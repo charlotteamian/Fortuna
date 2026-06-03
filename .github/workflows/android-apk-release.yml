@@ -1,0 +1,101 @@
+name: Android APK Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional release tag to create or update, for example v1.0.1'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint and build web app
+        run: npm run release:web
+
+      - name: Build Android debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Prepare APK artifact
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${{ inputs.release_tag }}" ]]; then
+            TAG="${{ inputs.release_tag }}"
+          fi
+
+          VERSION="${TAG#v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$TAG" && "$TAG" == "${GITHUB_REF_NAME}" && "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            VERSION="manual-${GITHUB_RUN_NUMBER}"
+          fi
+
+          mkdir -p release
+          APK_NAME="Fortuna-${VERSION}-debug.apk"
+          cp android/app/build/outputs/apk/debug/Fortuna-1.0.apk "release/$APK_NAME"
+          echo "apk_path=release/$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortuna-debug-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+
+      - name: Create or update GitHub Release
+        if: github.ref_type == 'tag' || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.apk.outputs.release_tag }}
+          APK_PATH: ${{ steps.apk.outputs.apk_path }}
+          VERSION: ${{ steps.apk.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          Fortuna $VERSION debug APK.
+
+          License note: Fortuna is available for personal, private, non-commercial use only. Commercial use and commercial distribution require prior written permission from the copyright holder.
+
+          Installation note: download the APK on an Android device, allow installation from unknown apps when prompted, and install it. This is a debug-signed sideload build for GitHub distribution.
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_PATH" --clobber
+          else
+            gh release create "$TAG" "$APK_PATH" --title "Fortuna $VERSION" --notes-file release-notes.md
+          fi
