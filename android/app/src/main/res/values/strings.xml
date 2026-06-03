@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Fortuna</string>
+    <string name="title_activity_main">Fortuna</string>
+    <string name="package_name">com.fortuna.wealthtracker</string>
+    <string name="custom_url_scheme">com.fortuna.wealthtracker</string>
+</resources>

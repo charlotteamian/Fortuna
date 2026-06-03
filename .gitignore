@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+.DS_Store
+.claude/
+AGENTS.md
+CLAUDE.md
+
+*.jks
+*.keystore
+*.p12
+*.pem
+
+android/.gradle/
+android/app/build/
+android/build/
