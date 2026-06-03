@@ -1,6 +1,6 @@
 # Fortuna
 
-Fortuna is a local-first personal wealth tracker for Android and the web. It helps track accounts, assets, liabilities, net worth history, product details, and exports without sending personal financial records to a backend service.
+Fortuna is a local-first personal wealth tracker for Android. It helps track accounts, assets, liabilities, net worth history, product details, and exports without sending personal financial records to a backend service.
 
 The Android package name is `com.fortuna.wealthtracker`.
 
