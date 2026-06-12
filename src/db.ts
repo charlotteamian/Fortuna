@@ -14,15 +14,21 @@ export interface Account {
   unit?: 'currency' | 'gram'; // gram for precious metals
   institution?: string;
   productData?: Record<string, string>;
+  portfolio?: boolean;     // platform-managed equity account: holdings live in `holdings`/`holdingTxns`
+  cashBalance?: number;    // portfolio accounts: idle cash on the platform (account currency)
 }
 
 export interface AccountRecord {
   id: string;
   accountId: string;
   date: string;
-  amount: number;          // grams if unit=gram, else currency amount
+  amount: number;          // grams if unit=gram (remaining holding after this txn), else currency amount
   note?: string;
   createdAt: number;
+  // --- Precious-metal transactional fields ---
+  kind?: 'buy' | 'sell';   // metals: a buy(+) or sell(-) transaction
+  deltaGrams?: number;     // metals: grams traded in this txn (always a positive magnitude)
+  pricePerGram?: number;   // metals: cost price (buy) or sale price (sell) per gram, in account currency
 }
 
 export interface ExchangeRate {
@@ -59,6 +65,54 @@ export interface ProductEntry {
   updatedAt: number;
 }
 
+// A bucket of the user's target asset allocation. Each entry of `categories` is a scope:
+// a whole category ('银行存款'), a market slice ('股票/ETF@us') or one account ('acct:<id>').
+export interface PlanItem {
+  id: string;
+  name: string;
+  targetPercent: number;   // 0–100
+  categories: string[];    // scopes covered by this bucket
+  sortOrder: number;
+  createdAt: number;
+}
+
+// A concrete security/asset target inside a plan item, with its own planned amount.
+export interface PlanTarget {
+  id: string;
+  planItemId: string;
+  label: string;           // display name (snapshot for linked refs, free text otherwise)
+  refKey?: string;         // 'h:<holdingId>' linked holding, 'a:<accountId>' linked account
+  targetAmount: number;    // planned amount in `currency`
+  currency?: string;       // currency of the planned amount; linked targets use the asset's own currency
+  sortOrder: number;
+  createdAt: number;
+}
+
+// One security held inside a portfolio (platform-managed) account.
+export interface Holding {
+  id: string;
+  accountId: string;
+  name: string;
+  symbol?: string;         // ticker / fund code
+  market?: string;         // A股 / 美股 / 港股 ...
+  lastPrice: number;       // latest quote, manually maintained (account currency)
+  priceDate?: string;
+  sortOrder: number;
+  createdAt: number;
+}
+
+export interface HoldingTxn {
+  id: string;
+  accountId: string;
+  holdingId: string;
+  date: string;
+  kind: 'buy' | 'sell';
+  shares: number;          // positive magnitude
+  price: number;           // per share, account currency
+  note?: string;
+  createdAt: number;
+}
+
 export interface Settings {
   id: string;
   primaryCurrency: string;
@@ -69,7 +123,14 @@ export interface Settings {
   themeMode?: 'light' | 'dark' | 'auto';
   fontSize?: 'small' | 'normal' | 'large';
   language?: 'auto' | 'zh' | 'en';
+  goldPriceSource?: GoldPriceSource;  // which gold price convention to value precious metals with
+  metalTxnMigrated?: boolean;         // legacy metal snapshot records converted to buy/sell deltas
+  planTargetTotal?: number;           // optional target total assets for the allocation plan (primary currency)
 }
+
+// 'international' = global spot (XAU/USD per troy ounce, the mainstream overseas method)
+// 'domestic'      = Shanghai gold convention (CNY per gram); for CNY users this matches local buying prices
+export type GoldPriceSource = 'international' | 'domestic';
 
 // ---- Color Themes ----
 export const COLOR_THEMES: ColorTheme[] = [
@@ -128,6 +189,10 @@ class AssetManagerDB extends Dexie {
   exchangeRates!: Table<ExchangeRate>;
   settings!: Table<Settings>;
   products!: Table<ProductEntry>;
+  planItems!: Table<PlanItem>;
+  planTargets!: Table<PlanTarget>;
+  holdings!: Table<Holding>;
+  holdingTxns!: Table<HoldingTxn>;
 
   constructor() {
     super('AssetManagerDB');
@@ -150,6 +215,27 @@ class AssetManagerDB extends Dexie {
       exchangeRates: 'id, base, quote',
       settings: 'id',
       products: 'id, sectionId, sortOrder, createdAt',
+    });
+    this.version(6).stores({
+      accounts: 'id, name, category, type, currency, sortOrder, institution',
+      records: 'id, accountId, date, createdAt',
+      exchangeRates: 'id, base, quote',
+      settings: 'id',
+      products: 'id, sectionId, sortOrder, createdAt',
+      planItems: 'id, sortOrder',
+      holdings: 'id, accountId, sortOrder',
+      holdingTxns: 'id, accountId, holdingId, date, createdAt',
+    });
+    this.version(7).stores({
+      accounts: 'id, name, category, type, currency, sortOrder, institution',
+      records: 'id, accountId, date, createdAt',
+      exchangeRates: 'id, base, quote',
+      settings: 'id',
+      products: 'id, sectionId, sortOrder, createdAt',
+      planItems: 'id, sortOrder',
+      planTargets: 'id, planItemId, sortOrder',
+      holdings: 'id, accountId, sortOrder',
+      holdingTxns: 'id, accountId, holdingId, date, createdAt',
     });
   }
 }
@@ -183,6 +269,11 @@ export async function initializeSettings(): Promise<Settings> {
     settings.language = 'auto';
     updated = true;
   }
+  if (settings.goldPriceSource === undefined) {
+    // CNY users default to the domestic (Shanghai gold, 元/克) convention; others to international spot
+    settings.goldPriceSource = settings.primaryCurrency === 'CNY' ? 'domestic' : 'international';
+    updated = true;
+  }
   // Migrate old "股票" category → "股票/ETF"
   const oldStockIdx = settings.categories.findIndex(c => c.name === '股票');
   if (oldStockIdx >= 0) {
@@ -197,7 +288,41 @@ export async function initializeSettings(): Promise<Settings> {
   if (updated) {
     await db.settings.put(settings);
   }
+  // One-time conversion of legacy metal "snapshot" records into buy/sell deltas
+  if (!settings.metalTxnMigrated) {
+    try {
+      await migrateMetalRecords();
+    } catch (e) {
+      console.warn('Metal record migration failed', e);
+    }
+    settings.metalTxnMigrated = true;
+    await db.settings.put(settings);
+  }
   return settings;
+}
+
+/**
+ * Legacy precious-metal records stored `amount` as the running total grams (a snapshot).
+ * The new model keeps that snapshot but also records each transaction as a buy/sell delta.
+ * This backfills kind/deltaGrams from consecutive snapshot diffs so edits/recompute work.
+ */
+async function migrateMetalRecords(): Promise<void> {
+  const metalAccounts = await db.accounts.filter(a => a.unit === 'gram').toArray();
+  for (const acct of metalAccounts) {
+    const recs = (await db.records.where('accountId').equals(acct.id).toArray())
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+    const seedCost = acct.productData?.avg_cost ? parseFloat(acct.productData.avg_cost.replace(/[^\d.]/g, '')) : NaN;
+    let prev = 0;
+    for (const r of recs) {
+      if (r.kind || r.deltaGrams != null) { prev = r.amount; continue; }  // already transactional
+      const delta = r.amount - prev;
+      const kind: 'buy' | 'sell' = delta >= 0 ? 'buy' : 'sell';
+      const update: Partial<AccountRecord> = { kind, deltaGrams: Math.abs(delta) };
+      if (kind === 'buy' && !isNaN(seedCost) && seedCost > 0) update.pricePerGram = seedCost;
+      await db.records.update(r.id, update);
+      prev = r.amount;
+    }
+  }
 }
 
 export function getTheme(id: string): ColorTheme {
@@ -210,7 +335,11 @@ export async function exportData(): Promise<string> {
   const records = await db.records.toArray();
   const settings = await db.settings.toArray();
   const products = await db.products.toArray();
-  const data = { version: 5, timestamp: Date.now(), accounts, records, settings, products };
+  const planItems = await db.planItems.toArray();
+  const planTargets = await db.planTargets.toArray();
+  const holdings = await db.holdings.toArray();
+  const holdingTxns = await db.holdingTxns.toArray();
+  const data = { version: 7, timestamp: Date.now(), accounts, records, settings, products, planItems, planTargets, holdings, holdingTxns };
   return JSON.stringify(data);
 }
 
@@ -218,17 +347,25 @@ export async function importData(jsonData: string): Promise<boolean> {
   try {
     const data = JSON.parse(jsonData);
     if (!data.accounts || !data.records || !data.settings) return false;
-    
-    await db.transaction('rw', db.accounts, db.records, db.settings, db.products, async () => {
+
+    await db.transaction('rw', [db.accounts, db.records, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns], async () => {
       await db.accounts.clear();
       await db.records.clear();
       await db.settings.clear();
       await db.products.clear();
-      
+      await db.planItems.clear();
+      await db.planTargets.clear();
+      await db.holdings.clear();
+      await db.holdingTxns.clear();
+
       if (data.accounts.length > 0) await db.accounts.bulkAdd(data.accounts);
       if (data.records.length > 0) await db.records.bulkAdd(data.records);
       if (data.settings.length > 0) await db.settings.bulkAdd(data.settings);
       if (data.products && data.products.length > 0) await db.products.bulkAdd(data.products);
+      if (data.planItems && data.planItems.length > 0) await db.planItems.bulkAdd(data.planItems);
+      if (data.planTargets && data.planTargets.length > 0) await db.planTargets.bulkAdd(data.planTargets);
+      if (data.holdings && data.holdings.length > 0) await db.holdings.bulkAdd(data.holdings);
+      if (data.holdingTxns && data.holdingTxns.length > 0) await db.holdingTxns.bulkAdd(data.holdingTxns);
     });
     return true;
   } catch (e) {
@@ -241,7 +378,11 @@ export async function exportToExcel(): Promise<string> {
   const accounts = await db.accounts.toArray();
   const records = await db.records.toArray();
   const products = await db.products.toArray();
-  
+  const planItems = await db.planItems.toArray();
+  const planTargets = await db.planTargets.toArray();
+  const holdings = await db.holdings.toArray();
+  const holdingTxns = await db.holdingTxns.toArray();
+
   const accountsExport = accounts.map(acct => {
     const acctRecords = records.filter(r => r.accountId === acct.id).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
     const { productData, ...rest } = acct;
@@ -262,15 +403,26 @@ export async function exportToExcel(): Promise<string> {
     ...p.data
   }));
   
+  // PlanItem.categories is an array — flatten to a delimited string for the sheet
+  const planExport = planItems.map(p => ({ ...p, categories: p.categories.join('|') }));
+
   const wb = XLSX.utils.book_new();
   const wsAccounts = XLSX.utils.json_to_sheet(accountsExport);
   const wsRecords = XLSX.utils.json_to_sheet(records);
   const wsProducts = XLSX.utils.json_to_sheet(productsExport);
-  
+  const wsPlan = XLSX.utils.json_to_sheet(planExport);
+  const wsPlanTargets = XLSX.utils.json_to_sheet(planTargets);
+  const wsHoldings = XLSX.utils.json_to_sheet(holdings);
+  const wsHoldingTxns = XLSX.utils.json_to_sheet(holdingTxns);
+
   XLSX.utils.book_append_sheet(wb, wsAccounts, "Accounts");
   XLSX.utils.book_append_sheet(wb, wsRecords, "Records");
   XLSX.utils.book_append_sheet(wb, wsProducts, "Products");
-  
+  XLSX.utils.book_append_sheet(wb, wsPlan, "Plan");
+  XLSX.utils.book_append_sheet(wb, wsPlanTargets, "PlanTargets");
+  XLSX.utils.book_append_sheet(wb, wsHoldings, "Holdings");
+  XLSX.utils.book_append_sheet(wb, wsHoldingTxns, "HoldingTxns");
+
   return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 }
 
@@ -280,6 +432,10 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
     const wsAccounts = wb.Sheets["Accounts"];
     const wsRecords = wb.Sheets["Records"];
     const wsProducts = wb.Sheets["Products"];
+    const wsPlan = wb.Sheets["Plan"];
+    const wsPlanTargets = wb.Sheets["PlanTargets"];
+    const wsHoldings = wb.Sheets["Holdings"];
+    const wsHoldingTxns = wb.Sheets["HoldingTxns"];
     if (!wsAccounts || !wsRecords) return false;
     
     const rawAccounts = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsAccounts);
@@ -310,13 +466,34 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       };
     });
     
-    await db.transaction('rw', db.accounts, db.records, db.products, async () => {
+    const planRaw = wsPlan ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsPlan) : [];
+    const planItems: PlanItem[] = planRaw.map(p => ({
+      id: String(p.id),
+      name: String(p.name ?? ''),
+      targetPercent: Number(p.targetPercent) || 0,
+      categories: typeof p.categories === 'string' && p.categories ? String(p.categories).split('|') : [],
+      sortOrder: Number(p.sortOrder) || 0,
+      createdAt: Number(p.createdAt) || Date.now(),
+    }));
+    const planTargets = wsPlanTargets ? XLSX.utils.sheet_to_json<PlanTarget>(wsPlanTargets) : [];
+    const holdings = wsHoldings ? XLSX.utils.sheet_to_json<Holding>(wsHoldings) : [];
+    const holdingTxns = wsHoldingTxns ? XLSX.utils.sheet_to_json<HoldingTxn>(wsHoldingTxns) : [];
+
+    await db.transaction('rw', [db.accounts, db.records, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns], async () => {
       await db.accounts.clear();
       await db.records.clear();
       await db.products.clear();
+      await db.planItems.clear();
+      await db.planTargets.clear();
+      await db.holdings.clear();
+      await db.holdingTxns.clear();
       if (accounts.length > 0) await db.accounts.bulkAdd(accounts);
       if (records.length > 0) await db.records.bulkAdd(records);
       if (products.length > 0) await db.products.bulkAdd(products);
+      if (planItems.length > 0) await db.planItems.bulkAdd(planItems);
+      if (planTargets.length > 0) await db.planTargets.bulkAdd(planTargets);
+      if (holdings.length > 0) await db.holdings.bulkAdd(holdings);
+      if (holdingTxns.length > 0) await db.holdingTxns.bulkAdd(holdingTxns);
     });
     return true;
   } catch (e) {

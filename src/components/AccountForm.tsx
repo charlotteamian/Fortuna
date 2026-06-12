@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState } from 'react';
-import { createAccount, addRecord } from '../services/assetService';
+import { createAccount, addRecord, addMetalTransaction } from '../services/assetService';
 import { type Settings, METAL_TYPES } from '../db';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
@@ -20,14 +20,18 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
   const [productData, setProductData] = useState<Record<string, string>>({});
   const [initShares, setInitShares] = useState('');
   const [initPrice, setInitPrice] = useState('');
+  const [metalGrams, setMetalGrams] = useState('');
+  const [metalCost, setMetalCost] = useState('');
+  const [portfolioMode, setPortfolioMode] = useState(true);
 
   const setField = (key: string, val: string) => setProductData(prev => ({ ...prev, [key]: val }));
 
   const cats = type === 'asset' ? assetCats : liabCats;
   const isMetal = category === '贵金属';
   const isEquity = category === '股票/ETF' || category === '股票' || category === '场外基金';
+  const isPortfolio = isEquity && portfolioMode;
   const extraFields = getFieldsForCategory(category, settings, t);
-  const renderedExtraFields = isEquity ? extraFields.filter(f => f.key !== 'cost') : extraFields;
+  const renderedExtraFields = isPortfolio ? [] : isEquity ? extraFields.filter(f => f.key !== 'cost') : extraFields;
 
   const handleTypeChange = (t: 'asset' | 'liability') => {
     setType(t);
@@ -57,7 +61,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
       ? METAL_TYPES.find(m => m.code === metalType)?.icon
       : settings.categories.find(c => c.name === category)?.icon;
     const finalProductData = { ...productData };
-    if (isEquity) {
+    if (isEquity && !isPortfolio) {
       const price = parseFloat(initPrice);
       if (!isNaN(price) && price > 0) finalProductData.cost = initPrice;
     }
@@ -66,13 +70,22 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
       institution: institution.trim() || undefined,
       productData: Object.keys(finalProductData).length > 0 ? finalProductData : undefined,
       ...(isMetal ? { metalType, unit: 'gram' as const } : {}),
+      ...(isPortfolio ? { portfolio: true } : {}),
     });
-    if (isEquity) {
+    if (isEquity && !isPortfolio) {
       const shares = parseFloat(initShares);
       const price = parseFloat(initPrice);
       if (!isNaN(shares) && !isNaN(price) && shares > 0 && price > 0) {
         const today = new Date().toISOString().split('T')[0];
         await addRecord(id, today, shares * price);
+      }
+    }
+    if (isMetal) {
+      const grams = parseFloat(metalGrams);
+      const cost = parseFloat(metalCost);
+      if (!isNaN(grams) && grams > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        await addMetalTransaction(id, { date: today, kind: 'buy', grams, pricePerGram: !isNaN(cost) && cost > 0 ? cost : 0 });
       }
     }
     onCreated(id);
@@ -110,6 +123,24 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
           </div>
         </div>
 
+        {/* Equity management mode: one account per platform (holdings inside) vs one per security */}
+        {isEquity && (
+          <div className="form-group">
+            <label className="form-label">{t('manage_mode')}</label>
+            <div style={S.typeRow}>
+              <button style={{ ...S.typeBtn, ...(portfolioMode ? { background: 'var(--asset-color)', color: '#000' } : S.typeBtnInactive) }}
+                onClick={() => setPortfolioMode(true)}>{t('mode_portfolio')}</button>
+              <button style={{ ...S.typeBtn, ...(!portfolioMode ? { background: 'var(--asset-color)', color: '#000' } : S.typeBtnInactive) }}
+                onClick={() => setPortfolioMode(false)}>{t('mode_single')}</button>
+            </div>
+            {portfolioMode && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+                {t('portfolio_hint')}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Metal type */}
         {isMetal && (
           <div className="form-group">
@@ -134,7 +165,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         <div className="form-group">
           <label className="form-label">{t('name')}</label>
           <input className="form-input"
-            placeholder={isMetal ? t('metal_placeholder') : t('account_placeholder')}
+            placeholder={isMetal ? t('metal_placeholder') : isPortfolio ? t('portfolio_name_ph') : t('account_placeholder')}
             value={name} onChange={e => setName(e.target.value)} />
         </div>
 
@@ -149,7 +180,33 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         {isMetal && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
             {t('metal_hint', { currency })}
+            <div style={{ marginTop: 4 }}>{t('metal_channel_hint')}</div>
           </div>
+        )}
+
+        {/* Metal quick-add: initial holding (optional) */}
+        {isMetal && (
+          <>
+            <div style={S.divider}><span style={S.dividerText}>{t('metal_initial_position')}</span></div>
+            <div className="form-group">
+              <label className="form-label">{t('grams_label')}</label>
+              <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
+                placeholder={`0.00 ${t('unit_gram')}`} value={metalGrams} onChange={e => setMetalGrams(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">{t('cost_price')} ({currency}/{t('unit_gram')})</label>
+              <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
+                placeholder={t('cost_price_optional')} value={metalCost} onChange={e => setMetalCost(e.target.value)} />
+            </div>
+            {metalGrams && metalCost && !isNaN(parseFloat(metalGrams)) && !isNaN(parseFloat(metalCost)) && parseFloat(metalGrams) > 0 && parseFloat(metalCost) > 0 && (
+              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                <span style={{ color: 'var(--text-muted)' }}>{t('grams_label')} × {t('cost_price')}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
+                  {(parseFloat(metalGrams) * parseFloat(metalCost)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
+                </span>
+              </div>
+            )}
+          </>
         )}
 
         {/* Category-specific product fields */}
@@ -180,8 +237,8 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
           </>
         )}
 
-        {/* Equity quick-add: initial position */}
-        {isEquity && (
+        {/* Equity quick-add: initial position (single-security mode only) */}
+        {isEquity && !isPortfolio && (
           <>
             <div style={S.divider}><span style={S.dividerText}>{t('initial_position')}</span></div>
             <div className="form-group">

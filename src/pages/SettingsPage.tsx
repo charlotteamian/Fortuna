@@ -37,7 +37,7 @@ export default function SettingsPage({ onRefresh }: Props) {
   const handleRefreshRates = async () => {
     if (!settings) return;
     setSyncing(true);
-    try { await refreshAllRates(settings.primaryCurrency); showToast(t('rates_updated')); const updatedTime = await getLastUpdateTime(); setLastUpdate(updatedTime); }
+    try { await refreshAllRates(settings.primaryCurrency, settings.goldPriceSource ?? 'international'); showToast(t('rates_updated')); const updatedTime = await getLastUpdateTime(); setLastUpdate(updatedTime); }
     catch { showToast(t('rates_failed'), 'error'); }
     setSyncing(false);
   };
@@ -261,6 +261,20 @@ export default function SettingsPage({ onRefresh }: Props) {
           <button className="btn btn-primary btn-sm" onClick={handleRefreshRates} disabled={syncing}>{syncing ? '...' : '🔄 ' + t('refresh_rates')}</button>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{t('rate_source')}</div>
+      </div>
+
+      {/* Gold Price Source */}
+      <div className="settings-section">
+        <div className="settings-section-title">{t('gold_price_section')}</div>
+        <div className="settings-item">
+          <span className="settings-item-label">{t('gold_price_source')}</span>
+          <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+            value={settings.goldPriceSource ?? 'international'} onChange={e => save({ goldPriceSource: e.target.value as Settings['goldPriceSource'] })}>
+            <option value="domestic">{t('gold_src_domestic')}</option>
+            <option value="international">{t('gold_src_international')}</option>
+          </select>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{t('gold_price_source_hint')}</div>
       </div>
 
       {/* Categories */}
