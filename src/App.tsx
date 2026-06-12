@@ -3,13 +3,14 @@ import './index.css';
 import RecordPage from './pages/RecordPage';
 import AccountDetail from './pages/AccountDetail';
 import ChartPage from './pages/ChartPage';
+import PlanPage from './pages/PlanPage';
 import ProductsPage from './pages/ProductsPage';
 import SettingsPage from './pages/SettingsPage';
 import { initializeSettings, getTheme, type Settings } from './db';
 import { useTranslation } from 'react-i18next';
 import { AppContext } from './app-context';
 
-type Tab = 'record' | 'chart' | 'products' | 'settings';
+type Tab = 'record' | 'plan' | 'chart' | 'products' | 'settings';
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -79,6 +80,7 @@ function App() {
       <div className="app">
         <div className="app-content">
           {tab === 'record' && <RecordPage key={refreshKey} onOpenAccount={openAccount} onRefresh={refresh} />}
+          {tab === 'plan' && <PlanPage key={refreshKey} />}
           {tab === 'chart' && <ChartPage key={refreshKey} />}
           {tab === 'products' && <ProductsPage />}
           {tab === 'settings' && <SettingsPage onRefresh={() => { loadSettings(); refresh(); }} />}
@@ -93,6 +95,17 @@ function App() {
                   <rect x="2" y="7" width="20" height="14" rx="3"/>
                   <path d="M16 7V5a2 2 0 00-2-2H8a2 2 0 00-2 2v2"/>
                   <circle cx="16" cy="14" r="1.5" fill={active ? 'var(--asset-color)' : 'var(--text-muted)'} stroke="none"/>
+                </svg>
+              ),
+            },
+            {
+              key: 'plan' as Tab,
+              label: t('plan_tab'),
+              icon: (active: boolean) => (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? 'var(--asset-color)' : 'var(--text-muted)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9"/>
+                  <circle cx="12" cy="12" r="4.5"/>
+                  <circle cx="12" cy="12" r="1.5" fill={active ? 'var(--asset-color)' : 'var(--text-muted)'} stroke="none"/>
                 </svg>
               ),
             },

@@ -1,0 +1,52 @@
+name: Daily GitHub Monitor
+
+on:
+  schedule:
+    # 01:00 UTC = 09:00 Asia/Shanghai.
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  MONITOR_LOOKBACK_HOURS: 36
+  OPENAI_MODEL: gpt-5-mini
+  CREATE_DRAFT_ISSUE: true
+
+jobs:
+  monitor:
+    name: Monitor issues and draft replies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Generate reply drafts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node scripts/github-monitor-drafts.mjs
+
+      - name: Add workflow summary
+        if: always()
+        run: |
+          if [ -f monitor-output/draft-replies.md ]; then
+            cat monitor-output/draft-replies.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload monitor output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-monitor-output
+          path: monitor-output

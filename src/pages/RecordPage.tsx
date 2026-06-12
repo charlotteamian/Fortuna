@@ -46,6 +46,12 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    const hasOpenModal = showForm || showExportMenu || Boolean(confirmDelete) || Boolean(editingAcct);
+    document.documentElement.classList.toggle('modal-open', hasOpenModal);
+    return () => document.documentElement.classList.remove('modal-open');
+  }, [showForm, showExportMenu, confirmDelete, editingAcct]);
+
   useLayoutEffect(() => {
     if (!loading && savedScrollY > 0) {
       const sc = document.querySelector('.app-content') as HTMLElement | null;
