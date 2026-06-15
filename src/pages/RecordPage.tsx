@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { getAccountsWithLatest, deleteAccount, updateAccount, type AccountWithLatest } from '../services/assetService';
+import { getAccountsWithLatest, deleteAccount, updateAccount, archiveAccount, restoreAccount, type AccountWithLatest } from '../services/assetService';
 import { initializeSettings, type Settings } from '../db';
 import { useAppContext } from '../app-context';
 import AccountForm from '../components/AccountForm';
@@ -12,12 +12,15 @@ import * as XLSX from 'xlsx';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
 
-let savedScrollY = 0;
+const SCROLL_Y_KEY = 'fortuna-record-scroll-y';
+const getSavedScrollY = () => Number(sessionStorage.getItem(SCROLL_Y_KEY) || 0);
+const setSavedScrollY = (value: number) => sessionStorage.setItem(SCROLL_Y_KEY, String(value));
 
 export default function RecordPage({ onOpenAccount }: Props) {
   const { t, i18n } = useTranslation();
   const { theme, amountVisible, setAmountVisible } = useAppContext();
   const [accounts, setAccounts] = useState<AccountWithLatest[]>([]);
+  const [archivedAccounts, setArchivedAccounts] = useState<AccountWithLatest[]>([]);
   const [totals, setTotals] = useState({ totalAssets: 0, totalLiabilities: 0, netWorth: 0 });
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,11 +39,19 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   const load = async () => {
     setLoading(true);
-    const s = await initializeSettings();
+    const [s, activeData, archivedData] = await Promise.all([
+      initializeSettings(),
+      getAccountsWithLatest(),
+      getAccountsWithLatest({ archivedOnly: true }),
+    ]);
     setSettings(s);
-    const data = await getAccountsWithLatest();
-    setAccounts(data.accounts);
-    setTotals(data);
+    setAccounts(activeData.accounts);
+    setArchivedAccounts(archivedData.accounts);
+    setTotals({
+      totalAssets: activeData.totalAssets,
+      totalLiabilities: activeData.totalLiabilities,
+      netWorth: activeData.netWorth,
+    });
     setLoading(false);
   };
 
@@ -53,6 +64,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   }, [showForm, showExportMenu, confirmDelete, editingAcct]);
 
   useLayoutEffect(() => {
+    const savedScrollY = getSavedScrollY();
     if (!loading && savedScrollY > 0) {
       const sc = document.querySelector('.app-content') as HTMLElement | null;
       if (sc) sc.scrollTop = savedScrollY;
@@ -62,11 +74,13 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   const openAccount = (id: string) => {
     const sc = document.querySelector('.app-content') as HTMLElement | null;
-    savedScrollY = sc ? sc.scrollTop : window.scrollY;
+    setSavedScrollY(sc ? sc.scrollTop : window.scrollY);
     onOpenAccount(id);
   };
 
   const handleDelete = async (id: string) => { await deleteAccount(id); setConfirmDelete(null); setContextMenu(null); showToast(t('deleted_toast')); load(); };
+  const handleArchive = async (id: string) => { await archiveAccount(id); setContextMenu(null); showToast(t('archived_toast')); load(); };
+  const handleRestore = async (id: string) => { await restoreAccount(id); setContextMenu(null); showToast(t('restored_toast')); load(); };
 
   const handleEditSave = async () => {
     if (!editingAcct) return;
@@ -230,6 +244,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const masked = (text: string) => amountVisible ? text : '****';
   const assetAccounts = accounts.filter(a => a.type === 'asset');
   const liabilityAccounts = accounts.filter(a => a.type === 'liability');
+  const hasAnyAccounts = accounts.length > 0 || archivedAccounts.length > 0;
 
   // Long-press handlers
   const startLongPress = useCallback((acctId: string, e: React.TouchEvent | React.MouseEvent) => {
@@ -247,7 +262,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const handleItemClick = useCallback((id: string) => {
     if (!contextMenu) {
       const sc = document.querySelector('.app-content') as HTMLElement | null;
-      savedScrollY = sc ? sc.scrollTop : window.scrollY;
+      setSavedScrollY(sc ? sc.scrollTop : window.scrollY);
       onOpenAccount(id);
     }
   }, [contextMenu, onOpenAccount]);
@@ -279,6 +294,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   const renderEntryItem = (acct: AccountWithLatest) => (
     <div className="entry-item" key={acct.id}
+      style={acct.archivedAt ? { opacity: 0.72 } : undefined}
       onClick={() => handleItemClick(acct.id)}
       onTouchStart={e => startLongPress(acct.id, e)}
       onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
@@ -286,6 +302,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
       <div className="entry-info">
         <div className="entry-category">{acct.name}</div>
         <div className="entry-note-text">
+          {acct.archivedAt && <span style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{t('archived_badge')}</span>}
           {acct.institution && <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{acct.institution}</span>}
           {t(acct.category)} · {acct.unit === 'gram' ? t('precious_metal_label') : acct.currency}
         </div>
@@ -338,10 +355,17 @@ export default function RecordPage({ onOpenAccount }: Props) {
       )}
 
       {loading ? <div className="loading"><div className="spinner" /></div>
-      : accounts.length === 0 ? (
+      : !hasAnyAccounts ? (
         <div className="empty-state"><div className="empty-icon">💎</div><div className="empty-text">{t('start_tracking')}</div><div className="empty-hint">{t('add_first_hint')}</div></div>
       ) : (
         <>
+          {accounts.length === 0 && (
+            <div className="empty-state" style={{ padding: '2rem 1rem' }}>
+              <div className="empty-icon">📦</div>
+              <div className="empty-text">{t('no_active_accounts')}</div>
+              <div className="empty-hint">{t('archived_accounts_hint')}</div>
+            </div>
+          )}
           {assetAccounts.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '1rem 0 0.5rem', color: theme.assetColor }}>{t('assets')}</h2>
@@ -389,6 +413,18 @@ export default function RecordPage({ onOpenAccount }: Props) {
               })}
             </div>
           )}
+          {archivedAccounts.length > 0 && (
+            <div style={{ marginBottom: '2rem' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '1rem 0 0.5rem', color: 'var(--text-muted)' }}>{t('archived_accounts')} ({archivedAccounts.length})</h2>
+              <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="dot" style={{ background: 'var(--text-muted)' }} />{t('archived_history')}
+                </div>
+                <div>{t('history_records')}</div>
+              </div>
+              {archivedAccounts.map(acct => renderEntryItem(acct))}
+            </div>
+          )}
           <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', margin: '12px 0 24px' }}>{t('long_press_hint')}</div>
         </>
       )}
@@ -418,19 +454,37 @@ export default function RecordPage({ onOpenAccount }: Props) {
         <>
           <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
           <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <button className="context-menu-item" onClick={() => { setContextMenu(null); openAccount(contextMenu.acctId); }}>
-              📝 {t('view_details')}
-            </button>
-            <button className="context-menu-item" onClick={() => {
-              const acct = accounts.find(a => a.id === contextMenu.acctId);
-              if (acct) setEditingAcct({ id: acct.id, name: acct.name, category: acct.category, institution: acct.institution || '', currency: acct.currency });
-              setContextMenu(null);
-            }}>
-              ✏️ {t('edit_account')}
-            </button>
-            <button className="context-menu-item danger" onClick={() => { setConfirmDelete(contextMenu.acctId); setContextMenu(null); }}>
-              🗑️ {t('delete_account_menu')}
-            </button>
+            {(() => {
+              const acct = [...accounts, ...archivedAccounts].find(a => a.id === contextMenu.acctId);
+              if (!acct) return null;
+              return (
+                <>
+                  <button className="context-menu-item" onClick={() => { setContextMenu(null); openAccount(contextMenu.acctId); }}>
+                    📝 {t('view_details')}
+                  </button>
+                  {!acct.archivedAt && (
+                    <button className="context-menu-item" onClick={() => {
+                      setEditingAcct({ id: acct.id, name: acct.name, category: acct.category, institution: acct.institution || '', currency: acct.currency });
+                      setContextMenu(null);
+                    }}>
+                      ✏️ {t('edit_account')}
+                    </button>
+                  )}
+                  {acct.archivedAt ? (
+                    <button className="context-menu-item" onClick={() => handleRestore(acct.id)}>
+                      ↩️ {t('restore_account')}
+                    </button>
+                  ) : (
+                    <button className="context-menu-item" onClick={() => handleArchive(acct.id)}>
+                      📦 {t('archive_account')}
+                    </button>
+                  )}
+                  <button className="context-menu-item danger" onClick={() => { setConfirmDelete(contextMenu.acctId); setContextMenu(null); }}>
+                    🗑️ {t('delete_account_menu')}
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </>
       )}

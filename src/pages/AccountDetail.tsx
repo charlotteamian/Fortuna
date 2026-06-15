@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { getAccount, getRecords, addRecord, updateRecord, deleteRecord, updateAccount,
-  addMetalTransaction, updateMetalTransaction, computeMetalPosition } from '../services/assetService';
+  addMetalTransaction, updateMetalTransaction, computeMetalPosition, restoreAccount } from '../services/assetService';
 import { initializeSettings, type Account, type AccountRecord, type Settings, METAL_TYPES } from '../db';
 import { getMetalPricePerGram } from '../services/rateService';
 import { useAppContext } from '../app-context';
@@ -142,6 +142,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
     load();
   };
   const handleNameSave = async () => { if (nameText.trim()) await updateAccount(accountId, { name: nameText.trim() }); setEditingName(false); load(); };
+  const handleRestoreAccount = async () => { await restoreAccount(accountId); load(); };
 
   const handleSaveProductData = async () => {
     await updateAccount(accountId, {
@@ -177,6 +178,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
 
   const isMetal = account.unit === 'gram';
   const isPortfolio = !!account.portfolio;
+  const isArchived = Boolean(account.archivedAt);
   const isEquity = !isPortfolio && (account.category === '股票/ETF' || account.category === '股票' || account.category === '场外基金');
   const costPerShare = account.productData?.cost ? parseFloat(account.productData.cost) : null;
   const metalName = METAL_TYPES.find(m => m.code === account.metalType)?.name || '';
@@ -216,6 +218,11 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                 </span>
               )}
               {isMetal && <span>{metalName}</span>}
+              {isArchived && (
+                <span style={{ background: 'var(--bg-glass)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
+                  {t('archived_badge')}
+                </span>
+              )}
               {account.institution && (
                 <span style={{ background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem' }}>
                   🏢 {account.institution}
@@ -226,12 +233,22 @@ export default function AccountDetail({ accountId, onBack }: Props) {
           </div>
         </div>
 
+        {isArchived && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{t('archived_accounts')}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('archived_detail_hint')}</div>
+            </div>
+            <button className="btn btn-sm btn-secondary" onClick={handleRestoreAccount}>{t('restore_account')}</button>
+          </div>
+        )}
+
         {/* Product info card (per-product fields make no sense for portfolio accounts) */}
         {!isPortfolio && ((account.productData && Object.keys(account.productData).some(k => account.productData![k])) ? (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('product_info')}</span>
-              <button onClick={openEditProductData} style={{ background: 'none', border: 'none', color: 'var(--asset-color)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px' }}>{t('edit')}</button>
+              {!isArchived && <button onClick={openEditProductData} style={{ background: 'none', border: 'none', color: 'var(--asset-color)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px' }}>{t('edit')}</button>}
             </div>
             {(() => {
               const fieldDefs = settings ? getFieldsForCategory(account.category, settings, t) : [];
@@ -246,7 +263,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
             })()}
           </div>
         ) : (
-          <button onClick={openEditProductData} style={{ width: '100%', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)', fontSize: '0.8rem', padding: '10px', cursor: 'pointer', marginBottom: 12 }}>
+          !isArchived && <button onClick={openEditProductData} style={{ width: '100%', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)', fontSize: '0.8rem', padding: '10px', cursor: 'pointer', marginBottom: 12 }}>
             + {t('edit_product_info')}
           </button>
         ))}
@@ -305,7 +322,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
         )}
 
         {/* Portfolio account: holdings managed inside the account */}
-        {isPortfolio && <PortfolioPanel account={account} onChanged={() => load()} />}
+        {isPortfolio && !isArchived && <PortfolioPanel account={account} onChanged={() => load()} />}
 
         {/* Latest value (non-metal) */}
         {!isMetal && !isPortfolio && records.length > 0 && (
@@ -321,7 +338,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
           </div>
         )}
 
-        {account.category === '信用卡' && (
+        {!isArchived && account.category === '信用卡' && (
           <div className="settings-item" style={{ marginBottom: 20, background: 'var(--bg-card)', padding: '12px 16px', borderRadius: 16 }}>
             <div>
               <div className="settings-item-label">{t('credit_card_reminder')}</div>
@@ -366,7 +383,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
           </div>
         )}
 
-        {isMetal ? (
+        {!isArchived && (isMetal ? (
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
             <button className="btn btn-block" style={{ background: theme.assetColor, color: '#000', fontWeight: 700 }}
               onClick={() => openMetalTxn('buy')}>＋ {t('buy_in')}</button>
@@ -378,7 +395,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
             onClick={() => { setEditingRecord(null); setNewAmount(''); setNewNote(''); setNewDate(new Date().toISOString().split('T')[0]); setStockShares(''); setStockPrice(''); setShowAddRecord(true); }}>
             + {t('add_record')}
           </button>
-        )}
+        ))}
 
         <div className="entry-group-title"><span className="dot" style={{ background: color }} />{isPortfolio ? t('snapshot_history') : t('history_records')} ({records.length})</div>
         {isPortfolio && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t('snapshot_hint')}</div>}
@@ -403,10 +420,12 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem', color: txnColor, whiteSpace: 'nowrap' }}>
                     {isSell ? '−' : '+'}{masked(grams.toFixed(2))}<span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 2 }}>{t('unit_gram')}</span>
                   </span>
-                  <div className="entry-actions" style={{ flexShrink: 0 }}>
-                    <button className="btn btn-sm btn-secondary" onClick={() => openEditMetalRec(r)}>✏️</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
-                  </div>
+                  {!isArchived && (
+                    <div className="entry-actions" style={{ flexShrink: 0 }}>
+                      <button className="btn btn-sm btn-secondary" onClick={() => openEditMetalRec(r)}>✏️</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
+                    </div>
+                  )}
                 </div>
                 {/* second line: unit price (left) · subtotal (right) */}
                 {hasPrice && (
@@ -429,10 +448,12 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                 </div>
                 {r.note && <div className="record-note">{r.note}</div>}
               </div>
-              <div className="entry-actions">
-                {!isPortfolio && <button className="btn btn-sm btn-secondary" onClick={() => openEditRecord(r)}>✏️</button>}
-                <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
-              </div>
+              {!isArchived && (
+                <div className="entry-actions">
+                  {!isPortfolio && <button className="btn btn-sm btn-secondary" onClick={() => openEditRecord(r)}>✏️</button>}
+                  <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
+                </div>
+              )}
             </div>
           ))
         )}

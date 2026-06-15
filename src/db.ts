@@ -16,6 +16,7 @@ export interface Account {
   productData?: Record<string, string>;
   portfolio?: boolean;     // platform-managed equity account: holdings live in `holdings`/`holdingTxns`
   cashBalance?: number;    // portfolio accounts: idle cash on the platform (account currency)
+  archivedAt?: number;     // archived accounts are hidden from active totals but keep all history
 }
 
 export interface AccountRecord {
@@ -237,6 +238,17 @@ class AssetManagerDB extends Dexie {
       holdings: 'id, accountId, sortOrder',
       holdingTxns: 'id, accountId, holdingId, date, createdAt',
     });
+    this.version(8).stores({
+      accounts: 'id, name, category, type, currency, sortOrder, institution, archivedAt',
+      records: 'id, accountId, date, createdAt',
+      exchangeRates: 'id, base, quote',
+      settings: 'id',
+      products: 'id, sectionId, sortOrder, createdAt',
+      planItems: 'id, sortOrder',
+      planTargets: 'id, planItemId, sortOrder',
+      holdings: 'id, accountId, sortOrder',
+      holdingTxns: 'id, accountId, holdingId, date, createdAt',
+    });
   }
 }
 
@@ -339,7 +351,7 @@ export async function exportData(): Promise<string> {
   const planTargets = await db.planTargets.toArray();
   const holdings = await db.holdings.toArray();
   const holdingTxns = await db.holdingTxns.toArray();
-  const data = { version: 7, timestamp: Date.now(), accounts, records, settings, products, planItems, planTargets, holdings, holdingTxns };
+  const data = { version: 8, timestamp: Date.now(), accounts, records, settings, products, planItems, planTargets, holdings, holdingTxns };
   return JSON.stringify(data);
 }
 

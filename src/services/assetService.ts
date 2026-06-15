@@ -1,17 +1,30 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db, type Account, type AccountRecord, type GoldPriceSource, initializeSettings } from '../db';
 import { convertAmount, computeMetalValue } from './rateService';
+import { splitAccountsByArchive } from '../lib/accountArchive';
 
 // ---- Account CRUD ----
-export async function createAccount(data: Omit<Account, 'id' | 'createdAt' | 'sortOrder'>): Promise<string> {
+export interface AccountQueryOptions {
+  includeArchived?: boolean;
+  archivedOnly?: boolean;
+}
+
+export async function createAccount(data: Omit<Account, 'id' | 'createdAt' | 'sortOrder' | 'archivedAt'>): Promise<string> {
   const count = await db.accounts.count();
   const id = uuidv4();
   await db.accounts.add({ ...data, id, createdAt: Date.now(), sortOrder: count });
   return id;
 }
-export async function getAccounts(): Promise<Account[]> { return db.accounts.orderBy('sortOrder').toArray(); }
+export async function getAccounts(options: AccountQueryOptions = {}): Promise<Account[]> {
+  const allAccounts = await db.accounts.orderBy('sortOrder').toArray();
+  if (options.includeArchived) return allAccounts;
+  const { active, archived } = splitAccountsByArchive(allAccounts);
+  return options.archivedOnly ? archived : active;
+}
 export async function getAccount(id: string): Promise<Account | undefined> { return db.accounts.get(id); }
 export async function updateAccount(id: string, updates: Partial<Account>): Promise<void> { await db.accounts.update(id, updates); }
+export async function archiveAccount(id: string): Promise<void> { await db.accounts.update(id, { archivedAt: Date.now() }); }
+export async function restoreAccount(id: string): Promise<void> { await db.accounts.update(id, { archivedAt: undefined }); }
 export async function deleteAccount(id: string): Promise<void> {
   await db.records.where('accountId').equals(id).delete();
   await db.holdingTxns.where('accountId').equals(id).delete();
@@ -122,13 +135,13 @@ export interface AccountWithLatest extends Account {
   metalValueInCurrency?: number; // for metals: value in account currency
 }
 
-export async function getAccountsWithLatest(): Promise<{
+export async function getAccountsWithLatest(options: AccountQueryOptions = {}): Promise<{
   accounts: AccountWithLatest[];
   totalAssets: number; totalLiabilities: number; netWorth: number;
 }> {
   const settings = await initializeSettings();
   const goldSource = settings.goldPriceSource ?? 'international';
-  const allAccounts = await getAccounts();
+  const allAccounts = await getAccounts(options);
   const primary = settings.primaryCurrency;
   const result: AccountWithLatest[] = [];
   let totalAssets = 0, totalLiabilities = 0;
