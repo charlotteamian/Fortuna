@@ -9,6 +9,7 @@ import {
 } from '../services/holdingService';
 import { fetchQuotes } from '../services/quoteService';
 import { useAppContext } from '../app-context';
+import { splitHoldingsByArchive } from '../lib/holdingArchive';
 
 interface Props { account: Account; onChanged: () => void; }
 
@@ -77,7 +78,8 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     if (refreshingRef.current) return;
     // read fresh from db so this also works right after mount / external changes
     const current = await getHoldingsWithPositions(account.id);
-    const targets = current.filter(h => (h.symbol || '').trim());
+    const { active } = splitHoldingsByArchive(current);
+    const targets = active.filter(h => (h.symbol || '').trim());
     if (targets.length === 0) return;
     refreshingRef.current = true;
     setRefreshing(true);
@@ -158,9 +160,10 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const signed = (n: number) => (n >= 0 ? '+' : '') + fmt(n);
 
   const cash = account.cashBalance || 0;
-  const positionValue = holdings.reduce((s, h) => s + h.marketValue, 0);
+  const { active: activeHoldings, archived: archivedHoldings } = splitHoldingsByArchive(holdings);
+  const positionValue = activeHoldings.reduce((s, h) => s + h.marketValue, 0);
   const totalValue = positionValue + cash;
-  const costBasis = holdings.reduce((s, h) => s + h.position.costBasis, 0);
+  const costBasis = activeHoldings.reduce((s, h) => s + h.position.costBasis, 0);
   const unrealized = positionValue - costBasis;
   const realized = holdings.reduce((s, h) => s + h.position.realizedPnl, 0);
 
@@ -237,7 +240,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   // ---- Batch prices ----
   const openPrices = () => {
     setPriceDate(today());
-    setPriceInputs(Object.fromEntries(holdings.map(h => [h.id, h.lastPrice > 0 ? String(h.lastPrice) : ''])));
+    setPriceInputs(Object.fromEntries(activeHoldings.map(h => [h.id, h.lastPrice > 0 ? String(h.lastPrice) : ''])));
     setShowPrices(true);
   };
   const handleSavePrices = async () => {
@@ -280,17 +283,18 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     );
   };
 
-  const renderHolding = (h: HoldingWithPosition) => {
+  const renderHolding = (h: HoldingWithPosition, archived = false) => {
     const expanded = expandedId === h.id;
     const pnlPct = h.position.costBasis > 0 ? (h.unrealizedPnl / h.position.costBasis) * 100 : 0;
     const hTxns = txns.filter(tx => tx.holdingId === h.id);
     return (
-      <div key={h.id} style={{ ...S.holdingCard, border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
+      <div key={h.id} style={{ ...S.holdingCard, ...(archived ? S.archivedHoldingCard : {}), border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
         <div style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expanded ? null : h.id)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</span>
             {h.symbol && <span style={S.badge}>{h.symbol}</span>}
             {h.market && <span style={S.badge}>{h.market}</span>}
+            {archived && <span style={S.archivedBadge}>{t('archived_holding_badge')}</span>}
             <span style={{ flex: 1 }} />
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9375rem', whiteSpace: 'nowrap' }}>
               {masked(fmt(h.marketValue))}
@@ -318,7 +322,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: '#000', fontWeight: 700 }} onClick={() => openTxn(h, 'buy')}>＋ {t('buy_in')}</button>
-              <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: '#fff', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t('sell_out')}</button>
+              {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: '#fff', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t('sell_out')}</button>}
               <button className="btn btn-sm btn-secondary" onClick={() => openEditHolding(h)}>✏️</button>
               <button className="btn btn-sm btn-danger" onClick={() => setConfirmDeleteHolding(h.id)}>🗑️</button>
             </div>
@@ -336,7 +340,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     );
   };
 
-  const hasSymbols = holdings.some(h => (h.symbol || '').trim());
+  const hasSymbols = activeHoldings.some(h => (h.symbol || '').trim());
   const indicatorVisible = pullDy > 0 || refreshing || quoteMsg;
 
   return (
@@ -382,13 +386,13 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <button className="btn btn-primary btn-block" onClick={openCreateHolding}>＋ {t('add_holding')}</button>
-        {holdings.length > 0 && (
+        {activeHoldings.length > 0 && (
           <button className="btn btn-secondary btn-block" onClick={openPrices}>💱 {t('batch_update_prices')}</button>
         )}
       </div>
 
       <div className="entry-group-title">
-        <span className="dot" style={{ background: theme.assetColor }} />{t('holdings_title')} ({holdings.length})
+        <span className="dot" style={{ background: theme.assetColor }} />{t('holdings_title')} ({activeHoldings.length})
         <span style={{ flex: 1 }} />
         {hasSymbols && (
           <button onClick={() => refreshQuotes(false)} disabled={refreshing}
@@ -397,10 +401,20 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
           </button>
         )}
       </div>
-      {holdings.length === 0 ? (
+      {activeHoldings.length === 0 ? (
         <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>{t('no_holdings')}</div>
       ) : (
-        holdings.map(renderHolding)
+        activeHoldings.map(h => renderHolding(h))
+      )}
+
+      {archivedHoldings.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <div className="entry-group-title">
+            <span className="dot" style={{ background: 'var(--text-muted)' }} />{t('archived_holdings_title')} ({archivedHoldings.length})
+          </div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t('archived_holdings_hint')}</div>
+          {archivedHoldings.map(h => renderHolding(h, true))}
+        </div>
       )}
 
       {/* Holding create / edit */}
@@ -531,7 +545,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
               <label className="form-label">{t('price_date_label')}</label>
               <input className="form-input" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
             </div>
-            {holdings.map(h => (
+            {activeHoldings.map(h => (
               <div className="form-group" key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
@@ -590,7 +604,9 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
 
 const S: Record<string, React.CSSProperties> = {
   holdingCard: { background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 8 },
+  archivedHoldingCard: { opacity: 0.72 },
   badge: { fontSize: '0.62rem', fontWeight: 600, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 7px', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' },
+  archivedBadge: { fontSize: '0.62rem', fontWeight: 700, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 7px', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' },
   posCell: { background: 'var(--bg-glass)', borderRadius: 10, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 },
   posKey: { fontSize: '0.66rem', color: 'var(--text-muted)' },
   posVal: { fontSize: '0.85rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' },
