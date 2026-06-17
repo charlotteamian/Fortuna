@@ -3,6 +3,7 @@ import { db, initializeSettings, type PlanItem, type PlanTarget } from '../db';
 import { getAccountsWithLatest } from './assetService';
 import { computeHoldingPosition } from './holdingService';
 import { convertAmount } from './rateService';
+import { getHoldingMode } from '../lib/productPortfolio';
 
 // ---- Scopes ----
 // A plan item links "scopes" at three granularities, finest wins so nothing is counted
@@ -169,33 +170,33 @@ export async function getPlanStatus(): Promise<PlanStatus> {
     accountValues[a.id] = a.convertedAmount;
     accountNames[a.id] = a.name;
     accountCategory[a.id] = a.category;
-    const isEquity = EQUITY_PLAN_CATEGORIES.includes(a.category);
-    if (isEquity && a.portfolio) {
+    const usesMarketScope = EQUITY_PLAN_CATEGORIES.includes(a.category);
+    if (a.portfolio) {
       const [holdings, txns] = await Promise.all([
         db.holdings.where('accountId').equals(a.id).toArray(),
         db.holdingTxns.where('accountId').equals(a.id).toArray(),
       ]);
       for (const h of holdings) {
         const pos = computeHoldingPosition(txns.filter(tx => tx.holdingId === h.id));
-        const raw = pos.shares * (h.lastPrice || 0);
+        const raw = getHoldingMode(a.category, h) === 'balance' ? pos.shares : pos.shares * (h.lastPrice || 0);
         const value = raw > 0 ? await convertAmount(raw, a.currency, primary) : 0;
         holdingValues[h.id] = value;
         holdingValuesCcy[h.id] = raw;
         holdingCurrency[h.id] = a.currency;
         holdingNames[h.id] = h.name;
         if (value > 0) {
-          const market = h.market ? canonicalMarket(h.market) : marketFromCurrency(a.currency);
+          const market = usesMarketScope ? (h.market ? canonicalMarket(h.market) : marketFromCurrency(a.currency)) : undefined;
           atoms.push({ accountId: a.id, category: a.category, market, holdingId: h.id, value });
         }
       }
       if (a.cashBalance && a.cashBalance > 0) {
         atoms.push({
-          accountId: a.id, category: a.category, market: marketFromCurrency(a.currency),
+          accountId: a.id, category: a.category, market: usesMarketScope ? marketFromCurrency(a.currency) : undefined,
           value: await convertAmount(a.cashBalance, a.currency, primary),
         });
       }
     } else if (a.convertedAmount > 0) {
-      const market = isEquity
+      const market = usesMarketScope
         ? (a.productData?.market ? canonicalMarket(a.productData.market) : marketFromCurrency(a.currency))
         : undefined;
       atoms.push({ accountId: a.id, category: a.category, market, value: a.convertedAmount });

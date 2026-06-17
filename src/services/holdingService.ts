@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db, type Holding, type HoldingTxn } from '../db';
 import { addRecord } from './assetService';
+import { getDefaultHoldingModeForCategory, getHoldingMode, usesBalanceHoldings } from '../lib/productPortfolio';
 
 // ---- Holding CRUD ----
 export async function getHoldings(accountId: string): Promise<Holding[]> {
@@ -8,7 +9,7 @@ export async function getHoldings(accountId: string): Promise<Holding[]> {
   return list.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
 }
 
-export async function createHolding(accountId: string, data: Pick<Holding, 'name' | 'symbol' | 'market' | 'lastPrice' | 'priceDate'>): Promise<string> {
+export async function createHolding(accountId: string, data: Pick<Holding, 'name' | 'symbol' | 'market' | 'mode' | 'lastPrice' | 'priceDate'>): Promise<string> {
   const count = await db.holdings.where('accountId').equals(accountId).count();
   const id = uuidv4();
   await db.holdings.add({ ...data, id, accountId, sortOrder: count, createdAt: Date.now() });
@@ -99,10 +100,11 @@ export interface HoldingWithPosition extends Holding {
 }
 
 export async function getHoldingsWithPositions(accountId: string): Promise<HoldingWithPosition[]> {
-  const [holdings, txns] = await Promise.all([getHoldings(accountId), getAccountTxns(accountId)]);
+  const [account, holdings, txns] = await Promise.all([db.accounts.get(accountId), getHoldings(accountId), getAccountTxns(accountId)]);
   return holdings.map(h => {
     const position = computeHoldingPosition(txns.filter(tx => tx.holdingId === h.id));
-    const marketValue = position.shares * (h.lastPrice || 0);
+    const mode = getHoldingMode(account?.category ?? '', h);
+    const marketValue = mode === 'balance' ? position.shares : position.shares * (h.lastPrice || 0);
     return { ...h, position, marketValue, unrealizedPnl: marketValue - position.costBasis };
   });
 }
@@ -117,6 +119,40 @@ export async function setCashBalance(accountId: string, cash: number): Promise<v
 export async function updatePrices(accountId: string, prices: Record<string, number>, date: string): Promise<void> {
   for (const [holdingId, price] of Object.entries(prices)) {
     if (price > 0) await db.holdings.update(holdingId, { lastPrice: price, priceDate: date });
+  }
+  await syncPortfolioSnapshot(accountId);
+}
+
+export async function setHoldingBalance(accountId: string, holdingId: string, targetBalance: number, date: string, note?: string): Promise<void> {
+  const safeTarget = Math.max(0, targetBalance);
+  const account = await db.accounts.get(accountId);
+  const holding = await db.holdings.get(holdingId);
+  if (!account || !holding || !usesBalanceHoldings(account.category, holding)) return;
+
+  if (!holding.mode) {
+    await db.holdings.update(holdingId, { mode: getDefaultHoldingModeForCategory(account.category), lastPrice: 1, priceDate: date });
+  }
+
+  const txns = await db.holdingTxns.where('holdingId').equals(holdingId).toArray();
+  const current = computeHoldingPosition(txns).shares;
+  const delta = Math.round((safeTarget - current) * 100) / 100;
+  if (Math.abs(delta) < 0.005) {
+    await syncPortfolioSnapshot(accountId);
+    return;
+  }
+
+  await addHoldingTxn(accountId, holdingId, {
+    date,
+    kind: delta >= 0 ? 'buy' : 'sell',
+    shares: Math.abs(delta),
+    price: 1,
+    note,
+  });
+}
+
+export async function updateBalances(accountId: string, balances: Record<string, number>, date: string): Promise<void> {
+  for (const [holdingId, balance] of Object.entries(balances)) {
+    if (balance >= 0) await setHoldingBalance(accountId, holdingId, balance, date);
   }
   await syncPortfolioSnapshot(accountId);
 }

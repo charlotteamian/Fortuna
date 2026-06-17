@@ -7,6 +7,7 @@ import { useAppContext } from '../app-context';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
 import PortfolioPanel from '../components/PortfolioPanel';
+import { getDefaultHoldingModeForCategory } from '../lib/productPortfolio';
 
 interface Props { accountId: string; onBack: () => void; }
 
@@ -86,7 +87,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
 
   const handleAddRecord = async () => {
     let amt: number;
-    if (isEquity) {
+    if (usesUnitRecordInput) {
       const shares = parseFloat(stockShares);
       const price = parseFloat(stockPrice);
       if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) return;
@@ -179,7 +180,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
   const isMetal = account.unit === 'gram';
   const isPortfolio = !!account.portfolio;
   const isArchived = Boolean(account.archivedAt);
-  const isEquity = !isPortfolio && (account.category === '股票/ETF' || account.category === '股票' || account.category === '场外基金');
+  const usesUnitRecordInput = !isPortfolio && getDefaultHoldingModeForCategory(account.category) === 'unit';
   const costPerShare = account.productData?.cost ? parseFloat(account.productData.cost) : null;
   const metalName = METAL_TYPES.find(m => m.code === account.metalType)?.name || '';
   const color = account.type === 'asset' ? theme.assetColor : theme.liabilityColor;
@@ -511,7 +512,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
               <label className="form-label">{t('date')}</label>
               <input className="form-input" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
             </div>
-            {isEquity && !editingRecord ? (
+            {usesUnitRecordInput && !editingRecord ? (
               <>
                 <div className="form-group">
                   <label className="form-label">{t('shares')}</label>

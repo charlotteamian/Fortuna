@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import * as XLSX from 'xlsx';
+import type { HoldingMode } from './lib/productPortfolio';
 
 export interface Account {
   id: string;
@@ -96,6 +97,7 @@ export interface Holding {
   name: string;
   symbol?: string;         // ticker / fund code
   market?: string;         // A股 / 美股 / 港股 ...
+  mode?: HoldingMode;      // unit = quantity × price, balance = current balance tracked by amount deltas
   lastPrice: number;       // latest quote, manually maintained (account currency)
   priceDate?: string;
   sortOrder: number;

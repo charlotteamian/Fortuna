@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import type { Account, HoldingTxn } from '../db';
 import {
   getHoldingsWithPositions, getAccountTxns, createHolding, updateHolding, deleteHolding,
-  addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, updatePrices,
+  addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, updatePrices, updateBalances, setHoldingBalance,
   type HoldingWithPosition,
 } from '../services/holdingService';
 import { fetchQuotes } from '../services/quoteService';
 import { useAppContext } from '../app-context';
 import { splitHoldingsByArchive } from '../lib/holdingArchive';
+import { getDefaultHoldingModeForCategory, usesBalanceHoldings, usesLiveQuotes } from '../lib/productPortfolio';
 
 interface Props { account: Account; onChanged: () => void; }
 
@@ -20,6 +21,9 @@ const today = () => new Date().toISOString().split('T')[0];
 export default function PortfolioPanel({ account, onChanged }: Props) {
   const { t, i18n } = useTranslation();
   const { theme, amountVisible } = useAppContext();
+  const defaultHoldingMode = getDefaultHoldingModeForCategory(account.category);
+  const isBalancePortfolio = defaultHoldingMode === 'balance';
+  const quoteRefreshEnabled = usesLiveQuotes(account.category);
   const [holdings, setHoldings] = useState<HoldingWithPosition[]>([]);
   const [txns, setTxns] = useState<HoldingTxn[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -75,6 +79,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   };
 
   const refreshQuotes = useCallback(async (silent = false) => {
+    if (!quoteRefreshEnabled) return;
     if (refreshingRef.current) return;
     // read fresh from db so this also works right after mount / external changes
     const current = await getHoldingsWithPositions(account.id);
@@ -100,7 +105,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     }
     refreshingRef.current = false;
     setRefreshing(false);
-  }, [account.id, account.category, load, onChanged, t]);
+  }, [account.id, account.category, load, onChanged, quoteRefreshEnabled, t]);
 
   const refreshRef = useRef(refreshQuotes);
   useEffect(() => { refreshRef.current = refreshQuotes; }, [refreshQuotes]);
@@ -163,9 +168,9 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const { active: activeHoldings, archived: archivedHoldings } = splitHoldingsByArchive(holdings);
   const positionValue = activeHoldings.reduce((s, h) => s + h.marketValue, 0);
   const totalValue = positionValue + cash;
-  const costBasis = activeHoldings.reduce((s, h) => s + h.position.costBasis, 0);
-  const unrealized = positionValue - costBasis;
-  const realized = holdings.reduce((s, h) => s + h.position.realizedPnl, 0);
+  const costBasis = isBalancePortfolio ? 0 : activeHoldings.reduce((s, h) => s + h.position.costBasis, 0);
+  const unrealized = isBalancePortfolio ? 0 : positionValue - costBasis;
+  const realized = isBalancePortfolio ? 0 : holdings.reduce((s, h) => s + h.position.realizedPnl, 0);
 
   // ---- Holding form ----
   const openCreateHolding = () => {
@@ -177,24 +182,32 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const openEditHolding = (h: HoldingWithPosition) => {
     setEditingHolding(h);
     setHName(h.name); setHSymbol(h.symbol || ''); setHMarket(h.market || '');
-    setHPrice(h.lastPrice > 0 ? String(h.lastPrice) : '');
+    setHPrice(isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
     setShowHoldingForm(true);
   };
   const handleSaveHolding = async () => {
     if (!hName.trim()) return;
-    const meta = { name: hName.trim(), symbol: hSymbol.trim() || undefined, market: hMarket || undefined };
-    const price = parseFloat(hPrice);
+    const meta = { name: hName.trim(), symbol: hSymbol.trim() || undefined, market: isBalancePortfolio ? undefined : (hMarket || undefined), mode: defaultHoldingMode };
+    const priceOrBalance = parseFloat(hPrice);
     if (editingHolding) {
       await updateHolding(editingHolding.id, meta);
-      if (!isNaN(price) && price > 0 && price !== editingHolding.lastPrice) {
-        await updatePrices(account.id, { [editingHolding.id]: price }, today());
+      if (isBalancePortfolio) {
+        if (!isNaN(priceOrBalance) && priceOrBalance >= 0 && Math.abs(priceOrBalance - editingHolding.marketValue) > 0.005) {
+          await setHoldingBalance(account.id, editingHolding.id, priceOrBalance, today(), t('balance_adjustment_note'));
+        }
+      } else if (!isNaN(priceOrBalance) && priceOrBalance > 0 && priceOrBalance !== editingHolding.lastPrice) {
+        await updatePrices(account.id, { [editingHolding.id]: priceOrBalance }, today());
       }
     } else {
       const initShares = parseFloat(hInitShares);
       const initPrice = parseFloat(hInitPrice);
-      const lastPrice = !isNaN(price) && price > 0 ? price : (!isNaN(initPrice) && initPrice > 0 ? initPrice : 0);
+      const lastPrice = isBalancePortfolio ? 1 : (!isNaN(priceOrBalance) && priceOrBalance > 0 ? priceOrBalance : (!isNaN(initPrice) && initPrice > 0 ? initPrice : 0));
       const id = await createHolding(account.id, { ...meta, lastPrice, priceDate: lastPrice > 0 ? today() : undefined });
-      if (!isNaN(initShares) && initShares > 0 && !isNaN(initPrice) && initPrice > 0) {
+      if (isBalancePortfolio) {
+        if (!isNaN(priceOrBalance) && priceOrBalance > 0) {
+          await addHoldingTxn(account.id, id, { date: today(), kind: 'buy', shares: priceOrBalance, price: 1, note: t('initial_balance_note') });
+        }
+      } else if (!isNaN(initShares) && initShares > 0 && !isNaN(initPrice) && initPrice > 0) {
         await addHoldingTxn(account.id, id, { date: today(), kind: 'buy', shares: initShares, price: initPrice });
       }
     }
@@ -212,7 +225,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const openTxn = (h: HoldingWithPosition, kind: 'buy' | 'sell') => {
     setTxnHolding(h); setEditingTxn(null); setTxnKind(kind);
     setTxnDate(today()); setTxnShares('');
-    setTxnPrice(h.lastPrice > 0 ? String(h.lastPrice) : '');
+    setTxnPrice(isBalancePortfolio ? '1' : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
     setTxnNote('');
   };
   const openEditTxn = (h: HoldingWithPosition, tx: HoldingTxn) => {
@@ -223,10 +236,10 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const handleSaveTxn = async () => {
     if (!txnHolding) return;
     const shares = parseFloat(txnShares);
-    const price = parseFloat(txnPrice);
+    const price = isBalancePortfolio ? 1 : parseFloat(txnPrice);
     if (isNaN(shares) || shares <= 0 || isNaN(price) || price < 0) return;
     if (txnKind === 'sell' && !editingTxn && shares > txnHolding.position.shares + 1e-6) {
-      alert(t('sell_exceeds_shares', { shares: txnHolding.position.shares.toLocaleString('en-US', { maximumFractionDigits: 4 }) }));
+      alert(t(isBalancePortfolio ? 'sell_exceeds_balance' : 'sell_exceeds_shares', { shares: txnHolding.position.shares.toLocaleString('en-US', { maximumFractionDigits: isBalancePortfolio ? 2 : 4 }) }));
       return;
     }
     const input = { date: txnDate, kind: txnKind, shares, price, note: txnNote.trim() || undefined };
@@ -240,16 +253,17 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   // ---- Batch prices ----
   const openPrices = () => {
     setPriceDate(today());
-    setPriceInputs(Object.fromEntries(activeHoldings.map(h => [h.id, h.lastPrice > 0 ? String(h.lastPrice) : ''])));
+    setPriceInputs(Object.fromEntries(activeHoldings.map(h => [h.id, isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : '')])));
     setShowPrices(true);
   };
   const handleSavePrices = async () => {
     const parsed: Record<string, number> = {};
     for (const [id, v] of Object.entries(priceInputs)) {
       const p = parseFloat(v);
-      if (!isNaN(p) && p > 0) parsed[id] = p;
+      if (!isNaN(p) && (isBalancePortfolio ? p >= 0 : p > 0)) parsed[id] = p;
     }
-    await updatePrices(account.id, parsed, priceDate);
+    if (isBalancePortfolio) await updateBalances(account.id, parsed, priceDate);
+    else await updatePrices(account.id, parsed, priceDate);
     setShowPrices(false);
     await changed();
   };
@@ -265,6 +279,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
 
   const renderTxnRow = (h: HoldingWithPosition, tx: HoldingTxn) => {
     const isSell = tx.kind === 'sell';
+    const holdingIsBalance = usesBalanceHoldings(account.category, h);
     const txnColor = isSell ? theme.liabilityColor : theme.assetColor;
     return (
       <div key={tx.id} style={S.txnRow}>
@@ -273,7 +288,9 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
         </span>
         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{tx.date}</span>
         <span style={{ flex: 1, minWidth: 0, fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {masked(`${tx.shares.toLocaleString('en-US', { maximumFractionDigits: 4 })} × ${tx.price.toFixed(account.currency === 'JPY' ? 0 : 3)}`)}
+          {holdingIsBalance
+            ? masked(`${isSell ? '-' : '+'}${tx.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`)
+            : masked(`${tx.shares.toLocaleString('en-US', { maximumFractionDigits: 4 })} × ${tx.price.toFixed(account.currency === 'JPY' ? 0 : 3)}`)}
         </span>
         <div className="entry-actions" style={{ flexShrink: 0 }}>
           <button className="btn btn-sm btn-secondary" onClick={() => openEditTxn(h, tx)}>✏️</button>
@@ -285,8 +302,11 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
 
   const renderHolding = (h: HoldingWithPosition, archived = false) => {
     const expanded = expandedId === h.id;
+    const holdingIsBalance = usesBalanceHoldings(account.category, h);
     const pnlPct = h.position.costBasis > 0 ? (h.unrealizedPnl / h.position.costBasis) * 100 : 0;
     const hTxns = txns.filter(tx => tx.holdingId === h.id);
+    const totalIn = hTxns.filter(tx => tx.kind === 'buy').reduce((s, tx) => s + tx.shares, 0);
+    const totalOut = hTxns.filter(tx => tx.kind === 'sell').reduce((s, tx) => s + tx.shares, 0);
     return (
       <div key={h.id} style={{ ...S.holdingCard, ...(archived ? S.archivedHoldingCard : {}), border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
         <div style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expanded ? null : h.id)}>
@@ -302,9 +322,11 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
             <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {masked(h.position.shares.toLocaleString('en-US', { maximumFractionDigits: 4 }))} {t('shares_unit')} · {t('last_price')} {h.lastPrice > 0 ? masked(h.lastPrice.toFixed(3)) : '—'}{h.priceDate ? ` (${h.priceDate.slice(5)})` : ''}
+              {holdingIsBalance
+                ? `${t('current_balance')} ${masked(h.marketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))} ${account.currency}`
+                : `${masked(h.position.shares.toLocaleString('en-US', { maximumFractionDigits: 4 }))} ${t('shares_unit')} · ${t('last_price')} ${h.lastPrice > 0 ? masked(h.lastPrice.toFixed(3)) : '—'}${h.priceDate ? ` (${h.priceDate.slice(5)})` : ''}`}
             </span>
-            {h.position.costBasis > 0 && (
+            {!holdingIsBalance && h.position.costBasis > 0 && (
               <span style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontWeight: 600, color: pnlColor(h.unrealizedPnl), whiteSpace: 'nowrap' }}>
                 {masked(`${signed(h.unrealizedPnl)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)`)}
               </span>
@@ -315,10 +337,21 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
         {expanded && (
           <div style={{ marginTop: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div style={S.posCell}><span style={S.posKey}>{t('avg_cost_label')}</span><span style={S.posVal}>{h.position.avgCost > 0 ? masked(h.position.avgCost.toFixed(3)) : '—'}</span></div>
-              <div style={S.posCell}><span style={S.posKey}>{t('holding_cost')}</span><span style={S.posVal}>{h.position.costBasis > 0 ? masked(fmt(h.position.costBasis)) : '—'}</span></div>
-              <div style={S.posCell}><span style={S.posKey}>{t('unrealized_pnl')}</span><span style={{ ...S.posVal, color: h.position.costBasis > 0 ? pnlColor(h.unrealizedPnl) : 'var(--text-muted)' }}>{h.position.costBasis > 0 ? masked(signed(h.unrealizedPnl)) : '—'}</span></div>
-              <div style={S.posCell}><span style={S.posKey}>{t('realized_pnl')}</span><span style={{ ...S.posVal, color: Math.abs(h.position.realizedPnl) > 0.005 ? pnlColor(h.position.realizedPnl) : 'var(--text-muted)' }}>{Math.abs(h.position.realizedPnl) > 0.005 ? masked(signed(h.position.realizedPnl)) : '—'}</span></div>
+              {holdingIsBalance ? (
+                <>
+                  <div style={S.posCell}><span style={S.posKey}>{t('current_balance')}</span><span style={S.posVal}>{masked(fmt(h.marketValue))}</span></div>
+                  <div style={S.posCell}><span style={S.posKey}>{t('txn_history')}</span><span style={S.posVal}>{hTxns.length}</span></div>
+                  <div style={S.posCell}><span style={S.posKey}>{t('total_buy_amount')}</span><span style={S.posVal}>{totalIn > 0 ? masked(fmt(totalIn)) : '—'}</span></div>
+                  <div style={S.posCell}><span style={S.posKey}>{t('total_sell_amount')}</span><span style={S.posVal}>{totalOut > 0 ? masked(fmt(totalOut)) : '—'}</span></div>
+                </>
+              ) : (
+                <>
+                  <div style={S.posCell}><span style={S.posKey}>{t('avg_cost_label')}</span><span style={S.posVal}>{h.position.avgCost > 0 ? masked(h.position.avgCost.toFixed(3)) : '—'}</span></div>
+                  <div style={S.posCell}><span style={S.posKey}>{t('holding_cost')}</span><span style={S.posVal}>{h.position.costBasis > 0 ? masked(fmt(h.position.costBasis)) : '—'}</span></div>
+                  <div style={S.posCell}><span style={S.posKey}>{t('unrealized_pnl')}</span><span style={{ ...S.posVal, color: h.position.costBasis > 0 ? pnlColor(h.unrealizedPnl) : 'var(--text-muted)' }}>{h.position.costBasis > 0 ? masked(signed(h.unrealizedPnl)) : '—'}</span></div>
+                  <div style={S.posCell}><span style={S.posKey}>{t('realized_pnl')}</span><span style={{ ...S.posVal, color: Math.abs(h.position.realizedPnl) > 0.005 ? pnlColor(h.position.realizedPnl) : 'var(--text-muted)' }}>{Math.abs(h.position.realizedPnl) > 0.005 ? masked(signed(h.position.realizedPnl)) : '—'}</span></div>
+                </>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: '#000', fontWeight: 700 }} onClick={() => openTxn(h, 'buy')}>＋ {t('buy_in')}</button>
@@ -340,8 +373,8 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     );
   };
 
-  const hasSymbols = activeHoldings.some(h => (h.symbol || '').trim());
-  const indicatorVisible = pullDy > 0 || refreshing || quoteMsg;
+  const hasSymbols = quoteRefreshEnabled && activeHoldings.some(h => (h.symbol || '').trim());
+  const indicatorVisible = quoteRefreshEnabled && (pullDy > 0 || refreshing || quoteMsg);
 
   return (
     <>
@@ -368,31 +401,40 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
           <div className="latest-value-currency" style={{ fontSize: '0.875rem', marginTop: 4 }}>{account.currency}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12, width: '100%' }}>
-          <div style={S.posCell}><span style={S.posKey}>{t('position_value')}</span><span style={S.posVal}>{masked(fmt(positionValue))}</span></div>
+          <div style={S.posCell}><span style={S.posKey}>{isBalancePortfolio ? t('product_balance_total') : t('position_value')}</span><span style={S.posVal}>{masked(fmt(positionValue))}</span></div>
           <div style={{ ...S.posCell, cursor: 'pointer' }} onClick={openCash}>
             <span style={S.posKey}>{t('cash_balance')} ✏️</span>
             <span style={S.posVal}>{masked(fmt(cash))}</span>
           </div>
-          <div style={S.posCell}><span style={S.posKey}>{t('unrealized_pnl')}</span>
-            <span style={{ ...S.posVal, color: costBasis > 0 ? pnlColor(unrealized) : 'var(--text-muted)' }}>
-              {costBasis > 0 ? masked(`${signed(unrealized)} (${unrealized >= 0 ? '+' : ''}${((unrealized / costBasis) * 100).toFixed(1)}%)`) : '—'}
-            </span>
-          </div>
-          <div style={S.posCell}><span style={S.posKey}>{t('realized_pnl')}</span>
-            <span style={{ ...S.posVal, color: Math.abs(realized) > 0.005 ? pnlColor(realized) : 'var(--text-muted)' }}>{Math.abs(realized) > 0.005 ? masked(signed(realized)) : '—'}</span>
-          </div>
+          {isBalancePortfolio ? (
+            <>
+              <div style={S.posCell}><span style={S.posKey}>{t('active_products')}</span><span style={S.posVal}>{activeHoldings.length}</span></div>
+              <div style={S.posCell}><span style={S.posKey}>{t('archived_products_title')}</span><span style={S.posVal}>{archivedHoldings.length}</span></div>
+            </>
+          ) : (
+            <>
+              <div style={S.posCell}><span style={S.posKey}>{t('unrealized_pnl')}</span>
+                <span style={{ ...S.posVal, color: costBasis > 0 ? pnlColor(unrealized) : 'var(--text-muted)' }}>
+                  {costBasis > 0 ? masked(`${signed(unrealized)} (${unrealized >= 0 ? '+' : ''}${((unrealized / costBasis) * 100).toFixed(1)}%)`) : '—'}
+                </span>
+              </div>
+              <div style={S.posCell}><span style={S.posKey}>{t('realized_pnl')}</span>
+                <span style={{ ...S.posVal, color: Math.abs(realized) > 0.005 ? pnlColor(realized) : 'var(--text-muted)' }}>{Math.abs(realized) > 0.005 ? masked(signed(realized)) : '—'}</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-        <button className="btn btn-primary btn-block" onClick={openCreateHolding}>＋ {t('add_holding')}</button>
+        <button className="btn btn-primary btn-block" onClick={openCreateHolding}>＋ {t(isBalancePortfolio ? 'add_product' : 'add_holding')}</button>
         {activeHoldings.length > 0 && (
-          <button className="btn btn-secondary btn-block" onClick={openPrices}>💱 {t('batch_update_prices')}</button>
+          <button className="btn btn-secondary btn-block" onClick={openPrices}>💱 {t(isBalancePortfolio ? 'batch_update_balances' : 'batch_update_prices')}</button>
         )}
       </div>
 
       <div className="entry-group-title">
-        <span className="dot" style={{ background: theme.assetColor }} />{t('holdings_title')} ({activeHoldings.length})
+        <span className="dot" style={{ background: theme.assetColor }} />{t(isBalancePortfolio ? 'products_in_account' : 'holdings_title')} ({activeHoldings.length})
         <span style={{ flex: 1 }} />
         {hasSymbols && (
           <button onClick={() => refreshQuotes(false)} disabled={refreshing}
@@ -402,7 +444,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
         )}
       </div>
       {activeHoldings.length === 0 ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>{t('no_holdings')}</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>{t(isBalancePortfolio ? 'no_products_in_account' : 'no_holdings')}</div>
       ) : (
         activeHoldings.map(h => renderHolding(h))
       )}
@@ -410,9 +452,9 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
       {archivedHoldings.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <div className="entry-group-title">
-            <span className="dot" style={{ background: 'var(--text-muted)' }} />{t('archived_holdings_title')} ({archivedHoldings.length})
+            <span className="dot" style={{ background: 'var(--text-muted)' }} />{t(isBalancePortfolio ? 'archived_products_title' : 'archived_holdings_title')} ({archivedHoldings.length})
           </div>
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t('archived_holdings_hint')}</div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t(isBalancePortfolio ? 'archived_products_hint' : 'archived_holdings_hint')}</div>
           {archivedHoldings.map(h => renderHolding(h, true))}
         </div>
       )}
@@ -422,21 +464,23 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
         <div className="modal-overlay" onClick={() => { setShowHoldingForm(false); setEditingHolding(null); }}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{editingHolding ? t('edit_holding') : t('add_holding')}</h2>
+              <h2 className="modal-title">{editingHolding ? t(isBalancePortfolio ? 'edit_product' : 'edit_holding') : t(isBalancePortfolio ? 'add_product' : 'add_holding')}</h2>
               <button className="modal-close" onClick={() => { setShowHoldingForm(false); setEditingHolding(null); }}>✕</button>
             </div>
             <div className="form-group">
               <label className="form-label">{t('name')}</label>
-              <input className="form-input" placeholder={t('holding_name_ph')} value={hName} onChange={e => setHName(e.target.value)} autoFocus={!editingHolding} />
+              <input className="form-input" placeholder={t(isBalancePortfolio ? 'product_holding_name_ph' : 'holding_name_ph')} value={hName} onChange={e => setHName(e.target.value)} autoFocus={!editingHolding} />
             </div>
             <div className="form-group">
-              <label className="form-label">{t('f_code')}</label>
+              <label className="form-label">{t(isBalancePortfolio ? 'product_code' : 'f_code')}</label>
               <input className="form-input mono" placeholder={t('f_code_ph')} value={hSymbol} onChange={e => setHSymbol(e.target.value)} />
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
-                {account.category === '场外基金' ? t('symbol_quote_hint_fund') : t('symbol_quote_hint_stock')}
-              </div>
+              {!isBalancePortfolio && (
+                <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+                  {account.category === '场外基金' ? t('symbol_quote_hint_fund') : t('symbol_quote_hint_stock')}
+                </div>
+              )}
             </div>
-            <div className="form-group">
+            {!isBalancePortfolio && <div className="form-group">
               <label className="form-label">{t('f_market')}</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {MARKET_OPTS.map(k => {
@@ -448,13 +492,13 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
                   );
                 })}
               </div>
-            </div>
+            </div>}
             <div className="form-group">
-              <label className="form-label">{t('last_price')} ({account.currency})</label>
-              <input className="form-input mono" type="number" inputMode="decimal" step="0.0001" min="0"
-                placeholder={t('price_per_share_ph')} value={hPrice} onChange={e => setHPrice(e.target.value)} />
+              <label className="form-label">{t(isBalancePortfolio ? 'current_balance' : 'last_price')} ({account.currency})</label>
+              <input className="form-input mono" type="number" inputMode="decimal" step={isBalancePortfolio ? '0.01' : '0.0001'} min="0"
+                placeholder={isBalancePortfolio ? '0.00' : t('price_per_share_ph')} value={hPrice} onChange={e => setHPrice(e.target.value)} />
             </div>
-            {!editingHolding && (
+            {!editingHolding && !isBalancePortfolio && (
               <>
                 <div style={S.divider}><span style={S.dividerText}>{t('initial_position')}</span></div>
                 <div className="form-group">
@@ -480,7 +524,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
       {/* Buy / sell transaction */}
       {txnHolding && (() => {
         const shares = parseFloat(txnShares);
-        const price = parseFloat(txnPrice);
+        const price = isBalancePortfolio ? 1 : parseFloat(txnPrice);
         const valid = !isNaN(shares) && shares > 0 && !isNaN(price) && price >= 0;
         const isSell = txnKind === 'sell';
         const txnColor = isSell ? theme.liabilityColor : theme.assetColor;
@@ -504,19 +548,22 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
                 <input className="form-input" type="date" value={txnDate} onChange={e => setTxnDate(e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">{t('shares')}</label>
-                <input className="form-input mono" type="number" inputMode="decimal" step="1" min="0"
-                  placeholder={t('shares_ph')} value={txnShares} onChange={e => setTxnShares(e.target.value)} autoFocus />
+                <label className="form-label">{t(isBalancePortfolio ? 'amount' : 'shares')}</label>
+                <input className="form-input mono" type="number" inputMode="decimal" step={isBalancePortfolio ? '0.01' : '1'} min="0"
+                  placeholder={isBalancePortfolio ? '0.00' : t('shares_ph')} value={txnShares} onChange={e => setTxnShares(e.target.value)} autoFocus />
               </div>
-              <div className="form-group">
+              {!isBalancePortfolio && <div className="form-group">
                 <label className="form-label">{t('txn_price')} ({account.currency})</label>
                 <input className="form-input mono" type="number" inputMode="decimal" step="0.0001" min="0"
                   placeholder={txnHolding.lastPrice > 0 ? String(txnHolding.lastPrice) : '0.00'}
                   value={txnPrice} onChange={e => setTxnPrice(e.target.value)} />
-              </div>
+              </div>}
               {valid && (
                 <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>{isSell ? t('sell_out') : t('buy_in')} {shares.toLocaleString('en-US', { maximumFractionDigits: 4 })} × {price}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {isSell ? t('sell_out') : t('buy_in')} {shares.toLocaleString('en-US', { maximumFractionDigits: isBalancePortfolio ? 2 : 4 })}
+                    {!isBalancePortfolio && ` × ${price}`}
+                  </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: txnColor }}>{fmtFull(shares * price)} {account.currency}</span>
                 </div>
               )}
@@ -533,16 +580,16 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
         );
       })()}
 
-      {/* Batch price update */}
+      {/* Batch price/balance update */}
       {showPrices && (
         <div className="modal-overlay" onClick={() => setShowPrices(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{t('batch_update_prices')}</h2>
+              <h2 className="modal-title">{t(isBalancePortfolio ? 'batch_update_balances' : 'batch_update_prices')}</h2>
               <button className="modal-close" onClick={() => setShowPrices(false)}>✕</button>
             </div>
             <div className="form-group">
-              <label className="form-label">{t('price_date_label')}</label>
+              <label className="form-label">{t(isBalancePortfolio ? 'balance_date_label' : 'price_date_label')}</label>
               <input className="form-input" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
             </div>
             {activeHoldings.map(h => (
@@ -551,7 +598,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
                   <div style={{ fontSize: '0.8125rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
                   {h.symbol && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{h.symbol}</div>}
                 </div>
-                <input className="form-input mono" type="number" inputMode="decimal" step="0.0001" min="0"
+                <input className="form-input mono" type="number" inputMode="decimal" step={isBalancePortfolio ? '0.01' : '0.0001'} min="0"
                   style={{ width: 130, flexShrink: 0 }}
                   value={priceInputs[h.id] ?? ''}
                   onChange={e => setPriceInputs(prev => ({ ...prev, [h.id]: e.target.value }))} />
@@ -590,7 +637,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
       {confirmDeleteHolding && (
         <div className="confirm-overlay" onClick={() => setConfirmDeleteHolding(null)}>
           <div className="confirm-box" onClick={e => e.stopPropagation()}>
-            <div className="confirm-msg">{t('delete_holding_confirm')}</div>
+            <div className="confirm-msg">{t(isBalancePortfolio ? 'delete_product_confirm' : 'delete_holding_confirm')}</div>
             <div className="confirm-actions">
               <button className="btn btn-secondary" onClick={() => setConfirmDeleteHolding(null)}>{t('cancel')}</button>
               <button className="btn btn-danger" onClick={() => handleDeleteHolding(confirmDeleteHolding)}>{t('confirm_delete')}</button>

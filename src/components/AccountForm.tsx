@@ -4,6 +4,7 @@ import { createAccount, addRecord, addMetalTransaction } from '../services/asset
 import { type Settings, METAL_TYPES } from '../db';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
+import { getDefaultHoldingModeForCategory, isProductPortfolioCategory } from '../lib/productPortfolio';
 
 interface Props { settings: Settings; onClose: () => void; onCreated: (id: string) => void; }
 
@@ -28,10 +29,11 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
 
   const cats = type === 'asset' ? assetCats : liabCats;
   const isMetal = category === '贵金属';
-  const isEquity = category === '股票/ETF' || category === '股票' || category === '场外基金';
-  const isPortfolio = isEquity && portfolioMode;
+  const supportsPortfolio = isProductPortfolioCategory(category, type);
+  const isPortfolio = supportsPortfolio && portfolioMode;
+  const isUnitProduct = getDefaultHoldingModeForCategory(category) === 'unit';
   const extraFields = getFieldsForCategory(category, settings, t);
-  const renderedExtraFields = isPortfolio ? [] : isEquity ? extraFields.filter(f => f.key !== 'cost') : extraFields;
+  const renderedExtraFields = isPortfolio ? [] : isUnitProduct ? extraFields.filter(f => f.key !== 'cost') : extraFields;
 
   const handleTypeChange = (t: 'asset' | 'liability') => {
     setType(t);
@@ -61,7 +63,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
       ? METAL_TYPES.find(m => m.code === metalType)?.icon
       : settings.categories.find(c => c.name === category)?.icon;
     const finalProductData = { ...productData };
-    if (isEquity && !isPortfolio) {
+    if (isUnitProduct && !isPortfolio) {
       const price = parseFloat(initPrice);
       if (!isNaN(price) && price > 0) finalProductData.cost = initPrice;
     }
@@ -72,7 +74,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
       ...(isMetal ? { metalType, unit: 'gram' as const } : {}),
       ...(isPortfolio ? { portfolio: true } : {}),
     });
-    if (isEquity && !isPortfolio) {
+    if (isUnitProduct && !isPortfolio) {
       const shares = parseFloat(initShares);
       const price = parseFloat(initPrice);
       if (!isNaN(shares) && !isNaN(price) && shares > 0 && price > 0) {
@@ -123,8 +125,8 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
           </div>
         </div>
 
-        {/* Equity management mode: one account per platform (holdings inside) vs one per security */}
-        {isEquity && (
+        {/* Product management mode: one account per platform (holdings inside) vs one per product */}
+        {supportsPortfolio && (
           <div className="form-group">
             <label className="form-label">{t('manage_mode')}</label>
             <div style={S.typeRow}>
@@ -237,8 +239,8 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
           </>
         )}
 
-        {/* Equity quick-add: initial position (single-security mode only) */}
-        {isEquity && !isPortfolio && (
+        {/* Unit-product quick-add: initial position (single-product mode only) */}
+        {isUnitProduct && !isPortfolio && (
           <>
             <div style={S.divider}><span style={S.dividerText}>{t('initial_position')}</span></div>
             <div className="form-group">
@@ -277,10 +279,10 @@ const S: Record<string, React.CSSProperties> = {
   typeBtnInactive: { background: 'var(--bg-glass)', color: 'var(--text-secondary)', border: '1px solid var(--border)' },
   chipRow: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   chip: { padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 },
-  chipActive: { background: 'var(--asset-dim)', borderColor: 'var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
+  chipActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
   divider: { display: 'flex', alignItems: 'center', margin: '4px 0 12px', gap: 8 },
   dividerText: { fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' },
   optionRow: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   optBtn: { padding: '5px 11px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' },
-  optBtnActive: { background: 'var(--asset-dim)', borderColor: 'var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
+  optBtnActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
 };
