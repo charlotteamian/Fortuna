@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getDefaultHoldingModeForCategory,
+  getProductHoldingFields,
   isProductPortfolioCategory,
+  shouldShowProductCodeForCategory,
   usesLiveQuotes,
 } from '../src/lib/productPortfolio.ts';
 
@@ -38,4 +40,13 @@ test('live quotes stay limited to supported security and fund categories', () =>
   assert.equal(usesLiveQuotes('理财产品'), false);
   assert.equal(usesLiveQuotes('银行存款'), false);
   assert.equal(usesLiveQuotes('数字货币'), false);
+});
+
+test('bank deposit product entries require rate and maturity instead of product code', () => {
+  assert.equal(shouldShowProductCodeForCategory('银行存款'), false);
+  assert.deepEqual(getProductHoldingFields('银行存款').map(field => field.key), ['rate', 'maturity']);
+  assert.equal(getProductHoldingFields('银行存款').every(field => field.required), true);
+
+  assert.equal(shouldShowProductCodeForCategory('理财产品'), true);
+  assert.deepEqual(getProductHoldingFields('理财产品'), []);
 });

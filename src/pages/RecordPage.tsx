@@ -8,9 +8,20 @@ import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { generateReportCanvas } from '../lib/reportGenerator';
 import { getFieldsForCategory } from '../lib/categoryFields';
+import { isProductPortfolioCategory } from '../lib/productPortfolio';
+import { setAccountPortfolioMode } from '../services/holdingService';
 import * as XLSX from 'xlsx';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
+interface EditingAccountState {
+  id: string;
+  name: string;
+  category: string;
+  institution: string;
+  currency: string;
+  type: 'asset' | 'liability';
+  portfolio: boolean;
+}
 
 const SCROLL_Y_KEY = 'fortuna-record-scroll-y';
 const getSavedScrollY = () => Number(sessionStorage.getItem(SCROLL_Y_KEY) || 0);
@@ -27,7 +38,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  const [editingAcct, setEditingAcct] = useState<{ id: string; name: string; category: string; institution: string; currency: string } | null>(null);
+  const [editingAcct, setEditingAcct] = useState<EditingAccountState | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ acctId: string; x: number; y: number } | null>(null);
@@ -84,6 +95,10 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   const handleEditSave = async () => {
     if (!editingAcct) return;
+    const currentAcct = [...accounts, ...archivedAccounts].find(acct => acct.id === editingAcct.id);
+    const supportsPortfolio = isProductPortfolioCategory(editingAcct.category, editingAcct.type);
+    const nextPortfolio = supportsPortfolio && editingAcct.portfolio;
+    if (currentAcct?.portfolio && !nextPortfolio) await setAccountPortfolioMode(editingAcct.id, false);
     await updateAccount(editingAcct.id, {
       name: editingAcct.name.trim() || editingAcct.name,
       category: editingAcct.category,
@@ -91,6 +106,8 @@ export default function RecordPage({ onOpenAccount }: Props) {
       currency: editingAcct.currency,
       icon: settings?.categories.find(c => c.name === editingAcct.category)?.icon,
     });
+    if (!currentAcct?.portfolio && nextPortfolio) await setAccountPortfolioMode(editingAcct.id, true);
+    if (currentAcct?.portfolio && nextPortfolio) await setAccountPortfolioMode(editingAcct.id, true);
     setEditingAcct(null);
     load();
   };
@@ -464,7 +481,15 @@ export default function RecordPage({ onOpenAccount }: Props) {
                   </button>
                   {!acct.archivedAt && (
                     <button className="context-menu-item" onClick={() => {
-                      setEditingAcct({ id: acct.id, name: acct.name, category: acct.category, institution: acct.institution || '', currency: acct.currency });
+                      setEditingAcct({
+                        id: acct.id,
+                        name: acct.name,
+                        category: acct.category,
+                        institution: acct.institution || '',
+                        currency: acct.currency,
+                        type: acct.type,
+                        portfolio: Boolean(acct.portfolio),
+                      });
                       setContextMenu(null);
                     }}>
                       ✏️ {t('edit_account')}
@@ -516,7 +541,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
             <div className="form-group">
               <label className="form-label">{t('category')}</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {settings.categories.map(c => (
+                {settings.categories.filter(c => c.type === editingAcct.type).map(c => (
                   <button key={c.name}
                     style={{ padding: '6px 12px', borderRadius: 20, border: `1px solid ${editingAcct.category === c.name ? 'var(--asset-color)' : 'var(--border)'}`, background: editingAcct.category === c.name ? 'var(--asset-dim)' : 'var(--bg-glass)', color: editingAcct.category === c.name ? 'var(--asset-color)' : 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', fontWeight: editingAcct.category === c.name ? 600 : 400 }}
                     onClick={() => setEditingAcct(prev => prev ? { ...prev, category: c.name } : null)}>
@@ -525,6 +550,22 @@ export default function RecordPage({ onOpenAccount }: Props) {
                 ))}
               </div>
             </div>
+            {isProductPortfolioCategory(editingAcct.category, editingAcct.type) && (
+              <div className="form-group">
+                <label className="form-label">{t('manage_mode')}</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button className={`btn ${editingAcct.portfolio ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setEditingAcct(prev => prev ? { ...prev, portfolio: true } : null)}>{t('mode_portfolio')}</button>
+                  <button className={`btn ${!editingAcct.portfolio ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setEditingAcct(prev => prev ? { ...prev, portfolio: false } : null)}>{t('mode_single')}</button>
+                </div>
+                {editingAcct.portfolio && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+                    {t('portfolio_hint')}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">{t('institution')}</label>
               <input className="form-input" placeholder={t('institution_ph')} value={editingAcct.institution}

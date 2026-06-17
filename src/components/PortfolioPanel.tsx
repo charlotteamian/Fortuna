@@ -10,7 +10,13 @@ import {
 import { fetchQuotes } from '../services/quoteService';
 import { useAppContext } from '../app-context';
 import { splitHoldingsByArchive } from '../lib/holdingArchive';
-import { getDefaultHoldingModeForCategory, usesBalanceHoldings, usesLiveQuotes } from '../lib/productPortfolio';
+import {
+  getDefaultHoldingModeForCategory,
+  getProductHoldingFields,
+  shouldShowProductCodeForCategory,
+  usesBalanceHoldings,
+  usesLiveQuotes,
+} from '../lib/productPortfolio';
 
 interface Props { account: Account; onChanged: () => void; }
 
@@ -24,6 +30,8 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const defaultHoldingMode = getDefaultHoldingModeForCategory(account.category);
   const isBalancePortfolio = defaultHoldingMode === 'balance';
   const quoteRefreshEnabled = usesLiveQuotes(account.category);
+  const productHoldingFields = isBalancePortfolio ? getProductHoldingFields(account.category) : [];
+  const showProductCode = !isBalancePortfolio || shouldShowProductCodeForCategory(account.category);
   const [holdings, setHoldings] = useState<HoldingWithPosition[]>([]);
   const [txns, setTxns] = useState<HoldingTxn[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -35,6 +43,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const [hSymbol, setHSymbol] = useState('');
   const [hMarket, setHMarket] = useState('');
   const [hPrice, setHPrice] = useState('');
+  const [hProductData, setHProductData] = useState<Record<string, string>>({});
   const [hInitShares, setHInitShares] = useState('');
   const [hInitPrice, setHInitPrice] = useState('');
   const [confirmDeleteHolding, setConfirmDeleteHolding] = useState<string | null>(null);
@@ -176,6 +185,7 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const openCreateHolding = () => {
     setEditingHolding(null);
     setHName(''); setHSymbol(''); setHMarket(''); setHPrice('');
+    setHProductData({});
     setHInitShares(''); setHInitPrice('');
     setShowHoldingForm(true);
   };
@@ -183,11 +193,24 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     setEditingHolding(h);
     setHName(h.name); setHSymbol(h.symbol || ''); setHMarket(h.market || '');
     setHPrice(isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
+    setHProductData(h.productData ? { ...h.productData } : {});
     setShowHoldingForm(true);
   };
   const handleSaveHolding = async () => {
     if (!hName.trim()) return;
-    const meta = { name: hName.trim(), symbol: hSymbol.trim() || undefined, market: isBalancePortfolio ? undefined : (hMarket || undefined), mode: defaultHoldingMode };
+    const cleanProductData = Object.fromEntries(Object.entries(hProductData).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v));
+    const missingRequired = productHoldingFields.some(field => field.required && !cleanProductData[field.key]);
+    if (missingRequired) {
+      alert(t('required_fields_missing'));
+      return;
+    }
+    const meta = {
+      name: hName.trim(),
+      symbol: showProductCode ? (hSymbol.trim() || undefined) : undefined,
+      market: isBalancePortfolio ? undefined : (hMarket || undefined),
+      mode: defaultHoldingMode,
+      productData: Object.keys(cleanProductData).length > 0 ? cleanProductData : undefined,
+    };
     const priceOrBalance = parseFloat(hPrice);
     if (editingHolding) {
       await updateHolding(editingHolding.id, meta);
@@ -303,6 +326,9 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const renderHolding = (h: HoldingWithPosition, archived = false) => {
     const expanded = expandedId === h.id;
     const holdingIsBalance = usesBalanceHoldings(account.category, h);
+    const productMeta = getProductHoldingFields(account.category)
+      .map(field => ({ field, value: h.productData?.[field.key]?.trim() }))
+      .filter((item): item is { field: (typeof productHoldingFields)[number]; value: string } => Boolean(item.value));
     const pnlPct = h.position.costBasis > 0 ? (h.unrealizedPnl / h.position.costBasis) * 100 : 0;
     const hTxns = txns.filter(tx => tx.holdingId === h.id);
     const totalIn = hTxns.filter(tx => tx.kind === 'buy').reduce((s, tx) => s + tx.shares, 0);
@@ -332,6 +358,13 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
               </span>
             )}
           </div>
+          {productMeta.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              {productMeta.map(({ field, value }) => (
+                <span key={field.key} style={S.badge}>{t(field.labelKey)} {value}</span>
+              ))}
+            </div>
+          )}
         </div>
 
         {expanded && (
@@ -339,6 +372,9 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {holdingIsBalance ? (
                 <>
+                  {productMeta.map(({ field, value }) => (
+                    <div style={S.posCell} key={field.key}><span style={S.posKey}>{t(field.labelKey)}</span><span style={S.posVal}>{value}</span></div>
+                  ))}
                   <div style={S.posCell}><span style={S.posKey}>{t('current_balance')}</span><span style={S.posVal}>{masked(fmt(h.marketValue))}</span></div>
                   <div style={S.posCell}><span style={S.posKey}>{t('txn_history')}</span><span style={S.posVal}>{hTxns.length}</span></div>
                   <div style={S.posCell}><span style={S.posKey}>{t('total_buy_amount')}</span><span style={S.posVal}>{totalIn > 0 ? masked(fmt(totalIn)) : '—'}</span></div>
@@ -471,15 +507,17 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
               <label className="form-label">{t('name')}</label>
               <input className="form-input" placeholder={t(isBalancePortfolio ? 'product_holding_name_ph' : 'holding_name_ph')} value={hName} onChange={e => setHName(e.target.value)} autoFocus={!editingHolding} />
             </div>
-            <div className="form-group">
-              <label className="form-label">{t(isBalancePortfolio ? 'product_code' : 'f_code')}</label>
-              <input className="form-input mono" placeholder={t('f_code_ph')} value={hSymbol} onChange={e => setHSymbol(e.target.value)} />
-              {!isBalancePortfolio && (
-                <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
-                  {account.category === '场外基金' ? t('symbol_quote_hint_fund') : t('symbol_quote_hint_stock')}
-                </div>
-              )}
-            </div>
+            {showProductCode && (
+              <div className="form-group">
+                <label className="form-label">{t(isBalancePortfolio ? 'product_code' : 'f_code')}</label>
+                <input className="form-input mono" placeholder={t('f_code_ph')} value={hSymbol} onChange={e => setHSymbol(e.target.value)} />
+                {!isBalancePortfolio && (
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+                    {account.category === '场外基金' ? t('symbol_quote_hint_fund') : t('symbol_quote_hint_stock')}
+                  </div>
+                )}
+              </div>
+            )}
             {!isBalancePortfolio && <div className="form-group">
               <label className="form-label">{t('f_market')}</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -498,6 +536,18 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
               <input className="form-input mono" type="number" inputMode="decimal" step={isBalancePortfolio ? '0.01' : '0.0001'} min="0"
                 placeholder={isBalancePortfolio ? '0.00' : t('price_per_share_ph')} value={hPrice} onChange={e => setHPrice(e.target.value)} />
             </div>
+            {productHoldingFields.map(field => (
+              <div className="form-group" key={field.key}>
+                <label className="form-label">{t(field.labelKey)}{field.required ? ' *' : ''}</label>
+                <input className="form-input"
+                  type={field.key === 'rate' ? 'number' : 'text'}
+                  inputMode={field.key === 'rate' ? 'decimal' : undefined}
+                  step={field.key === 'rate' ? '0.01' : undefined}
+                  placeholder={field.placeholderKey ? t(field.placeholderKey) : ''}
+                  value={hProductData[field.key] || ''}
+                  onChange={e => setHProductData(prev => ({ ...prev, [field.key]: e.target.value }))} />
+              </div>
+            ))}
             {!editingHolding && !isBalancePortfolio && (
               <>
                 <div style={S.divider}><span style={S.dividerText}>{t('initial_position')}</span></div>

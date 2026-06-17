@@ -9,7 +9,7 @@ export async function getHoldings(accountId: string): Promise<Holding[]> {
   return list.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
 }
 
-export async function createHolding(accountId: string, data: Pick<Holding, 'name' | 'symbol' | 'market' | 'mode' | 'lastPrice' | 'priceDate'>): Promise<string> {
+export async function createHolding(accountId: string, data: Pick<Holding, 'name' | 'symbol' | 'market' | 'mode' | 'productData' | 'lastPrice' | 'priceDate'>): Promise<string> {
   const count = await db.holdings.where('accountId').equals(accountId).count();
   const id = uuidv4();
   await db.holdings.add({ ...data, id, accountId, sortOrder: count, createdAt: Date.now() });
@@ -155,6 +155,71 @@ export async function updateBalances(accountId: string, balances: Record<string,
     if (balance >= 0) await setHoldingBalance(accountId, holdingId, balance, date);
   }
   await syncPortfolioSnapshot(accountId);
+}
+
+async function getLatestAccountAmount(accountId: string): Promise<{ amount: number; date: string } | null> {
+  const latest = (await db.records.where('accountId').equals(accountId).toArray())
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt)[0];
+  return latest ? { amount: latest.amount, date: latest.date } : null;
+}
+
+async function getPortfolioTotal(accountId: string): Promise<number> {
+  const account = await db.accounts.get(accountId);
+  const withPos = await getHoldingsWithPositions(accountId);
+  const total = (account?.cashBalance || 0) + withPos.reduce((s, h) => s + h.marketValue, 0);
+  return Math.round(total * 100) / 100;
+}
+
+async function upsertTodayAccountRecord(accountId: string, amount: number): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const todayRecs = (await db.records.where('accountId').equals(accountId).toArray())
+    .filter(r => r.date === today)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  if (todayRecs.length > 0) await db.records.update(todayRecs[0].id, { amount });
+  else await addRecord(accountId, today, amount);
+}
+
+export async function setAccountPortfolioMode(accountId: string, portfolio: boolean): Promise<void> {
+  const account = await db.accounts.get(accountId);
+  if (!account) return;
+
+  if (portfolio) {
+    if (account.portfolio) {
+      await syncPortfolioSnapshot(accountId);
+      return;
+    }
+    await db.accounts.update(accountId, { portfolio: true });
+
+    const holdingCount = await db.holdings.where('accountId').equals(accountId).count();
+    if (holdingCount > 0) {
+      await syncPortfolioSnapshot(accountId);
+      return;
+    }
+
+    const latest = await getLatestAccountAmount(accountId);
+    if (!latest || latest.amount <= 0) {
+      await syncPortfolioSnapshot(accountId);
+      return;
+    }
+
+    const mode = getDefaultHoldingModeForCategory(account.category);
+    const id = await createHolding(accountId, {
+      name: account.name,
+      symbol: mode === 'unit' ? account.productData?.code : undefined,
+      market: mode === 'unit' ? account.productData?.market : undefined,
+      mode,
+      productData: mode === 'balance' ? account.productData : undefined,
+      lastPrice: 1,
+      priceDate: latest.date,
+    });
+    await addHoldingTxn(accountId, id, { date: latest.date, kind: 'buy', shares: latest.amount, price: 1 });
+    return;
+  }
+
+  if (!account.portfolio) return;
+  const total = await getPortfolioTotal(accountId);
+  await db.accounts.update(accountId, { portfolio: undefined, cashBalance: undefined });
+  await upsertTodayAccountRecord(accountId, total);
 }
 
 /**

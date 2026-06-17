@@ -98,6 +98,7 @@ export interface Holding {
   symbol?: string;         // ticker / fund code
   market?: string;         // A股 / 美股 / 港股 ...
   mode?: HoldingMode;      // unit = quantity × price, balance = current balance tracked by amount deltas
+  productData?: Record<string, string>; // per-product metadata, e.g. deposit rate and maturity
   lastPrice: number;       // latest quote, manually maintained (account currency)
   priceDate?: string;
   sortOrder: number;

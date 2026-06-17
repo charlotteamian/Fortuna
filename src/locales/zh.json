@@ -499,6 +499,7 @@
   "holding_name_ph": "如：沪深300ETF / 腾讯控股",
   "product_holding_name_ph": "如：一年期定存 / 稳健理财90天 / 国债逆回购",
   "product_code": "产品代码（可选）",
+  "required_fields_missing": "请补全必填字段",
   "no_holdings": "暂无持仓，点击「添加持仓」开始维护",
   "no_products_in_account": "暂无产品，点击「添加产品」开始维护",
   "total_market_value": "账户总价值",

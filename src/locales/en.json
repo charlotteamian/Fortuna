@@ -501,6 +501,7 @@
   "holding_name_ph": "e.g., CSI 300 ETF / AAPL",
   "product_holding_name_ph": "e.g., 1Y term deposit / Stable 90-day product / Treasury repo",
   "product_code": "Product Code (Optional)",
+  "required_fields_missing": "Please fill required fields",
   "no_holdings": "No holdings yet — tap \"Add Holding\" to start",
   "no_products_in_account": "No products yet — tap \"Add Product\" to start",
   "total_market_value": "Total Value",
