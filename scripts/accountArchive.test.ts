@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitAccountsByArchive } from '../src/lib/accountArchive';
+import { splitAccountsByArchive } from '../src/lib/accountArchive.ts';
 
 type AccountLike = {
   id: string;

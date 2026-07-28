@@ -1,15 +1,31 @@
-import { useState, useEffect, useRef } from 'react';
-import { db, initializeSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, exportToExcel, importFromExcel, type Settings, type CustomField } from '../db';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { db, initializeSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, exportToExcel, importFromExcel, type Account, type Settings, type CustomField } from '../db';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
-import { Share } from '@capacitor/share';
-import { Filesystem, Directory } from '@capacitor/filesystem';
 import { useTranslation } from 'react-i18next';
+import {
+  getDefaultSnapshotFocusAccountIds,
+  getSnapshotFocusAccountIds,
+  isSnapshotFocusCandidate,
+} from '../lib/portableSnapshot';
+import {
+  configurePortableSnapshot as configureAutomaticSnapshot,
+  disconnectPortableSnapshot as disconnectAutomaticSnapshot,
+  flushPortableSnapshot as flushAutomaticSnapshot,
+  getPortableSnapshotStatus as getAutomaticSnapshotStatus,
+  AUTOMATIC_SNAPSHOT_FILE,
+  schedulePortableSnapshot as scheduleAutomaticSnapshot,
+} from '../services/portableSnapshotService';
+import type { PortableSnapshotStatus as AutomaticSnapshotStatus } from '../native/portableSnapshot';
+import UserGuide from '../components/UserGuide';
+import { formatLocalDate } from '../lib/localDate';
 
-interface Props { onRefresh: () => void; }
+interface Props { onRefresh: () => void; onOpenOnboarding: () => void; }
 
-export default function SettingsPage({ onRefresh }: Props) {
+export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -19,25 +35,63 @@ export default function SettingsPage({ onRefresh }: Props) {
   const [newCatFields, setNewCatFields] = useState<(CustomField & { optionsStr?: string })[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [snapshotAccounts, setSnapshotAccounts] = useState<Account[]>([]);
+  const [snapshotStatus, setSnapshotStatus] = useState<AutomaticSnapshotStatus>({ supported: false, configured: false });
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [pendingImport, setPendingImport] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type }); setTimeout(() => setToast(null), 2000);
   };
 
-  const load = async () => { const s = await initializeSettings(); setSettings(s); const t = await getLastUpdateTime(); setLastUpdate(t); };
-  useEffect(() => { load(); }, []);
+  const load = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
+    setLoadError(false);
+    try {
+      const [s, ratesUpdatedAt, accounts, syncStatus] = await Promise.all([
+        initializeSettings(),
+        getLastUpdateTime(),
+        db.accounts.toArray(),
+        getAutomaticSnapshotStatus(),
+      ]);
+      setSettings(s);
+      setLastUpdate(ratesUpdatedAt);
+      setSnapshotAccounts(accounts);
+      setSnapshotStatus(syncStatus);
+    } catch (error) {
+      console.error('Settings load failed', error);
+      setLoadError(true);
+    } finally {
+      if (initial) setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(true); }, [load]);
+
+  useEffect(() => {
+    const hasOpenModal = showAddCategory || Boolean(pendingImport);
+    document.documentElement.classList.toggle('modal-open', hasOpenModal);
+    return () => document.documentElement.classList.remove('modal-open');
+  }, [pendingImport, showAddCategory]);
 
   const save = async (updates: Partial<Settings>) => {
     if (!settings) return;
     const updated = { ...settings, ...updates };
     await db.settings.put(updated); setSettings(updated); onRefresh();
+    scheduleAutomaticSnapshot('settings-updated');
   };
 
   const handleRefreshRates = async () => {
     if (!settings) return;
     setSyncing(true);
-    try { await refreshAllRates(settings.primaryCurrency, settings.goldPriceSource ?? 'international'); showToast(t('rates_updated')); const updatedTime = await getLastUpdateTime(); setLastUpdate(updatedTime); }
+    try {
+      await refreshAllRates(settings.primaryCurrency, settings.goldPriceSource ?? 'international');
+      showToast(t('rates_updated'));
+      const updatedTime = await getLastUpdateTime();
+      setLastUpdate(updatedTime);
+      scheduleAutomaticSnapshot('exchange-rates-refreshed');
+    }
     catch { showToast(t('rates_failed'), 'error'); }
     setSyncing(false);
   };
@@ -66,6 +120,15 @@ export default function SettingsPage({ onRefresh }: Props) {
 
   const handleAddCategory = () => {
     if (!newCatName.trim() || !settings) return;
+    const categoryName = newCatName.trim();
+    if (settings.categories.some(category => category.name === categoryName)) {
+      showToast(t('category_exists'), 'error');
+      return;
+    }
+    if (categoryName.includes('@') || /^(acct|hold|cash):/i.test(categoryName)) {
+      showToast(t('category_reserved_chars'), 'error');
+      return;
+    }
     const fields: CustomField[] = newCatFields
       .filter(f => f.label.trim())
       .map(f => {
@@ -77,27 +140,107 @@ export default function SettingsPage({ onRefresh }: Props) {
           options: opts.length > 0 ? opts : undefined,
         };
       });
-    save({ categories: [...settings.categories, { name: newCatName.trim(), type: newCatType, icon: newCatIcon, fields: fields.length > 0 ? fields : undefined }] });
+    void save({ categories: [...settings.categories, { name: categoryName, type: newCatType, icon: newCatIcon, fields: fields.length > 0 ? fields : undefined }] });
     setNewCatName(''); setNewCatFields([]); setShowAddCategory(false); showToast(t('cat_added'));
   };
 
   const handleDeleteCategory = async (name: string) => {
     if (!settings) return;
+    const category = settings.categories.find(candidate => candidate.name === name);
+    if (!category || settings.categories.filter(candidate => candidate.type === category.type).length <= 1) {
+      showToast(t('last_category_required'), 'error');
+      return;
+    }
     const inUse = await db.accounts.where('category').equals(name).count();
     if (inUse > 0) { showToast(t('cat_in_use'), 'error'); return; }
     save({ categories: settings.categories.filter(c => c.name !== name) });
     showToast(t('cat_deleted'));
   };
-  const handleResetCategories = () => { save({ categories: [...DEFAULT_CATEGORIES] }); showToast(t('cat_reset')); };
+  const handleResetCategories = async () => {
+    if (!settings) return;
+    const defaultNames = new Set(DEFAULT_CATEGORIES.map(category => category.name));
+    const usedCustomCategories = (await db.accounts.toArray())
+      .map(account => account.category)
+      .filter((name, index, values) => !defaultNames.has(name) && values.indexOf(name) === index);
+    if (usedCustomCategories.length > 0) {
+      showToast(t('categories_reset_blocked', { categories: usedCustomCategories.join('、') }), 'error');
+      return;
+    }
+    if (!confirm(t('categories_reset_confirm'))) return;
+    await save({ categories: [...DEFAULT_CATEGORIES] });
+    showToast(t('cat_reset'));
+  };
   const handleAddCurrency = (code: string) => { if (!settings || settings.currencies.includes(code)) return; save({ currencies: [...settings.currencies, code] }); };
-  const handleRemoveCurrency = (code: string) => { if (!settings) return; save({ currencies: settings.currencies.filter(c => c !== code) }); };
+  const handleRemoveCurrency = async (code: string) => {
+    if (!settings) return;
+    if (code === settings.primaryCurrency || await db.accounts.where('currency').equals(code).count() > 0) {
+      showToast(t('currency_in_use'), 'error');
+      return;
+    }
+    await save({ currencies: settings.currencies.filter(currency => currency !== code) });
+  };
+
+  const handleSnapshotFocusToggle = async (accountId: string) => {
+    if (!settings) return;
+    const current = new Set(settings.snapshotFocusAccountIds ?? getDefaultSnapshotFocusAccountIds());
+    if (current.has(accountId)) current.delete(accountId);
+    else current.add(accountId);
+    await save({ snapshotFocusAccountIds: [...current] });
+    if (snapshotStatus.configured) {
+      void flushAutomaticSnapshot('focus-accounts-changed')
+        .then(result => setSnapshotStatus(result.status))
+        .catch(error => console.warn('Automatic snapshot account selection failed', error));
+    }
+  };
+
+  const handleChooseSnapshotDirectory = async () => {
+    setSnapshotBusy(true);
+    try {
+      const result = await configureAutomaticSnapshot();
+      setSnapshotStatus(result.status);
+      if (result.written) showToast(t('snapshot_sync_success'));
+    } catch {
+      showToast(t('snapshot_sync_failed'), 'error');
+      setSnapshotStatus(await getAutomaticSnapshotStatus());
+    } finally {
+      setSnapshotBusy(false);
+    }
+  };
+
+  const handleWriteSnapshotNow = async () => {
+    setSnapshotBusy(true);
+    try {
+      const result = await flushAutomaticSnapshot('manual-sync');
+      setSnapshotStatus(result.status);
+      showToast(result.written ? t('snapshot_sync_success') : t('snapshot_choose_directory_first'), result.written ? 'success' : 'error');
+    } catch {
+      showToast(t('snapshot_sync_failed'), 'error');
+    } finally {
+      setSnapshotBusy(false);
+    }
+  };
+
+  const handleDisconnectSnapshot = async () => {
+    setSnapshotBusy(true);
+    try {
+      await disconnectAutomaticSnapshot();
+      setSnapshotStatus(await getAutomaticSnapshotStatus());
+      showToast(t('snapshot_sync_disconnected'));
+    } finally {
+      setSnapshotBusy(false);
+    }
+  };
 
   const handleExport = async () => {
     try {
       const base64Data = await exportToExcel();
-      const fileName = `fortuna_backup_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `fortuna_backup_${formatLocalDate()}.xlsx`;
       
       try {
+        const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+          import('@capacitor/filesystem'),
+          import('@capacitor/share'),
+        ]);
         const writeResult = await Filesystem.writeFile({
           path: fileName,
           data: base64Data,
@@ -105,8 +248,8 @@ export default function SettingsPage({ onRefresh }: Props) {
         });
         
         await Share.share({
-          title: 'Fortuna 备份数据',
-          text: '这是我的 Fortuna 资产备份文件 (Excel)',
+          title: t('backup_share_title'),
+          text: t('backup_share_text'),
           url: writeResult.uri,
           dialogTitle: t('backup_restore'),
         });
@@ -133,35 +276,66 @@ export default function SettingsPage({ onRefresh }: Props) {
     }
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        // result is "data:application/vnd...;base64,XXXXXX"
-        const base64Data = result.split(',')[1];
-        if (base64Data) {
-          const success = await importFromExcel(base64Data);
-          if (success) { showToast(t('import_success')); load(); onRefresh(); }
-          else { showToast(t('import_failed'), 'error'); }
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 25 * 1024 * 1024) {
+      showToast(t('import_file_too_large'), 'error');
+    } else {
+      setPendingImport(file);
+    }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const confirmImport = async () => {
+    if (!pendingImport) return;
+    setImporting(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(pendingImport);
+      });
+      const base64Data = dataUrl.split(',')[1];
+      const success = Boolean(base64Data) && await importFromExcel(base64Data);
+      if (success) {
+        setPendingImport(null);
+        showToast(t('import_success'));
+        await load();
+        onRefresh();
+        scheduleAutomaticSnapshot('backup-restored');
+      } else {
+        showToast(t('import_failed'), 'error');
+      }
+    } catch (error) {
+      console.error('Backup import failed', error);
+      showToast(t('import_failed'), 'error');
+    } finally {
+      setImporting(false);
+    }
   };
 
 
 
-  if (!settings) return <div className="loading"><div className="spinner" /></div>;
+  if (loading) return <div className="loading"><div className="spinner" /></div>;
+  if (loadError && !settings) return (
+    <div className="empty-state" role="alert">
+      <div className="empty-icon">⚠️</div>
+      <div className="empty-text">{t('load_failed')}</div>
+      <div className="empty-hint">{t('load_failed_hint')}</div>
+      <button type="button" className="btn btn-primary" onClick={() => void load(true)}>{t('retry')}</button>
+    </div>
+  );
+  if (!settings) return null;
 
   const availableCurrencies = Object.keys(CURRENCY_NAMES).filter(c => !settings.currencies.includes(c));
+  const snapshotCandidates = snapshotAccounts.filter(isSnapshotFocusCandidate);
+  const selectedSnapshotIds = new Set(getSnapshotFocusAccountIds(snapshotAccounts, settings.snapshotFocusAccountIds));
 
   return (
     <>
-      {toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}
+      {toast && <div className={`toast ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>}
       <div className="page-header"><div><h1 className="page-title">{t('settings')}</h1><p className="page-subtitle">{t('about_title')} {t('app_name')}</p></div></div>
 
       {/* Theme Mode & Font Size & Language */}
@@ -171,6 +345,7 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <span className="settings-item-label">{t('language')}</span>
           <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+            aria-label={t('language')}
             value={settings.language || 'auto'} onChange={e => save({ language: e.target.value as Settings['language'] })}>
             <option value="auto">{t('auto')}</option>
             <option value="zh">{t('zh')}</option>
@@ -181,6 +356,7 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <span className="settings-item-label">{t('theme_mode')}</span>
           <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+            aria-label={t('theme_mode')}
             value={settings.themeMode || 'auto'} onChange={e => save({ themeMode: e.target.value as Settings['themeMode'] })}>
             <option value="auto">{t('system_auto')}</option>
             <option value="light">{t('light_mode')}</option>
@@ -191,11 +367,28 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <span className="settings-item-label">{t('font_size')}</span>
           <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+            aria-label={t('font_size')}
             value={settings.fontSize || 'normal'} onChange={e => save({ fontSize: e.target.value as Settings['fontSize'] })}>
             <option value="small">{t('small')}</option>
             <option value="normal">{t('normal')}</option>
             <option value="large">{t('large')}</option>
           </select>
+        </div>
+        <div className="settings-item">
+          <div>
+            <div className="settings-item-label">{t('show_archived_assets_setting')}</div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
+              {t('show_archived_assets_hint')}
+            </div>
+          </div>
+          <button
+            className={`btn btn-sm ${(settings.showArchivedAccounts ?? true) ? 'btn-primary' : 'btn-secondary'}`}
+            role="switch"
+            aria-checked={settings.showArchivedAccounts ?? true}
+            style={{ flexShrink: 0, minWidth: 78, whiteSpace: 'nowrap' }}
+            onClick={() => save({ showArchivedAccounts: !(settings.showArchivedAccounts ?? true) })}>
+            {(settings.showArchivedAccounts ?? true) ? t('shown') : t('hidden')}
+          </button>
         </div>
       </div>
 
@@ -211,10 +404,10 @@ export default function SettingsPage({ onRefresh }: Props) {
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.assetColor, display: 'inline-block' }} />
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.liabilityColor, display: 'inline-block' }} />
               </div>
-              <div style={{ fontSize: 12, color: settings.colorTheme === themeItem.id ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: settings.colorTheme === themeItem.id ? 700 : 400 }}>
+              <div style={{ fontSize: '0.75rem', color: settings.colorTheme === themeItem.id ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: settings.colorTheme === themeItem.id ? 700 : 400 }}>
                 {t(themeItem.id)}
               </div>
-              {settings.colorTheme === themeItem.id && <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 2 }}>✓ {t('current_theme')}</div>}
+              {settings.colorTheme === themeItem.id && <div style={{ fontSize: '0.625rem', color: 'var(--accent)', marginTop: 2 }}>✓ {t('current_theme')}</div>}
             </button>
           ))}
         </div>
@@ -226,7 +419,7 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('default_show_amount')}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
               {t('privacy_hint')}
             </div>
           </div>
@@ -244,6 +437,7 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <span className="settings-item-label">{t('summary_currency')}</span>
           <select className="form-select" style={{ width: 'auto', padding: '8px 32px 8px 12px' }}
+            aria-label={t('summary_currency')}
             value={settings.primaryCurrency} onChange={e => save({ primaryCurrency: e.target.value })}>
             {settings.currencies.map(c => <option key={c} value={c}>{c} - {t(c + '_name')}</option>)}
           </select>
@@ -256,11 +450,11 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('last_updated')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{lastUpdate ? new Date(lastUpdate).toLocaleString(t('zh') === '简体中文' ? 'zh-CN' : 'en-US') : t('never_updated')}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{lastUpdate ? new Date(lastUpdate).toLocaleString(t('zh') === '简体中文' ? 'zh-CN' : 'en-US') : t('never_updated')}</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={handleRefreshRates} disabled={syncing}>{syncing ? '...' : '🔄 ' + t('refresh_rates')}</button>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{t('rate_source')}</div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('rate_source')}</div>
       </div>
 
       {/* Gold Price Source */}
@@ -269,12 +463,13 @@ export default function SettingsPage({ onRefresh }: Props) {
         <div className="settings-item">
           <span className="settings-item-label">{t('gold_price_source')}</span>
           <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+            aria-label={t('gold_price_source')}
             value={settings.goldPriceSource ?? 'international'} onChange={e => save({ goldPriceSource: e.target.value as Settings['goldPriceSource'] })}>
             <option value="domestic">{t('gold_src_domestic')}</option>
             <option value="international">{t('gold_src_international')}</option>
           </select>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{t('gold_price_source_hint')}</div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('gold_price_source_hint')}</div>
       </div>
 
       {/* Categories */}
@@ -292,7 +487,7 @@ export default function SettingsPage({ onRefresh }: Props) {
             <span className="category-type" style={{ background: c.type === 'asset' ? 'var(--asset-dim)' : 'var(--liability-dim)', color: c.type === 'asset' ? 'var(--asset-color)' : 'var(--liability-color)' }}>
               {c.type === 'asset' ? t('assets') : t('liabilities')}
             </span>
-            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCategory(c.name)} style={{ padding: '4px 8px', fontSize: 11 }}>✕</button>
+            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCategory(c.name)} style={{ padding: '4px 8px', fontSize: '0.6875rem' }}>✕</button>
           </div>
         ))}
       </div>
@@ -301,14 +496,82 @@ export default function SettingsPage({ onRefresh }: Props) {
       <div className="settings-section">
         <div className="settings-section-title">{t('common_currencies')}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
-          {settings.currencies.map(c => <span className="tag" key={c}>{c}<span className="tag-remove" onClick={() => handleRemoveCurrency(c)}>✕</span></span>)}
+          {settings.currencies.map(c => (
+            <span className="tag" key={c}>
+              {c}
+              <button type="button" className="tag-remove" aria-label={t('remove_currency', { currency: c })} onClick={() => void handleRemoveCurrency(c)}>✕</button>
+            </span>
+          ))}
         </div>
         {availableCurrencies.length > 0 && (
           <div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{t('click_to_add')}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>{t('click_to_add')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {availableCurrencies.map(c => <span className="tag" key={c} style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => handleAddCurrency(c)}>+ {c}</span>)}
+              {availableCurrencies.map(c => <button type="button" className="tag tag-add" key={c} aria-label={t('add_currency', { currency: c })} onClick={() => handleAddCurrency(c)}>+ {c}</button>)}
             </div>
+          </div>
+        )}
+      </div>
+
+
+      {/* Optional portable JSON snapshot */}
+      <div className="settings-section">
+        <div className="settings-section-title">{t('snapshot_sync_title')}</div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 10 }}>
+          {t('snapshot_sync_desc', { file: AUTOMATIC_SNAPSHOT_FILE })}
+        </div>
+        <div className="settings-item">
+          <div style={{ minWidth: 0 }}>
+            <div className="settings-item-label">{t('snapshot_sync_directory')}</div>
+            <div style={{ fontSize: '0.6875rem', color: snapshotStatus.configured ? 'var(--asset-color)' : 'var(--text-muted)', marginTop: 2, overflowWrap: 'anywhere' }}>
+              {!snapshotStatus.supported
+                ? t('snapshot_android_only')
+                : snapshotStatus.configured
+                  ? `✓ ${snapshotStatus.directoryName || t('snapshot_directory_configured')}`
+                  : t('snapshot_directory_not_set')}
+            </div>
+            {snapshotStatus.lastWriteAt && (
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                {t('snapshot_last_sync', { time: new Date(snapshotStatus.lastWriteAt).toLocaleString() })}
+              </div>
+            )}
+          </div>
+          <button className="btn btn-secondary btn-sm" disabled={!snapshotStatus.supported || snapshotBusy}
+            style={{ flexShrink: 0, whiteSpace: 'nowrap' }} onClick={handleChooseSnapshotDirectory}>
+            📁 {snapshotStatus.configured ? t('snapshot_change_directory') : t('snapshot_choose_directory')}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 10, marginBottom: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+          {t('snapshot_focus_accounts')}
+        </div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 4 }}>
+          {t('snapshot_focus_accounts_hint')}
+        </div>
+        {snapshotCandidates.length === 0 ? (
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '8px 0 12px' }}>{t('snapshot_no_focus_accounts')}</div>
+        ) : snapshotCandidates.map(account => (
+          <label key={account.id} className="settings-item" style={{ cursor: 'pointer', padding: '10px 0' }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="settings-item-label">{account.name}</div>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                {[account.institution, t(account.category), account.currency].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            <input type="checkbox" checked={selectedSnapshotIds.has(account.id)}
+              onChange={() => handleSnapshotFocusToggle(account.id)}
+              style={{ width: 20, height: 20, accentColor: 'var(--asset-color)', flexShrink: 0 }} />
+          </label>
+        ))}
+
+        {snapshotStatus.configured && (
+          <div className="snapshot-actions">
+            <button className="btn btn-primary btn-sm" disabled={snapshotBusy} onClick={handleWriteSnapshotNow}>
+              🔄 {t('snapshot_sync_now')}
+            </button>
+            <button className="btn btn-danger btn-sm" disabled={snapshotBusy} onClick={handleDisconnectSnapshot}>
+              {t('snapshot_disconnect')}
+            </button>
           </div>
         )}
       </div>
@@ -318,6 +581,7 @@ export default function SettingsPage({ onRefresh }: Props) {
       {/* Backup and Restore */}
       <div className="settings-section">
         <div className="settings-section-title">{t('backup_restore')}</div>
+        <div className="settings-note">{t('backup_plaintext_warning')}</div>
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('export_data')}</div>
@@ -339,39 +603,40 @@ export default function SettingsPage({ onRefresh }: Props) {
       {/* About */}
       <div className="settings-section">
         <div className="settings-section-title">{t('about_title')}</div>
-        <div className="settings-item" style={{ cursor: 'pointer' }} onClick={() => setShowGuide(true)}>
+        <button type="button" className="settings-item settings-link settings-button" onClick={() => setShowGuide(true)}>
           <span className="settings-item-label" style={{ color: 'var(--accent)' }}>{t('user_guide_title')}</span>
           <span className="settings-item-value">{t('click_to_view')}</span>
-        </div>
+        </button>
+        <button type="button" className="settings-item settings-link settings-button" onClick={onOpenOnboarding}>
+          <span className="settings-item-label">{t('reopen_onboarding')}</span>
+          <span className="settings-item-value">{t('click_to_view')}</span>
+        </button>
+        <a className="settings-item settings-link" href="./privacy-policy.html" target="_blank" rel="noreferrer">
+          <span className="settings-item-label">{t('privacy_policy')}</span>
+          <span className="settings-item-value">↗</span>
+        </a>
+        <a className="settings-item settings-link" href="https://github.com/charlotteamian/Fortuna/issues" target="_blank" rel="noreferrer">
+          <span className="settings-item-label">{t('support_and_feedback')}</span>
+          <span className="settings-item-value">{t('open_support')} ↗</span>
+        </a>
         <div className="settings-item">
           <span className="settings-item-label">Fortuna</span>
-          <span className="settings-item-value">v4.0.0</span>
+          <span className="settings-item-value">v1.2.0</span>
         </div>
         <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('data_security_hint')}</div>
       </div>
 
-      {/* User Guide Modal */}
-      {showGuide && (
-        <div className="modal-overlay" onClick={() => setShowGuide(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h2 className="modal-title">{t('user_guide_title')}</h2><button className="modal-close" onClick={() => setShowGuide(false)}>✕</button></div>
-            <div style={{ fontSize: '0.875rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 4, fontSize: '1rem' }}>{t('guide_assets')}</h3>
-              <p style={{ marginBottom: 8 }}>{t('guide_assets_1')}</p>
-              <p style={{ marginBottom: 12 }}>{t('guide_assets_2')}</p>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 4, fontSize: '1rem', marginTop: 16 }}>{t('guide_accounts')}</h3>
-              <p style={{ marginBottom: 12 }}>{t('guide_accounts_1')}</p>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 4, fontSize: '1rem', marginTop: 16 }}>{t('guide_charts')}</h3>
-              <p style={{ marginBottom: 12 }}>{t('guide_charts_1')}</p>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 4, fontSize: '1rem', marginTop: 16 }}>{t('guide_categories')}</h3>
-              <p style={{ marginBottom: 12 }}>{t('guide_categories_1')}</p>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 4, fontSize: '1rem', marginTop: 16 }}>{t('guide_export')}</h3>
-              <p style={{ marginBottom: 12 }}>{t('guide_export_1')}</p>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 4, fontSize: '1rem', marginTop: 16 }}>{t('guide_security')}</h3>
-              <p style={{ marginBottom: 12 }}>{t('guide_security_1')}</p>
-            </div>
-            <div className="modal-actions" style={{ marginTop: 24 }}>
-              <button className="btn btn-primary btn-block" onClick={() => setShowGuide(false)}>{t('i_know')}</button>
+      {showGuide && <UserGuide onClose={() => setShowGuide(false)} />}
+
+      {pendingImport && (
+        <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="import-confirm-title" onClick={() => !importing && setPendingImport(null)}>
+          <div className="confirm-box" onClick={event => event.stopPropagation()}>
+            <h2 className="confirm-title" id="import-confirm-title">{t('import_confirm_title')}</h2>
+            <p className="confirm-msg">{t('import_confirm_message', { file: pendingImport.name })}</p>
+            <p className="confirm-warning">{t('import_confirm_warning')}</p>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" disabled={importing} onClick={() => setPendingImport(null)}>{t('cancel')}</button>
+              <button className="btn btn-danger" disabled={importing} onClick={() => void confirmImport()}>{importing ? t('importing') : t('replace_and_restore')}</button>
             </div>
           </div>
         </div>

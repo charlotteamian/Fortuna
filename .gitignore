@@ -1,5 +1,7 @@
 node_modules/
 dist/
+build/
+*.apk
 
 .DS_Store
 .idea/

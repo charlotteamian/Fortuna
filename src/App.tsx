@@ -1,14 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import './index.css';
 import RecordPage from './pages/RecordPage';
-import AccountDetail from './pages/AccountDetail';
-import ChartPage from './pages/ChartPage';
-import PlanPage from './pages/PlanPage';
-import ProductsPage from './pages/ProductsPage';
-import SettingsPage from './pages/SettingsPage';
-import { initializeSettings, getTheme, type Settings } from './db';
+import Onboarding from './components/Onboarding';
+import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION, CURRENT_ONBOARDING_VERSION, initializeSettings, getTheme, type Settings } from './db';
 import { useTranslation } from 'react-i18next';
 import { AppContext } from './app-context';
+import { PORTABLE_SNAPSHOT_REQUEST_EVENT } from './services/portableSnapshotEvents';
+import { flushPortableSnapshot, schedulePortableSnapshot } from './services/portableSnapshotService';
+import { addPortableSnapshotBackgroundListener } from './native/portableSnapshot';
+import { refreshRatesInBackground } from './services/rateService';
+
+const AccountDetail = lazy(() => import('./pages/AccountDetail'));
+const ChartPage = lazy(() => import('./pages/ChartPage'));
+const PlanPage = lazy(() => import('./pages/PlanPage'));
+const ProductsPage = lazy(() => import('./pages/ProductsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 type Tab = 'record' | 'plan' | 'chart' | 'products' | 'settings';
 
@@ -18,59 +24,129 @@ function App() {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [amountVisible, setAmountVisible] = useState(true);
+  const [amountVisible, setAmountVisible] = useState(false);
+  const [resolvedAppearance, setResolvedAppearance] = useState<'dark' | 'light'>('dark');
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [startupError, setStartupError] = useState(false);
 
   const refresh = () => setRefreshKey(k => k + 1);
 
-  const loadSettings = async () => {
-    const s = await initializeSettings();
+  const applySettings = useCallback((s: Settings) => {
     setSettings(s);
     setAmountVisible(s.amountVisible);
-    
+    setOnboardingOpen((s.onboardingVersion ?? CURRENT_ONBOARDING_VERSION) < CURRENT_ONBOARDING_VERSION);
+
     const root = document.documentElement;
-    // Theme Mode
     const isDark = s.themeMode === 'dark' || (s.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    setResolvedAppearance(isDark ? 'dark' : 'light');
     root.classList.toggle('light-mode', !isDark);
     root.classList.toggle('dark-mode', isDark);
-
-    // Font Size
     root.classList.remove('font-small', 'font-normal', 'font-large');
     root.classList.add(`font-${s.fontSize || 'normal'}`);
 
-    // Apply theme colors as CSS variables
-    const tConfig = getTheme(s.colorTheme);
-    root.style.setProperty('--asset-color', tConfig.assetColor);
-    root.style.setProperty('--asset-dim', tConfig.assetDim);
-    root.style.setProperty('--liability-color', tConfig.liabilityColor);
-    root.style.setProperty('--liability-dim', tConfig.liabilityDim);
-    
-    // Language
-    if (s.language === 'auto') {
-      const sysLang = navigator.language.startsWith('zh') ? 'zh' : 'en';
-      if (i18n.language !== sysLang) i18n.changeLanguage(sysLang);
-    } else if (s.language && i18n.language !== s.language) {
-      i18n.changeLanguage(s.language);
-    }
-  };
+    const themeConfig = getTheme(s.colorTheme, isDark ? 'dark' : 'light');
+    root.style.setProperty('--asset-color', themeConfig.assetColor);
+    root.style.setProperty('--asset-dim', themeConfig.assetDim);
+    root.style.setProperty('--liability-color', themeConfig.liabilityColor);
+    root.style.setProperty('--liability-dim', themeConfig.liabilityDim);
 
-  useEffect(() => { 
-    loadSettings(); 
-    // Listen for system theme changes if set to auto
+    const language = s.language === 'auto'
+      ? (navigator.language.startsWith('zh') ? 'zh' : 'en')
+      : (s.language ?? 'en');
+    root.lang = language === 'zh' ? 'zh-CN' : 'en';
+    if (i18n.language !== language) void i18n.changeLanguage(language);
+  }, [i18n]);
+
+  const loadSettings = useCallback(async () => {
+    setStartupError(false);
+    try {
+      applySettings(await initializeSettings());
+    } catch (error) {
+      console.error('Failed to initialize Fortuna', error);
+      setStartupError(true);
+    }
+  }, [applySettings]);
+
+  useEffect(() => { void loadSettings(); }, [loadSettings]);
+
+  useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => { if (settings?.themeMode === 'auto') loadSettings(); };
+    const handler = () => { if (settings?.themeMode === 'auto') void loadSettings(); };
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
-  }, [settings?.themeMode]);
+  }, [loadSettings, settings?.themeMode]);
 
-  const theme = getTheme(settings?.colorTheme || 'red-green');
+  useEffect(() => {
+    if (!settings) return;
+    const timer = window.setTimeout(() => {
+      void refreshRatesInBackground(settings.primaryCurrency, settings.goldPriceSource ?? 'international')
+        .then(updated => { if (updated) schedulePortableSnapshot('market-data-refreshed'); })
+        .catch(error => console.warn('Background market-data refresh failed', error));
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [settings?.goldPriceSource, settings?.primaryCurrency]);
+
+  useEffect(() => {
+    if (!settings || (settings.automaticSnapshotSchemaVersion ?? 0) >= CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION) return;
+    schedulePortableSnapshot('snapshot-schema-upgrade', 4000);
+  }, [settings]);
+
+  useEffect(() => {
+    let nativeBackgroundListener: Awaited<ReturnType<typeof addPortableSnapshotBackgroundListener>> = null;
+    let disposed = false;
+    const onSyncRequested = (event: Event) => {
+      const reason = (event as CustomEvent<{ reason?: string }>).detail?.reason ?? 'data-changed';
+      schedulePortableSnapshot(reason);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushPortableSnapshot('app-backgrounded').catch(error => console.warn('Automatic snapshot background write failed', error));
+      }
+    };
+    const onPageHide = () => {
+      void flushPortableSnapshot('app-pagehide').catch(error => console.warn('Automatic snapshot page-hide write failed', error));
+    };
+
+    window.addEventListener(PORTABLE_SNAPSHOT_REQUEST_EVENT, onSyncRequested);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+    void addPortableSnapshotBackgroundListener(() => {
+      void flushPortableSnapshot('android-app-backgrounded').catch(error => console.warn('Automatic snapshot native background write failed', error));
+    }).then(listener => {
+      if (disposed) void listener?.remove();
+      else nativeBackgroundListener = listener;
+    });
+    return () => {
+      disposed = true;
+      window.removeEventListener(PORTABLE_SNAPSHOT_REQUEST_EVENT, onSyncRequested);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+      void nativeBackgroundListener?.remove();
+    };
+  }, []);
+
+  const theme = getTheme(settings?.colorTheme || 'emerald-rose', resolvedAppearance);
 
   const openAccount = (id: string) => setEditingAccountId(id);
   const closeAccount = () => { setEditingAccountId(null); refresh(); };
 
+  const pageFallback = <div className="loading" role="status" aria-label={t('loading')}><div className="spinner" /></div>;
+
+  if (startupError) {
+    return (
+      <div className="startup-error" role="alert">
+        <div className="empty-icon">⚠️</div>
+        <div className="empty-text">{t('startup_failed')}</div>
+        <div className="empty-hint">{t('startup_failed_hint')}</div>
+        <button className="btn btn-primary" onClick={() => void loadSettings()}>{t('retry')}</button>
+      </div>
+    );
+  }
+
   if (editingAccountId) {
     return (
       <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
-        <AccountDetail accountId={editingAccountId} onBack={closeAccount} />
+        <Suspense fallback={pageFallback}><AccountDetail accountId={editingAccountId} onBack={closeAccount} /></Suspense>
       </AppContext.Provider>
     );
   }
@@ -78,14 +154,16 @@ function App() {
   return (
     <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
       <div className="app">
-        <div className="app-content">
+        <main className="app-content">
           {tab === 'record' && <RecordPage key={refreshKey} onOpenAccount={openAccount} onRefresh={refresh} />}
-          {tab === 'plan' && <PlanPage key={refreshKey} />}
-          {tab === 'chart' && <ChartPage key={refreshKey} />}
-          {tab === 'products' && <ProductsPage />}
-          {tab === 'settings' && <SettingsPage onRefresh={() => { loadSettings(); refresh(); }} />}
-        </div>
-        <nav className="tab-bar">
+          <Suspense fallback={pageFallback}>
+            {tab === 'plan' && <PlanPage key={refreshKey} />}
+            {tab === 'chart' && <ChartPage key={refreshKey} />}
+            {tab === 'products' && <ProductsPage />}
+            {tab === 'settings' && <SettingsPage onRefresh={() => { void loadSettings(); refresh(); }} onOpenOnboarding={() => setOnboardingOpen(true)} />}
+          </Suspense>
+        </main>
+        <nav className="tab-bar" aria-label={t('main_navigation')}>
           {([
             {
               key: 'record' as Tab,
@@ -150,13 +228,23 @@ function App() {
           ] as { key: Tab; label: string; icon: (active: boolean) => React.ReactNode }[]).map(({ key, label, icon }) => {
             const active = tab === key;
             return (
-              <button key={key} className={`tab-item${active ? ' active' : ''}`} onClick={() => setTab(key)}>
+              <button key={key} type="button" className={`tab-item${active ? ' active' : ''}`} onClick={() => setTab(key)} aria-current={active ? 'page' : undefined} aria-label={label}>
                 <div className="tab-icon-wrap">{icon(active)}</div>
                 <span className="tab-label">{label}</span>
               </button>
             );
           })}
         </nav>
+        {onboardingOpen && settings && (
+          <Onboarding
+            settings={settings}
+            onComplete={(updated, destination) => {
+              applySettings(updated);
+              setOnboardingOpen(false);
+              if (destination === 'settings') setTab('settings');
+            }}
+          />
+        )}
       </div>
     </AppContext.Provider>
   );

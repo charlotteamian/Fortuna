@@ -1,18 +1,15 @@
 # Fortuna Google Play 上架清单
 
-更新日期：2026-05-18
+更新日期：2026-07-28
 
 ## 当前本地状态
 
 - 包名：`com.fortuna.wealthtracker`
 - App 名称：`Fortuna`
-- 版本：`versionCode 1` / `versionName 1.0`
-- `targetSdkVersion`：36，满足 Google Play 当前至少 API 35 的提交门槛。
-- 已生成未正式签名的 AAB：`android/app/build/outputs/bundle/release/app-release.aab`
-- Web build 通过：`npm run build`
-- Capacitor 同步通过：`npx cap sync android`
-- Android release bundle 构建通过：`JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew bundleRelease`
-- `npm run lint` 仍有源码规则问题，需要上架前清理或调整规则。
+- 版本：`versionCode 3` / `versionName 1.2.0`
+- `targetSdkVersion`：36；这也满足 2026-08-31 起新 app 和更新需面向 Android 16 / API 36 的要求（提交当天仍应复核官方政策）。
+- Web 单元/回归测试、TypeScript、ESLint、Vite build、Capacitor 同步和 Android 构建状态应以每次待发布提交的实际 CI/本地结果为准，不复用旧产物结论。
+- 正式 AAB 必须在最终代码上重新生成，并使用开发者自己的 upload key 签名；不要把旧的 debug APK 当作商店发布包。
 
 ## 还不能直接上传的原因
 
@@ -24,7 +21,7 @@ export FORTUNA_UPLOAD_STORE_PASSWORD='...'
 export FORTUNA_UPLOAD_KEY_ALIAS=fortuna-upload
 export FORTUNA_UPLOAD_KEY_PASSWORD='...'
 
-cd /Users/restartday/Documents/Fortuna/android
+cd /path/to/Fortuna/android
 JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew bundleRelease
 ```
 
@@ -33,7 +30,7 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradle
 ```bash
 '/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool' -genkeypair \
   -v \
-  -keystore /Users/restartday/Documents/Fortuna/fortuna-upload-key.jks \
+  -keystore /secure/path/fortuna-upload-key.jks \
   -alias fortuna-upload \
   -keyalg RSA \
   -keysize 2048 \
@@ -61,12 +58,12 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradle
    - 如果是 2023-11-13 之后创建的个人开发者账号，生产发布前需要 Closed testing：至少 12 个 tester 连续 opt-in 14 天。
 
 4. App content
-   - Data safety：需要填写。Fortuna 本地存储资产、负债、持仓、账户名称等金融信息，并会联网请求 frankfurter.dev 汇率接口。
+   - Data safety：需要填写。账本主要保存在本地；汇率、贵金属和行情功能仍会把查询所需的公开市场标识及常规连接元数据发送给独立服务。按 `release/play-store/data-safety-and-policy-answers.md` 与最终 AAB 复核。
    - Privacy policy：需要提供公开 URL，尤其因为涉及 financial info、calendar permission、share/export。
    - Financial features declaration：需要填写。定位为个人资产记录/投资组合追踪，不提供贷款、授信、证券交易执行、个性化金融建议。
    - Permissions declaration：当前 manifest 包含 `READ_CALENDAR` / `WRITE_CALENDAR`，用于用户主动创建还款提醒。若日历提醒不是首发核心功能，建议发布前移除日历权限，降低审核摩擦。
-   - Content rating：按问卷填写，通常应为 Everyone。
-   - Target audience：面向成人/普通用户，不面向儿童。
+   - Content rating：按当前问卷和实际功能如实填写，不预设评级结果。
+   - Target audience：定位为 `18 and over`，不面向儿童。
 
 5. Store listing
    - Short description：最多 80 字符。
@@ -80,11 +77,11 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradle
    - Internal testing 通过安装验证后，再推 Closed testing 或 Production。
    - 生产发布前检查 Play Console 的 Policy status / App content 是否全绿。
 
-## 上架前建议处理
+## 上架前必须复核
 
-- 修复 lint：当前主要问题是 React Hooks 规则、`any` 类型、`ProductsPage` 的 unused expression。
+- 在最终提交上重新运行全部测试、ESLint、Web build、Capacitor sync 和 Android release build，并保留结果。
 - 确认是否保留日历权限：保留就要在商店说明和权限声明里讲清楚用途；不保留则首版更容易过审。
-- 准备隐私政策页面：要覆盖本地 IndexedDB、导出文件、汇率 API、日历权限、无广告/无第三方分析 SDK。
+- 托管并核对隐私政策页面：必须覆盖本地 IndexedDB、行情服务、系统备份、导入导出、自动快照、日历权限及无广告/无第三方分析 SDK。
 - 准备测试账号/测试数据说明：Fortuna 不需要登录，但可以在审核备注说明“无需账号，首次打开即可使用”。
 
 ## 官方参考

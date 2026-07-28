@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { LineChart, Line, BarChart, Bar, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { getChartData, getAccountsWithLatest } from '../services/assetService';
+import { getMonthlyRealizedPnl, type MonthlyPnl } from '../services/pnlService';
 import { initializeSettings, getTheme } from '../db';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../app-context';
+import { formatLocalDate, parseLocalDate } from '../lib/localDate';
+import { RATES_REFRESHED_EVENT } from '../services/rateService';
 
 type TimeRange = '3m' | '6m' | '1y' | 'all' | 'quarter' | 'year';
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
@@ -22,8 +25,8 @@ function generateFixedTicks(dates: string[], range: TimeRange): string[] {
   if (range === 'year') return dates; // already aggregated
   if (range === 'quarter') return dates; // already aggregated
 
-  const minDate = new Date(dates[0]);
-  const maxDate = new Date(dates[dates.length - 1]);
+  const minDate = parseLocalDate(dates[0]);
+  const maxDate = parseLocalDate(dates[dates.length - 1]);
   const ticks: string[] = [];
 
   // Determine interval
@@ -41,11 +44,11 @@ function generateFixedTicks(dates: string[], range: TimeRange): string[] {
   // Start from 1st of min's month
   const cursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
   while (cursor <= maxDate) {
-    ticks.push(cursor.toISOString().split('T')[0]);
+    ticks.push(formatLocalDate(cursor));
     cursor.setMonth(cursor.getMonth() + intervalMonths);
   }
   // Always include last
-  const lastTick = maxDate.toISOString().split('T')[0];
+  const lastTick = formatLocalDate(maxDate);
   if (!ticks.includes(lastTick)) ticks.push(lastTick);
   return ticks;
 }
@@ -68,7 +71,7 @@ function interpolateToTicks(ticks: string[], valuesMap: Record<string, number>, 
 function aggregateByPeriod(dates: string[], values: Record<string, number>, period: 'quarter' | 'year'): { labels: string[]; data: Record<string, number> } {
   const buckets: Record<string, { label: string; date: string; val: number }> = {};
   for (const d of dates) {
-    const dt = new Date(d);
+    const dt = parseLocalDate(d);
     let key: string;
     if (period === 'year') key = String(dt.getFullYear());
     else { const q = Math.ceil((dt.getMonth() + 1) / 3); key = `${dt.getFullYear()}-Q${q}`; }
@@ -84,36 +87,55 @@ export default function ChartPage() {
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [primaryCurrency, setPrimaryCurrency] = useState('CNY');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [pieData, setPieData] = useState<AssetPieDatum[]>([]);
   const [themeColors, setThemeColors] = useState(getTheme('emerald-rose'));
   const [institutionPieData, setInstitutionPieData] = useState<PieDatum[]>([]);
+  const [monthlyPnl, setMonthlyPnl] = useState<MonthlyPnl[]>([]);
+  const [unavailableValuations, setUnavailableValuations] = useState(0);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const [data, settings, acctData] = await Promise.all([getChartData(), initializeSettings(), getAccountsWithLatest()]);
+  const load = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
+    setLoadError(false);
+    try {
+      const [data, settings, acctData, pnl] = await Promise.all([getChartData(), initializeSettings(), getAccountsWithLatest(), getMonthlyRealizedPnl()]);
       setChartData(data);
+      setMonthlyPnl(pnl);
+      setUnavailableValuations(acctData.accounts.filter(account => account.conversionUnavailable).length);
       setPrimaryCurrency(settings.primaryCurrency);
-      setThemeColors(getTheme(settings.colorTheme));
+      const isDark = settings.themeMode === 'dark'
+        || (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      setThemeColors(getTheme(settings.colorTheme, isDark ? 'dark' : 'light'));
       const assetAccts = acctData.accounts.filter(a => a.type === 'asset' && a.convertedAmount > 0);
       setPieData(assetAccts.map(a => ({ name: a.name, category: a.category, currency: a.currency, value: Math.round(a.convertedAmount) })));
       const byInstitution: Record<string, number> = {};
       for (const a of acctData.accounts.filter(x => x.type === 'asset' && x.convertedAmount > 0)) {
-        const inst = a.institution?.trim() || '（未设置）';
+        const inst = a.institution?.trim() || t('no_institution');
         byInstitution[inst] = (byInstitution[inst] || 0) + Math.round(a.convertedAmount);
       }
       setInstitutionPieData(Object.entries(byInstitution).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value));
-      setLoading(false);
-    })();
-  }, []);
+    } catch (error) {
+      console.error('Chart data load failed', error);
+      setLoadError(true);
+    } finally {
+      if (initial) setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    const refresh = () => { void load(false); };
+    window.addEventListener(RATES_REFRESHED_EVENT, refresh);
+    return () => window.removeEventListener(RATES_REFRESHED_EVENT, refresh);
+  }, [load]);
 
   const filterDates = (dates: string[]) => {
     if (timeRange === 'all' || timeRange === 'quarter' || timeRange === 'year') return dates;
     const now = new Date();
     const months = timeRange === '3m' ? 3 : timeRange === '6m' ? 6 : 12;
     const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
-    return dates.filter(d => new Date(d) >= cutoff);
+    return dates.filter(d => parseLocalDate(d) >= cutoff);
   };
 
   const masked = (text: string) => amountVisible ? text : '****';
@@ -133,7 +155,7 @@ export default function ChartPage() {
   const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
     if (!active || !payload?.length) return null;
     return (
-      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, maxWidth: 280 }}>
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: '0.75rem', maxWidth: 280 }}>
         <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
         {payload.map((p, i) => (
           <div key={i} style={{ color: p.color, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
@@ -141,6 +163,19 @@ export default function ChartPage() {
             <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, flexShrink: 0 }}>{masked(fmt(p.value))}</span>
           </div>
         ))}
+      </div>
+    );
+  };
+
+  const PnlTooltip = ({ active, payload, label }: TooltipProps) => {
+    if (!active || !payload?.length) return null;
+    const v = payload[0].value;
+    return (
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: '0.75rem' }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: v >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>
+          {masked((v >= 0 ? '+' : '') + fmt(v))} {primaryCurrency}
+        </div>
       </div>
     );
   };
@@ -213,12 +248,31 @@ export default function ChartPage() {
     }, {})).sort((a, b) => b.value - a.value);
 
     return { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal };
-  }, [chartData, timeRange, pieData]);
+  }, [chartData, timeRange, pieData, t]);
+
+  // Monthly realized P&L, windowed to the selected range (aggregated ranges show everything).
+  const monthlyPnlView = useMemo(() => {
+    if (timeRange === '3m' || timeRange === '6m' || timeRange === '1y') {
+      const n = timeRange === '3m' ? 3 : timeRange === '6m' ? 6 : 12;
+      return monthlyPnl.slice(-n);
+    }
+    return monthlyPnl;
+  }, [monthlyPnl, timeRange]);
+  const monthlyPnlTotal = monthlyPnlView.reduce((s, r) => s + r.realized, 0);
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
+  if (loadError && !chartData) return (
+    <div className="empty-state" role="alert">
+      <div className="empty-icon">⚠️</div>
+      <div className="empty-text">{t('load_failed')}</div>
+      <div className="empty-hint">{t('load_failed_hint')}</div>
+      <button type="button" className="btn btn-primary" onClick={() => void load()}>{t('retry')}</button>
+    </div>
+  );
   if (!chartContent) return (
     <>
       <div className="page-header"><div><h1 className="page-title">{t('chart_analysis')}</h1><p className="page-subtitle">{t('visualize_assets')}</p></div></div>
+      {unavailableValuations > 0 && <div className="valuation-warning" role="status">⚠️ {t('some_values_excluded', { count: unavailableValuations })}</div>}
       <div className="empty-state"><div className="empty-icon">📈</div><div className="empty-text">{t('no_data')}</div><div className="empty-hint">{t('no_data_hint')}</div></div>
     </>
   );
@@ -227,15 +281,15 @@ export default function ChartPage() {
 
   const renderMiniChart = (data: ChartRow[], dataKey: string, color: string, title: string) => (
     <div className="chart-card" style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>{title}</div>
+      <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>{title}</div>
       {data.length < 2 ? (
-        <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: 12 }}>{t('not_enough_data')}</div>
+        <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: '0.75rem' }}>{t('not_enough_data')}</div>
       ) : (
         <ResponsiveContainer width="100%" height={150}>
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="date" tick={{ fill: '#5a6478', fontSize: 10 }} />
-            <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: '#5a6478', fontSize: 10 }} width={45} />
+            <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} />
+            <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} width={45} />
             <Tooltip content={<CustomTooltip />} />
             <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 2, fill: color }} />
           </LineChart>
@@ -247,6 +301,7 @@ export default function ChartPage() {
   return (
     <>
       <div className="page-header"><div><h1 className="page-title">{t('chart_analysis')}</h1><p className="page-subtitle">{t('visualize_assets')}</p></div></div>
+      {unavailableValuations > 0 && <div className="valuation-warning" role="status">⚠️ {t('some_values_excluded', { count: unavailableValuations })}</div>}
 
 
       {/* Time range */}
@@ -265,35 +320,71 @@ export default function ChartPage() {
 
         {/* Per-category breakdown */}
         <div className="chart-card" style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>
             📊 {t('by_category')}
           </div>
           {breakdownData.length < 2 ? (
-            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: 12 }}>{t('not_enough_data')}</div>
+            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: '0.75rem' }}>{t('not_enough_data')}</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={breakdownData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="date" tick={{ fill: '#5a6478', fontSize: 10 }} />
-                <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: '#5a6478', fontSize: 10 }} width={45} />
+                <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} />
+                <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} width={45} />
                 <Tooltip content={<CustomTooltip />} />
                 {breakdownKeys.map((key, i) => (
                   <Line key={key} type="monotone" dataKey={t(key)}
                     stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ r: 2, fill: COLORS[i % COLORS.length] }} />
                 ))}
-                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: '0.6875rem' }} />
               </LineChart>
             </ResponsiveContainer>
           )}
         </div>
       </div>
 
+      {/* Monthly realized P&L (includes sold-out / archived holdings) */}
+      {monthlyPnl.length > 0 && (
+        <div className="chart-section">
+          <div className="chart-title">{t('monthly_pnl')}</div>
+          <div className="chart-subtitle">{t('unit')} {primaryCurrency} · {t('monthly_pnl_hint')}</div>
+          <div className="chart-card">
+            {monthlyPnlView.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: '0.75rem' }}>{t('no_data')}</div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={monthlyPnlView}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="month" tickFormatter={(m: string) => m.slice(2)} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} />
+                    <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} width={45} />
+                    <Tooltip content={<PnlTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                    <Bar dataKey="realized" radius={[3, 3, 0, 0]}>
+                      {monthlyPnlView.map((d, i) => (
+                        <Cell key={i} fill={d.realized >= 0 ? themeColors.assetColor : themeColors.liabilityColor} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: '0.8125rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{t('realized_pnl_total')}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: monthlyPnlTotal >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>
+                    {masked((monthlyPnlTotal >= 0 ? '+' : '') + fmt(monthlyPnlTotal))}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Pie chart */}
       <div className="chart-section">
         <div className="chart-title">{t('asset_allocation')}</div>
         <div className="chart-card">
           {productPieFinal.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40, fontSize: 13 }}>{t('no_data')}</div>
+            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40, fontSize: '0.8125rem' }}>{t('no_data')}</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={240}>
@@ -309,10 +400,10 @@ export default function ChartPage() {
                 {productPieFinal.map((d, i) => {
                   const total = productPieFinal.reduce((s, x) => s + x.value, 0);
                   return (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 13 }}>
+                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: '0.8125rem' }}>
                       <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
                       <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{d.name}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 11, marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(d.value))}</span>
                     </div>
                   );
@@ -341,10 +432,10 @@ export default function ChartPage() {
               {institutionPieData.map((d, i) => {
                 const total = institutionPieData.reduce((s, x) => s + x.value, 0);
                 return (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 13 }}>
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: '0.8125rem' }}>
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[(i + 6) % COLORS.length], flexShrink: 0 }} />
                     <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{d.name}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 11, marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(d.value))}</span>
                   </div>
                 );
@@ -356,10 +447,10 @@ export default function ChartPage() {
 
       {/* Currency Allocation Pie chart */}
       <div className="chart-section">
-        <div className="chart-title">币种比例</div>
+        <div className="chart-title">{t('currency_allocation')}</div>
         <div className="chart-card">
           {currencyPieFinal.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40, fontSize: 13 }}>{t('no_data')}</div>
+            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40, fontSize: '0.8125rem' }}>{t('no_data')}</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={240}>
@@ -375,10 +466,10 @@ export default function ChartPage() {
                 {currencyPieFinal.map((d, i) => {
                   const total = currencyPieFinal.reduce((s, x) => s + x.value, 0);
                   return (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 13 }}>
+                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: '0.8125rem' }}>
                       <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[(i + 3) % COLORS.length], flexShrink: 0 }} />
                       <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{d.name}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 11, marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(d.value))}</span>
                     </div>
                   );

@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAccount, getRecords, addRecord, updateRecord, deleteRecord, updateAccount,
+  addBalanceAdjustment, addBalanceTransaction, updateBalanceTransaction,
   addMetalTransaction, updateMetalTransaction, computeMetalPosition, restoreAccount } from '../services/assetService';
 import { initializeSettings, type Account, type AccountRecord, type Settings, METAL_TYPES } from '../db';
 import { getMetalPricePerGram } from '../services/rateService';
@@ -8,25 +9,37 @@ import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
 import PortfolioPanel from '../components/PortfolioPanel';
 import { getDefaultHoldingModeForCategory } from '../lib/productPortfolio';
+import {
+  deriveBalanceTimeline,
+  getBalanceFlowActionKey,
+  getBalanceFlowConfig,
+  usesDerivedBalanceRecords,
+  type BalanceFlowKind,
+} from '../lib/balanceFlow';
+import { formatLocalDate } from '../lib/localDate';
 
 interface Props { accountId: string; onBack: () => void; }
 
 export default function AccountDetail({ accountId, onBack }: Props) {
   const { t, i18n } = useTranslation();
-  const { theme, amountVisible } = useAppContext();
+  const { theme, amountVisible, setAmountVisible } = useAppContext();
   const [account, setAccount] = useState<Account | null>(null);
   const [records, setRecords] = useState<AccountRecord[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showAddRecord, setShowAddRecord] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AccountRecord | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameText, setNameText] = useState('');
   const [stockShares, setStockShares] = useState('');
   const [stockPrice, setStockPrice] = useState('');
-  const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newDate, setNewDate] = useState(formatLocalDate());
   const [newAmount, setNewAmount] = useState('');
   const [newNote, setNewNote] = useState('');
+  const [recordKind, setRecordKind] = useState<BalanceFlowKind>('buy');
+  const [recordEntryMode, setRecordEntryMode] = useState<'flow' | 'adjust'>('flow');
   const [metalPricePerGram, setMetalPricePerGram] = useState<number | null>(null);
   // Precious-metal buy/sell transaction modal
   const [showMetalTxn, setShowMetalTxn] = useState(false);
@@ -52,25 +65,44 @@ export default function AccountDetail({ accountId, onBack }: Props) {
   };
 
   // Silent by default so in-place refreshes (e.g. from PortfolioPanel) don't unmount children
-  const load = async (initial = false) => {
+  const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
-    const [a, r, s] = await Promise.all([getAccount(accountId), getRecords(accountId), initializeSettings()]);
-    setAccount(a || null);
-    setRecords(r);
-    setSettings(s);
-    setNameText(a?.name || '');
-    if (a?.unit === 'gram' && a.metalType) {
-      const ppg = await getMetalPricePerGram(a.metalType, a.currency, s.goldPriceSource ?? 'international');
-      setMetalPricePerGram(ppg);
+    setLoadError(false);
+    try {
+      const [a, r, s] = await Promise.all([getAccount(accountId), getRecords(accountId), initializeSettings()]);
+      setAccount(a || null);
+      setRecords(r);
+      setSettings(s);
+      setNameText(a?.name || '');
+      if (a?.unit === 'gram' && a.metalType) {
+        try {
+          const ppg = await getMetalPricePerGram(a.metalType, a.currency, s.goldPriceSource ?? 'international');
+          setMetalPricePerGram(ppg);
+        } catch (error) {
+          console.warn('Metal price load failed; showing the saved account data', error);
+          setMetalPricePerGram(null);
+        }
+      } else {
+        setMetalPricePerGram(null);
+      }
+    } catch (error) {
+      console.error('Account detail load failed', error);
+      setLoadError(true);
+    } finally {
+      if (initial) setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [accountId]);
 
   const [showEditProductData, setShowEditProductData] = useState(false);
   const [editInstitution, setEditInstitution] = useState('');
   const [editProductData, setEditProductData] = useState<Record<string, string>>({});
 
   const [refreshingMetal, setRefreshingMetal] = useState(false);
+  const balanceFlow = account ? getBalanceFlowConfig(account.category, account.type) : null;
+  const usesDerivedRecordFlow = Boolean(
+    account && !account.portfolio && usesDerivedBalanceRecords(account.category, account.type),
+  );
+
   const handleRefreshMetal = async () => {
     if (!account || !account.metalType) return;
     setRefreshingMetal(true);
@@ -83,22 +115,40 @@ export default function AccountDetail({ accountId, onBack }: Props) {
     setRefreshingMetal(false);
   };
 
-  useEffect(() => { load(true); }, [accountId]);
+  useEffect(() => { void load(true); }, [load]);
 
   const handleAddRecord = async () => {
     let amt: number;
-    if (usesUnitRecordInput) {
+    if (usesDerivedRecordFlow && recordEntryMode === 'adjust') {
+      amt = parseFloat(newAmount);
+      if (isNaN(amt) || amt < 0) return;
+      await addBalanceAdjustment(accountId, newDate, amt, newNote || undefined);
+    } else if (usesDerivedRecordFlow) {
+      amt = parseFloat(newAmount);
+      if (isNaN(amt) || amt <= 0) return;
+      const id = await addBalanceTransaction(accountId, {
+        date: newDate,
+        kind: recordKind,
+        amount: amt,
+        note: newNote || undefined,
+      });
+      if (!id) {
+        alert(t('balance_decrease_exceeds'));
+        return;
+      }
+    } else if (usesUnitRecordInput) {
       const shares = parseFloat(stockShares);
       const price = parseFloat(stockPrice);
       if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) return;
       amt = shares * price;
+      await addRecord(accountId, newDate, amt, newNote || undefined);
     } else {
       amt = parseFloat(newAmount);
       if (isNaN(amt) || amt < 0) return;
+      await addRecord(accountId, newDate, amt, newNote || undefined);
     }
-    await addRecord(accountId, newDate, amt, newNote || undefined);
     setShowAddRecord(false);
-    setNewAmount(''); setNewNote(''); setNewDate(new Date().toISOString().split('T')[0]);
+    setNewAmount(''); setNewNote(''); setNewDate(formatLocalDate());
     setStockShares(''); setStockPrice('');
     load();
   };
@@ -106,8 +156,26 @@ export default function AccountDetail({ accountId, onBack }: Props) {
   const handleUpdateRecord = async () => {
     if (!editingRecord) return;
     const amt = parseFloat(newAmount);
-    if (isNaN(amt) || amt < 0) return;
-    await updateRecord(editingRecord.id, { date: newDate, amount: amt, note: newNote || undefined });
+    if (isNaN(amt) || (editingRecord.deltaAmount != null ? amt <= 0 : amt < 0)) return;
+    if (usesDerivedRecordFlow && recordEntryMode === 'flow' && editingRecord.deltaAmount != null) {
+      const updated = await updateBalanceTransaction(editingRecord.id, {
+        date: newDate,
+        kind: recordKind,
+        amount: amt,
+        note: newNote || undefined,
+      });
+      if (!updated) {
+        alert(t('balance_decrease_exceeds'));
+        return;
+      }
+    } else {
+      await updateRecord(editingRecord.id, {
+        date: newDate,
+        amount: amt,
+        note: newNote || undefined,
+        ...(usesDerivedRecordFlow && recordEntryMode === 'adjust' ? { balanceAdjustment: true } : {}),
+      });
+    }
     setEditingRecord(null); setNewAmount(''); setNewNote(''); load();
   };
 
@@ -117,7 +185,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
   const openMetalTxn = (kind: 'buy' | 'sell') => {
     setMetalKind(kind); setEditingMetalRec(null);
     setTxnGrams(''); setTxnPrice(''); setNewNote('');
-    setNewDate(new Date().toISOString().split('T')[0]);
+    setNewDate(formatLocalDate());
     setShowMetalTxn(true);
   };
   const openEditMetalRec = (r: AccountRecord) => {
@@ -159,7 +227,33 @@ export default function AccountDetail({ accountId, onBack }: Props) {
     setShowEditProductData(true);
   };
   const setField = (key: string, val: string) => setEditProductData(prev => ({ ...prev, [key]: val }));
-  const openEditRecord = (r: AccountRecord) => { setEditingRecord(r); setNewDate(r.date); setNewAmount(String(r.amount)); setNewNote(r.note || ''); };
+  const openAddRecord = () => {
+    setEditingRecord(null);
+    setRecordEntryMode('flow');
+    setNewAmount('');
+    setNewNote('');
+    setNewDate(formatLocalDate());
+    setStockShares('');
+    setStockPrice('');
+    setRecordKind(usesDerivedRecordFlow && (records[0]?.amount ?? 0) > 0 ? 'sell' : 'buy');
+    setShowAddRecord(true);
+  };
+  const openBalanceAdjustment = () => {
+    setEditingRecord(null);
+    setRecordEntryMode('adjust');
+    setNewAmount(String(records[0]?.amount ?? 0));
+    setNewNote('');
+    setNewDate(formatLocalDate());
+    setShowAddRecord(true);
+  };
+  const openEditRecord = (r: AccountRecord) => {
+    setEditingRecord(r);
+    setRecordEntryMode(r.deltaAmount != null ? 'flow' : 'adjust');
+    setNewDate(r.date);
+    setNewAmount(String(r.deltaAmount ?? r.amount));
+    setNewNote(r.note || '');
+    setRecordKind(r.kind ?? 'buy');
+  };
   const masked = (text: string) => amountVisible ? text : '****';
 
   const fmt = (n: number) => {
@@ -175,6 +269,14 @@ export default function AccountDetail({ accountId, onBack }: Props) {
   };
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
+  if (loadError && (!account || !settings)) return (
+    <div className="empty-state" role="alert">
+      <div className="empty-icon">⚠️</div>
+      <div className="empty-text">{t('load_failed')}</div>
+      <div className="empty-hint">{t('load_failed_hint')}</div>
+      <button type="button" className="btn btn-primary" onClick={() => void load(true)}>{t('retry')}</button>
+    </div>
+  );
   if (!account || !settings) return null;
 
   const isMetal = account.unit === 'gram';
@@ -187,6 +289,34 @@ export default function AccountDetail({ accountId, onBack }: Props) {
   const position = isMetal ? computeMetalPosition(records) : null;
   const marketValue = position && metalPricePerGram ? position.remainingGrams * metalPricePerGram : 0;
   const unrealizedPnl = position ? marketValue - position.costBasis : 0;
+  const isFlowRecordInput = usesDerivedRecordFlow
+    && recordEntryMode === 'flow'
+    && (!editingRecord || editingRecord.deltaAmount != null);
+  const isBalanceAdjustmentInput = usesDerivedRecordFlow
+    && recordEntryMode === 'adjust'
+    && (!editingRecord || editingRecord.deltaAmount == null);
+  const parsedFlowAmount = parseFloat(newAmount);
+  let balancePreview: { amount: number; underflow: boolean } | null = null;
+  if (isFlowRecordInput && !isNaN(parsedFlowAmount) && parsedFlowAmount > 0) {
+    const previewRecord: AccountRecord = {
+      id: editingRecord?.id ?? '__preview__',
+      accountId,
+      date: newDate,
+      amount: 0,
+      kind: recordKind,
+      deltaAmount: parsedFlowAmount,
+      note: newNote || undefined,
+      createdAt: editingRecord?.createdAt ?? Number.MAX_SAFE_INTEGER,
+    };
+    const previewRecords = editingRecord
+      ? records.map(record => record.id === editingRecord.id ? previewRecord : record)
+      : [...records, previewRecord];
+    const previewTimeline = deriveBalanceTimeline(previewRecords);
+    balancePreview = {
+      amount: previewTimeline.at(-1)?.amount ?? 0,
+      underflow: previewTimeline.some(entry => entry.underflow),
+    };
+  }
 
   return (
     <div className="app">
@@ -205,7 +335,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
               </div>
             ) : (
               <h1 className="account-header-name" onClick={() => setEditingName(true)}>
-                {account.name} <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>✏️</span>
+                {account.name} <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>✏️</span>
               </h1>
             )}
             <div className="account-header-meta">
@@ -232,6 +362,15 @@ export default function AccountDetail({ accountId, onBack }: Props) {
               <span>{account.currency} {t(account.currency + '_name') || ''}</span>
             </div>
           </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary account-amount-toggle"
+            onClick={() => setAmountVisible(!amountVisible)}
+            title={amountVisible ? t('hide_amount') : t('show_amount')}
+            aria-label={amountVisible ? t('hide_amount') : t('show_amount')}
+          >
+            {amountVisible ? '👁️' : '🔒'}
+          </button>
         </div>
 
         {isArchived && (
@@ -277,17 +416,19 @@ export default function AccountDetail({ accountId, onBack }: Props) {
               <div style={{ whiteSpace: 'nowrap' }}>{masked(position.remainingGrams.toFixed(2))}</div>
               <div className="latest-value-currency" style={{ fontSize: '0.875rem', marginTop: 4 }}>{t('unit_gram')}</div>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
               {metalName}{t('unit_price')}：{metalPricePerGram != null && metalPricePerGram > 0 ? masked(metalPricePerGram.toFixed(2)) : '—'} {account.currency}/{t('unit_gram')}
               <button
+                type="button"
+                className="btn btn-icon btn-secondary"
                 onClick={(e) => { e.stopPropagation(); handleRefreshMetal(); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 14, animation: refreshingMetal ? 'spin 1s linear infinite' : 'none', opacity: refreshingMetal ? 0.5 : 1 }}
-                title={t('refresh')}>
+                style={{ animation: refreshingMetal ? 'spin 1s linear infinite' : 'none', opacity: refreshingMetal ? 0.5 : 1 }}
+                title={t('refresh')} aria-label={t('refresh')} disabled={refreshingMetal}>
                 🔄
               </button>
             </div>
             {position.remainingGrams > 0 && metalPricePerGram != null && metalPricePerGram > 0 && (
-              <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 600, color, marginTop: 4 }}>
+              <div style={{ fontSize: '1.125rem', fontFamily: 'var(--font-mono)', fontWeight: 600, color, marginTop: 4 }}>
                 ≈ {masked(fmt(marketValue))} {account.currency}
               </div>
             )}
@@ -328,14 +469,14 @@ export default function AccountDetail({ accountId, onBack }: Props) {
         {/* Latest value (non-metal) */}
         {!isMetal && !isPortfolio && records.length > 0 && (
           <div className="latest-value-card">
-            <div className="stat-label">{t('latest_balance')}</div>
+            <div className="stat-label">{t(usesDerivedRecordFlow && balanceFlow ? balanceFlow.balanceLabelKey : 'latest_balance')}</div>
             <div className="latest-value" style={{ color, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ whiteSpace: 'nowrap' }}>
                 {masked(records[0].amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
               </div>
               <div className="latest-value-currency" style={{ fontSize: '0.875rem', marginTop: 4 }}>{account.currency}</div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{t('record_date')}：{records[0].date}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('record_date')}：{records[0].date}</div>
           </div>
         )}
 
@@ -386,22 +527,45 @@ export default function AccountDetail({ accountId, onBack }: Props) {
 
         {!isArchived && (isMetal ? (
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-            <button className="btn btn-block" style={{ background: theme.assetColor, color: '#000', fontWeight: 700 }}
+            <button className="btn btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }}
               onClick={() => openMetalTxn('buy')}>＋ {t('buy_in')}</button>
             <button className="btn btn-block" style={{ background: theme.liabilityColor, color: '#fff', fontWeight: 700 }}
               onClick={() => openMetalTxn('sell')}>－ {t('sell_out')}</button>
           </div>
-        ) : isPortfolio ? null : (
-          <button className="btn btn-primary btn-block" style={{ marginBottom: 20 }}
-            onClick={() => { setEditingRecord(null); setNewAmount(''); setNewNote(''); setNewDate(new Date().toISOString().split('T')[0]); setStockShares(''); setStockPrice(''); setShowAddRecord(true); }}>
+        ) : isPortfolio ? null : usesDerivedRecordFlow ? (
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+            <button className="btn btn-primary btn-block" onClick={openAddRecord}>
+              + {t('record_balance_change')}
+            </button>
+            <button className="btn btn-secondary btn-block" onClick={openBalanceAdjustment}>
+              {t('balance_adjustment')}
+            </button>
+          </div>
+        ) : (
+          <button className="btn btn-primary btn-block" style={{ marginBottom: 20 }} onClick={openAddRecord}>
             + {t('add_record')}
           </button>
         ))}
 
-        <div className="entry-group-title"><span className="dot" style={{ background: color }} />{isPortfolio ? t('snapshot_history') : t('history_records')} ({records.length})</div>
+        <div className="entry-group-title collapsible-section-title">
+          <span className="dot" style={{ background: color }} />
+          <span className="collapsible-section-label">{isPortfolio ? t('snapshot_history') : t(usesDerivedRecordFlow ? 'balance_change_history' : 'history_records')} ({records.length})</span>
+          {isPortfolio && (
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              onClick={() => setShowSnapshots(value => !value)}
+              aria-expanded={showSnapshots}
+              aria-label={showSnapshots ? t('hide_snapshots') : t('show_snapshots')}
+            >
+              {showSnapshots ? `▲ ${t('hide_archived_assets')}` : `▼ ${t('show_archived_assets')}`}
+            </button>
+          )}
+        </div>
+        {(!isPortfolio || showSnapshots) && <>
         {isPortfolio && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t('snapshot_hint')}</div>}
         {records.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 20, textAlign: 'center' }}>{t('no_records')}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', padding: 20, textAlign: 'center' }}>{t('no_records')}</div>
         ) : isMetal ? (
           records.map(r => {
             const isSell = r.kind === 'sell';
@@ -412,14 +576,14 @@ export default function AccountDetail({ accountId, onBack }: Props) {
             return (
               <div key={r.id} style={S.metalRow}>
                 {/* top line: badge + date · grams · actions */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, background: isSell ? theme.liabilityDim : theme.assetDim, color: txnColor, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
+                <div className="metal-record-head">
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isSell ? theme.liabilityDim : theme.assetDim, color: txnColor, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
                     {isSell ? t('sell_out') : t('buy_in')}
                   </span>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{r.date}</span>
                   <span style={{ flex: 1 }} />
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem', color: txnColor, whiteSpace: 'nowrap' }}>
-                    {isSell ? '−' : '+'}{masked(grams.toFixed(2))}<span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 2 }}>{t('unit_gram')}</span>
+                    {isSell ? '−' : '+'}{masked(grams.toFixed(2))}<span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: 2 }}>{t('unit_gram')}</span>
                   </span>
                   {!isArchived && (
                     <div className="entry-actions" style={{ flexShrink: 0 }}>
@@ -430,12 +594,48 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                 </div>
                 {/* second line: unit price (left) · subtotal (right) */}
                 {hasPrice && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  <div className="metal-record-detail" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     <span style={{ whiteSpace: 'nowrap' }}>@ {masked(r.pricePerGram!.toFixed(2))} {account.currency}/{t('unit_gram')}</span>
                     <span style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)' }}>{masked(total.toLocaleString('en-US', { maximumFractionDigits: 0 }))} {account.currency}</span>
                   </div>
                 )}
                 {r.note && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>{r.note}</div>}
+              </div>
+            );
+          })
+        ) : usesDerivedRecordFlow && balanceFlow ? (
+          records.map(r => {
+            const isDelta = r.deltaAmount != null && r.kind;
+            const isDecrease = r.kind === 'sell';
+            const txnColor = isDecrease ? theme.liabilityColor : theme.assetColor;
+            return (
+              <div key={r.id} className="balance-record-card">
+                <div className="balance-record-meta">
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isDelta ? (isDecrease ? theme.liabilityDim : theme.assetDim) : 'var(--bg-glass)', color: isDelta ? txnColor : 'var(--text-muted)', borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
+                    {isDelta
+                      ? t(getBalanceFlowActionKey(balanceFlow, r.kind!))
+                      : t(r.balanceAdjustment ? 'balance_adjustment' : 'legacy_balance_record')}
+                  </span>
+                  <span className="balance-record-date">{r.date}</span>
+                  {!isArchived && (
+                    <div className="entry-actions balance-record-actions">
+                      <button className="btn btn-sm btn-secondary" onClick={() => openEditRecord(r)}>✏️</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
+                    </div>
+                  )}
+                </div>
+                <div className="balance-record-amount" style={{ color: isDelta ? txnColor : 'var(--text-primary)' }}>
+                  <span>{isDelta ? (isDecrease ? '−' : '+') : '='}</span>
+                  <span>{masked((isDelta ? r.deltaAmount! : r.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</span>
+                  <span className="balance-record-currency">{account.currency}</span>
+                </div>
+                {r.note && <div className="balance-record-note">{r.note}</div>}
+                {isDelta && (
+                  <div className="balance-record-result">
+                    <span>{t(balanceFlow.balanceLabelKey)}</span>
+                    <span>{masked(r.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))} {account.currency}</span>
+                  </div>
+                )}
               </div>
             );
           })
@@ -458,6 +658,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
             </div>
           ))
         )}
+        </>}
       </div>
 
       {showEditProductData && account && (
@@ -505,14 +706,48 @@ export default function AccountDetail({ accountId, onBack }: Props) {
         <div className="modal-overlay" onClick={() => { setShowAddRecord(false); setEditingRecord(null); }}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{editingRecord ? t('edit_record') : t('add_record')}</h2>
+              <h2 className="modal-title">
+                {t(isBalanceAdjustmentInput ? 'balance_adjustment' : editingRecord ? 'edit_record' : isFlowRecordInput ? 'record_balance_change' : 'add_record')}
+              </h2>
               <button className="modal-close" onClick={() => { setShowAddRecord(false); setEditingRecord(null); }}>✕</button>
             </div>
+            {isFlowRecordInput && balanceFlow && (
+              <div className="form-group">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-block" style={{ background: recordKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: recordKind === 'buy' ? '#000' : 'var(--text-secondary)', border: recordKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
+                    onClick={() => setRecordKind('buy')}>＋ {t(balanceFlow.increaseActionKey)}</button>
+                  <button className="btn btn-block" style={{ background: recordKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: recordKind === 'sell' ? '#fff' : 'var(--text-secondary)', border: recordKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
+                    onClick={() => setRecordKind('sell')}>－ {t(balanceFlow.decreaseActionKey)}</button>
+                </div>
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">{t('date')}</label>
               <input className="form-input" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
             </div>
-            {usesUnitRecordInput && !editingRecord ? (
+            {isFlowRecordInput && balanceFlow ? (
+              <div className="form-group">
+                <label className="form-label">{t('transaction_amount')} ({account.currency})</label>
+                <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
+                  placeholder="0.00" value={newAmount} onChange={e => setNewAmount(e.target.value)} autoFocus />
+                {balancePreview && (
+                  <div style={{ fontSize: '0.75rem', color: balancePreview.underflow ? 'var(--liability-color)' : 'var(--text-muted)', marginTop: 6 }}>
+                    {balancePreview.underflow
+                      ? t('balance_decrease_exceeds')
+                      : `${t('balance_after_change')}：${balancePreview.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`}
+                  </div>
+                )}
+              </div>
+            ) : isBalanceAdjustmentInput && balanceFlow ? (
+              <div className="form-group">
+                <label className="form-label">{t('adjusted_balance')} ({account.currency})</label>
+                <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
+                  placeholder="0.00" value={newAmount} onChange={e => setNewAmount(e.target.value)} autoFocus />
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                  {t('balance_adjustment_hint')}
+                </div>
+              </div>
+            ) : usesUnitRecordInput && !editingRecord ? (
               <>
                 <div className="form-group">
                   <label className="form-label">{t('shares')}</label>
@@ -526,14 +761,14 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                 </div>
                 {stockShares && stockPrice && !isNaN(parseFloat(stockShares)) && !isNaN(parseFloat(stockPrice)) && (
                   <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: 4 }}>
                       <span style={{ color: 'var(--text-muted)' }}>{t('market_value')}</span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
                         {(parseFloat(stockShares) * parseFloat(stockPrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {account.currency}
                       </span>
                     </div>
                     {costPerShare !== null && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
                         <span style={{ color: 'var(--text-muted)' }}>{t('pnl')}</span>
                         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: (parseFloat(stockPrice) - costPerShare) >= 0 ? 'var(--asset-color)' : 'var(--liability-color)' }}>
                           {((parseFloat(stockPrice) - costPerShare) * parseFloat(stockShares) >= 0 ? '+' : '')}
@@ -550,7 +785,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                 <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
                   placeholder={isMetal ? `0.00 ${t('unit_gram')}` : '0.00'} value={newAmount} onChange={e => setNewAmount(e.target.value)} autoFocus />
                 {isMetal && metalPricePerGram !== null && newAmount && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
                     ≈ {fmt(parseFloat(newAmount || '0') * metalPricePerGram)} {account.currency}（{metalName} {metalPricePerGram.toFixed(2)}/{account.currency}/{t('unit_gram')}）
                   </div>
                 )}
@@ -562,7 +797,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary btn-block" onClick={() => { setShowAddRecord(false); setEditingRecord(null); }}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" onClick={editingRecord ? handleUpdateRecord : handleAddRecord}>
+              <button className="btn btn-primary btn-block" disabled={Boolean(balancePreview?.underflow)} onClick={editingRecord ? handleUpdateRecord : handleAddRecord}>
                 {editingRecord ? t('update') : t('save')}
               </button>
             </div>
@@ -609,7 +844,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
                   value={txnPrice} onChange={e => setTxnPrice(e.target.value)} />
               </div>
               {valid && (
-                <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{isSell ? t('sell_out') : t('buy_in')} {grams.toFixed(2)}{t('unit_gram')} × {price.toFixed(2)}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: txnColor }}>{total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {account.currency}</span>
                 </div>

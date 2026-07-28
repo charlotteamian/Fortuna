@@ -1,6 +1,6 @@
 # Fortuna Play Store Listing
 
-把下面内容复制到 Play Console 的 Main store listing。`TODO` 项需要你按自己的开发者信息替换。
+把下面内容复制到 Play Console 的 Main store listing。发布前必须用当前 AAB 和隐私政策复核功能与数据披露。
 
 ## App Details
 
@@ -37,13 +37,14 @@ Fortuna 是一个本地优先的个人资产管理工具，帮助你记录银行
 • 净资产、资产总额和负债总额概览
 • 按类别、机构和币种查看资产构成
 • 净值趋势与资产配置图表
-• 汇率更新，支持多币种折算
+• 汇率、贵金属价格和支持标的的公开行情更新
 • Excel 备份与恢复
+• 经你选择目录并授权后的自动 JSON 快照
 • 可选的信用卡还款日历提醒
 • 金额隐藏开关，适合公共场合查看
 
 隐私说明：
-Fortuna 不需要账号登录，不提供贷款、授信、证券交易或个性化投资建议。你的资产记录默认保存在设备本地。应用仅在你主动刷新汇率时访问汇率服务，并在你主动导出或分享备份时调用系统分享功能。
+Fortuna 不需要账号登录，不提供贷款、授信、证券交易或个性化投资建议。资产记录保存在设备本地 IndexedDB；Android 也可能按你的系统备份设置备份或恢复部分应用数据。输入行情代码后，应用可能在自动或手动刷新时向第三方行情服务发送公开的币种、金属、证券、基金、期货或期权标识，但不会有意发送账户名称、余额、数量、交易记录或备注。导出、日历提醒和自动快照均需你先选择或授权相应的系统目标。
 ```
 
 English:
@@ -56,13 +57,14 @@ Key features:
 • View total assets, total liabilities and net worth
 • Analyze allocation by category, institution and currency
 • Visualize net worth trends and asset allocation
-• Refresh exchange rates for multi-currency summaries
+• Refresh exchange rates, precious-metal prices and supported public market quotes
 • Export and restore Excel backups
+• Create automatic JSON snapshots after you choose and authorize a destination
 • Optional calendar reminders for credit card repayment dates
 • Hide amounts by default when viewing in public
 
 Privacy:
-Fortuna does not require an account. It does not provide loans, credit, securities trading, or personalized investment advice. Your financial records are stored locally on your device by default. The app only contacts an exchange-rate service when you refresh rates, and only invokes system sharing when you choose to export or share a backup.
+Fortuna does not require an account. It does not provide loans, credit, securities trading, or personalized investment advice. Financial records are stored in local IndexedDB, and Android may back up or restore some app data according to your system settings. If you enter market identifiers, automatic or manual refreshes may send public currency, metal, security, fund, futures or option codes to third-party data services, but do not intentionally send account names, balances, quantities, transactions or notes. Exports, calendar reminders and automatic snapshots require you to select or authorize their system destination first.
 ```
 
 ## Graphics
@@ -78,8 +80,9 @@ Upload these files:
 
 ## Contact Details
 
-- Website: optional. Can use your privacy policy site if you have no separate website.
-- Email: `TODO: 填一个能公开展示并接收审核邮件的邮箱`
+- Website: 可使用公开隐私政策页面。
+- 应用内支持入口：`设置 → 关于`。
+- Email: Google Play 要求填写可用的联系邮箱；只有在真实、可维护的地址准备好后再填入 Console，不要在政策或商店文案中发布占位邮箱。
 - Phone: optional
 
 ## Store Settings
@@ -93,4 +96,3 @@ Upload these files:
 ```text
 No login is required. Reviewers can open the app and use all core features immediately. The app stores user-entered financial records locally on the device.
 ```
-
