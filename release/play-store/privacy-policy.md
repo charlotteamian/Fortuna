@@ -1,53 +1,70 @@
 # Privacy Policy for Fortuna
 
-Effective date: 2026-05-18
+Effective date: 2026-07-28
 
-Developer: TODO: your developer name  
-Contact: TODO: your public support email
+Fortuna is a local-first personal asset, liability, holdings, and net-worth tracking app. This policy explains what the app stores, when it connects to other services, and what choices you have.
 
-Fortuna is a personal asset, liability, and net worth tracking app. This Privacy Policy explains how the app handles information.
+## Data Stored on Your Device
 
-## Information You Enter
+Fortuna stores the information you enter in the app's local IndexedDB database. This may include account and institution names, asset and liability categories, balances, holdings, security or fund codes, transactions, notes, currencies, product details, allocation plans, cached market data, and settings.
 
-Fortuna may store information that you manually enter, including account names, asset categories, balances, holdings, notes, currencies, institutions, product fields, and settings.
+Fortuna does not require an account and does not operate a server that receives your asset database. Except for the limited transfers described below, the developer does not receive your financial records.
 
-This information is stored locally on your device using browser storage inside the app. Fortuna does not require an account and does not upload your asset records to a developer-operated server.
+## Market Data and Exchange-Rate Requests
 
-## Exchange Rates
+Fortuna can request public exchange rates, precious-metal prices, and market quotes. Requests may happen automatically when cached data is missing or stale or when you open a supported portfolio, and may also happen when you choose to refresh data.
 
-Fortuna can retrieve public exchange-rate data from `https://api.frankfurter.dev` when you refresh rates or use multi-currency summaries. These requests may include currency codes such as `CNY` or `USD`, but do not include your account names, balances, holdings, notes, or other financial records.
+Depending on the feature and instrument, the app may contact:
+
+- Frankfurter (`api.frankfurter.dev`) for currency exchange rates;
+- Gold API (`api.gold-api.com`) for precious-metal prices;
+- Tencent (`qt.gtimg.cn`) for supported equity and exchange-traded security quotes;
+- Eastmoney/Tiantian Fund (`fundgz.1234567.com.cn`) for supported fund estimates;
+- Sina Finance (`hq.sinajs.cn`) for supported futures quotes; and
+- Cboe (`cdn.cboe.com`) for delayed US equity-option quotes.
+
+These requests send only the public identifiers needed for a lookup, such as currency or metal codes and fund, security, futures, option-underlying, or option-contract codes. They do not intentionally send your account names, balances, quantities, transaction history, or notes. As with any internet request, the receiving service can see ordinary connection information such as your IP address and request headers. Those services are independent of Fortuna and handle request data under their own terms and privacy practices.
 
 ## Calendar Reminders
 
-Fortuna may request calendar access if you choose to add an optional credit card repayment reminder to your system calendar. Calendar access is used only for this user-initiated reminder feature. Fortuna does not upload calendar data to a developer-operated server.
+If you choose to create a repayment reminder, Fortuna opens a system calendar prompt. The proposed calendar entry may include the account name and repayment date you entered. Nothing is added until you confirm through the device interface. Your calendar app or calendar provider may store or synchronize the resulting entry under its own privacy policy. Fortuna does not send calendar content to a developer-operated server.
 
-## Export and Sharing
+## Exports, Imports, Sharing, and Automatic Snapshots
 
-Fortuna lets you export reports or backups and share them using your device's system sharing features. When you choose to export or share a file, the selected app or service may process that file under its own privacy policy. Fortuna does not automatically share your records.
+Manual reports and backups are created only when you request them. On Android, Fortuna may place a temporary export in app cache and open the system share sheet; on the web it may start a download. Any app, storage provider, or person you select can then receive and process the file. Imported backups are read only after you select a file and are restored into the local database.
 
-## Data Sharing
+The optional automatic JSON snapshot is disabled until you choose a destination directory and grant persistent access through Android's system directory picker. Once enabled, Fortuna can update a full snapshot after relevant changes and when the app moves to the background. A selected cloud-backed directory may synchronize the snapshot through its storage provider. Disconnecting the directory stops future writes and revokes Fortuna's retained access, but it does not delete snapshot files that have already been created.
 
-Fortuna does not sell personal data. Fortuna does not use advertising SDKs or analytics SDKs. Fortuna does not share your manually entered financial records with the developer.
+Exports and snapshots can contain sensitive financial information in readable form. Store and share them carefully.
 
-## Data Deletion
+## Device and System Backups
 
-You can delete records inside the app where supported. You can also remove local app data by uninstalling Fortuna or clearing the app's storage on your device. Because Fortuna does not operate user accounts or cloud storage, there is no server-side account data to delete.
+Fortuna's Android configuration permits operating-system backup. Depending on your device, account, manufacturer, and backup settings, Android or a system backup provider may back up and later restore some local app data, potentially including the IndexedDB database. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your device backup settings if you do not want this behavior.
+
+## Data Sharing and Advertising
+
+Fortuna does not sell personal data and does not include advertising or analytics SDKs. The developer does not receive your locally stored asset database. Data can leave the app only through the market-data requests, system calendar, user-authorized exports or snapshot destination, and operating-system backup paths described above.
+
+## Retention and Deletion
+
+Local records remain on the device until you delete them in the app, clear the app's storage, or uninstall the app. Clearing storage or uninstalling can permanently remove records that you have not exported. Android may restore previously backed-up data after reinstalling, depending on system settings.
+
+Deleting local data does not remove copies in exported files, automatic snapshots, calendar entries, shared destinations, or system/cloud backups. Delete those copies separately in the relevant app or service. Disconnecting an automatic snapshot directory does not delete existing snapshot files.
+
+Fortuna does not maintain a server-side account or server-side asset database to delete. Third-party market-data services may retain connection or request information according to their own policies.
 
 ## Security
 
-Your records are stored locally on your device. Please protect your device with a passcode or biometric lock. Exchange-rate requests use HTTPS.
+Market-data requests use HTTPS. Local data is protected by the security controls of your device; Fortuna does not add a separate database password or end-to-end encryption layer. Use a device passcode or biometric lock and keep exported files and selected snapshot directories secure.
 
 ## Financial Disclaimer
 
-Fortuna is an informational personal tracking tool. It does not provide loans, credit, brokerage services, securities trading, crypto trading, or personalized financial advice.
+Fortuna is an informational record-keeping tool. It does not provide loans, credit, brokerage, securities or crypto trading, or personalized financial or investment advice. Quotes and calculations may be delayed, incomplete, or inaccurate. Verify important figures independently before making a financial decision.
 
 ## Changes
 
-This Privacy Policy may be updated from time to time. The updated version will be posted at the same public URL used in the Google Play listing.
+This policy may be updated when the app's data practices or features change. The current version will be published at the privacy-policy URL used in the app and its store listing.
 
 ## Contact
 
-If you have questions, contact:
-
-TODO: your public support email
-
+For privacy questions and the current support route, open Fortuna and go to **Settings → About**.

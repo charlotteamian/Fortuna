@@ -13,7 +13,7 @@
 5. 打开 app，随便添加一两个测试账户/记录，看看能不能正常使用。
 6. 接下来 14 天请不要退出测试计划。
 
-这个 app 不需要登录，不会上传你的资产数据。你可以只填假数据测试。
+这个 app 不需要登录，账本保存在本机；但汇率和行情更新会把测试用的公开币种或证券代码发送给独立数据服务。请只填假数据测试，并在结束后删除测试记录。
 
 ## English
 
@@ -26,5 +26,4 @@ Hi, I am testing Fortuna, a personal wealth tracker on Google Play. Please help 
 5. Open the app and add one or two fake test accounts/records.
 6. Please stay opted in for 14 days.
 
-The app does not require login. Please use fake data for testing.
-
+The app does not require login and keeps its ledger locally. Exchange-rate and quote lookups still send the public test identifiers needed for lookup to independent data services. Please use fake data and delete it after testing.

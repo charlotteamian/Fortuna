@@ -7,8 +7,7 @@
 1. Google Play Developer 账号  
    地址：https://play.google.com/console
 
-2. 一个公开支持邮箱  
-   例如：`yourname+fortuna@gmail.com`。这个邮箱会显示在商店页。
+2. 一个真实、可长期维护的公开支持邮箱。这个邮箱会显示在商店页；不要在仓库里提交占位地址。
 
 3. 一个公开隐私政策 URL  
    我已经生成了隐私政策文件：
@@ -16,7 +15,7 @@
    - `release/play-store/privacy-policy.md`
    - `public/privacy-policy.html`
 
-   你需要先把里面的 `TODO` 替换成你的开发者名称和邮箱，然后公开托管。最简单方案：
+   当前政策没有虚构开发者身份或邮箱，支持入口统一指向应用内“设置 → 关于”。提交前仍需逐项核对政策与当前 AAB，并把政策公开托管。常见方案：
    - Google Sites 新建一个页面，复制隐私政策内容，发布后拿 URL。
    - 或 Notion 页面 Share to web。
    - 或 GitHub Pages。
@@ -24,7 +23,7 @@
 4. 如果你的 Play Console 是 2023-11-13 后创建的个人账号：准备至少 12 个测试者 Gmail。  
    他们需要连续 14 天 opt-in closed testing。
 
-## 1. 替换隐私政策 TODO
+## 1. 核对并托管隐私政策
 
 打开：
 
@@ -34,12 +33,7 @@ release/play-store/privacy-policy.md
 public/privacy-policy.html
 ```
 
-把这些换掉：
-
-```text
-TODO: your developer name
-TODO: your public support email
-```
+确认三份内容一致、没有占位信息，并与当前发布包的数据实践相符。在 Play Console 填写真实支持邮箱；如果应用内增加邮件入口，也必须使用同一个可维护地址。
 
 ## 2. 生成 upload key
 
@@ -72,7 +66,7 @@ fortuna-upload-key.jks
 把你刚才的密码填进环境变量：
 
 ```bash
-export FORTUNA_UPLOAD_KEYSTORE='/Users/restartday/Documents/Fortuna/fortuna-upload-key.jks'
+export FORTUNA_UPLOAD_KEYSTORE='/absolute/path/to/fortuna-upload-key.jks'
 export FORTUNA_UPLOAD_STORE_PASSWORD='你刚才设置的 keystore password'
 export FORTUNA_UPLOAD_KEY_ALIAS='fortuna-upload'
 export FORTUNA_UPLOAD_KEY_PASSWORD='你刚才设置的 key password'
@@ -150,7 +144,7 @@ release/play-store/data-safety-and-policy-answers.md
 
 - Ads: `No`
 - App access: `No login required`
-- Data safety: 推荐 `No data collected/shared`，因为资产记录只在本地，不上传给开发者。
+- Data safety: 不要选择旧版的 `No data collected/shared`。行情请求会把用户输入的公开市场标识发送给独立数据服务；按 `data-safety-and-policy-answers.md` 的保守口径填写，并在提交当日复核服务商实践与 Google 定义。
 - Financial features: 选择个人财务/资产追踪相关；贷款、交易、个性化建议全部选 `No`。
 - Target audience: `18 and over`
 - Privacy policy URL: 填你公开托管后的隐私政策 URL。
@@ -168,7 +162,7 @@ Test and release -> Testing -> Internal testing
 1. Create new release
 2. 选择 Play App Signing，接受条款。
 3. 上传正式签名的 `app-release.aab`
-4. Release name: `1.0`
+4. Release name: `1.2.0`
 5. Release notes:
 
 ```text
@@ -227,8 +221,8 @@ Fortuna was tested for core flows: creating accounts, adding records, viewing ne
 
 ## 10. 审核中常见卡点
 
-1. 隐私政策 URL 里还有 TODO  
-   解决：发布前全部替换成真实开发者名和邮箱。
+1. 隐私政策、Data safety 与 AAB 行为不一致
+   解决：发布前按实际网络请求、系统备份、日历、导出和自动快照逐项复核；不要复用旧版“完全不收集/共享”的答案。
 
 2. AAB 未签名或签名不对  
    解决：用 `scripts/build-release-aab.sh` 生成，不要上传 debug APK。
@@ -238,4 +232,3 @@ Fortuna was tested for core flows: creating accounts, adding records, viewing ne
 
 4. Calendar 权限被追问  
    解决：说明仅用于用户主动添加信用卡还款提醒；如果仍卡住，发一个去掉日历功能的 v1。
-

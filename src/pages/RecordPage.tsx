@@ -1,16 +1,14 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { getAccountsWithLatest, deleteAccount, updateAccount, archiveAccount, restoreAccount, type AccountWithLatest } from '../services/assetService';
-import { initializeSettings, type Settings } from '../db';
+import { db, type Settings } from '../db';
 import { useAppContext } from '../app-context';
 import AccountForm from '../components/AccountForm';
 import { useTranslation } from 'react-i18next';
-import { Share } from '@capacitor/share';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { generateReportCanvas } from '../lib/reportGenerator';
 import { getFieldsForCategory } from '../lib/categoryFields';
 import { isProductPortfolioCategory } from '../lib/productPortfolio';
 import { setAccountPortfolioMode } from '../services/holdingService';
-import * as XLSX from 'xlsx';
+import { RATES_REFRESHED_EVENT } from '../services/rateService';
+import { formatLocalDate } from '../lib/localDate';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
 interface EditingAccountState {
@@ -29,12 +27,14 @@ const setSavedScrollY = (value: number) => sessionStorage.setItem(SCROLL_Y_KEY, 
 
 export default function RecordPage({ onOpenAccount }: Props) {
   const { t, i18n } = useTranslation();
-  const { theme, amountVisible, setAmountVisible } = useAppContext();
+  const { theme, amountVisible, setAmountVisible, settings: appSettings } = useAppContext();
   const [accounts, setAccounts] = useState<AccountWithLatest[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountWithLatest[]>([]);
   const [totals, setTotals] = useState({ totalAssets: 0, totalLiabilities: 0, netWorth: 0 });
+  const [unavailableValuations, setUnavailableValuations] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -48,25 +48,38 @@ export default function RecordPage({ onOpenAccount }: Props) {
     setToast({ msg, type }); setTimeout(() => setToast(null), 2000);
   };
 
-  const load = async () => {
-    setLoading(true);
-    const [s, activeData, archivedData] = await Promise.all([
-      initializeSettings(),
-      getAccountsWithLatest(),
-      getAccountsWithLatest({ archivedOnly: true }),
-    ]);
-    setSettings(s);
-    setAccounts(activeData.accounts);
-    setArchivedAccounts(archivedData.accounts);
-    setTotals({
-      totalAssets: activeData.totalAssets,
-      totalLiabilities: activeData.totalLiabilities,
-      netWorth: activeData.netWorth,
-    });
-    setLoading(false);
-  };
+  const load = useCallback(async (showSpinner = true) => {
+    if (!appSettings) return;
+    if (showSpinner) setLoading(true);
+    setLoadError(false);
+    try {
+      const allData = await getAccountsWithLatest({ includeArchived: true, settings: appSettings });
+      const active = allData.accounts.filter(account => !account.archivedAt);
+      const archived = allData.accounts
+        .filter(account => Boolean(account.archivedAt))
+        .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
+      const totalAssets = active.filter(account => account.type === 'asset').reduce((sum, account) => sum + account.convertedAmount, 0);
+      const totalLiabilities = active.filter(account => account.type === 'liability').reduce((sum, account) => sum + account.convertedAmount, 0);
+      setSettings(appSettings);
+      setAccounts(active);
+      setArchivedAccounts(archived);
+      setTotals({ totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities });
+      setUnavailableValuations(active.filter(account => account.conversionUnavailable).length);
+    } catch (error) {
+      console.error('Failed to load asset overview', error);
+      setLoadError(true);
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
+  }, [appSettings]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onRatesRefreshed = () => { void load(false); };
+    window.addEventListener(RATES_REFRESHED_EVENT, onRatesRefreshed);
+    return () => window.removeEventListener(RATES_REFRESHED_EVENT, onRatesRefreshed);
+  }, [load]);
 
   useEffect(() => {
     const hasOpenModal = showForm || showExportMenu || Boolean(confirmDelete) || Boolean(editingAcct);
@@ -92,6 +105,12 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const handleDelete = async (id: string) => { await deleteAccount(id); setConfirmDelete(null); setContextMenu(null); showToast(t('deleted_toast')); load(); };
   const handleArchive = async (id: string) => { await archiveAccount(id); setContextMenu(null); showToast(t('archived_toast')); load(); };
   const handleRestore = async (id: string) => { await restoreAccount(id); setContextMenu(null); showToast(t('restored_toast')); load(); };
+  const toggleArchivedAccounts = async () => {
+    if (!settings) return;
+    const updated = { ...settings, showArchivedAccounts: !(settings.showArchivedAccounts ?? true) };
+    await db.settings.put(updated);
+    setSettings(updated);
+  };
 
   const handleEditSave = async () => {
     if (!editingAcct) return;
@@ -116,6 +135,11 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   const handleExportImage = async () => {
     try {
+      const [{ Share }, { Filesystem, Directory }, { generateReportCanvas }] = await Promise.all([
+        import('@capacitor/share'),
+        import('@capacitor/filesystem'),
+        import('../lib/reportGenerator'),
+      ]);
       const canvas = generateReportCanvas({
         accounts,
         totalAssets: totals.totalAssets,
@@ -129,7 +153,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
       });
       const dataUrl = canvas.toDataURL('image/png');
       const base64 = dataUrl.split(',')[1];
-      const fileName = `Fortuna_Report_${new Date().toISOString().split('T')[0]}.png`;
+      const fileName = `Fortuna_Report_${formatLocalDate()}.png`;
       try {
         const f = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
         await Share.share({ title: t('export_report_title'), url: f.uri, dialogTitle: t('export_report_title') });
@@ -151,6 +175,11 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const handleExportExcel = async () => {
     if (!settings) return;
     try {
+      const [{ Share }, { Filesystem, Directory }, XLSX] = await Promise.all([
+        import('@capacitor/share'),
+        import('@capacitor/filesystem'),
+        import('xlsx'),
+      ]);
       const isEn = i18n.language.startsWith('en');
       const primary = settings.primaryCurrency;
 
@@ -228,7 +257,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
       const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 
-      const fileName = `Fortuna_Assets_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const fileName = `Fortuna_Assets_${formatLocalDate()}.xlsx`;
       try {
         const f = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
         await Share.share({ title: t('export_report_title'), url: f.uri, dialogTitle: t('export_report_title') });
@@ -262,6 +291,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const assetAccounts = accounts.filter(a => a.type === 'asset');
   const liabilityAccounts = accounts.filter(a => a.type === 'liability');
   const hasAnyAccounts = accounts.length > 0 || archivedAccounts.length > 0;
+  const showArchivedAccounts = settings?.showArchivedAccounts ?? true;
 
   // Long-press handlers
   const startLongPress = useCallback((acctId: string, e: React.TouchEvent | React.MouseEvent) => {
@@ -303,7 +333,11 @@ export default function RecordPage({ onOpenAccount }: Props) {
           {masked(acct.latestAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
         </div>
         <div className="entry-amount-currency">
-          {acct.currency !== settings?.primaryCurrency && masked('≈ ' + fmt(acct.convertedAmount) + ' ' + (settings?.primaryCurrency || ''))}
+          {acct.currency !== settings?.primaryCurrency && (
+            acct.conversionUnavailable
+              ? t('conversion_unavailable')
+              : masked('≈ ' + fmt(acct.convertedAmount) + ' ' + (settings?.primaryCurrency || ''))
+          )}
         </div>
       </div>
     );
@@ -311,8 +345,20 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   const renderEntryItem = (acct: AccountWithLatest) => (
     <div className="entry-item" key={acct.id}
+      role="button"
+      tabIndex={0}
+      aria-label={`${acct.name}, ${t('view_details')}`}
       style={acct.archivedAt ? { opacity: 0.72 } : undefined}
       onClick={() => handleItemClick(acct.id)}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleItemClick(acct.id);
+        } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault();
+          setContextMenu({ acctId: acct.id, x: Math.max(16, window.innerWidth / 2 - 90), y: Math.max(16, window.innerHeight / 2 - 70) });
+        }
+      }}
       onTouchStart={e => startLongPress(acct.id, e)}
       onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
       onContextMenu={e => { e.preventDefault(); setContextMenu({ acctId: acct.id, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 140) }); }}>
@@ -330,16 +376,16 @@ export default function RecordPage({ onOpenAccount }: Props) {
 
   return (
     <>
-      {toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}
+      {toast && <div className={`toast ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>}
       <div className="page-header">
         <div>
           <h1 className="page-title">Fortuna</h1>
           <p className="page-subtitle">{t('smart_tracking')}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-sm btn-secondary" onClick={() => setShowExportMenu(true)} title={t('export_accounts')}>📥</button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowExportMenu(true)} title={t('export_accounts')} aria-label={t('export_accounts')}>📥</button>
           <button className="btn btn-sm btn-secondary" onClick={() => setAmountVisible(!amountVisible)}
-            title={amountVisible ? t('hide_amount') : t('show_amount')}>
+            title={amountVisible ? t('hide_amount') : t('show_amount')} aria-label={amountVisible ? t('hide_amount') : t('show_amount')}>
             {amountVisible ? '👁️' : '🔒'}
           </button>
         </div>
@@ -370,10 +416,26 @@ export default function RecordPage({ onOpenAccount }: Props) {
           </div>
         </div>
       )}
+      {unavailableValuations > 0 && (
+        <div className="valuation-warning" role="status">⚠️ {t('some_values_excluded', { count: unavailableValuations })}</div>
+      )}
 
-      {loading ? <div className="loading"><div className="spinner" /></div>
+      {loading ? <div className="loading" role="status" aria-label={t('loading')}><div className="spinner" /></div>
+      : loadError ? (
+        <div className="empty-state" role="alert">
+          <div className="empty-icon">⚠️</div>
+          <div className="empty-text">{t('load_failed')}</div>
+          <div className="empty-hint">{t('load_failed_hint')}</div>
+          <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => void load()}>{t('retry')}</button>
+        </div>
+      )
       : !hasAnyAccounts ? (
-        <div className="empty-state"><div className="empty-icon">💎</div><div className="empty-text">{t('start_tracking')}</div><div className="empty-hint">{t('add_first_hint')}</div></div>
+        <div className="empty-state">
+          <div className="empty-icon">💎</div>
+          <div className="empty-text">{t('start_tracking')}</div>
+          <div className="empty-hint">{t('add_first_hint')}</div>
+          <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => setShowForm(true)}>{t('add_first_account')}</button>
+        </div>
       ) : (
         <>
           {accounts.length === 0 && (
@@ -432,14 +494,28 @@ export default function RecordPage({ onOpenAccount }: Props) {
           )}
           {archivedAccounts.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '1rem 0 0.5rem', color: 'var(--text-muted)' }}>{t('archived_accounts')} ({archivedAccounts.length})</h2>
-              <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="dot" style={{ background: 'var(--text-muted)' }} />{t('archived_history')}
-                </div>
-                <div>{t('history_records')}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '1rem 0 0.5rem' }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-muted)' }}>{t('archived_accounts')} ({archivedAccounts.length})</h2>
+                <button
+                  className={`btn btn-sm ${showArchivedAccounts ? 'btn-secondary' : 'btn-primary'}`}
+                  role="switch"
+                  aria-checked={showArchivedAccounts}
+                  onClick={toggleArchivedAccounts}
+                  style={{ flexShrink: 0, minWidth: 88, whiteSpace: 'nowrap' }}>
+                  {showArchivedAccounts ? `👁️ ${t('hide_archived_assets')}` : `📦 ${t('show_archived_assets')}`}
+                </button>
               </div>
-              {archivedAccounts.map(acct => renderEntryItem(acct))}
+              {showArchivedAccounts && (
+                <>
+                  <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="dot" style={{ background: 'var(--text-muted)' }} />{t('archived_history')}
+                    </div>
+                    <div>{t('history_records')}</div>
+                  </div>
+                  {archivedAccounts.map(acct => renderEntryItem(acct))}
+                </>
+              )}
             </div>
           )}
           <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', margin: '12px 0 24px' }}>{t('long_press_hint')}</div>
@@ -447,11 +523,11 @@ export default function RecordPage({ onOpenAccount }: Props) {
       )}
 
       {showExportMenu && (
-        <div className="modal-overlay" onClick={() => setShowExportMenu(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }}>
+        <div className="modal-overlay" onClick={() => setShowExportMenu(false)} role="presentation">
+          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="export-format-title" onClick={e => e.stopPropagation()} style={{ maxWidth: 360 }}>
             <div className="modal-header">
-              <h2 className="modal-title">{t('choose_export_format')}</h2>
-              <button className="modal-close" onClick={() => setShowExportMenu(false)}>✕</button>
+              <h2 className="modal-title" id="export-format-title">{t('choose_export_format')}</h2>
+              <button type="button" className="modal-close" onClick={() => setShowExportMenu(false)} aria-label={t('close')}>✕</button>
             </div>
             <button className="btn btn-primary btn-block" style={{ marginBottom: 10 }} onClick={() => { setShowExportMenu(false); handleExportImage(); }}>
               🖼️ {t('export_as_image')}
@@ -463,14 +539,14 @@ export default function RecordPage({ onOpenAccount }: Props) {
         </div>
       )}
 
-      <button className="fab" onClick={() => setShowForm(true)}>+</button>
+      <button type="button" className="fab" onClick={() => setShowForm(true)} aria-label={t('add_account')}>+</button>
       {showForm && settings && <AccountForm settings={settings} onClose={() => setShowForm(false)} onCreated={handleCreated} />}
 
       {/* Context Menu (long-press) */}
       {contextMenu && (
         <>
           <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
-          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <div className="context-menu" role="menu" aria-label={t('account_actions')} style={{ left: contextMenu.x, top: contextMenu.y }}>
             {(() => {
               const acct = [...accounts, ...archivedAccounts].find(a => a.id === contextMenu.acctId);
               if (!acct) return null;
@@ -560,7 +636,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
                     onClick={() => setEditingAcct(prev => prev ? { ...prev, portfolio: false } : null)}>{t('mode_single')}</button>
                 </div>
                 {editingAcct.portfolio && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
                     {t('portfolio_hint')}
                   </div>
                 )}

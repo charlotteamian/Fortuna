@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getDefaultHoldingModeForCategory,
   getProductHoldingFields,
+  defaultsToProductPortfolio,
   isProductPortfolioCategory,
   shouldShowProductCodeForCategory,
   usesLiveQuotes,
@@ -22,6 +23,13 @@ test('product portfolio categories include product-like assets but exclude cash,
   assert.equal(isProductPortfolioCategory('贵金属', 'asset'), false);
   assert.equal(isProductPortfolioCategory('房产', 'asset'), false);
   assert.equal(isProductPortfolioCategory('信用卡', 'liability'), false);
+});
+
+test('custom asset categories support portfolios but default to a simple balance account', () => {
+  assert.equal(isProductPortfolioCategory('收藏品', 'asset'), true);
+  assert.equal(defaultsToProductPortfolio('收藏品', 'asset'), false);
+  assert.equal(defaultsToProductPortfolio('银行存款', 'asset'), true);
+  assert.equal(defaultsToProductPortfolio('信用卡', 'liability'), false);
 });
 
 test('portfolio holdings use unit mode only for tradable quote-like assets', () => {
@@ -49,4 +57,12 @@ test('bank deposit product entries require rate and maturity instead of product 
 
   assert.equal(shouldShowProductCodeForCategory('理财产品'), true);
   assert.deepEqual(getProductHoldingFields('理财产品'), []);
+});
+
+test('receivables use counterparty and repayment fields instead of a product code', () => {
+  assert.equal(shouldShowProductCodeForCategory('债权'), false);
+  assert.deepEqual(
+    getProductHoldingFields('债权').map(field => field.key),
+    ['counterparty', 'rate', 'due', 'risk'],
+  );
 });

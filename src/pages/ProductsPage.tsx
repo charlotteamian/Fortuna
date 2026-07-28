@@ -5,6 +5,7 @@ import { initializeSettings, type Settings } from '../db';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../app-context';
 import { getFieldsForCategory } from '../lib/categoryFields';
+import { RATES_REFRESHED_EVENT } from '../services/rateService';
 
 const COLORS = ['#818cf8','#34d399','#60a5fa','#c084fc','#fbbf24','#f472b6','#22d3ee','#a3e635','#fb923c','#2dd4bf'];
 
@@ -15,16 +16,29 @@ export default function AccountPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [data, s] = await Promise.all([getAccountsWithLatest(), initializeSettings()]);
-    setAcctData(data);
-    setSettings(s);
-    setLoading(false);
+  const load = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
+    setLoadError(false);
+    try {
+      const [data, s] = await Promise.all([getAccountsWithLatest(), initializeSettings()]);
+      setAcctData(data);
+      setSettings(s);
+    } catch (error) {
+      console.error('Account overview load failed', error);
+      setLoadError(true);
+    } finally {
+      if (initial) setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    const refresh = () => { void load(false); };
+    window.addEventListener(RATES_REFRESHED_EVENT, refresh);
+    return () => window.removeEventListener(RATES_REFRESHED_EVENT, refresh);
+  }, [load]);
 
   const fmt = (n: number) => {
     const isEn = i18n.language.startsWith('en');
@@ -67,6 +81,14 @@ export default function AccountPage() {
   }, [grouped]);
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
+  if (loadError && !acctData) return (
+    <div className="empty-state" role="alert">
+      <div className="empty-icon">⚠️</div>
+      <div className="empty-text">{t('load_failed')}</div>
+      <div className="empty-hint">{t('load_failed_hint')}</div>
+      <button type="button" className="btn btn-primary" onClick={() => void load()}>{t('retry')}</button>
+    </div>
+  );
 
   if (!acctData || acctData.accounts.length === 0) {
     return (
@@ -89,6 +111,11 @@ export default function AccountPage() {
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 700, color: theme.assetColor }}>{masked(fmt(acctData.totalAssets))}</div>
         </div>
       </div>
+      {acctData.accounts.some(account => account.conversionUnavailable) && (
+        <div className="valuation-warning" role="status">
+          ⚠️ {t('some_values_excluded', { count: acctData.accounts.filter(account => account.conversionUnavailable).length })}
+        </div>
+      )}
 
       <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {instList.map(([inst, accounts], idx) => {
@@ -103,7 +130,7 @@ export default function AccountPage() {
           return (
             <div key={inst} style={S.card}>
               {/* Institution header */}
-              <div style={S.instHeader} onClick={() => toggle(inst)}>
+              <button type="button" style={S.instHeader} onClick={() => toggle(inst)} aria-expanded={isExpanded}>
                 <div style={{ ...S.avatar, background: avatarColor + '22', color: avatarColor, border: `1.5px solid ${avatarColor}44` }}>
                   {initial}
                 </div>
@@ -112,11 +139,11 @@ export default function AccountPage() {
                   <div style={S.instMeta}>
                     {assetTotal > 0 && <span style={{ color: theme.assetColor, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(assetTotal))}</span>}
                     {liabTotal > 0 && <span style={{ color: theme.liabilityColor, fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>－{masked(fmt(liabTotal))}</span>}
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{accounts.length} 项</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{t('item_count', { count: accounts.length })}</span>
                   </div>
                 </div>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{isExpanded ? '▲' : '▼'}</span>
-              </div>
+              </button>
 
               {/* Account list */}
               {isExpanded && (
@@ -144,8 +171,10 @@ export default function AccountPage() {
                                 : acct.latestAmount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
                               )}
                             </div>
-                            {acct.currency !== settings?.primaryCurrency && acct.convertedAmount > 0 && (
-                              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>≈{masked(fmt(acct.convertedAmount))}</div>
+                            {acct.currency !== settings?.primaryCurrency && (
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                {acct.conversionUnavailable ? t('conversion_unavailable') : `≈${masked(fmt(acct.convertedAmount))}`}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -179,7 +208,7 @@ export default function AccountPage() {
 
 const S: Record<string, React.CSSProperties> = {
   card: { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' },
-  instHeader: { display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px', cursor: 'pointer', userSelect: 'none' },
+  instHeader: { display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px', cursor: 'pointer', userSelect: 'none', width: '100%', border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left', font: 'inherit' },
   avatar: { width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 700, flexShrink: 0 },
   instInfo: { flex: 1, minWidth: 0 },
   instName: { fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' },

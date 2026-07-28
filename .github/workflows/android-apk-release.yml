@@ -68,7 +68,12 @@ jobs:
 
           mkdir -p release
           APK_NAME="Fortuna-${VERSION}-debug.apk"
-          cp android/app/build/outputs/apk/debug/Fortuna-1.0.apk "release/$APK_NAME"
+          APK_SOURCE="$(find android/app/build/outputs/apk/debug -maxdepth 1 -type f -name 'Fortuna-*.apk' -print -quit)"
+          if [[ -z "$APK_SOURCE" ]]; then
+            echo "No Fortuna APK found in the Gradle debug output directory" >&2
+            exit 1
+          fi
+          cp "$APK_SOURCE" "release/$APK_NAME"
           echo "apk_path=release/$APK_NAME" >> "$GITHUB_OUTPUT"
           echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -90,11 +95,19 @@ jobs:
         run: |
           set -euo pipefail
           cat > release-notes.md <<EOF
-          Fortuna $VERSION debug APK.
+          ## Fortuna $VERSION
 
-          License note: Fortuna is available for personal, private, non-commercial use only. Commercial use and commercial distribution require prior written permission from the copyright holder.
+          ### Core app
 
-          Installation note: download the APK on an Android device, allow installation from unknown apps when prompted, and install it. This is a debug-signed sideload build for GitHub distribution.
+          Local-first accounts, holdings, liabilities, allocation plans, charts, Excel backup/restore, and an optional portable snapshot.
+
+          ### Privacy
+
+          No Fortuna login, analytics SDK, or advertising SDK is required. Financial records stay local unless the user explicitly exports or shares them.
+
+          ### Installation
+
+          Download the APK on an Android device, allow installation from unknown apps when prompted, and install it. This is a debug-signed sideload build for GitHub distribution and personal, non-commercial use.
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then

@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Privacy Policy for the Fortuna personal wealth tracker" />
     <title>Fortuna Privacy Policy</title>
     <style>
       body { margin: 0; background: #06080f; color: #f6f8ff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.65; }
@@ -12,37 +14,62 @@
       p, li { color: #cbd5e1; }
       code { color: #fbbf24; }
       .meta { color: #8b95a8; margin-bottom: 32px; }
-      .todo { color: #fbbf24; font-weight: 700; }
-      a { color: #60a5fa; }
     </style>
   </head>
   <body>
     <main>
       <h1>Privacy Policy for Fortuna</h1>
-      <div class="meta">Effective date: 2026-05-18</div>
-      <p>Developer: <span class="todo">TODO: your developer name</span><br />Contact: <span class="todo">TODO: your public support email</span></p>
-      <p>Fortuna is a personal asset, liability, and net worth tracking app. This Privacy Policy explains how the app handles information.</p>
-      <h2>Information You Enter</h2>
-      <p>Fortuna may store information that you manually enter, including account names, asset categories, balances, holdings, notes, currencies, institutions, product fields, and settings.</p>
-      <p>This information is stored locally on your device using browser storage inside the app. Fortuna does not require an account and does not upload your asset records to a developer-operated server.</p>
-      <h2>Exchange Rates</h2>
-      <p>Fortuna can retrieve public exchange-rate data from <code>https://api.frankfurter.dev</code> when you refresh rates or use multi-currency summaries. These requests may include currency codes such as <code>CNY</code> or <code>USD</code>, but do not include your account names, balances, holdings, notes, or other financial records.</p>
+      <div class="meta">Effective date: 2026-07-28</div>
+
+      <p>Fortuna is a local-first personal asset, liability, holdings, and net-worth tracking app. This policy explains what the app stores, when it connects to other services, and what choices you have.</p>
+
+      <h2>Data Stored on Your Device</h2>
+      <p>Fortuna stores the information you enter in the app's local IndexedDB database. This may include account and institution names, asset and liability categories, balances, holdings, security or fund codes, transactions, notes, currencies, product details, allocation plans, cached market data, and settings.</p>
+      <p>Fortuna does not require an account and does not operate a server that receives your asset database. Except for the limited transfers described below, the developer does not receive your financial records.</p>
+
+      <h2>Market Data and Exchange-Rate Requests</h2>
+      <p>Fortuna can request public exchange rates, precious-metal prices, and market quotes. Requests may happen automatically when cached data is missing or stale or when you open a supported portfolio, and may also happen when you choose to refresh data.</p>
+      <p>Depending on the feature and instrument, the app may contact:</p>
+      <ul>
+        <li>Frankfurter (<code>api.frankfurter.dev</code>) for currency exchange rates;</li>
+        <li>Gold API (<code>api.gold-api.com</code>) for precious-metal prices;</li>
+        <li>Tencent (<code>qt.gtimg.cn</code>) for supported equity and exchange-traded security quotes;</li>
+        <li>Eastmoney/Tiantian Fund (<code>fundgz.1234567.com.cn</code>) for supported fund estimates;</li>
+        <li>Sina Finance (<code>hq.sinajs.cn</code>) for supported futures quotes; and</li>
+        <li>Cboe (<code>cdn.cboe.com</code>) for delayed US equity-option quotes.</li>
+      </ul>
+      <p>These requests send only the public identifiers needed for a lookup, such as currency or metal codes and fund, security, futures, option-underlying, or option-contract codes. They do not intentionally send your account names, balances, quantities, transaction history, or notes. As with any internet request, the receiving service can see ordinary connection information such as your IP address and request headers. Those services are independent of Fortuna and handle request data under their own terms and privacy practices.</p>
+
       <h2>Calendar Reminders</h2>
-      <p>Fortuna may request calendar access if you choose to add an optional credit card repayment reminder to your system calendar. Calendar access is used only for this user-initiated reminder feature. Fortuna does not upload calendar data to a developer-operated server.</p>
-      <h2>Export and Sharing</h2>
-      <p>Fortuna lets you export reports or backups and share them using your device's system sharing features. When you choose to export or share a file, the selected app or service may process that file under its own privacy policy. Fortuna does not automatically share your records.</p>
-      <h2>Data Sharing</h2>
-      <p>Fortuna does not sell personal data. Fortuna does not use advertising SDKs or analytics SDKs. Fortuna does not share your manually entered financial records with the developer.</p>
-      <h2>Data Deletion</h2>
-      <p>You can delete records inside the app where supported. You can also remove local app data by uninstalling Fortuna or clearing the app's storage on your device. Because Fortuna does not operate user accounts or cloud storage, there is no server-side account data to delete.</p>
+      <p>If you choose to create a repayment reminder, Fortuna opens a system calendar prompt. The proposed calendar entry may include the account name and repayment date you entered. Nothing is added until you confirm through the device interface. Your calendar app or calendar provider may store or synchronize the resulting entry under its own privacy policy. Fortuna does not send calendar content to a developer-operated server.</p>
+
+      <h2>Exports, Imports, Sharing, and Automatic Snapshots</h2>
+      <p>Manual reports and backups are created only when you request them. On Android, Fortuna may place a temporary export in app cache and open the system share sheet; on the web it may start a download. Any app, storage provider, or person you select can then receive and process the file. Imported backups are read only after you select a file and are restored into the local database.</p>
+      <p>The optional automatic JSON snapshot is disabled until you choose a destination directory and grant persistent access through Android's system directory picker. Once enabled, Fortuna can update a full snapshot after relevant changes and when the app moves to the background. A selected cloud-backed directory may synchronize the snapshot through its storage provider. Disconnecting the directory stops future writes and revokes Fortuna's retained access, but it does not delete snapshot files that have already been created.</p>
+      <p>Exports and snapshots can contain sensitive financial information in readable form. Store and share them carefully.</p>
+
+      <h2>Device and System Backups</h2>
+      <p>Fortuna's Android configuration permits operating-system backup. Depending on your device, account, manufacturer, and backup settings, Android or a system backup provider may back up and later restore some local app data, potentially including the IndexedDB database. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your device backup settings if you do not want this behavior.</p>
+
+      <h2>Data Sharing and Advertising</h2>
+      <p>Fortuna does not sell personal data and does not include advertising or analytics SDKs. The developer does not receive your locally stored asset database. Data can leave the app only through the market-data requests, system calendar, user-authorized exports or snapshot destination, and operating-system backup paths described above.</p>
+
+      <h2>Retention and Deletion</h2>
+      <p>Local records remain on the device until you delete them in the app, clear the app's storage, or uninstall the app. Clearing storage or uninstalling can permanently remove records that you have not exported. Android may restore previously backed-up data after reinstalling, depending on system settings.</p>
+      <p>Deleting local data does not remove copies in exported files, automatic snapshots, calendar entries, shared destinations, or system/cloud backups. Delete those copies separately in the relevant app or service. Disconnecting an automatic snapshot directory does not delete existing snapshot files.</p>
+      <p>Fortuna does not maintain a server-side account or server-side asset database to delete. Third-party market-data services may retain connection or request information according to their own policies.</p>
+
       <h2>Security</h2>
-      <p>Your records are stored locally on your device. Please protect your device with a passcode or biometric lock. Exchange-rate requests use HTTPS.</p>
+      <p>Market-data requests use HTTPS. Local data is protected by the security controls of your device; Fortuna does not add a separate database password or end-to-end encryption layer. Use a device passcode or biometric lock and keep exported files and selected snapshot directories secure.</p>
+
       <h2>Financial Disclaimer</h2>
-      <p>Fortuna is an informational personal tracking tool. It does not provide loans, credit, brokerage services, securities trading, crypto trading, or personalized financial advice.</p>
+      <p>Fortuna is an informational record-keeping tool. It does not provide loans, credit, brokerage, securities or crypto trading, or personalized financial or investment advice. Quotes and calculations may be delayed, incomplete, or inaccurate. Verify important figures independently before making a financial decision.</p>
+
       <h2>Changes</h2>
-      <p>This Privacy Policy may be updated from time to time. The updated version will be posted at the same public URL used in the Google Play listing.</p>
+      <p>This policy may be updated when the app's data practices or features change. The current version will be published at the privacy-policy URL used in the app and its store listing.</p>
+
       <h2>Contact</h2>
-      <p>If you have questions, contact: <span class="todo">TODO: your public support email</span></p>
+      <p>For privacy questions and the current support route, open Fortuna and go to <strong>Settings → About</strong>.</p>
     </main>
   </body>
 </html>

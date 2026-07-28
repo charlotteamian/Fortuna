@@ -1,9 +1,12 @@
 export type HoldingMode = 'unit' | 'balance';
 
 const EXCLUDED_ASSET_PORTFOLIO_CATEGORIES = new Set(['现金', '贵金属', '房产']);
+const DEFAULT_PRODUCT_PORTFOLIO_CATEGORIES = new Set([
+  '银行存款', '股票/ETF', '股票', '场外基金', '债券', '理财产品', '债权', '数字货币', '其他资产',
+]);
 const UNIT_HOLDING_CATEGORIES = new Set(['股票/ETF', '股票', '场外基金', '数字货币']);
 const LIVE_QUOTE_CATEGORIES = new Set(['股票/ETF', '股票', '场外基金']);
-const PRODUCT_CODE_CATEGORIES = new Set(['理财产品', '债券', '债权', '数字货币', '其他资产']);
+const PRODUCT_CODE_CATEGORIES = new Set(['理财产品', '债券', '数字货币', '其他资产']);
 
 export interface ProductHoldingField {
   key: string;
@@ -17,11 +20,22 @@ const PRODUCT_HOLDING_FIELDS: Record<string, ProductHoldingField[]> = {
     { key: 'rate', labelKey: 'f_rate', placeholderKey: 'f_rate_ph', required: true },
     { key: 'maturity', labelKey: 'f_maturity', placeholderKey: 'f_maturity_ph', required: true },
   ],
+  债权: [
+    { key: 'counterparty', labelKey: 'f_counterparty', placeholderKey: 'f_counterparty_ph' },
+    { key: 'rate', labelKey: 'f_agreed_rate', placeholderKey: 'f_agreed_rate_ph' },
+    { key: 'due', labelKey: 'f_repay_due', placeholderKey: 'f_repay_due_ph' },
+    { key: 'risk', labelKey: 'f_repay_risk', placeholderKey: 'f_repay_risk_ph' },
+  ],
 };
 
 export function isProductPortfolioCategory(category: string, type: 'asset' | 'liability'): boolean {
   if (type !== 'asset') return false;
   return !EXCLUDED_ASSET_PORTFOLIO_CATEGORIES.has(category);
+}
+
+/** Built-in product categories default to a portfolio; user-defined categories stay single by default. */
+export function defaultsToProductPortfolio(category: string, type: 'asset' | 'liability'): boolean {
+  return type === 'asset' && DEFAULT_PRODUCT_PORTFOLIO_CATEGORIES.has(category);
 }
 
 export function getDefaultHoldingModeForCategory(category: string): HoldingMode {

@@ -4,7 +4,8 @@ import { createAccount, addRecord, addMetalTransaction } from '../services/asset
 import { type Settings, METAL_TYPES } from '../db';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
-import { getDefaultHoldingModeForCategory, isProductPortfolioCategory } from '../lib/productPortfolio';
+import { defaultsToProductPortfolio, getDefaultHoldingModeForCategory, isProductPortfolioCategory } from '../lib/productPortfolio';
+import { formatLocalDate } from '../lib/localDate';
 
 interface Props { settings: Settings; onClose: () => void; onCreated: (id: string) => void; }
 
@@ -12,8 +13,9 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
   const { t } = useTranslation();
   const assetCats = settings.categories.filter(c => c.type === 'asset');
   const liabCats = settings.categories.filter(c => c.type === 'liability');
+  const initialCategory = assetCats[0]?.name || '';
   const [type, setType] = useState<'asset' | 'liability'>('asset');
-  const [category, setCategory] = useState(assetCats[0]?.name || '');
+  const [category, setCategory] = useState(initialCategory);
   const [name, setName] = useState('');
   const [institution, setInstitution] = useState('');
   const [currency, setCurrency] = useState(settings.primaryCurrency);
@@ -23,7 +25,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
   const [initPrice, setInitPrice] = useState('');
   const [metalGrams, setMetalGrams] = useState('');
   const [metalCost, setMetalCost] = useState('');
-  const [portfolioMode, setPortfolioMode] = useState(true);
+  const [portfolioMode, setPortfolioMode] = useState(defaultsToProductPortfolio(initialCategory, 'asset'));
 
   const setField = (key: string, val: string) => setProductData(prev => ({ ...prev, [key]: val }));
 
@@ -38,27 +40,32 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
   const handleTypeChange = (t: 'asset' | 'liability') => {
     setType(t);
     const newCats = t === 'asset' ? assetCats : liabCats;
-    if (!newCats.find(c => c.name === category)) setCategory(newCats[0]?.name || '');
+    if (!newCats.find(c => c.name === category)) {
+      const nextCategory = newCats[0]?.name || '';
+      setCategory(nextCategory);
+      setPortfolioMode(defaultsToProductPortfolio(nextCategory, t));
+    }
     setProductData({});
   };
 
   const handleCategoryChange = (c: string) => {
     setCategory(c);
+    setPortfolioMode(defaultsToProductPortfolio(c, type));
     setProductData({});
     if (c === '贵金属' && !name) {
       const m = METAL_TYPES.find(m => m.code === metalType);
-      if (m) setName(m.name);
+      if (m) setName(t(m.name));
     }
   };
 
   const handleMetalChange = (code: string) => {
     setMetalType(code);
     const m = METAL_TYPES.find(m => m.code === code);
-    if (m && (!name || METAL_TYPES.some(mt => mt.name === name))) setName(m.name);
+    if (m && (!name || METAL_TYPES.some(mt => mt.name === name || t(mt.name) === name))) setName(t(m.name));
   };
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !category || !cats.some(candidate => candidate.name === category)) return;
     const icon = isMetal
       ? METAL_TYPES.find(m => m.code === metalType)?.icon
       : settings.categories.find(c => c.name === category)?.icon;
@@ -78,7 +85,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
       const shares = parseFloat(initShares);
       const price = parseFloat(initPrice);
       if (!isNaN(shares) && !isNaN(price) && shares > 0 && price > 0) {
-        const today = new Date().toISOString().split('T')[0];
+        const today = formatLocalDate();
         await addRecord(id, today, shares * price);
       }
     }
@@ -86,7 +93,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
       const grams = parseFloat(metalGrams);
       const cost = parseFloat(metalCost);
       if (!isNaN(grams) && grams > 0) {
-        const today = new Date().toISOString().split('T')[0];
+        const today = formatLocalDate();
         await addMetalTransaction(id, { date: today, kind: 'buy', grams, pricePerGram: !isNaN(cost) && cost > 0 ? cost : 0 });
       }
     }
@@ -94,19 +101,19 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="add-account-title" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">{t('add_account')}</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <h2 className="modal-title" id="add-account-title">{t('add_account')}</h2>
+          <button type="button" className="modal-close" onClick={onClose} aria-label={t('close')}>✕</button>
         </div>
 
         {/* Type toggle */}
         <div className="form-group">
           <div style={S.typeRow}>
-            <button style={{ ...S.typeBtn, ...(type === 'asset' ? { background: 'var(--asset-color)', color: '#000' } : S.typeBtnInactive) }}
+            <button type="button" style={{ ...S.typeBtn, ...(type === 'asset' ? { background: 'var(--asset-color)', color: 'var(--theme-on-asset)' } : S.typeBtnInactive) }}
               onClick={() => handleTypeChange('asset')}>{t('assets')}</button>
-            <button style={{ ...S.typeBtn, ...(type === 'liability' ? { background: 'var(--liability-color)', color: '#fff' } : S.typeBtnInactive) }}
+            <button type="button" style={{ ...S.typeBtn, ...(type === 'liability' ? { background: 'var(--liability-color)', color: '#fff' } : S.typeBtnInactive) }}
               onClick={() => handleTypeChange('liability')}>{t('liabilities')}</button>
           </div>
         </div>
@@ -116,13 +123,14 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
           <label className="form-label">{t('category')}</label>
           <div style={S.chipRow}>
             {cats.map(c => (
-              <button key={c.name}
+              <button type="button" key={c.name}
                 style={{ ...S.chip, ...(category === c.name ? S.chipActive : {}) }}
                 onClick={() => handleCategoryChange(c.name)}>
                 {t(c.name)}
               </button>
             ))}
           </div>
+          {cats.length === 0 && <div className="form-error" role="alert">{t('category_required')}</div>}
         </div>
 
         {/* Product management mode: one account per platform (holdings inside) vs one per product */}
@@ -136,7 +144,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
                 onClick={() => setPortfolioMode(false)}>{t('mode_single')}</button>
             </div>
             {portfolioMode && (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
                 {t('portfolio_hint')}
               </div>
             )}
@@ -150,7 +158,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {METAL_TYPES.map(m => (
                 <button key={m.code} className={`btn ${metalType === m.code ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => handleMetalChange(m.code)}>{m.name}</button>
+                  onClick={() => handleMetalChange(m.code)}>{t(m.name)}</button>
               ))}
             </div>
           </div>
@@ -180,7 +188,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         </div>
 
         {isMetal && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 16, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
             {t('metal_hint', { currency })}
             <div style={{ marginTop: 4 }}>{t('metal_channel_hint')}</div>
           </div>
@@ -201,7 +209,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
                 placeholder={t('cost_price_optional')} value={metalCost} onChange={e => setMetalCost(e.target.value)} />
             </div>
             {metalGrams && metalCost && !isNaN(parseFloat(metalGrams)) && !isNaN(parseFloat(metalCost)) && parseFloat(metalGrams) > 0 && parseFloat(metalCost) > 0 && (
-              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
                 <span style={{ color: 'var(--text-muted)' }}>{t('grams_label')} × {t('cost_price')}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
                   {(parseFloat(metalGrams) * parseFloat(metalCost)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
@@ -221,7 +229,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
                 {field.options ? (
                   <div style={S.optionRow}>
                     {field.options.map(optVal => (
-                      <button key={optVal}
+                      <button type="button" key={optVal}
                         style={{ ...S.optBtn, ...(productData[field.key] === optVal ? S.optBtnActive : {}) }}
                         onClick={() => setField(field.key, productData[field.key] === optVal ? '' : optVal)}>
                         {optVal}
@@ -254,7 +262,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
                 value={initPrice} onChange={e => setInitPrice(e.target.value)} />
             </div>
             {initShares && initPrice && !isNaN(parseFloat(initShares)) && !isNaN(parseFloat(initPrice)) && parseFloat(initShares) > 0 && parseFloat(initPrice) > 0 && (
-              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
                 <span style={{ color: 'var(--text-muted)' }}>{t('market_value')} = {t('shares')} × {t('price_per_share')}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
                   {(parseFloat(initShares) * parseFloat(initPrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -265,8 +273,8 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         )}
 
         <div className="modal-actions">
-          <button className="btn btn-secondary btn-block" onClick={onClose}>{t('cancel')}</button>
-          <button className="btn btn-primary btn-block" onClick={handleSave}>{t('create')}</button>
+          <button type="button" className="btn btn-secondary btn-block" onClick={onClose}>{t('cancel')}</button>
+          <button type="button" className="btn btn-primary btn-block" disabled={!name.trim() || !category || !cats.some(candidate => candidate.name === category)} onClick={handleSave}>{t('create')}</button>
         </div>
       </div>
     </div>

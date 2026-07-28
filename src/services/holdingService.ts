@@ -2,6 +2,19 @@ import { v4 as uuidv4 } from 'uuid';
 import { db, type Holding, type HoldingTxn } from '../db';
 import { addRecord } from './assetService';
 import { getDefaultHoldingModeForCategory, getHoldingMode, usesBalanceHoldings } from '../lib/productPortfolio';
+import {
+  computeBalanceHoldingPosition,
+  computeHoldingPnl,
+  computeHoldingPosition,
+  type HoldingPnl,
+  type HoldingPosition,
+} from '../lib/holdingPosition';
+import { requestPortableSnapshot } from './portableSnapshotEvents';
+import { getHoldingContractMultiplier } from '../lib/usOption';
+import { formatLocalDate } from '../lib/localDate';
+
+export { computeBalanceHoldingPosition, computeHoldingPnl, computeHoldingPosition } from '../lib/holdingPosition';
+export type { HoldingPnl, HoldingPosition } from '../lib/holdingPosition';
 
 // ---- Holding CRUD ----
 export async function getHoldings(accountId: string): Promise<Holding[]> {
@@ -9,15 +22,27 @@ export async function getHoldings(accountId: string): Promise<Holding[]> {
   return list.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
 }
 
-export async function createHolding(accountId: string, data: Pick<Holding, 'name' | 'symbol' | 'market' | 'mode' | 'productData' | 'lastPrice' | 'priceDate'>): Promise<string> {
+export async function createHolding(accountId: string, data: Pick<Holding,
+  'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
+  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'productData'
+  | 'lastPrice' | 'priceDate'
+>): Promise<string> {
   const count = await db.holdings.where('accountId').equals(accountId).count();
   const id = uuidv4();
   await db.holdings.add({ ...data, id, accountId, sortOrder: count, createdAt: Date.now() });
+  requestPortableSnapshot('holding-created');
   return id;
 }
 
 export async function updateHolding(id: string, updates: Partial<Holding>): Promise<void> {
+  const existing = await db.holdings.get(id);
+  if (!existing) return;
   await db.holdings.update(id, updates);
+  // Metadata can change valuation semantics (for example a 1x security becoming a
+  // 100x option contract), so the account snapshot must be recalculated even when
+  // the displayed price itself did not change.
+  await syncPortfolioSnapshot(existing.accountId);
+  requestPortableSnapshot('holding-updated');
 }
 
 export async function deleteHolding(id: string): Promise<void> {
@@ -33,7 +58,14 @@ export async function getAccountTxns(accountId: string): Promise<HoldingTxn[]> {
   return list.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 }
 
-export interface HoldingTxnInput { date: string; kind: 'buy' | 'sell'; shares: number; price: number; note?: string; }
+export interface HoldingTxnInput {
+  date: string;
+  kind: 'buy' | 'sell';
+  shares: number;
+  price: number;
+  balanceSnapshot?: number;
+  note?: string;
+}
 
 export async function addHoldingTxn(accountId: string, holdingId: string, input: HoldingTxnInput): Promise<string> {
   const id = uuidv4();
@@ -59,6 +91,7 @@ export async function deleteHoldingTxn(txnId: string): Promise<void> {
 
 /** A transaction at or after the holding's quote date is the freshest price we know — adopt it. */
 async function touchPriceFromTxn(holdingId: string, input: HoldingTxnInput): Promise<void> {
+  if (input.balanceSnapshot != null) return;
   const h = await db.holdings.get(holdingId);
   if (!h || input.price <= 0) return;
   if (!h.priceDate || input.date >= h.priceDate) {
@@ -66,46 +99,22 @@ async function touchPriceFromTxn(holdingId: string, input: HoldingTxnInput): Pro
   }
 }
 
-// ---- Position math (moving average cost, same convention as metals) ----
-export interface HoldingPosition {
-  shares: number;
-  avgCost: number;       // weighted average cost per share of the current position
-  costBasis: number;     // shares * avgCost
-  realizedPnl: number;   // accumulated realized P&L from sells
-}
-
-export function computeHoldingPosition(txns: HoldingTxn[]): HoldingPosition {
-  const chron = [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
-  let shares = 0, costBasis = 0, realizedPnl = 0;
-  for (const tx of chron) {
-    if (tx.kind === 'sell') {
-      const avg = shares > 0 ? costBasis / shares : 0;
-      const sold = Math.min(tx.shares, shares);
-      realizedPnl += sold * (tx.price - avg);
-      costBasis -= sold * avg;
-      shares -= sold;
-    } else {
-      shares += tx.shares;
-      costBasis += tx.shares * tx.price;
-    }
-    if (shares < 1e-9) { shares = 0; costBasis = 0; }
-  }
-  return { shares, avgCost: shares > 0 ? costBasis / shares : 0, costBasis, realizedPnl };
-}
-
-export interface HoldingWithPosition extends Holding {
+export interface HoldingWithPosition extends Holding, HoldingPnl {
   position: HoldingPosition;
   marketValue: number;     // position.shares * lastPrice
-  unrealizedPnl: number;
 }
 
 export async function getHoldingsWithPositions(accountId: string): Promise<HoldingWithPosition[]> {
   const [account, holdings, txns] = await Promise.all([db.accounts.get(accountId), getHoldings(accountId), getAccountTxns(accountId)]);
   return holdings.map(h => {
-    const position = computeHoldingPosition(txns.filter(tx => tx.holdingId === h.id));
     const mode = getHoldingMode(account?.category ?? '', h);
-    const marketValue = mode === 'balance' ? position.shares : position.shares * (h.lastPrice || 0);
-    return { ...h, position, marketValue, unrealizedPnl: marketValue - position.costBasis };
+    const multiplier = getHoldingContractMultiplier(h);
+    const holdingTxns = txns.filter(tx => tx.holdingId === h.id);
+    const position = mode === 'balance'
+      ? computeBalanceHoldingPosition(holdingTxns)
+      : computeHoldingPosition(holdingTxns, multiplier);
+    const marketValue = mode === 'balance' ? position.shares : position.shares * multiplier * (h.lastPrice || 0);
+    return { ...h, position, marketValue, ...computeHoldingPnl(position, marketValue) };
   });
 }
 
@@ -134,20 +143,39 @@ export async function setHoldingBalance(accountId: string, holdingId: string, ta
   }
 
   const txns = await db.holdingTxns.where('holdingId').equals(holdingId).toArray();
-  const current = computeHoldingPosition(txns).shares;
-  const delta = Math.round((safeTarget - current) * 100) / 100;
-  if (Math.abs(delta) < 0.005) {
+  const current = computeBalanceHoldingPosition(txns).shares;
+  if (Math.abs(safeTarget - current) < 0.005) {
     await syncPortfolioSnapshot(accountId);
     return;
   }
 
   await addHoldingTxn(accountId, holdingId, {
     date,
-    kind: delta >= 0 ? 'buy' : 'sell',
-    shares: Math.abs(delta),
+    kind: 'buy',
+    shares: 0,
     price: 1,
+    balanceSnapshot: Math.round(safeTarget * 100) / 100,
     note,
   });
+}
+
+export async function updateHoldingBalanceSnapshot(
+  txnId: string,
+  targetBalance: number,
+  date: string,
+  note?: string,
+): Promise<void> {
+  const txn = await db.holdingTxns.get(txnId);
+  if (!txn) return;
+  await db.holdingTxns.update(txnId, {
+    date,
+    kind: 'buy',
+    shares: 0,
+    price: 1,
+    balanceSnapshot: Math.round(Math.max(0, targetBalance) * 100) / 100,
+    note,
+  });
+  await syncPortfolioSnapshot(txn.accountId);
 }
 
 export async function updateBalances(accountId: string, balances: Record<string, number>, date: string): Promise<void> {
@@ -171,7 +199,7 @@ async function getPortfolioTotal(accountId: string): Promise<number> {
 }
 
 async function upsertTodayAccountRecord(accountId: string, amount: number): Promise<void> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatLocalDate();
   const todayRecs = (await db.records.where('accountId').equals(accountId).toArray())
     .filter(r => r.date === today)
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -220,6 +248,7 @@ export async function setAccountPortfolioMode(accountId: string, portfolio: bool
   const total = await getPortfolioTotal(accountId);
   await db.accounts.update(accountId, { portfolio: undefined, cashBalance: undefined });
   await upsertTodayAccountRecord(accountId, total);
+  requestPortableSnapshot('portfolio-mode-disabled');
 }
 
 /**
@@ -233,10 +262,11 @@ export async function syncPortfolioSnapshot(accountId: string): Promise<void> {
   const withPos = await getHoldingsWithPositions(accountId);
   const total = (account.cashBalance || 0) + withPos.reduce((s, h) => s + h.marketValue, 0);
   const rounded = Math.round(total * 100) / 100;
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatLocalDate();
   const todayRecs = (await db.records.where('accountId').equals(accountId).toArray())
     .filter(r => r.date === today)
     .sort((a, b) => b.createdAt - a.createdAt);
   if (todayRecs.length > 0) await db.records.update(todayRecs[0].id, { amount: rounded });
   else await addRecord(accountId, today, rounded);
+  requestPortableSnapshot('portfolio-changed');
 }

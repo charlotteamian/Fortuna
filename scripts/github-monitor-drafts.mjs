@@ -338,7 +338,7 @@ async function generateDraft(candidate, projectContext) {
       'Manual reply checklist:',
       '- Read the linked GitHub thread.',
       '- Answer only from confirmed Fortuna repository context.',
-      '- If the request requires a product decision from charlotte, say that it needs maintainer confirmation.',
+      '- If the request requires a product decision, say that it needs maintainer confirmation.',
     ].join('\n')
   }
 

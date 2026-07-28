@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitHoldingsByArchive } from '../src/lib/holdingArchive';
+import { splitHoldingsByArchive } from '../src/lib/holdingArchive.ts';
 
 type HoldingLike = {
   id: string;
