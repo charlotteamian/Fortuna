@@ -2,6 +2,15 @@
 
 All notable user-facing changes are documented here.
 
+## [Unreleased]
+
+### Product story and bilingual demo
+
+- Reframed the product around four differentiators: full-asset consolidation, supported market-price refresh, plan-versus-position tracking, and local-first data portability.
+- Split the GitHub introduction into independent Chinese and English sections, each paired with matching-language screenshots.
+- Added a complete English synthetic JSON/Excel demo alongside the Chinese demo.
+- Added the same product-differentiation explanation to the in-app user guide.
+
 ## [1.2.0] - 2026-07-28
 
 ### Onboarding and documentation

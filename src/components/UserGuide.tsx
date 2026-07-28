@@ -6,6 +6,7 @@ interface Props {
 }
 
 const GUIDE_SECTIONS = [
+  'why_fortuna',
   'quick_start',
   'navigation',
   'account_models',

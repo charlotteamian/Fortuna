@@ -1,0 +1,1236 @@
+{
+  "metadata": {
+    "format": "Fortuna Synthetic Demo Dataset",
+    "version": 1,
+    "generatedFor": "Fortuna v1.2.0",
+    "synthetic": true,
+    "warning": "This dataset is entirely fictional and contains no real person, account, or transaction information.",
+    "locale": "en"
+  },
+  "accounts": [
+    {
+      "id": "demo-daily-bank",
+      "name": "Everyday Account (Demo)",
+      "category": "银行存款",
+      "type": "asset",
+      "currency": "CNY",
+      "institution": "Pine Ridge Bank (Fictional)",
+      "createdAt": 1754035200000,
+      "sortOrder": 0
+    },
+    {
+      "id": "demo-emergency",
+      "name": "Emergency Fund (Demo)",
+      "category": "银行存款",
+      "type": "asset",
+      "currency": "CNY",
+      "institution": "Pine Ridge Bank (Fictional)",
+      "productData": {
+        "interestRate": "1.65%",
+        "maturityDate": "2027-06-30"
+      },
+      "createdAt": 1754035200001,
+      "sortOrder": 1
+    },
+    {
+      "id": "demo-broker",
+      "name": "Galaxy Securities (Demo)",
+      "category": "股票/ETF",
+      "type": "asset",
+      "currency": "CNY",
+      "institution": "Galaxy Securities (Fictional)",
+      "portfolio": true,
+      "cashBalance": 18500,
+      "createdAt": 1754035200002,
+      "sortOrder": 2
+    },
+    {
+      "id": "demo-fund-platform",
+      "name": "Balanced Products (Demo)",
+      "category": "场外基金",
+      "type": "asset",
+      "currency": "CNY",
+      "institution": "Harbor Fund (Fictional)",
+      "portfolio": true,
+      "cashBalance": 0,
+      "createdAt": 1754035200003,
+      "sortOrder": 3
+    },
+    {
+      "id": "demo-usd-savings",
+      "name": "Travel Fund (Demo)",
+      "category": "银行存款",
+      "type": "asset",
+      "currency": "USD",
+      "institution": "Seabreeze Bank (Fictional)",
+      "createdAt": 1754035200004,
+      "sortOrder": 4
+    },
+    {
+      "id": "demo-home",
+      "name": "Primary Home (Demo)",
+      "category": "房产",
+      "type": "asset",
+      "currency": "CNY",
+      "productData": {
+        "location": "Sample Central District",
+        "area": "89 m²"
+      },
+      "createdAt": 1754035200005,
+      "sortOrder": 5
+    },
+    {
+      "id": "demo-mortgage",
+      "name": "Home Mortgage (Demo)",
+      "category": "房贷",
+      "type": "liability",
+      "currency": "CNY",
+      "institution": "Pine Ridge Bank (Fictional)",
+      "createdAt": 1754035200006,
+      "sortOrder": 6
+    },
+    {
+      "id": "demo-card",
+      "name": "Everyday Credit Card (Demo)",
+      "category": "信用卡",
+      "type": "liability",
+      "currency": "CNY",
+      "institution": "Seabreeze Bank (Fictional)",
+      "createdAt": 1754035200007,
+      "sortOrder": 7
+    }
+  ],
+  "records": [
+    {
+      "id": "demo-record-1-01",
+      "accountId": "demo-daily-bank",
+      "date": "2025-08-31",
+      "amount": 31800,
+      "createdAt": 1756627200000
+    },
+    {
+      "id": "demo-record-1-02",
+      "accountId": "demo-daily-bank",
+      "date": "2025-09-30",
+      "amount": 29200,
+      "createdAt": 1759219200000
+    },
+    {
+      "id": "demo-record-1-03",
+      "accountId": "demo-daily-bank",
+      "date": "2025-10-31",
+      "amount": 34600,
+      "createdAt": 1761897600000
+    },
+    {
+      "id": "demo-record-1-04",
+      "accountId": "demo-daily-bank",
+      "date": "2025-11-30",
+      "amount": 30200,
+      "createdAt": 1764489600000
+    },
+    {
+      "id": "demo-record-1-05",
+      "accountId": "demo-daily-bank",
+      "date": "2025-12-31",
+      "amount": 38600,
+      "createdAt": 1767168000000
+    },
+    {
+      "id": "demo-record-1-06",
+      "accountId": "demo-daily-bank",
+      "date": "2026-01-31",
+      "amount": 33200,
+      "createdAt": 1769846400000
+    },
+    {
+      "id": "demo-record-1-07",
+      "accountId": "demo-daily-bank",
+      "date": "2026-02-28",
+      "amount": 36100,
+      "createdAt": 1772265600000
+    },
+    {
+      "id": "demo-record-1-08",
+      "accountId": "demo-daily-bank",
+      "date": "2026-03-31",
+      "amount": 40500,
+      "createdAt": 1774944000000
+    },
+    {
+      "id": "demo-record-1-09",
+      "accountId": "demo-daily-bank",
+      "date": "2026-04-30",
+      "amount": 37400,
+      "createdAt": 1777536000000
+    },
+    {
+      "id": "demo-record-1-10",
+      "accountId": "demo-daily-bank",
+      "date": "2026-05-31",
+      "amount": 42100,
+      "createdAt": 1780214400000
+    },
+    {
+      "id": "demo-record-1-11",
+      "accountId": "demo-daily-bank",
+      "date": "2026-06-30",
+      "amount": 39800,
+      "createdAt": 1782806400000
+    },
+    {
+      "id": "demo-record-1-12",
+      "accountId": "demo-daily-bank",
+      "date": "2026-07-28",
+      "amount": 45600,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600000
+    },
+    {
+      "id": "demo-record-2-01",
+      "accountId": "demo-emergency",
+      "date": "2025-08-31",
+      "amount": 96000,
+      "createdAt": 1756627200001
+    },
+    {
+      "id": "demo-record-2-02",
+      "accountId": "demo-emergency",
+      "date": "2025-09-30",
+      "amount": 98000,
+      "createdAt": 1759219200001
+    },
+    {
+      "id": "demo-record-2-03",
+      "accountId": "demo-emergency",
+      "date": "2025-10-31",
+      "amount": 100000,
+      "createdAt": 1761897600001
+    },
+    {
+      "id": "demo-record-2-04",
+      "accountId": "demo-emergency",
+      "date": "2025-11-30",
+      "amount": 102000,
+      "createdAt": 1764489600001
+    },
+    {
+      "id": "demo-record-2-05",
+      "accountId": "demo-emergency",
+      "date": "2025-12-31",
+      "amount": 104000,
+      "createdAt": 1767168000001
+    },
+    {
+      "id": "demo-record-2-06",
+      "accountId": "demo-emergency",
+      "date": "2026-01-31",
+      "amount": 106000,
+      "createdAt": 1769846400001
+    },
+    {
+      "id": "demo-record-2-07",
+      "accountId": "demo-emergency",
+      "date": "2026-02-28",
+      "amount": 108000,
+      "createdAt": 1772265600001
+    },
+    {
+      "id": "demo-record-2-08",
+      "accountId": "demo-emergency",
+      "date": "2026-03-31",
+      "amount": 110000,
+      "createdAt": 1774944000001
+    },
+    {
+      "id": "demo-record-2-09",
+      "accountId": "demo-emergency",
+      "date": "2026-04-30",
+      "amount": 112000,
+      "createdAt": 1777536000001
+    },
+    {
+      "id": "demo-record-2-10",
+      "accountId": "demo-emergency",
+      "date": "2026-05-31",
+      "amount": 114000,
+      "createdAt": 1780214400001
+    },
+    {
+      "id": "demo-record-2-11",
+      "accountId": "demo-emergency",
+      "date": "2026-06-30",
+      "amount": 117000,
+      "createdAt": 1782806400001
+    },
+    {
+      "id": "demo-record-2-12",
+      "accountId": "demo-emergency",
+      "date": "2026-07-28",
+      "amount": 120000,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600001
+    },
+    {
+      "id": "demo-record-3-01",
+      "accountId": "demo-broker",
+      "date": "2025-08-31",
+      "amount": 74800,
+      "createdAt": 1756627200002
+    },
+    {
+      "id": "demo-record-3-02",
+      "accountId": "demo-broker",
+      "date": "2025-09-30",
+      "amount": 76200,
+      "createdAt": 1759219200002
+    },
+    {
+      "id": "demo-record-3-03",
+      "accountId": "demo-broker",
+      "date": "2025-10-31",
+      "amount": 74100,
+      "createdAt": 1761897600002
+    },
+    {
+      "id": "demo-record-3-04",
+      "accountId": "demo-broker",
+      "date": "2025-11-30",
+      "amount": 78500,
+      "createdAt": 1764489600002
+    },
+    {
+      "id": "demo-record-3-05",
+      "accountId": "demo-broker",
+      "date": "2025-12-31",
+      "amount": 80100,
+      "createdAt": 1767168000002
+    },
+    {
+      "id": "demo-record-3-06",
+      "accountId": "demo-broker",
+      "date": "2026-01-31",
+      "amount": 82400,
+      "createdAt": 1769846400002
+    },
+    {
+      "id": "demo-record-3-07",
+      "accountId": "demo-broker",
+      "date": "2026-02-28",
+      "amount": 80600,
+      "createdAt": 1772265600002
+    },
+    {
+      "id": "demo-record-3-08",
+      "accountId": "demo-broker",
+      "date": "2026-03-31",
+      "amount": 83600,
+      "createdAt": 1774944000002
+    },
+    {
+      "id": "demo-record-3-09",
+      "accountId": "demo-broker",
+      "date": "2026-04-30",
+      "amount": 85100,
+      "createdAt": 1777536000002
+    },
+    {
+      "id": "demo-record-3-10",
+      "accountId": "demo-broker",
+      "date": "2026-05-31",
+      "amount": 87200,
+      "createdAt": 1780214400002
+    },
+    {
+      "id": "demo-record-3-11",
+      "accountId": "demo-broker",
+      "date": "2026-06-30",
+      "amount": 86100,
+      "createdAt": 1782806400002
+    },
+    {
+      "id": "demo-record-3-12",
+      "accountId": "demo-broker",
+      "date": "2026-07-28",
+      "amount": 88880,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600002
+    },
+    {
+      "id": "demo-record-4-01",
+      "accountId": "demo-fund-platform",
+      "date": "2025-08-31",
+      "amount": 93000,
+      "createdAt": 1756627200003
+    },
+    {
+      "id": "demo-record-4-02",
+      "accountId": "demo-fund-platform",
+      "date": "2025-09-30",
+      "amount": 96000,
+      "createdAt": 1759219200003
+    },
+    {
+      "id": "demo-record-4-03",
+      "accountId": "demo-fund-platform",
+      "date": "2025-10-31",
+      "amount": 98500,
+      "createdAt": 1761897600003
+    },
+    {
+      "id": "demo-record-4-04",
+      "accountId": "demo-fund-platform",
+      "date": "2025-11-30",
+      "amount": 101000,
+      "createdAt": 1764489600003
+    },
+    {
+      "id": "demo-record-4-05",
+      "accountId": "demo-fund-platform",
+      "date": "2025-12-31",
+      "amount": 104500,
+      "createdAt": 1767168000003
+    },
+    {
+      "id": "demo-record-4-06",
+      "accountId": "demo-fund-platform",
+      "date": "2026-01-31",
+      "amount": 106000,
+      "createdAt": 1769846400003
+    },
+    {
+      "id": "demo-record-4-07",
+      "accountId": "demo-fund-platform",
+      "date": "2026-02-28",
+      "amount": 109000,
+      "createdAt": 1772265600003
+    },
+    {
+      "id": "demo-record-4-08",
+      "accountId": "demo-fund-platform",
+      "date": "2026-03-31",
+      "amount": 111500,
+      "createdAt": 1774944000003
+    },
+    {
+      "id": "demo-record-4-09",
+      "accountId": "demo-fund-platform",
+      "date": "2026-04-30",
+      "amount": 114000,
+      "createdAt": 1777536000003
+    },
+    {
+      "id": "demo-record-4-10",
+      "accountId": "demo-fund-platform",
+      "date": "2026-05-31",
+      "amount": 116000,
+      "createdAt": 1780214400003
+    },
+    {
+      "id": "demo-record-4-11",
+      "accountId": "demo-fund-platform",
+      "date": "2026-06-30",
+      "amount": 118000,
+      "createdAt": 1782806400003
+    },
+    {
+      "id": "demo-record-4-12",
+      "accountId": "demo-fund-platform",
+      "date": "2026-07-28",
+      "amount": 120000,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600003
+    },
+    {
+      "id": "demo-record-5-01",
+      "accountId": "demo-usd-savings",
+      "date": "2025-08-31",
+      "amount": 9500,
+      "createdAt": 1756627200004
+    },
+    {
+      "id": "demo-record-5-02",
+      "accountId": "demo-usd-savings",
+      "date": "2025-09-30",
+      "amount": 9700,
+      "createdAt": 1759219200004
+    },
+    {
+      "id": "demo-record-5-03",
+      "accountId": "demo-usd-savings",
+      "date": "2025-10-31",
+      "amount": 9900,
+      "createdAt": 1761897600004
+    },
+    {
+      "id": "demo-record-5-04",
+      "accountId": "demo-usd-savings",
+      "date": "2025-11-30",
+      "amount": 10100,
+      "createdAt": 1764489600004
+    },
+    {
+      "id": "demo-record-5-05",
+      "accountId": "demo-usd-savings",
+      "date": "2025-12-31",
+      "amount": 10300,
+      "createdAt": 1767168000004
+    },
+    {
+      "id": "demo-record-5-06",
+      "accountId": "demo-usd-savings",
+      "date": "2026-01-31",
+      "amount": 10500,
+      "createdAt": 1769846400004
+    },
+    {
+      "id": "demo-record-5-07",
+      "accountId": "demo-usd-savings",
+      "date": "2026-02-28",
+      "amount": 10700,
+      "createdAt": 1772265600004
+    },
+    {
+      "id": "demo-record-5-08",
+      "accountId": "demo-usd-savings",
+      "date": "2026-03-31",
+      "amount": 10900,
+      "createdAt": 1774944000004
+    },
+    {
+      "id": "demo-record-5-09",
+      "accountId": "demo-usd-savings",
+      "date": "2026-04-30",
+      "amount": 11100,
+      "createdAt": 1777536000004
+    },
+    {
+      "id": "demo-record-5-10",
+      "accountId": "demo-usd-savings",
+      "date": "2026-05-31",
+      "amount": 11400,
+      "createdAt": 1780214400004
+    },
+    {
+      "id": "demo-record-5-11",
+      "accountId": "demo-usd-savings",
+      "date": "2026-06-30",
+      "amount": 11700,
+      "createdAt": 1782806400004
+    },
+    {
+      "id": "demo-record-5-12",
+      "accountId": "demo-usd-savings",
+      "date": "2026-07-28",
+      "amount": 12000,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600004
+    },
+    {
+      "id": "demo-record-6-01",
+      "accountId": "demo-home",
+      "date": "2025-08-31",
+      "amount": 1750000,
+      "createdAt": 1756627200005
+    },
+    {
+      "id": "demo-record-6-02",
+      "accountId": "demo-home",
+      "date": "2025-09-30",
+      "amount": 1750000,
+      "createdAt": 1759219200005
+    },
+    {
+      "id": "demo-record-6-03",
+      "accountId": "demo-home",
+      "date": "2025-10-31",
+      "amount": 1750000,
+      "createdAt": 1761897600005
+    },
+    {
+      "id": "demo-record-6-04",
+      "accountId": "demo-home",
+      "date": "2025-11-30",
+      "amount": 1750000,
+      "createdAt": 1764489600005
+    },
+    {
+      "id": "demo-record-6-05",
+      "accountId": "demo-home",
+      "date": "2025-12-31",
+      "amount": 1780000,
+      "createdAt": 1767168000005
+    },
+    {
+      "id": "demo-record-6-06",
+      "accountId": "demo-home",
+      "date": "2026-01-31",
+      "amount": 1780000,
+      "createdAt": 1769846400005
+    },
+    {
+      "id": "demo-record-6-07",
+      "accountId": "demo-home",
+      "date": "2026-02-28",
+      "amount": 1780000,
+      "createdAt": 1772265600005
+    },
+    {
+      "id": "demo-record-6-08",
+      "accountId": "demo-home",
+      "date": "2026-03-31",
+      "amount": 1780000,
+      "createdAt": 1774944000005
+    },
+    {
+      "id": "demo-record-6-09",
+      "accountId": "demo-home",
+      "date": "2026-04-30",
+      "amount": 1800000,
+      "createdAt": 1777536000005
+    },
+    {
+      "id": "demo-record-6-10",
+      "accountId": "demo-home",
+      "date": "2026-05-31",
+      "amount": 1800000,
+      "createdAt": 1780214400005
+    },
+    {
+      "id": "demo-record-6-11",
+      "accountId": "demo-home",
+      "date": "2026-06-30",
+      "amount": 1800000,
+      "createdAt": 1782806400005
+    },
+    {
+      "id": "demo-record-6-12",
+      "accountId": "demo-home",
+      "date": "2026-07-28",
+      "amount": 1800000,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600005
+    },
+    {
+      "id": "demo-record-7-01",
+      "accountId": "demo-mortgage",
+      "date": "2025-08-31",
+      "amount": 968000,
+      "createdAt": 1756627200006
+    },
+    {
+      "id": "demo-record-7-02",
+      "accountId": "demo-mortgage",
+      "date": "2025-09-30",
+      "amount": 962000,
+      "createdAt": 1759219200006
+    },
+    {
+      "id": "demo-record-7-03",
+      "accountId": "demo-mortgage",
+      "date": "2025-10-31",
+      "amount": 956000,
+      "createdAt": 1761897600006
+    },
+    {
+      "id": "demo-record-7-04",
+      "accountId": "demo-mortgage",
+      "date": "2025-11-30",
+      "amount": 950000,
+      "createdAt": 1764489600006
+    },
+    {
+      "id": "demo-record-7-05",
+      "accountId": "demo-mortgage",
+      "date": "2025-12-31",
+      "amount": 944000,
+      "createdAt": 1767168000006
+    },
+    {
+      "id": "demo-record-7-06",
+      "accountId": "demo-mortgage",
+      "date": "2026-01-31",
+      "amount": 938000,
+      "createdAt": 1769846400006
+    },
+    {
+      "id": "demo-record-7-07",
+      "accountId": "demo-mortgage",
+      "date": "2026-02-28",
+      "amount": 932000,
+      "createdAt": 1772265600006
+    },
+    {
+      "id": "demo-record-7-08",
+      "accountId": "demo-mortgage",
+      "date": "2026-03-31",
+      "amount": 926000,
+      "createdAt": 1774944000006
+    },
+    {
+      "id": "demo-record-7-09",
+      "accountId": "demo-mortgage",
+      "date": "2026-04-30",
+      "amount": 920000,
+      "createdAt": 1777536000006
+    },
+    {
+      "id": "demo-record-7-10",
+      "accountId": "demo-mortgage",
+      "date": "2026-05-31",
+      "amount": 914000,
+      "createdAt": 1780214400006
+    },
+    {
+      "id": "demo-record-7-11",
+      "accountId": "demo-mortgage",
+      "date": "2026-06-30",
+      "amount": 908000,
+      "createdAt": 1782806400006
+    },
+    {
+      "id": "demo-record-7-12",
+      "accountId": "demo-mortgage",
+      "date": "2026-07-28",
+      "amount": 902000,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600006
+    },
+    {
+      "id": "demo-record-8-01",
+      "accountId": "demo-card",
+      "date": "2025-08-31",
+      "amount": 3200,
+      "createdAt": 1756627200007
+    },
+    {
+      "id": "demo-record-8-02",
+      "accountId": "demo-card",
+      "date": "2025-09-30",
+      "amount": 2800,
+      "createdAt": 1759219200007
+    },
+    {
+      "id": "demo-record-8-03",
+      "accountId": "demo-card",
+      "date": "2025-10-31",
+      "amount": 4100,
+      "createdAt": 1761897600007
+    },
+    {
+      "id": "demo-record-8-04",
+      "accountId": "demo-card",
+      "date": "2025-11-30",
+      "amount": 3600,
+      "createdAt": 1764489600007
+    },
+    {
+      "id": "demo-record-8-05",
+      "accountId": "demo-card",
+      "date": "2025-12-31",
+      "amount": 5200,
+      "createdAt": 1767168000007
+    },
+    {
+      "id": "demo-record-8-06",
+      "accountId": "demo-card",
+      "date": "2026-01-31",
+      "amount": 2900,
+      "createdAt": 1769846400007
+    },
+    {
+      "id": "demo-record-8-07",
+      "accountId": "demo-card",
+      "date": "2026-02-28",
+      "amount": 3900,
+      "createdAt": 1772265600007
+    },
+    {
+      "id": "demo-record-8-08",
+      "accountId": "demo-card",
+      "date": "2026-03-31",
+      "amount": 3300,
+      "createdAt": 1774944000007
+    },
+    {
+      "id": "demo-record-8-09",
+      "accountId": "demo-card",
+      "date": "2026-04-30",
+      "amount": 4700,
+      "createdAt": 1777536000007
+    },
+    {
+      "id": "demo-record-8-10",
+      "accountId": "demo-card",
+      "date": "2026-05-31",
+      "amount": 3100,
+      "createdAt": 1780214400007
+    },
+    {
+      "id": "demo-record-8-11",
+      "accountId": "demo-card",
+      "date": "2026-06-30",
+      "amount": 3800,
+      "createdAt": 1782806400007
+    },
+    {
+      "id": "demo-record-8-12",
+      "accountId": "demo-card",
+      "date": "2026-07-28",
+      "amount": 4200,
+      "note": "Demo month-end balance",
+      "createdAt": 1785225600007
+    }
+  ],
+  "exchangeRates": [
+    {
+      "id": "USD_CNY",
+      "base": "USD",
+      "quote": "CNY",
+      "rate": 7.18,
+      "date": "2026-07-28",
+      "updatedAt": 1785225600000
+    },
+    {
+      "id": "EUR_CNY",
+      "base": "EUR",
+      "quote": "CNY",
+      "rate": 8.35,
+      "date": "2026-07-28",
+      "updatedAt": 1785225600001
+    },
+    {
+      "id": "GBP_CNY",
+      "base": "GBP",
+      "quote": "CNY",
+      "rate": 9.62,
+      "date": "2026-07-28",
+      "updatedAt": 1785225600002
+    }
+  ],
+  "products": [],
+  "planItems": [
+    {
+      "id": "demo-plan-growth",
+      "name": "Long-Term Growth",
+      "targetPercent": 25,
+      "categories": [
+        "股票/ETF"
+      ],
+      "allocations": [],
+      "sortOrder": 0,
+      "createdAt": 1767254400000
+    },
+    {
+      "id": "demo-plan-stable",
+      "name": "Stable Reserve",
+      "targetPercent": 25,
+      "categories": [
+        "银行存款",
+        "场外基金"
+      ],
+      "allocations": [],
+      "sortOrder": 1,
+      "createdAt": 1767254400001
+    },
+    {
+      "id": "demo-plan-home",
+      "name": "Home Equity",
+      "targetPercent": 50,
+      "categories": [
+        "房产"
+      ],
+      "allocations": [],
+      "sortOrder": 2,
+      "createdAt": 1767254400002
+    }
+  ],
+  "planTargets": [
+    {
+      "id": "demo-target-global",
+      "planItemId": "demo-plan-growth",
+      "label": "Global Equities",
+      "refKeys": [
+        "h:demo-h-global"
+      ],
+      "allocations": [],
+      "targetPercent": 18,
+      "sortOrder": 0,
+      "createdAt": 1767254400000
+    },
+    {
+      "id": "demo-target-bond",
+      "planItemId": "demo-plan-growth",
+      "label": "Short-Term Bonds",
+      "refKeys": [
+        "h:demo-h-bond"
+      ],
+      "allocations": [],
+      "targetPercent": 7,
+      "sortOrder": 1,
+      "createdAt": 1767254400001
+    },
+    {
+      "id": "demo-target-cash",
+      "planItemId": "demo-plan-stable",
+      "label": "Liquidity Reserve",
+      "refKeys": [
+        "a:demo-daily-bank",
+        "a:demo-emergency",
+        "c:demo-broker"
+      ],
+      "allocations": [],
+      "targetPercent": 15,
+      "sortOrder": 0,
+      "createdAt": 1767254400002
+    },
+    {
+      "id": "demo-target-funds",
+      "planItemId": "demo-plan-stable",
+      "label": "Balanced Products",
+      "refKeys": [
+        "h:demo-h-balanced",
+        "h:demo-h-income"
+      ],
+      "allocations": [],
+      "targetPercent": 10,
+      "sortOrder": 1,
+      "createdAt": 1767254400003
+    },
+    {
+      "id": "demo-target-home",
+      "planItemId": "demo-plan-home",
+      "label": "Primary Home",
+      "refKeys": [
+        "a:demo-home"
+      ],
+      "allocations": [],
+      "targetPercent": 50,
+      "sortOrder": 0,
+      "createdAt": 1767254400004
+    }
+  ],
+  "holdings": [
+    {
+      "id": "demo-h-global",
+      "accountId": "demo-broker",
+      "name": "Global Broad Market Index (Demo)",
+      "symbol": "DEMO-GLOBAL",
+      "market": "Other",
+      "lastPrice": 26.4,
+      "priceDate": "2026-07-28",
+      "sortOrder": 0,
+      "createdAt": 1754380800000
+    },
+    {
+      "id": "demo-h-bond",
+      "accountId": "demo-broker",
+      "name": "Short-Term Bond ETF (Demo)",
+      "symbol": "DEMO-BOND",
+      "market": "Other",
+      "lastPrice": 10.25,
+      "priceDate": "2026-07-28",
+      "sortOrder": 1,
+      "createdAt": 1754380800001
+    },
+    {
+      "id": "demo-h-archived",
+      "accountId": "demo-broker",
+      "name": "Technology Theme Fund (Archived Demo)",
+      "symbol": "DEMO-TECH",
+      "market": "Other",
+      "lastPrice": 16.2,
+      "priceDate": "2026-02-18",
+      "sortOrder": 2,
+      "createdAt": 1754380800002
+    },
+    {
+      "id": "demo-h-balanced",
+      "accountId": "demo-fund-platform",
+      "name": "Balanced Portfolio (Demo)",
+      "symbol": "DEMO-BAL",
+      "market": "Other",
+      "mode": "balance",
+      "productData": {
+        "riskLevel": "R2",
+        "manager": "Fictional Manager"
+      },
+      "lastPrice": 1,
+      "priceDate": "2026-07-28",
+      "sortOrder": 0,
+      "createdAt": 1754467200000
+    },
+    {
+      "id": "demo-h-income",
+      "accountId": "demo-fund-platform",
+      "name": "Cash Income Portfolio (Demo)",
+      "symbol": "DEMO-CASH",
+      "market": "Other",
+      "mode": "balance",
+      "productData": {
+        "riskLevel": "R1",
+        "manager": "Fictional Manager"
+      },
+      "lastPrice": 1,
+      "priceDate": "2026-07-28",
+      "sortOrder": 1,
+      "createdAt": 1754467200001
+    },
+    {
+      "id": "demo-h-fund-archived",
+      "accountId": "demo-fund-platform",
+      "name": "90-Day Product (Archived Demo)",
+      "symbol": "DEMO-90D",
+      "market": "Other",
+      "mode": "balance",
+      "lastPrice": 1,
+      "priceDate": "2026-04-01",
+      "sortOrder": 2,
+      "createdAt": 1754467200002
+    }
+  ],
+  "holdingTxns": [
+    {
+      "id": "demo-t-global-1",
+      "accountId": "demo-broker",
+      "holdingId": "demo-h-global",
+      "date": "2025-08-05",
+      "kind": "buy",
+      "shares": 1800,
+      "price": 22.5,
+      "note": "Demo opening position",
+      "createdAt": 1754380800000
+    },
+    {
+      "id": "demo-t-global-2",
+      "accountId": "demo-broker",
+      "holdingId": "demo-h-global",
+      "date": "2026-03-12",
+      "kind": "buy",
+      "shares": 400,
+      "price": 24.8,
+      "note": "Demo recurring investment",
+      "createdAt": 1773302400000
+    },
+    {
+      "id": "demo-t-bond-1",
+      "accountId": "demo-broker",
+      "holdingId": "demo-h-bond",
+      "date": "2025-09-10",
+      "kind": "buy",
+      "shares": 1200,
+      "price": 10.05,
+      "note": "Demo defensive position",
+      "createdAt": 1757491200000
+    },
+    {
+      "id": "demo-t-archived-1",
+      "accountId": "demo-broker",
+      "holdingId": "demo-h-archived",
+      "date": "2025-10-08",
+      "kind": "buy",
+      "shares": 500,
+      "price": 15,
+      "note": "Demo purchase",
+      "createdAt": 1759910400000
+    },
+    {
+      "id": "demo-t-archived-2",
+      "accountId": "demo-broker",
+      "holdingId": "demo-h-archived",
+      "date": "2026-02-18",
+      "kind": "sell",
+      "shares": 500,
+      "price": 16.2,
+      "note": "Demo position closed",
+      "createdAt": 1771401600000
+    },
+    {
+      "id": "demo-t-balanced-1",
+      "accountId": "demo-fund-platform",
+      "holdingId": "demo-h-balanced",
+      "date": "2025-08-06",
+      "kind": "buy",
+      "shares": 0,
+      "price": 1,
+      "balanceSnapshot": 65000,
+      "note": "Demo opening balance",
+      "createdAt": 1754467200000
+    },
+    {
+      "id": "demo-t-balanced-2",
+      "accountId": "demo-fund-platform",
+      "holdingId": "demo-h-balanced",
+      "date": "2026-07-28",
+      "kind": "buy",
+      "shares": 0,
+      "price": 1,
+      "balanceSnapshot": 80000,
+      "note": "Demo latest balance",
+      "createdAt": 1785225600000
+    },
+    {
+      "id": "demo-t-income-1",
+      "accountId": "demo-fund-platform",
+      "holdingId": "demo-h-income",
+      "date": "2025-08-06",
+      "kind": "buy",
+      "shares": 0,
+      "price": 1,
+      "balanceSnapshot": 28000,
+      "note": "Demo opening balance",
+      "createdAt": 1754467200001
+    },
+    {
+      "id": "demo-t-income-2",
+      "accountId": "demo-fund-platform",
+      "holdingId": "demo-h-income",
+      "date": "2026-07-28",
+      "kind": "buy",
+      "shares": 0,
+      "price": 1,
+      "balanceSnapshot": 40000,
+      "note": "Demo latest balance",
+      "createdAt": 1785225600001
+    },
+    {
+      "id": "demo-t-fund-old-1",
+      "accountId": "demo-fund-platform",
+      "holdingId": "demo-h-fund-archived",
+      "date": "2025-11-01",
+      "kind": "buy",
+      "shares": 0,
+      "price": 1,
+      "balanceSnapshot": 20000,
+      "note": "Demo opening balance",
+      "createdAt": 1761984000000
+    },
+    {
+      "id": "demo-t-fund-old-2",
+      "accountId": "demo-fund-platform",
+      "holdingId": "demo-h-fund-archived",
+      "date": "2026-04-01",
+      "kind": "buy",
+      "shares": 0,
+      "price": 1,
+      "balanceSnapshot": 0,
+      "note": "Demo maturity archive",
+      "createdAt": 1775030400000
+    }
+  ],
+  "settings": [
+    {
+      "id": "main",
+      "primaryCurrency": "CNY",
+      "categories": [
+        {
+          "name": "银行存款",
+          "type": "asset",
+          "icon": "🏦"
+        },
+        {
+          "name": "现金",
+          "type": "asset",
+          "icon": "💵"
+        },
+        {
+          "name": "股票/ETF",
+          "type": "asset",
+          "icon": "📈"
+        },
+        {
+          "name": "场外基金",
+          "type": "asset",
+          "icon": "📊"
+        },
+        {
+          "name": "债券",
+          "type": "asset",
+          "icon": "📃"
+        },
+        {
+          "name": "理财产品",
+          "type": "asset",
+          "icon": "💹"
+        },
+        {
+          "name": "贵金属",
+          "type": "asset",
+          "icon": "🥇"
+        },
+        {
+          "name": "债权",
+          "type": "asset",
+          "icon": "📜"
+        },
+        {
+          "name": "房产",
+          "type": "asset",
+          "icon": "🏠"
+        },
+        {
+          "name": "数字货币",
+          "type": "asset",
+          "icon": "₿"
+        },
+        {
+          "name": "其他资产",
+          "type": "asset",
+          "icon": "💎"
+        },
+        {
+          "name": "信用卡",
+          "type": "liability",
+          "icon": "💳"
+        },
+        {
+          "name": "房贷",
+          "type": "liability",
+          "icon": "🏗️"
+        },
+        {
+          "name": "车贷",
+          "type": "liability",
+          "icon": "🚗"
+        },
+        {
+          "name": "消费贷",
+          "type": "liability",
+          "icon": "📋"
+        },
+        {
+          "name": "其他负债",
+          "type": "liability",
+          "icon": "⚠️"
+        }
+      ],
+      "currencies": [
+        "CNY",
+        "USD",
+        "EUR",
+        "GBP",
+        "JPY",
+        "HKD",
+        "SGD",
+        "AUD",
+        "CAD",
+        "CHF"
+      ],
+      "colorTheme": "emerald-rose",
+      "amountVisible": true,
+      "showArchivedAccounts": false,
+      "themeMode": "dark",
+      "fontSize": "normal",
+      "language": "en",
+      "goldPriceSource": "international",
+      "metalTxnMigrated": true,
+      "planTargetTotal": 2200000,
+      "onboardingVersion": 1,
+      "snapshotFocusAccountIds": [
+        "demo-broker",
+        "demo-fund-platform"
+      ],
+      "automaticSnapshotSchemaVersion": 6
+    }
+  ]
+}
