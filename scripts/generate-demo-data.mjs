@@ -7,6 +7,8 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const demoDir = path.join(rootDir, 'demo');
 const jsonPath = path.join(demoDir, 'fortuna-demo-data.json');
 const workbookPath = path.join(demoDir, 'Fortuna-Demo-Portfolio.xlsx');
+const englishJsonPath = path.join(demoDir, 'fortuna-demo-data.en.json');
+const englishWorkbookPath = path.join(demoDir, 'Fortuna-Demo-Portfolio.en.xlsx');
 
 const createdAt = (day, offset = 0) => Date.parse(`${day}T08:00:00Z`) + offset;
 const categories = [
@@ -118,26 +120,109 @@ const demo = {
   accounts, records, exchangeRates, products: [], planItems, planTargets, holdings, holdingTxns, settings,
 };
 
+const englishAccounts = {
+  'demo-daily-bank': { name: 'Everyday Account (Demo)', institution: 'Pine Ridge Bank (Fictional)' },
+  'demo-emergency': { name: 'Emergency Fund (Demo)', institution: 'Pine Ridge Bank (Fictional)' },
+  'demo-broker': { name: 'Galaxy Securities (Demo)', institution: 'Galaxy Securities (Fictional)' },
+  'demo-fund-platform': { name: 'Balanced Products (Demo)', institution: 'Harbor Fund (Fictional)' },
+  'demo-usd-savings': { name: 'Travel Fund (Demo)', institution: 'Seabreeze Bank (Fictional)' },
+  'demo-home': { name: 'Primary Home (Demo)', productData: { location: 'Sample Central District', area: '89 m²' } },
+  'demo-mortgage': { name: 'Home Mortgage (Demo)', institution: 'Pine Ridge Bank (Fictional)' },
+  'demo-card': { name: 'Everyday Credit Card (Demo)', institution: 'Seabreeze Bank (Fictional)' },
+};
+const englishHoldingNames = {
+  'demo-h-global': 'Global Broad Market Index (Demo)',
+  'demo-h-bond': 'Short-Term Bond ETF (Demo)',
+  'demo-h-archived': 'Technology Theme Fund (Archived Demo)',
+  'demo-h-balanced': 'Balanced Portfolio (Demo)',
+  'demo-h-income': 'Cash Income Portfolio (Demo)',
+  'demo-h-fund-archived': '90-Day Product (Archived Demo)',
+};
+const englishTransactionNotes = {
+  'demo-t-global-1': 'Demo opening position',
+  'demo-t-global-2': 'Demo recurring investment',
+  'demo-t-bond-1': 'Demo defensive position',
+  'demo-t-archived-1': 'Demo purchase',
+  'demo-t-archived-2': 'Demo position closed',
+  'demo-t-balanced-1': 'Demo opening balance',
+  'demo-t-balanced-2': 'Demo latest balance',
+  'demo-t-income-1': 'Demo opening balance',
+  'demo-t-income-2': 'Demo latest balance',
+  'demo-t-fund-old-1': 'Demo opening balance',
+  'demo-t-fund-old-2': 'Demo maturity archive',
+};
+const englishPlanNames = {
+  'demo-plan-growth': 'Long-Term Growth',
+  'demo-plan-stable': 'Stable Reserve',
+  'demo-plan-home': 'Home Equity',
+};
+const englishTargetLabels = {
+  'demo-target-global': 'Global Equities',
+  'demo-target-bond': 'Short-Term Bonds',
+  'demo-target-cash': 'Liquidity Reserve',
+  'demo-target-funds': 'Balanced Products',
+  'demo-target-home': 'Primary Home',
+};
+const englishDemo = {
+  ...demo,
+  metadata: {
+    ...demo.metadata,
+    locale: 'en',
+    warning: 'This dataset is entirely fictional and contains no real person, account, or transaction information.',
+  },
+  accounts: accounts.map(account => ({
+    ...account,
+    ...englishAccounts[account.id],
+  })),
+  records: records.map(record => ({ ...record, note: record.note ? 'Demo month-end balance' : undefined })),
+  holdings: holdings.map(holding => ({
+    ...holding,
+    name: englishHoldingNames[holding.id],
+    market: 'Other',
+    productData: holding.productData ? { ...holding.productData, manager: holding.productData.manager ? 'Fictional Manager' : undefined } : undefined,
+  })),
+  holdingTxns: holdingTxns.map(transaction => ({ ...transaction, note: englishTransactionNotes[transaction.id] })),
+  planItems: planItems.map(item => ({
+    ...item,
+    name: englishPlanNames[item.id],
+  })),
+  planTargets: planTargets.map(target => ({ ...target, label: englishTargetLabels[target.id] })),
+  settings: settings.map(row => ({
+    ...row,
+    language: 'en',
+  })),
+};
+
+function writeWorkbook(dataset, targetPath) {
+  const wb = XLSX.utils.book_new();
+  const rows = {
+    BackupInfo: [{ format: 'Fortuna Excel Backup', version: 2, exportedAt: '2026-07-28T08:00:00.000Z', syntheticDemo: true }],
+    Settings: dataset.settings.map(row => ({ ...row, categories: JSON.stringify(row.categories), currencies: JSON.stringify(row.currencies), snapshotFocusAccountIds: JSON.stringify(row.snapshotFocusAccountIds) })),
+    ExchangeRates: dataset.exchangeRates,
+    Accounts: dataset.accounts.map(({ productData, ...row }) => ({
+      ...row,
+      productData: productData ? JSON.stringify(productData) : '',
+      latestBalance: dataset.records.filter(record => record.accountId === row.id).at(-1)?.amount ?? 0,
+    })),
+    Records: dataset.records,
+    Products: dataset.products,
+    Plan: dataset.planItems.map(row => ({ ...row, categories: row.categories.join('|'), allocations: JSON.stringify(row.allocations) })),
+    PlanTargets: dataset.planTargets.map(row => ({ ...row, refKeys: row.refKeys.join('|'), allocations: JSON.stringify(row.allocations) })),
+    Holdings: dataset.holdings.map(({ productData, ...row }) => ({ ...row, productData: productData ? JSON.stringify(productData) : '' })),
+    HoldingTxns: dataset.holdingTxns,
+  };
+  for (const [sheetName, data] of Object.entries(rows)) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), sheetName);
+  }
+  XLSX.writeFile(wb, targetPath, { compression: true });
+}
+
 fs.mkdirSync(demoDir, { recursive: true });
 fs.writeFileSync(jsonPath, `${JSON.stringify(demo, null, 2)}\n`, 'utf8');
+fs.writeFileSync(englishJsonPath, `${JSON.stringify(englishDemo, null, 2)}\n`, 'utf8');
+writeWorkbook(demo, workbookPath);
+writeWorkbook(englishDemo, englishWorkbookPath);
 
-const wb = XLSX.utils.book_new();
-const rows = {
-  BackupInfo: [{ format: 'Fortuna Excel Backup', version: 2, exportedAt: '2026-07-28T08:00:00.000Z', syntheticDemo: true }],
-  Settings: settings.map(row => ({ ...row, categories: JSON.stringify(row.categories), currencies: JSON.stringify(row.currencies), snapshotFocusAccountIds: JSON.stringify(row.snapshotFocusAccountIds) })),
-  ExchangeRates: exchangeRates,
-  Accounts: accounts.map(({ productData, ...row }) => ({ ...row, productData: productData ? JSON.stringify(productData) : '', latestBalance: records.find(record => record.accountId === row.id)?.amount ?? 0 })),
-  Records: records,
-  Products: [],
-  Plan: planItems.map(row => ({ ...row, categories: row.categories.join('|'), allocations: JSON.stringify(row.allocations) })),
-  PlanTargets: planTargets.map(row => ({ ...row, refKeys: row.refKeys.join('|'), allocations: JSON.stringify(row.allocations) })),
-  Holdings: holdings.map(({ productData, ...row }) => ({ ...row, productData: productData ? JSON.stringify(productData) : '' })),
-  HoldingTxns: holdingTxns,
-};
-for (const [sheetName, data] of Object.entries(rows)) {
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), sheetName);
+for (const targetPath of [jsonPath, workbookPath, englishJsonPath, englishWorkbookPath]) {
+  console.log(`Wrote ${path.relative(rootDir, targetPath)}`);
 }
-XLSX.writeFile(wb, workbookPath, { compression: true });
-
-console.log(`Wrote ${path.relative(rootDir, jsonPath)}`);
-console.log(`Wrote ${path.relative(rootDir, workbookPath)}`);

@@ -546,7 +546,7 @@ export default function PlanPage() {
                   </div>
                   {tg.linkedProducts.length > 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
-                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('plan_linked_products')}：</span>
+                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('plan_linked_products')}:</span>
                       {tg.linkedProducts.map(product => (
                         <span key={product.refKey} style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 10, padding: '2px 7px' }}>
                           {resourceLabel(product)} · {masked(fmt(product.currentValue))} {product.currency}
@@ -724,7 +724,7 @@ export default function PlanPage() {
                 return (
                   <div key={cat} style={{ marginTop: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t(cat)}：</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t(cat)}:</span>
                       <button disabled={wholeBlocked}
                         style={{ ...S.chip, ...(wholeActive ? S.chipActive : {}), ...(wholeBlocked ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
                         onClick={() => !wholeBlocked && setWholeCat(cat)}>
@@ -745,7 +745,7 @@ export default function PlanPage() {
                     </div>
                     {catAccounts.length > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_by_account')}：</span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_by_account')}:</span>
                         {catAccounts.map(a => {
                           const scope = makeAccountScope(a.id);
                           const aUsed = othersAcct.has(a.id);
@@ -763,7 +763,7 @@ export default function PlanPage() {
                     {/* Exact holding shares can override or split broader account/category claims. */}
                     {catAccounts.filter(a => a.holdings.length > 0).map(a => (
                       <div key={`hold-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_holdings_of', { name: a.name })}：</span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_holdings_of', { name: a.name })}:</span>
                         {a.holdings.map(h => {
                           const scope = makeHoldingScope(h.id);
                           const hUsed = othersHold.has(h.id) || status.items.some(item => (
@@ -806,7 +806,7 @@ export default function PlanPage() {
                       )));
                       return (
                         <div key={`cash-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{a.name}：</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{a.name}:</span>
                           <button
                             style={{ ...S.chip, ...(active ? S.chipActive : {}), padding: '4px 10px', fontSize: '0.72rem' }}
                             onClick={() => toggleCash(a.id)}>
