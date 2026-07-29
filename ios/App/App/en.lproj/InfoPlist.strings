@@ -1,0 +1,2 @@
+"NSCalendarsUsageDescription" = "Fortuna uses calendar access only when you choose to create a repayment reminder.";
+"NSCalendarsWriteOnlyAccessUsageDescription" = "Fortuna adds a repayment reminder only after you confirm it in the system calendar sheet.";

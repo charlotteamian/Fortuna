@@ -667,6 +667,7 @@
   "snapshot_sync_desc": "Optional advanced feature. After you choose any writable folder, all active accounts, liabilities, holdings, records, and allocation targets are written to {{file}} for personal tools you authorise. A cloud-backed folder may sync the file off-device.",
   "snapshot_sync_directory": "Snapshot Folder",
   "snapshot_android_only": "Configure the folder in the Android app",
+  "snapshot_ios_unavailable": "Automatic folder snapshots are not available on iOS. Use Excel Backup and the iOS share sheet instead.",
   "snapshot_directory_configured": "Folder access granted",
   "snapshot_directory_not_set": "No folder selected; this feature is off by default",
   "snapshot_choose_directory": "Choose Folder",

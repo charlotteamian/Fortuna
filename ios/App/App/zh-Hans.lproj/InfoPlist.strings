@@ -1,0 +1,2 @@
+"NSCalendarsUsageDescription" = "仅当你主动创建还款提醒时，Fortuna 才会使用日历权限。";
+"NSCalendarsWriteOnlyAccessUsageDescription" = "Fortuna 只会在你通过系统日历界面确认后添加还款提醒。";

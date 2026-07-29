@@ -18,11 +18,12 @@ import {
 import type { PortableSnapshotStatus as AutomaticSnapshotStatus } from '../native/portableSnapshot';
 import UserGuide from '../components/UserGuide';
 import { formatLocalDate } from '../lib/localDate';
+import { Capacitor } from '@capacitor/core';
 
 interface Props { onRefresh: () => void; onOpenOnboarding: () => void; }
 
 export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -332,6 +333,9 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const availableCurrencies = Object.keys(CURRENCY_NAMES).filter(c => !settings.currencies.includes(c));
   const snapshotCandidates = snapshotAccounts.filter(isSnapshotFocusCandidate);
   const selectedSnapshotIds = new Set(getSnapshotFocusAccountIds(snapshotAccounts, settings.snapshotFocusAccountIds));
+  const automaticSnapshotUnavailableLabel = Capacitor.getPlatform() === 'ios'
+    ? t('snapshot_ios_unavailable')
+    : t('snapshot_android_only');
 
   return (
     <>
@@ -525,7 +529,7 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
             <div className="settings-item-label">{t('snapshot_sync_directory')}</div>
             <div style={{ fontSize: '0.6875rem', color: snapshotStatus.configured ? 'var(--asset-color)' : 'var(--text-muted)', marginTop: 2, overflowWrap: 'anywhere' }}>
               {!snapshotStatus.supported
-                ? t('snapshot_android_only')
+                ? automaticSnapshotUnavailableLabel
                 : snapshotStatus.configured
                   ? `✓ ${snapshotStatus.directoryName || t('snapshot_directory_configured')}`
                   : t('snapshot_directory_not_set')}
@@ -611,7 +615,7 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
           <span className="settings-item-label">{t('reopen_onboarding')}</span>
           <span className="settings-item-value">{t('click_to_view')}</span>
         </button>
-        <a className="settings-item settings-link" href="./privacy-policy.html" target="_blank" rel="noreferrer">
+        <a className="settings-item settings-link" href={i18n.resolvedLanguage?.startsWith('zh') ? './privacy-policy-zh.html' : './privacy-policy.html'} target="_blank" rel="noreferrer">
           <span className="settings-item-label">{t('privacy_policy')}</span>
           <span className="settings-item-value">↗</span>
         </a>
@@ -621,7 +625,7 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
         </a>
         <div className="settings-item">
           <span className="settings-item-label">Fortuna</span>
-          <span className="settings-item-value">v1.2.0</span>
+          <span className="settings-item-value">v{__APP_VERSION__}</span>
         </div>
         <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('data_security_hint')}</div>
       </div>

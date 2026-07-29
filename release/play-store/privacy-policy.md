@@ -1,6 +1,6 @@
 # Privacy Policy for Fortuna
 
-Effective date: 2026-07-28
+Effective date: 2026-07-29
 
 Fortuna is a local-first personal asset, liability, holdings, and net-worth tracking app. This policy explains what the app stores, when it connects to other services, and what choices you have.
 
@@ -31,15 +31,15 @@ If you choose to create a repayment reminder, Fortuna opens a system calendar pr
 
 ## Exports, Imports, Sharing, and Automatic Snapshots
 
-Manual reports and backups are created only when you request them. On Android, Fortuna may place a temporary export in app cache and open the system share sheet; on the web it may start a download. Any app, storage provider, or person you select can then receive and process the file. Imported backups are read only after you select a file and are restored into the local database.
+Manual reports and backups are created only when you request them. On Android and iOS, Fortuna may place a temporary export in app cache and open the system share sheet; on the web it may start a download. Any app, storage provider, or person you select can then receive and process the file. Imported backups are read only after you select a file and are restored into the local database.
 
-The optional automatic JSON snapshot is disabled until you choose a destination directory and grant persistent access through Android's system directory picker. Once enabled, Fortuna can update a full snapshot after relevant changes and when the app moves to the background. A selected cloud-backed directory may synchronize the snapshot through its storage provider. Disconnecting the directory stops future writes and revokes Fortuna's retained access, but it does not delete snapshot files that have already been created.
+On Android, the optional automatic JSON snapshot is disabled until you choose a destination directory and grant persistent access through the system directory picker. Once enabled, Fortuna can update a full snapshot after relevant changes and when the app moves to the background. A selected cloud-backed directory may synchronize the snapshot through its storage provider. Disconnecting the directory stops future writes and revokes Fortuna's retained access, but it does not delete snapshot files that have already been created. Automatic folder snapshots are not available on iOS; iOS users can export an Excel backup or report through the system share sheet.
 
 Exports and snapshots can contain sensitive financial information in readable form. Store and share them carefully.
 
 ## Device and System Backups
 
-Fortuna's Android configuration permits operating-system backup. Depending on your device, account, manufacturer, and backup settings, Android or a system backup provider may back up and later restore some local app data, potentially including the IndexedDB database. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your device backup settings if you do not want this behavior.
+Android or iOS may back up and later restore some local app-container data, potentially including the IndexedDB database, according to your device, account, and system backup settings. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your Android backup or iCloud Backup settings if you do not want this behavior.
 
 ## Data Sharing and Advertising
 
@@ -47,7 +47,7 @@ Fortuna does not sell personal data and does not include advertising or analytic
 
 ## Retention and Deletion
 
-Local records remain on the device until you delete them in the app, clear the app's storage, or uninstall the app. Clearing storage or uninstalling can permanently remove records that you have not exported. Android may restore previously backed-up data after reinstalling, depending on system settings.
+Local records remain on the device until you delete them in the app, clear the app's storage, or uninstall the app. Clearing storage or uninstalling can permanently remove records that you have not exported. Android or iOS may restore previously backed-up data after reinstalling, depending on system settings.
 
 Deleting local data does not remove copies in exported files, automatic snapshots, calendar entries, shared destinations, or system/cloud backups. Delete those copies separately in the relevant app or service. Disconnecting an automatic snapshot directory does not delete existing snapshot files.
 

@@ -4,6 +4,12 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+### iOS and App Store readiness
+
+- Aligned the iOS marketing version with the current package release and added a release guard that verifies every bundled web asset after Capacitor sync.
+- Added an app privacy manifest, localized calendar permission copy, iOS-specific snapshot guidance, and current App Store submission materials.
+- Added Xcode 26 CI compilation and a signed-archive workflow so future iOS builds cannot silently ship stale frontend content.
+
 ### Product story and bilingual demo
 
 - Reframed the product around four differentiators: full-asset consolidation, supported market-price refresh, plan-versus-position tracking, and local-first data portability.

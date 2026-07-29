@@ -667,6 +667,7 @@
   "snapshot_sync_desc": "可选高级功能。选择任意有写入权限的文件夹后，全部有效账户、负债、持仓、记录和配置目标会写入 {{file}}，供您授权的个人工具读取。文件夹若位于云盘，数据可能被云服务同步。",
   "snapshot_sync_directory": "快照目录",
   "snapshot_android_only": "请在 Android App 中配置目录",
+  "snapshot_ios_unavailable": "iOS 暂不支持自动目录快照，请改用 Excel 备份并通过 iOS 系统分享保存。",
   "snapshot_directory_configured": "目录已授权",
   "snapshot_directory_not_set": "尚未选择目录；此功能默认关闭",
   "snapshot_choose_directory": "选择目录",

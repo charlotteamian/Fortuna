@@ -127,7 +127,7 @@ The GitHub APK is a debug-signed sideload build for personal, non-commercial use
 ### Technology
 
 - React 19 + TypeScript 6 + Vite 8
-- Capacitor 8 Android shell
+- Capacitor 8 Android and iOS shells
 - Dexie 4 / IndexedDB local persistence
 - Recharts 3 visualisations
 - i18next Chinese/English localisation
@@ -135,7 +135,7 @@ The GitHub APK is a debug-signed sideload build for personal, non-commercial use
 
 ### Build from source
 
-Requirements: Node.js 24+, Java 21, and the Android SDK.
+Requirements: Node.js 24+. Android builds also need Java 21 and the Android SDK; App Store builds need Xcode 26 or later and an active Apple Developer signing team.
 
 ```bash
 npm ci
@@ -151,9 +151,11 @@ Useful commands:
 npm run dev            # Vite development server
 npm run demo:generate  # rebuild both synthetic JSON and Excel demo sets
 npm run release:web    # lint, build, and sync Android web assets
+npm run release:ios    # test, build, sync, and verify the current iOS bundle
+npm run archive:ios    # create a signed App Store archive (requires build number/signing)
 ```
 
-For a signed Play Store bundle, configure an upload key and run `bash scripts/build-release-aab.sh`. Publishing notes live in [`docs/play-store-release.md`](docs/play-store-release.md).
+For a signed Play Store bundle, configure an upload key and run `bash scripts/build-release-aab.sh`. Publishing notes live in [`docs/play-store-release.md`](docs/play-store-release.md). App Store materials live in [`release/app-store/`](release/app-store/).
 
 ### Repository layout
 
