@@ -4,6 +4,20 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-02
+
+### Account controls and layout
+
+- Moved hiding and total-inclusion controls into the account long-press menu, removing the repeated hide buttons from the overview.
+- Replaced the account-form inclusion control with a compact switch layout.
+- Replaced the long inline hidden-account list in Settings with a single button and recovery sheet.
+
+### Fixes and polish
+
+- Fixed un-hiding an account resetting the current amount-visibility state.
+- Replaced the narrow monospace amount style with the app's regular asset-number typeface across balances, values, prices, and P&L.
+- Moved the Android update button directly into About and removed the explanatory update panel.
+
 ## [1.3.0] - 2026-08-02
 
 ### Stable Android updates

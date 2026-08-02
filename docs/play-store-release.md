@@ -6,7 +6,7 @@
 
 - 包名：`com.fortuna.wealthtracker`
 - App 名称：`Fortuna`
-- 版本：`versionCode 5` / `versionName 1.3.0`
+- 版本：`versionCode 6` / `versionName 1.3.1`
 - `targetSdkVersion`：36；这也满足 2026-08-31 起新 app 和更新需面向 Android 16 / API 36 的要求（提交当天仍应复核官方政策）。
 - Web 单元/回归测试、TypeScript、ESLint、Vite build、Capacitor 同步和 Android 构建状态应以每次待发布提交的实际 CI/本地结果为准，不复用旧产物结论。
 - 正式 AAB 必须在最终代码上重新生成，并使用开发者自己的 upload key 签名；不要把旧的 debug APK 当作商店发布包。

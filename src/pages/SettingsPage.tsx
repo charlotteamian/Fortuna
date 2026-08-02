@@ -31,11 +31,11 @@ import {
   type AppUpdateInstallResult,
 } from '../native/appUpdater';
 
-interface Props { onRefresh: () => void; onOpenOnboarding: () => void; }
+interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; }
 
 type AppUpdateState = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installer-opened' | 'error';
 
-export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
+export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding }: Props) {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +49,7 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const [newCatFields, setNewCatFields] = useState<(CustomField & { optionsStr?: string })[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [showHiddenAccounts, setShowHiddenAccounts] = useState(false);
   const [snapshotAccounts, setSnapshotAccounts] = useState<Account[]>([]);
   const [snapshotStatus, setSnapshotStatus] = useState<AutomaticSnapshotStatus>({ supported: false, configured: false });
   const [snapshotBusy, setSnapshotBusy] = useState(false);
@@ -100,10 +101,10 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   }, []);
 
   useEffect(() => {
-    const hasOpenModal = showAddCategory || Boolean(pendingImport);
+    const hasOpenModal = showAddCategory || showHiddenAccounts || Boolean(pendingImport);
     document.documentElement.classList.toggle('modal-open', hasOpenModal);
     return () => document.documentElement.classList.remove('modal-open');
-  }, [pendingImport, showAddCategory]);
+  }, [pendingImport, showAddCategory, showHiddenAccounts]);
 
   const save = async (updates: Partial<Settings>) => {
     if (!settings) return;
@@ -129,7 +130,7 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const handleUnhideAccount = async (accountId: string) => {
     await updateAccount(accountId, { hidden: false });
     setSnapshotAccounts(current => current.map(account => account.id === accountId ? { ...account, hidden: false } : account));
-    onRefresh();
+    onAccountsChanged();
     showToast(t('account_unhidden_toast'));
   };
 
@@ -361,6 +362,7 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
       const result = await checkForAppUpdate(__APP_VERSION__);
       setAppUpdateCheck(result);
       setAppUpdateState(result.update ? 'available' : 'current');
+      if (!result.update) showToast(t('app_is_current'));
     } catch (error) {
       console.error('App update check failed', error);
       setAppUpdateState('error');
@@ -488,26 +490,10 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
       </div>
 
       <div className="settings-section">
-        <div className="settings-section-title">{t('hidden_accounts')}</div>
-        <div className="settings-note">{t('hidden_accounts_hint')}</div>
-        {hiddenAccounts.length === 0 ? (
-          <div className="settings-item">
-            <span className="settings-item-label">{t('no_hidden_accounts')}</span>
-          </div>
-        ) : hiddenAccounts.map(account => (
-          <div className="settings-item" key={account.id}>
-            <div>
-              <div className="settings-item-label">{account.name}</div>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                {[account.institution, t(account.category), account.currency].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-            <button type="button" className="btn btn-sm btn-secondary"
-              onClick={() => void handleUnhideAccount(account.id)}>
-              👁️ {t('unhide_account')}
-            </button>
-          </div>
-        ))}
+        <button type="button" className="settings-item settings-link settings-button" onClick={() => setShowHiddenAccounts(true)}>
+          <span className="settings-item-label">{t('hidden_accounts')}</span>
+          <span className="settings-item-value">{t('hidden_accounts_count', { count: hiddenAccounts.length })} ›</span>
+        </button>
       </div>
 
       {/* Color Theme */}
@@ -718,76 +704,28 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
         </div>
       </div>
 
-      {supportsAppUpdater() && (
-        <div className="settings-section">
-          <div className="settings-section-title">{t('app_update')}</div>
-          <div className="settings-note">{t('app_update_desc')}</div>
-          <div className="settings-item">
-            <div>
-              <div className="settings-item-label">{t('current_version')}</div>
-              <div className="settings-item-value">Fortuna v{__APP_VERSION__}</div>
-            </div>
-            <button type="button" className="btn btn-secondary btn-sm"
-              disabled={appUpdateState === 'checking' || appUpdateState === 'downloading'}
-              onClick={() => void handleCheckForAppUpdate()}>
-              {appUpdateState === 'checking' ? t('checking_for_updates') : `🔄 ${t('check_for_updates')}`}
-            </button>
-          </div>
-
-          {appUpdateState === 'current' && (
-            <div className="update-status update-status-success">✓ {t('app_is_current')}</div>
-          )}
-
-          {appUpdateCheck?.update && (
-            <div className="update-card">
-              <div className="update-card-head">
-                <div>
-                  <div className="settings-item-label">{t('update_available')}</div>
-                  <div className="settings-item-value">v{appUpdateCheck.update.version} · {(appUpdateCheck.update.assetSize / 1024 / 1024).toFixed(1)} MB</div>
-                </div>
-                {appUpdateState !== 'downloading' && appUpdateState !== 'downloaded' && appUpdateState !== 'installer-opened' && (
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleDownloadAndInstall()}>
-                    ⬇️ {t('download_and_install')}
-                  </button>
-                )}
-              </div>
-              {appUpdateCheck.update.releaseNotes && (
-                <details className="update-release-notes">
-                  <summary>{t('update_release_notes')}</summary>
-                  <div>{appUpdateCheck.update.releaseNotes}</div>
-                </details>
-              )}
-            </div>
-          )}
-
-          {appUpdateState === 'downloading' && (
-            <div className="update-status" role="status" aria-live="polite">
-              <div>{t('downloading_update')} {Math.round(appUpdateProgress * 100)}%</div>
-              <div className="update-progress" aria-label={t('update_download_progress')}>
-                <span style={{ width: `${Math.round(appUpdateProgress * 100)}%` }} />
-              </div>
-            </div>
-          )}
-
-          {appUpdateState === 'downloaded' && (
-            <div className="update-status update-status-warning">
-              <div>{t('update_permission_hint')}</div>
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleInstallDownloadedUpdate()}>
-                {t('install_downloaded_update', { version: downloadedUpdateVersion ?? '' })}
-              </button>
-            </div>
-          )}
-
-          {appUpdateState === 'installer-opened' && (
-            <div className="update-status update-status-success">✓ {t('update_installer_opened')}</div>
-          )}
-          <div className="settings-note update-security-note">🔐 {t('signed_update_security_hint')}</div>
-        </div>
-      )}
-
       {/* About */}
       <div className="settings-section">
         <div className="settings-section-title">{t('about_title')}</div>
+        {supportsAppUpdater() && (
+          <div className="settings-item">
+            <span className="settings-item-label">{t('app_update')}</span>
+            <button type="button"
+              className={`btn btn-sm ${appUpdateState === 'available' || appUpdateState === 'downloaded' || appUpdateState === 'installer-opened' ? 'btn-primary' : 'btn-secondary'}`}
+              disabled={appUpdateState === 'checking' || appUpdateState === 'downloading'}
+              onClick={() => {
+                if (appUpdateState === 'available') void handleDownloadAndInstall();
+                else if (appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') void handleInstallDownloadedUpdate();
+                else void handleCheckForAppUpdate();
+              }}>
+              {appUpdateState === 'checking' && t('checking_for_updates')}
+              {appUpdateState === 'downloading' && `${t('downloading_update')} ${Math.round(appUpdateProgress * 100)}%`}
+              {appUpdateState === 'available' && `${t('download_and_install')} v${appUpdateCheck?.update?.version ?? ''}`}
+              {(appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') && t('install_downloaded_update', { version: downloadedUpdateVersion ?? appUpdateCheck?.update?.version ?? '' })}
+              {(appUpdateState === 'idle' || appUpdateState === 'current' || appUpdateState === 'error') && t('check_for_updates')}
+            </button>
+          </div>
+        )}
         <button type="button" className="settings-item settings-link settings-button" onClick={() => setShowGuide(true)}>
           <span className="settings-item-label" style={{ color: 'var(--accent)' }}>{t('user_guide_title')}</span>
           <span className="settings-item-value">{t('click_to_view')}</span>
@@ -812,6 +750,34 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
       </div>
 
       {showGuide && <UserGuide onClose={() => setShowGuide(false)} />}
+
+      {showHiddenAccounts && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="hidden-accounts-title" onClick={() => setShowHiddenAccounts(false)}>
+          <div className="modal-content" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title" id="hidden-accounts-title">{t('hidden_accounts')}</h2>
+              <button type="button" className="modal-close" onClick={() => setShowHiddenAccounts(false)} aria-label={t('close')}>✕</button>
+            </div>
+            <div className="settings-note">{t('hidden_accounts_hint')}</div>
+            {hiddenAccounts.length === 0 ? (
+              <div className="hidden-accounts-empty">{t('no_hidden_accounts')}</div>
+            ) : hiddenAccounts.map(account => (
+              <div className="settings-item" key={account.id}>
+                <div>
+                  <div className="settings-item-label">{account.name}</div>
+                  <div className="hidden-account-meta">
+                    {[account.institution, t(account.category), account.currency].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => void handleUnhideAccount(account.id)}>
+                  {t('unhide_account')}
+                </button>
+              </div>
+            ))}
+            <div className="modal-safe-area" />
+          </div>
+        </div>
+      )}
 
       {pendingImport && (
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="import-confirm-title" onClick={() => !importing && setPendingImport(null)}>

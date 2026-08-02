@@ -275,16 +275,17 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         )}
 
         <div className="form-group">
-          <div className="settings-item" style={{ padding: '10px 0' }}>
-            <div>
-              <div className="settings-item-label">{t('include_in_totals')}</div>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('include_in_totals_hint')}</div>
+          <div className="preference-toggle-card">
+            <div className="preference-toggle-copy">
+              <div className="preference-toggle-title">{t('include_in_totals')}</div>
+              <div className="preference-toggle-hint">{t('include_in_totals_hint')}</div>
             </div>
             <button type="button"
-              className={`btn btn-sm ${includeInTotals ? 'btn-primary' : 'btn-secondary'}`}
+              className={`toggle-switch ${includeInTotals ? 'active' : ''}`}
               role="switch" aria-checked={includeInTotals}
+              aria-label={t('include_in_totals')}
               onClick={() => setIncludeInTotals(value => !value)}>
-              {includeInTotals ? t('included_in_totals') : t('excluded_from_totals')}
+              <span />
             </button>
           </div>
         </div>

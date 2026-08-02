@@ -160,7 +160,7 @@ function App() {
             {tab === 'plan' && <PlanPage key={refreshKey} />}
             {tab === 'chart' && <ChartPage key={refreshKey} />}
             {tab === 'products' && <ProductsPage />}
-            {tab === 'settings' && <SettingsPage onRefresh={() => { void loadSettings(); refresh(); }} onOpenOnboarding={() => setOnboardingOpen(true)} />}
+            {tab === 'settings' && <SettingsPage onRefresh={() => { void loadSettings(); refresh(); }} onAccountsChanged={refresh} onOpenOnboarding={() => setOnboardingOpen(true)} />}
           </Suspense>
         </main>
         <nav className="tab-bar" aria-label={t('main_navigation')}>

@@ -119,6 +119,13 @@ export default function RecordPage({ onOpenAccount }: Props) {
     showToast(t('account_hidden_toast'));
     load();
   };
+  const handleToggleIncludeInTotals = async (account: AccountWithLatest) => {
+    const includeInTotals = !isAccountIncludedInTotals(account);
+    await updateAccount(account.id, { includeInTotals });
+    setContextMenu(null);
+    showToast(t(includeInTotals ? 'account_included_toast' : 'account_excluded_toast'));
+    load();
+  };
   const toggleArchivedAccounts = async () => {
     if (!settings) return;
     const updated = { ...settings, showArchivedAccounts: !(settings.showArchivedAccounts ?? true) };
@@ -359,8 +366,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   };
 
   const renderEntryItem = (acct: AccountWithLatest) => (
-    <div className="entry-row" key={acct.id}>
-      <div className="entry-item"
+      <div className="entry-item" key={acct.id}
         role="button"
         tabIndex={0}
         aria-label={`${acct.name}, ${t('view_details')}`}
@@ -389,11 +395,6 @@ export default function RecordPage({ onOpenAccount }: Props) {
         </div>
         {renderAmount(acct)}
       </div>
-      {!acct.archivedAt && (
-        <button type="button" className="entry-hide-button" title={t('hide_account')} aria-label={t('hide_account_named', { name: acct.name })}
-          onClick={() => void handleHide(acct.id)}>🙈</button>
-      )}
-    </div>
   );
 
   return (
@@ -599,6 +600,11 @@ export default function RecordPage({ onOpenAccount }: Props) {
                       🙈 {t('hide_account')}
                     </button>
                   )}
+                  {!acct.archivedAt && (
+                    <button className="context-menu-item" onClick={() => handleToggleIncludeInTotals(acct)}>
+                      {isAccountIncludedInTotals(acct) ? '➖' : '➕'} {t(isAccountIncludedInTotals(acct) ? 'exclude_from_totals_action' : 'include_in_totals_action')}
+                    </button>
+                  )}
                   {acct.archivedAt ? (
                     <button className="context-menu-item" onClick={() => handleRestore(acct.id)}>
                       ↩️ {t('restore_account')}
@@ -683,16 +689,17 @@ export default function RecordPage({ onOpenAccount }: Props) {
               </select>
             </div>
             <div className="form-group">
-              <div className="settings-item" style={{ padding: '10px 0' }}>
-                <div>
-                  <div className="settings-item-label">{t('include_in_totals')}</div>
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('include_in_totals_hint')}</div>
+              <div className="preference-toggle-card">
+                <div className="preference-toggle-copy">
+                  <div className="preference-toggle-title">{t('include_in_totals')}</div>
+                  <div className="preference-toggle-hint">{t('include_in_totals_hint')}</div>
                 </div>
                 <button type="button"
-                  className={`btn btn-sm ${editingAcct.includeInTotals ? 'btn-primary' : 'btn-secondary'}`}
+                  className={`toggle-switch ${editingAcct.includeInTotals ? 'active' : ''}`}
                   role="switch" aria-checked={editingAcct.includeInTotals}
+                  aria-label={t('include_in_totals')}
                   onClick={() => setEditingAcct(prev => prev ? { ...prev, includeInTotals: !prev.includeInTotals } : null)}>
-                  {editingAcct.includeInTotals ? t('included_in_totals') : t('excluded_from_totals')}
+                  <span />
                 </button>
               </div>
             </div>
