@@ -76,13 +76,16 @@ jobs:
           set -euo pipefail
           APK_SOURCE="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name 'Fortuna-*.apk' -print -quit)"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
-          EXPECTED_CERT="$(tr -d '[:space:]' < android/release-signing-cert.sha256)"
-          ACTUAL_CERT="$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK_SOURCE" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          EXPECTED_CERT="$(tr '[:upper:]' '[:lower:]' < android/release-signing-cert.sha256 | tr -d '[:space:]:')"
+          CERT_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK_SOURCE")"
+          ACTUAL_CERT="$(printf '%s\n' "$CERT_OUTPUT" | awk -F': ' '/certificate SHA-256 digest/ { print $2; exit }' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]:')"
           "$BUILD_TOOLS/apksigner" verify --verbose "$APK_SOURCE"
           if [[ -z "$ACTUAL_CERT" || "$ACTUAL_CERT" != "$EXPECTED_CERT" ]]; then
+            printf '%s\n' "$CERT_OUTPUT" >&2
             echo "Release signing certificate mismatch" >&2
             exit 1
           fi
+          echo "Verified release certificate SHA-256: $ACTUAL_CERT"
 
       - name: Prepare APK artifact
         id: apk
