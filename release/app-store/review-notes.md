@@ -18,7 +18,7 @@ Calendar reminders use Apple's system confirmation interface and are created onl
 
 Automatic folder snapshots are Android-only. On iOS the setting explains this limitation and directs users to Excel backup and the iOS share sheet. All other current business features share the same React/Dexie production bundle as Android and the web build.
 
-App version: 1.2.1
+App version: 1.3.0
 Bundle ID: com.fortuna.wealthtracker
 ```
 

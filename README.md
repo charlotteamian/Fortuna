@@ -57,10 +57,10 @@
 ### Android 安装与数据边界
 
 1. 打开[最新 GitHub Release](https://github.com/charlotteamian/Fortuna/releases/latest)。
-2. 在 Android 设备下载 `Fortuna-*-debug.apk`。
+2. 在 Android 设备下载 `Fortuna-*-release.apk`。
 3. 打开文件，并在系统提示时允许当前浏览器或文件管理器安装应用。
 
-GitHub APK 是用于个人、非商业使用的 debug 签名侧载版本。账本保存在 App 的 IndexedDB；行情查询只发送公开的币种、金属、基金或证券代码，不发送账户余额。可选 JSON 快照只在用户选择目录并授权后启用；云盘同步和外部 AI 分析由用户自己的服务完成，并非 Fortuna 内置云服务。
+从 1.3.0 起，GitHub APK 使用固定 release 签名，并可在 **设置 → 应用更新** 中检查、下载和确认安装后续正式版本。由旧 debug 签名迁移到 1.3.0 时必须先导出完整 Excel 备份、卸载旧版、安装 1.3.0 后恢复；之后同一签名版本可直接覆盖升级。账本保存在 App 的 IndexedDB；行情查询只发送公开的币种、金属、基金或证券代码，不发送账户余额。可选 JSON 快照只在用户选择目录并授权后启用；云盘同步和外部 AI 分析由用户自己的服务完成，并非 Fortuna 内置云服务。
 
 ---
 
@@ -115,10 +115,10 @@ Every account, institution, identifier, balance, price, and transaction is ficti
 ### Android install and data boundary
 
 1. Open the [latest GitHub Release](https://github.com/charlotteamian/Fortuna/releases/latest).
-2. Download `Fortuna-*-debug.apk` on the Android device.
+2. Download `Fortuna-*-release.apk` on the Android device.
 3. Open it and allow installation from that browser or file manager if Android asks.
 
-The GitHub APK is a debug-signed sideload build for personal, non-commercial use. Records live in the app's IndexedDB. Quote requests send public currency, metal, fund, or security identifiers—not account balances. The optional JSON snapshot starts only after the user selects and authorises a folder. Cloud sync and external AI analysis are provided by the user's chosen services, not by a Fortuna cloud backend.
+Starting with 1.3.0, GitHub APKs use one permanent release-signing identity. Later official releases can be checked, downloaded, and confirmed under **Settings → App Update**. Moving from an older debug-signed build to 1.3.0 requires a complete Excel backup, uninstall, 1.3.0 installation, and restore; subsequent same-signature releases can update in place. Records live in the app's IndexedDB. Quote requests send public currency, metal, fund, or security identifiers—not account balances. The optional JSON snapshot starts only after the user selects and authorises a folder. Cloud sync and external AI analysis are provided by the user's chosen services, not by a Fortuna cloud backend.
 
 ---
 
@@ -151,6 +151,7 @@ Useful commands:
 npm run dev            # Vite development server
 npm run demo:generate  # rebuild both synthetic JSON and Excel demo sets
 npm run release:web    # lint, build, and sync Android web assets
+bash scripts/build-release-apk.sh # signed APK; requires release-signing variables
 npm run release:ios    # test, build, sync, and verify the current iOS bundle
 npm run archive:ios    # create a signed App Store archive (requires build number/signing)
 ```

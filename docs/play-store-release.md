@@ -6,38 +6,26 @@
 
 - 包名：`com.fortuna.wealthtracker`
 - App 名称：`Fortuna`
-- 版本：`versionCode 4` / `versionName 1.2.1`
+- 版本：`versionCode 5` / `versionName 1.3.0`
 - `targetSdkVersion`：36；这也满足 2026-08-31 起新 app 和更新需面向 Android 16 / API 36 的要求（提交当天仍应复核官方政策）。
 - Web 单元/回归测试、TypeScript、ESLint、Vite build、Capacitor 同步和 Android 构建状态应以每次待发布提交的实际 CI/本地结果为准，不复用旧产物结论。
 - 正式 AAB 必须在最终代码上重新生成，并使用开发者自己的 upload key 签名；不要把旧的 debug APK 当作商店发布包。
 
-## 还不能直接上传的原因
+## 签名状态与构建
 
-当前 AAB 未配置 release upload key。Play Console 新应用需要上传 Android App Bundle，且必须用 upload key 签名。项目已配置为从环境变量读取签名信息：
+Fortuna 已从 1.3.0 起建立固定 release/upload key。GitHub Actions 的密钥内容保存在仓库 Secrets，本地密钥与密码保存在仓库外；不要重新生成另一把 key。项目从以下环境变量读取签名信息：
 
 ```bash
 export FORTUNA_UPLOAD_KEYSTORE=/absolute/path/fortuna-upload-key.jks
 export FORTUNA_UPLOAD_STORE_PASSWORD='...'
-export FORTUNA_UPLOAD_KEY_ALIAS=fortuna-upload
+export FORTUNA_UPLOAD_KEY_ALIAS=fortuna-release
 export FORTUNA_UPLOAD_KEY_PASSWORD='...'
 
 cd /path/to/Fortuna/android
 JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew bundleRelease
 ```
 
-生成 upload key 示例：
-
-```bash
-'/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool' -genkeypair \
-  -v \
-  -keystore /secure/path/fortuna-upload-key.jks \
-  -alias fortuna-upload \
-  -keyalg RSA \
-  -keysize 2048 \
-  -validity 10000
-```
-
-请把 `.jks` 和密码单独保存到密码管理器或安全位置，不要提交到仓库。
+公开证书 SHA-256 为 `b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c`，CI 会与 `android/release-signing-cert.sha256` 核对。请把 `.jks` 和密码分别备份到安全位置，不要提交到仓库。详细说明见 `docs/android-signing.md`。
 
 ## Play Console 流程
 
@@ -62,6 +50,7 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradle
    - Privacy policy：需要提供公开 URL，尤其因为涉及 financial info、calendar permission、share/export。
    - Financial features declaration：需要填写。定位为个人资产记录/投资组合追踪，不提供贷款、授信、证券交易执行、个性化金融建议。
    - Permissions declaration：当前 manifest 包含 `READ_CALENDAR` / `WRITE_CALENDAR`，用于用户主动创建还款提醒。若日历提醒不是首发核心功能，建议发布前移除日历权限，降低审核摩擦。
+   - GitHub 侧载版还包含 `REQUEST_INSTALL_PACKAGES`，用于 App 内安装已验证更新。Google Play 对该权限限制严格；提交 Play 前应单独评估政策资格，必要时用 Play 专用构建移除 App 内 APK 安装能力并改用 Play 更新。
    - Content rating：按当前问卷和实际功能如实填写，不预设评级结果。
    - Target audience：定位为 `18 and over`，不面向儿童。
 

@@ -77,12 +77,24 @@ public class PortableSnapshotPlugin extends Plugin {
 
         Uri treeUri = result.getData().getData();
         ContentResolver resolver = getContext().getContentResolver();
-        int takeFlags = result.getData().getFlags()
-            & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        int resultFlags = result.getData().getFlags();
+        boolean canRead = (resultFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0;
+        boolean canWrite = (resultFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
 
         try {
             releasePreviousPermission(treeUri);
-            resolver.takePersistableUriPermission(treeUri, takeFlags);
+            if (canRead && canWrite) {
+                resolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                );
+            } else if (canRead) {
+                resolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } else if (canWrite) {
+                resolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } else {
+                throw new SecurityException("The selected directory did not grant read or write access");
+            }
             String directoryName = queryDisplayName(treeUri);
             prefs().edit()
                 .putString(KEY_TREE_URI, treeUri.toString())

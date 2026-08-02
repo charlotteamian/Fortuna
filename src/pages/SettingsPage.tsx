@@ -21,8 +21,19 @@ import { formatLocalDate } from '../lib/localDate';
 import { Capacitor } from '@capacitor/core';
 import { updateAccount } from '../services/assetService';
 import { isAccountHidden } from '../lib/accountPreferences';
+import { checkForAppUpdate, type AppUpdateCheck } from '../lib/appUpdate';
+import {
+  addAppUpdateProgressListener,
+  downloadAndInstallUpdate,
+  getAppUpdaterStatus,
+  installDownloadedUpdate,
+  supportsAppUpdater,
+  type AppUpdateInstallResult,
+} from '../native/appUpdater';
 
 interface Props { onRefresh: () => void; onOpenOnboarding: () => void; }
+
+type AppUpdateState = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installer-opened' | 'error';
 
 export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const { t, i18n } = useTranslation();
@@ -43,6 +54,10 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [pendingImport, setPendingImport] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateState>('idle');
+  const [appUpdateCheck, setAppUpdateCheck] = useState<AppUpdateCheck | null>(null);
+  const [downloadedUpdateVersion, setDownloadedUpdateVersion] = useState<string | null>(null);
+  const [appUpdateProgress, setAppUpdateProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -71,6 +86,18 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
     }
   }, []);
   useEffect(() => { void load(true); }, [load]);
+
+  useEffect(() => {
+    if (!supportsAppUpdater()) return;
+    void getAppUpdaterStatus()
+      .then(status => {
+        if (status.downloadedVersion) {
+          setDownloadedUpdateVersion(status.downloadedVersion);
+          setAppUpdateState('downloaded');
+        }
+      })
+      .catch(error => console.warn('App updater status failed', error));
+  }, []);
 
   useEffect(() => {
     const hasOpenModal = showAddCategory || Boolean(pendingImport);
@@ -323,6 +350,58 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
       showToast(t('import_failed'), 'error');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleCheckForAppUpdate = async () => {
+    setAppUpdateState('checking');
+    setAppUpdateCheck(null);
+    setAppUpdateProgress(0);
+    try {
+      const result = await checkForAppUpdate(__APP_VERSION__);
+      setAppUpdateCheck(result);
+      setAppUpdateState(result.update ? 'available' : 'current');
+    } catch (error) {
+      console.error('App update check failed', error);
+      setAppUpdateState('error');
+      showToast(t('update_check_failed'), 'error');
+    }
+  };
+
+  const applyInstallResult = (result: AppUpdateInstallResult) => {
+    setDownloadedUpdateVersion(result.versionName);
+    if (result.status === 'permission_required') {
+      setAppUpdateState('downloaded');
+      showToast(t('update_permission_required'), 'error');
+    } else {
+      setAppUpdateState('installer-opened');
+    }
+  };
+
+  const handleDownloadAndInstall = async () => {
+    const update = appUpdateCheck?.update;
+    if (!update) return;
+    setAppUpdateState('downloading');
+    setAppUpdateProgress(0);
+    const listener = await addAppUpdateProgressListener(event => setAppUpdateProgress(event.progress));
+    try {
+      applyInstallResult(await downloadAndInstallUpdate(update.downloadUrl, update.version));
+    } catch (error) {
+      console.error('App update download or install failed', error);
+      setAppUpdateState('error');
+      showToast(t('update_install_failed'), 'error');
+    } finally {
+      await listener?.remove();
+    }
+  };
+
+  const handleInstallDownloadedUpdate = async () => {
+    try {
+      applyInstallResult(await installDownloadedUpdate());
+    } catch (error) {
+      console.error('Downloaded update install failed', error);
+      setAppUpdateState('error');
+      showToast(t('update_install_failed'), 'error');
     }
   };
 
@@ -638,6 +717,73 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
           <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} ref={fileInputRef} onChange={handleImport} />
         </div>
       </div>
+
+      {supportsAppUpdater() && (
+        <div className="settings-section">
+          <div className="settings-section-title">{t('app_update')}</div>
+          <div className="settings-note">{t('app_update_desc')}</div>
+          <div className="settings-item">
+            <div>
+              <div className="settings-item-label">{t('current_version')}</div>
+              <div className="settings-item-value">Fortuna v{__APP_VERSION__}</div>
+            </div>
+            <button type="button" className="btn btn-secondary btn-sm"
+              disabled={appUpdateState === 'checking' || appUpdateState === 'downloading'}
+              onClick={() => void handleCheckForAppUpdate()}>
+              {appUpdateState === 'checking' ? t('checking_for_updates') : `🔄 ${t('check_for_updates')}`}
+            </button>
+          </div>
+
+          {appUpdateState === 'current' && (
+            <div className="update-status update-status-success">✓ {t('app_is_current')}</div>
+          )}
+
+          {appUpdateCheck?.update && (
+            <div className="update-card">
+              <div className="update-card-head">
+                <div>
+                  <div className="settings-item-label">{t('update_available')}</div>
+                  <div className="settings-item-value">v{appUpdateCheck.update.version} · {(appUpdateCheck.update.assetSize / 1024 / 1024).toFixed(1)} MB</div>
+                </div>
+                {appUpdateState !== 'downloading' && appUpdateState !== 'downloaded' && appUpdateState !== 'installer-opened' && (
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleDownloadAndInstall()}>
+                    ⬇️ {t('download_and_install')}
+                  </button>
+                )}
+              </div>
+              {appUpdateCheck.update.releaseNotes && (
+                <details className="update-release-notes">
+                  <summary>{t('update_release_notes')}</summary>
+                  <div>{appUpdateCheck.update.releaseNotes}</div>
+                </details>
+              )}
+            </div>
+          )}
+
+          {appUpdateState === 'downloading' && (
+            <div className="update-status" role="status" aria-live="polite">
+              <div>{t('downloading_update')} {Math.round(appUpdateProgress * 100)}%</div>
+              <div className="update-progress" aria-label={t('update_download_progress')}>
+                <span style={{ width: `${Math.round(appUpdateProgress * 100)}%` }} />
+              </div>
+            </div>
+          )}
+
+          {appUpdateState === 'downloaded' && (
+            <div className="update-status update-status-warning">
+              <div>{t('update_permission_hint')}</div>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleInstallDownloadedUpdate()}>
+                {t('install_downloaded_update', { version: downloadedUpdateVersion ?? '' })}
+              </button>
+            </div>
+          )}
+
+          {appUpdateState === 'installer-opened' && (
+            <div className="update-status update-status-success">✓ {t('update_installer_opened')}</div>
+          )}
+          <div className="settings-note update-security-note">🔐 {t('signed_update_security_hint')}</div>
+        </div>
+      )}
 
       {/* About */}
       <div className="settings-section">

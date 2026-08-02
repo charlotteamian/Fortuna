@@ -8,10 +8,21 @@ android {
     def releaseStorePassword = System.getenv("FORTUNA_UPLOAD_STORE_PASSWORD")
     def releaseKeyAlias = System.getenv("FORTUNA_UPLOAD_KEY_ALIAS")
     def releaseKeyPassword = System.getenv("FORTUNA_UPLOAD_KEY_PASSWORD")
+    def releaseSigningValues = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword]
+    def hasAnyReleaseSigningValue = releaseSigningValues.any { it }
+    def hasCompleteReleaseSigning = releaseSigningValues.every { it }
+    def releaseTaskRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+
+    if (hasAnyReleaseSigningValue && !hasCompleteReleaseSigning) {
+        throw new GradleException("Fortuna release signing is only partially configured. Set all FORTUNA_UPLOAD_* variables.")
+    }
+    if (releaseTaskRequested && !hasCompleteReleaseSigning) {
+        throw new GradleException("Fortuna release builds require the long-term release keystore.")
+    }
 
     signingConfigs {
         release {
-            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+            if (hasCompleteReleaseSigning) {
                 storeFile file(releaseStoreFile)
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
@@ -24,8 +35,8 @@ android {
         applicationId "com.fortuna.wealthtracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.2.1"
+        versionCode 5
+        versionName "1.3.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -36,7 +47,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+            if (hasCompleteReleaseSigning) {
                 signingConfig signingConfigs.release
             }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

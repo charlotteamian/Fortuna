@@ -19,7 +19,7 @@
   <body>
     <main>
       <h1>Privacy Policy for Fortuna</h1>
-      <div class="meta">Effective date: 2026-07-29</div>
+      <div class="meta">Effective date: 2026-08-02</div>
 
       <p>Fortuna is a local-first personal asset, liability, holdings, and net-worth tracking app. This policy explains what the app stores, when it connects to other services, and what choices you have.</p>
 
@@ -40,6 +40,10 @@
       </ul>
       <p>These requests send only the public identifiers needed for a lookup, such as currency or metal codes and fund, security, futures, option-underlying, or option-contract codes. They do not intentionally send your account names, balances, quantities, transaction history, or notes. As with any internet request, the receiving service can see ordinary connection information such as your IP address and request headers. Those services are independent of Fortuna and handle request data under their own terms and privacy practices.</p>
 
+      <h2>Android App Updates</h2>
+      <p>When you choose Check for updates on Android, Fortuna requests public release metadata from GitHub (<code>api.github.com</code>). If you choose to update, the app downloads the release APK from GitHub's HTTPS release infrastructure. These requests do not include your accounts, balances, holdings, transactions, notes, or backup files; GitHub can receive ordinary connection information such as your IP address and request headers under its own privacy practices.</p>
+      <p>Before opening Android's installation confirmation, Fortuna verifies the trusted release URL, package name, higher version code, and the same signing certificate as the installed app. The Android install-packages permission only allows Fortuna to request installation; Android still requires you to allow the source and confirm the installation.</p>
+
       <h2>Calendar Reminders</h2>
       <p>If you choose to create a repayment reminder, Fortuna opens a system calendar prompt. The proposed calendar entry may include the account name and repayment date you entered. Nothing is added until you confirm through the device interface. Your calendar app or calendar provider may store or synchronize the resulting entry under its own privacy policy. Fortuna does not send calendar content to a developer-operated server.</p>
 
@@ -52,7 +56,7 @@
       <p>Android or iOS may back up and later restore some local app-container data, potentially including the IndexedDB database, according to your device, account, and system backup settings. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your Android backup or iCloud Backup settings if you do not want this behavior.</p>
 
       <h2>Data Sharing and Advertising</h2>
-      <p>Fortuna does not sell personal data and does not include advertising or analytics SDKs. The developer does not receive your locally stored asset database. Data can leave the app only through the market-data requests, system calendar, user-authorized exports or snapshot destination, and operating-system backup paths described above.</p>
+      <p>Fortuna does not sell personal data and does not include advertising or analytics SDKs. The developer does not receive your locally stored asset database. Data can leave the app only through the market-data and update requests, system calendar, user-authorized exports or snapshot destination, and operating-system backup paths described above.</p>
 
       <h2>Retention and Deletion</h2>
       <p>Local records remain on the device until you delete them in the app, clear the app's storage, or uninstall the app. Clearing storage or uninstalling can permanently remove records that you have not exported. Android or iOS may restore previously backed-up data after reinstalling, depending on system settings.</p>

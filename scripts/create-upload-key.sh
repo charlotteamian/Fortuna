@@ -4,8 +4,19 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JAVA_HOME_DEFAULT="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 KEYTOOL="${JAVA_HOME:-$JAVA_HOME_DEFAULT}/bin/keytool"
-OUT="${1:-$ROOT_DIR/fortuna-upload-key.jks}"
-ALIAS="${2:-fortuna-upload}"
+OUT="${1:-$ROOT_DIR/fortuna-release.jks}"
+ALIAS="${2:-fortuna-release}"
+
+if [[ "${FORTUNA_ALLOW_NEW_SIGNING_KEY:-}" != "yes" ]]; then
+  cat <<'EOF'
+Fortuna already has a permanent Android signing identity.
+Creating another key would make future APKs incompatible with existing installations.
+
+Use the existing protected keystore. Only set FORTUNA_ALLOW_NEW_SIGNING_KEY=yes
+when intentionally creating a separate distribution identity.
+EOF
+  exit 1
+fi
 
 if [[ ! -x "$KEYTOOL" ]]; then
   echo "Cannot find keytool. Install Android Studio or set JAVA_HOME."
@@ -22,8 +33,8 @@ fi
   -keystore "$OUT" \
   -alias "$ALIAS" \
   -keyalg RSA \
-  -keysize 2048 \
-  -validity 10000
+  -keysize 4096 \
+  -validity 36500
 
 cat <<EOF
 

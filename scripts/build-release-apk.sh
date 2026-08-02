@@ -11,28 +11,21 @@ fi
 
 if [[ -z "${FORTUNA_UPLOAD_KEYSTORE:-}" || -z "${FORTUNA_UPLOAD_STORE_PASSWORD:-}" || -z "${FORTUNA_UPLOAD_KEY_ALIAS:-}" || -z "${FORTUNA_UPLOAD_KEY_PASSWORD:-}" ]]; then
   cat <<'EOF'
-Missing signing environment variables.
+Missing long-term signing environment variables.
 
-Set these before building the Play Store AAB:
-
-export FORTUNA_UPLOAD_KEYSTORE=/absolute/path/fortuna-upload-key.jks
-export FORTUNA_UPLOAD_STORE_PASSWORD='your-store-password'
-export FORTUNA_UPLOAD_KEY_ALIAS=fortuna-release
-export FORTUNA_UPLOAD_KEY_PASSWORD='your-key-password'
-
-Then run:
-
-bash scripts/build-release-aab.sh
+Set FORTUNA_UPLOAD_KEYSTORE, FORTUNA_UPLOAD_STORE_PASSWORD,
+FORTUNA_UPLOAD_KEY_ALIAS, and FORTUNA_UPLOAD_KEY_PASSWORD before running this script.
 EOF
   exit 1
 fi
 
 cd "$ROOT_DIR"
-npm run release:web
+npm test
+npm run release:android
 
 cd "$ANDROID_DIR"
-./gradlew bundleRelease
+./gradlew assembleRelease --console=plain
 
 echo
-echo "Signed AAB:"
-echo "$ANDROID_DIR/app/build/outputs/bundle/release/app-release.aab"
+echo "Signed APK:"
+find "$ANDROID_DIR/app/build/outputs/apk/release" -maxdepth 1 -type f -name 'Fortuna-*.apk' -print

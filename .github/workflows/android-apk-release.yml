@@ -19,8 +19,12 @@ env:
 
 jobs:
   build-apk:
-    name: Build debug APK
+    name: Build signed release APK
     runs-on: ubuntu-latest
+    env:
+      FORTUNA_UPLOAD_STORE_PASSWORD: ${{ secrets.FORTUNA_UPLOAD_STORE_PASSWORD }}
+      FORTUNA_UPLOAD_KEY_ALIAS: ${{ secrets.FORTUNA_UPLOAD_KEY_ALIAS }}
+      FORTUNA_UPLOAD_KEY_PASSWORD: ${{ secrets.FORTUNA_UPLOAD_KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -41,15 +45,44 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Restore long-term signing key
+        env:
+          FORTUNA_UPLOAD_KEYSTORE_BASE64: ${{ secrets.FORTUNA_UPLOAD_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${FORTUNA_UPLOAD_KEYSTORE_BASE64:-}" || -z "${FORTUNA_UPLOAD_STORE_PASSWORD:-}" || -z "${FORTUNA_UPLOAD_KEY_ALIAS:-}" || -z "${FORTUNA_UPLOAD_KEY_PASSWORD:-}" ]]; then
+            echo "Fortuna release signing secrets are incomplete" >&2
+            exit 1
+          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/fortuna-release.jks"
+          printf '%s' "$FORTUNA_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "FORTUNA_UPLOAD_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Lint and build web app
         run: npm run release:web
 
-      - name: Build Android debug APK
+      - name: Build Android signed release APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease --console=plain
+
+      - name: Verify release signature identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_SOURCE="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name 'Fortuna-*.apk' -print -quit)"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -n 1)"
+          EXPECTED_CERT="$(tr -d '[:space:]' < android/release-signing-cert.sha256)"
+          ACTUAL_CERT="$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK_SOURCE" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK_SOURCE"
+          if [[ -z "$ACTUAL_CERT" || "$ACTUAL_CERT" != "$EXPECTED_CERT" ]]; then
+            echo "Release signing certificate mismatch" >&2
+            exit 1
+          fi
 
       - name: Prepare APK artifact
         id: apk
@@ -67,8 +100,8 @@ jobs:
           fi
 
           mkdir -p release
-          APK_NAME="Fortuna-${VERSION}-debug.apk"
-          APK_SOURCE="$(find android/app/build/outputs/apk/debug -maxdepth 1 -type f -name 'Fortuna-*.apk' -print -quit)"
+          APK_NAME="Fortuna-${VERSION}-release.apk"
+          APK_SOURCE="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name 'Fortuna-*.apk' -print -quit)"
           if [[ -z "$APK_SOURCE" ]]; then
             echo "No Fortuna APK found in the Gradle debug output directory" >&2
             exit 1
@@ -81,7 +114,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fortuna-debug-apk
+          name: fortuna-release-apk
           path: ${{ steps.apk.outputs.apk_path }}
 
       - name: Create or update GitHub Release
@@ -111,7 +144,7 @@ jobs:
 
           ### Installation
 
-          Download the APK on an Android device, allow installation from unknown apps when prompted, and install it. This is a debug-signed sideload build for GitHub distribution and personal, non-commercial use.
+          Download the release-signed APK on an Android device, allow installation from unknown apps when prompted, and install it. Future GitHub releases keep the same signing identity so Android can install them as updates.
           EOF
           fi
 

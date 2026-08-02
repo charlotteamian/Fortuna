@@ -162,11 +162,11 @@ Test and release -> Testing -> Internal testing
 1. Create new release
 2. 选择 Play App Signing，接受条款。
 3. 上传正式签名的 `app-release.aab`
-4. Release name: `1.2.1`
+4. Release name: `1.3.0`
 5. Release notes:
 
 ```text
-Adds independent account inclusion and hiding controls while preserving Fortuna's local-first asset, liability, portfolio, chart, plan, and backup workflows.
+Adds independent account inclusion and hiding controls, permanent release signing for the GitHub channel, and a security-checked Android update flow while preserving Fortuna's local-first ledger and backups.
 ```
 
 6. Save -> Review release -> Start rollout to Internal testing

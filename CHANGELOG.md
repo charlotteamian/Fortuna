@@ -4,6 +4,16 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-02
+
+### Stable Android updates
+
+- Established a permanent Android release-signing identity and changed GitHub releases from ephemeral debug signing to verified release signing.
+- Added an Android-only update section under Settings that checks the official GitHub release, shows release notes, downloads the signed APK, and opens Android's installation confirmation.
+- Added native validation for the trusted GitHub URL, Fortuna package name, higher version code, and exact match with the currently installed signing certificate before installation can start.
+- Added CI certificate pinning so a release fails instead of publishing an APK signed with an unexpected key.
+- This version is the one-time signing transition: users of 1.2.1 or earlier debug builds must export a complete backup, uninstall the old app, install 1.3.0, and restore. Releases after 1.3.0 can update in place.
+
 ## [1.2.1] - 2026-08-02
 
 ### Account visibility and valuation control
