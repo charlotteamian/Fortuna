@@ -4,6 +4,15 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-02
+
+### Account visibility and valuation control
+
+- Added an independent per-account switch for including assets or liabilities in total assets, total liabilities, net worth, and allocation-plan calculations.
+- Added presentation-only hiding for accounts, with a direct overview action and a Settings recovery list. Hidden accounts remain included in totals unless the inclusion switch is separately disabled.
+- Kept overview subtotals, product summaries, charts, reports, Excel backups, and portable snapshot schema v7 aligned with the two independent states.
+- Preserved backward compatibility: existing accounts remain included and visible until the user changes either setting.
+
 ### iOS and App Store readiness
 
 - Aligned the iOS marketing version with the current package release and added a release guard that verifies every bundled web asset after Capacitor sync.

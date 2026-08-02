@@ -1,6 +1,7 @@
 import type { AccountWithLatest } from '../services/assetService';
 import type { Settings } from '../db';
 import { getFieldsForCategory } from './categoryFields';
+import { isAccountIncludedInTotals } from './accountPreferences';
 
 export interface ReportOpts {
   accounts: AccountWithLatest[];
@@ -60,8 +61,10 @@ export function generateReportCanvas(opts: ReportOpts): HTMLCanvasElement {
     const key = a.category;
     if (!catMap[key]) catMap[key] = { accounts: [], assets: 0, liabilities: 0, type: a.type };
     catMap[key].accounts.push(a);
-    if (a.type === 'asset') catMap[key].assets += a.convertedAmount;
-    else catMap[key].liabilities += a.convertedAmount;
+    if (isAccountIncludedInTotals(a)) {
+      if (a.type === 'asset') catMap[key].assets += a.convertedAmount;
+      else catMap[key].liabilities += a.convertedAmount;
+    }
   }
   const insts = Object.entries(catMap)
     .filter(([, v]) => v.accounts.length > 0)

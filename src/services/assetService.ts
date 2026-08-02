@@ -8,6 +8,7 @@ import {
   usesDerivedBalanceRecords,
   type BalanceFlowKind,
 } from '../lib/balanceFlow';
+import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
 
 // ---- Account CRUD ----
 export interface AccountQueryOptions {
@@ -320,7 +321,10 @@ export async function getAccountsWithLatest(options: AccountQueryOptions = {}): 
     const latestAmount = latest?.amount ?? 0;
     const latestDate = latest?.date ?? '-';
     const valuation = await valuate(acct, latestAmount, primary);
-    if (acct.type === 'asset') totalAssets += valuation.converted; else totalLiabilities += valuation.converted;
+    if (!acct.archivedAt && isAccountIncludedInTotals(acct)) {
+      if (acct.type === 'asset') totalAssets += valuation.converted;
+      else totalLiabilities += valuation.converted;
+    }
     return {
       ...acct,
       latestAmount,
@@ -363,11 +367,18 @@ export async function getChartData(): Promise<{
       let value = 0;
       for (const r of acctRecords) { if (r.date <= date) value = r.amount; else break; }
       const { converted } = await valuate(acct, value, primary);
-      if (!accountSeries[acct.id]) accountSeries[acct.id] = { name: acct.name, category: acct.category, type: acct.type, values: {} };
-      accountSeries[acct.id].values[date] = Math.round(converted);
-      if (!categorySeries[acct.category]) categorySeries[acct.category] = { type: acct.type, values: {} };
-      categorySeries[acct.category].values[date] = (categorySeries[acct.category].values[date] || 0) + Math.round(converted);
-      if (acct.type === 'asset') dayAssets += converted; else dayLiabilities += converted;
+      if (!isAccountHidden(acct)) {
+        if (!accountSeries[acct.id]) accountSeries[acct.id] = { name: acct.name, category: acct.category, type: acct.type, values: {} };
+        accountSeries[acct.id].values[date] = Math.round(converted);
+      }
+      if (!isAccountHidden(acct) && isAccountIncludedInTotals(acct)) {
+        if (!categorySeries[acct.category]) categorySeries[acct.category] = { type: acct.type, values: {} };
+        categorySeries[acct.category].values[date] = (categorySeries[acct.category].values[date] || 0) + Math.round(converted);
+      }
+      if (isAccountIncludedInTotals(acct)) {
+        if (acct.type === 'asset') dayAssets += converted;
+        else dayLiabilities += converted;
+      }
     }
     totalSeries.totalAssets[date] = Math.round(dayAssets);
     totalSeries.totalLiabilities[date] = Math.round(dayLiabilities);

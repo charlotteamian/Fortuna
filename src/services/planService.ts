@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db, initializeSettings, type PlanItem, type PlanTarget } from '../db';
 import { getAccountsWithLatest } from './assetService';
+import { isAccountIncludedInTotals } from '../lib/accountPreferences';
 import { computeBalanceHoldingPosition, computeHoldingPosition } from './holdingService';
 import { convertAmountFromCache } from './rateService';
 import { getHoldingMode } from '../lib/productPortfolio';
@@ -217,7 +218,7 @@ export async function getPlanStatus(): Promise<PlanStatus> {
     getPlanItems(), db.planTargets.toArray(), initializeSettings(), getAccountsWithLatest(),
   ]);
   const primary = settings.primaryCurrency;
-  const assetAccounts = acctData.accounts.filter(a => a.type === 'asset');
+  const assetAccounts = acctData.accounts.filter(a => a.type === 'asset' && isAccountIncludedInTotals(a));
 
   interface ResourceInfo {
     refKey: string;

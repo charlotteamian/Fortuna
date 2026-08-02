@@ -14,10 +14,10 @@
 
 ## 2. 生成候选 Archive
 
-每次上传必须增加 build number。首次候选可从 1 开始；如果 App Store Connect 已存在 build 1，则改用更大的整数。
+每次上传必须增加 build number。当前 1.2.1 候选使用 build 2；如果 App Store Connect 已存在 build 2，则改用更大的整数。
 
 ```bash
-export FORTUNA_IOS_BUILD_NUMBER=1
+export FORTUNA_IOS_BUILD_NUMBER=2
 npm run archive:ios
 ```
 
@@ -25,7 +25,7 @@ npm run archive:ios
 
 - 运行全部业务与发布脚本测试；
 - 运行 ESLint 和 TypeScript/Vite 生产构建；
-- 将 `package.json` 的 `1.2.0` 同步到 Xcode；
+- 将 `package.json` 的 `1.2.1` 同步到 Xcode；
 - 执行 `cap sync ios`；
 - 逐文件校验 `dist/` 与 iOS 内置 `public/`；
 - 用自动签名生成 `build/Fortuna.xcarchive`。
@@ -34,7 +34,7 @@ npm run archive:ios
 
 1. 打开 Xcode → Window → Organizer → Archives。
 2. 选中 Fortuna Archive，先执行 Validate App。
-3. 检查：版本 `1.2.0`、build number、Bundle ID、签名 Team、App Icon、隐私清单均正确。
+3. 检查：版本 `1.2.1`、build number、Bundle ID、签名 Team、App Icon、隐私清单均正确。
 4. 选择 Distribute App → App Store Connect → Upload。
 5. 等待 App Store Connect 处理完成；有 warning 也要逐条阅读，不要只看“Complete”。
 

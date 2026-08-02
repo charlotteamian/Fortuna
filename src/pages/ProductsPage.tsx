@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../app-context';
 import { getFieldsForCategory } from '../lib/categoryFields';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
+import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
 
 const COLORS = ['#818cf8','#34d399','#60a5fa','#c084fc','#fbbf24','#f472b6','#22d3ee','#a3e635','#fb923c','#2dd4bf'];
 
@@ -58,6 +59,7 @@ export default function AccountPage() {
     if (!acctData) return {};
     const map: Record<string, AccountWithLatest[]> = {};
     for (const acct of acctData.accounts) {
+      if (isAccountHidden(acct)) continue;
       const key = acct.institution?.trim() || t('no_institution');
       if (!map[key]) map[key] = [];
       map[key].push(acct);
@@ -74,11 +76,12 @@ export default function AccountPage() {
 
   const instList = useMemo(() => {
     return Object.entries(grouped).sort(([, a], [, b]) => {
-      const sumA = a.filter(x => x.type === 'asset').reduce((s, x) => s + x.convertedAmount, 0);
-      const sumB = b.filter(x => x.type === 'asset').reduce((s, x) => s + x.convertedAmount, 0);
+      const sumA = a.filter(x => x.type === 'asset' && isAccountIncludedInTotals(x)).reduce((s, x) => s + x.convertedAmount, 0);
+      const sumB = b.filter(x => x.type === 'asset' && isAccountIncludedInTotals(x)).reduce((s, x) => s + x.convertedAmount, 0);
       return sumB - sumA;
     });
   }, [grouped]);
+  const visibleAccountCount = acctData?.accounts.filter(account => !isAccountHidden(account)).length ?? 0;
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
   if (loadError && !acctData) return (
@@ -111,18 +114,25 @@ export default function AccountPage() {
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 700, color: theme.assetColor }}>{masked(fmt(acctData.totalAssets))}</div>
         </div>
       </div>
-      {acctData.accounts.some(account => account.conversionUnavailable) && (
+      {acctData.accounts.some(account => isAccountIncludedInTotals(account) && account.conversionUnavailable) && (
         <div className="valuation-warning" role="status">
-          ⚠️ {t('some_values_excluded', { count: acctData.accounts.filter(account => account.conversionUnavailable).length })}
+          ⚠️ {t('some_values_excluded', { count: acctData.accounts.filter(account => isAccountIncludedInTotals(account) && account.conversionUnavailable).length })}
         </div>
       )}
 
       <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {visibleAccountCount === 0 && (
+          <div className="empty-state" style={{ padding: '2rem 1rem' }}>
+            <div className="empty-icon">🙈</div>
+            <div className="empty-text">{t('all_accounts_hidden')}</div>
+            <div className="empty-hint">{t('all_accounts_hidden_hint')}</div>
+          </div>
+        )}
         {instList.map(([inst, accounts], idx) => {
           const assetAccts = accounts.filter(a => a.type === 'asset');
           const liabAccts = accounts.filter(a => a.type === 'liability');
-          const assetTotal = assetAccts.reduce((s, a) => s + a.convertedAmount, 0);
-          const liabTotal = liabAccts.reduce((s, a) => s + a.convertedAmount, 0);
+          const assetTotal = assetAccts.filter(isAccountIncludedInTotals).reduce((s, a) => s + a.convertedAmount, 0);
+          const liabTotal = liabAccts.filter(isAccountIncludedInTotals).reduce((s, a) => s + a.convertedAmount, 0);
           const isExpanded = expanded.has(inst);
           const avatarColor = COLORS[idx % COLORS.length];
           const initial = inst.replace(/[（(].*/, '').trim()[0] || '?';
@@ -160,6 +170,7 @@ export default function AccountPage() {
                               <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{acct.name}</div>
                               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 1 }}>
                                 <span style={{ background: catDim, color: catColor, borderRadius: 8, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 600 }}>{t(acct.category)}</span>
+                                {!isAccountIncludedInTotals(acct) && <span style={{ marginLeft: 5 }}>{t('excluded_from_totals_badge')}</span>}
                                 <span style={{ marginLeft: 5 }}>{acct.currency}</span>
                               </div>
                             </div>

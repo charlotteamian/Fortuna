@@ -123,7 +123,7 @@ test('snapshot focus labels are optional and only accept active accounts', () =>
   );
 });
 
-test('automatic snapshot v6 exports all active accounts and marks optional focus accounts', () => {
+test('automatic snapshot v7 exports all active accounts and marks optional focus accounts', () => {
   const snapshot = buildAutomaticSnapshot({
     accounts: [focusAccount, reserveAccount, archivedAccount],
     records,
@@ -136,7 +136,7 @@ test('automatic snapshot v6 exports all active accounts and marks optional focus
     trigger: 'test',
   });
 
-  assert.equal(snapshot.schemaVersion, 6);
+  assert.equal(snapshot.schemaVersion, 7);
   assert.equal(snapshot.accountCount, 2);
   assert.equal(snapshot.focusAccountCount, 1);
   assert.deepEqual(snapshot.totals, {
@@ -153,6 +153,8 @@ test('automatic snapshot v6 exports all active accounts and marks optional focus
   assert.deepEqual(snapshot.categorySummary.map(row => [row.category, row.value]), [['股票/ETF', 700], ['银行存款', 300]]);
   assert.equal(snapshot.generatedAt, '2026-07-13T02:00:00.000Z');
   assert.equal(snapshot.accounts[0].isFocusAccount, true);
+  assert.equal(snapshot.accounts[0].includedInTotals, true);
+  assert.equal(snapshot.accounts[0].hiddenInApp, false);
   assert.equal(snapshot.accounts[1].isFocusAccount, false);
   assert.equal(snapshot.accounts[1].productData?.maturity, '2026-12-31');
   assert.equal(snapshot.allocationPlan.items[0].action, 'reduce');
@@ -182,6 +184,30 @@ test('automatic snapshot v6 exports all active accounts and marks optional focus
   assert.equal(position.priceDate, '2026-07-10');
 
   assert.doesNotMatch(JSON.stringify(snapshot), /哨兵|GPT|Claude|快账户/i);
+});
+
+test('hidden accounts still count in totals while excluded accounts do not', () => {
+  const hiddenAccount: AccountWithLatest = { ...reserveAccount, hidden: true };
+  const excludedAccount: AccountWithLatest = { ...focusAccount, includeInTotals: false };
+  const snapshot = buildAutomaticSnapshot({
+    accounts: [hiddenAccount, excludedAccount],
+    records: [],
+    holdings: [],
+    transactions: [],
+    exchangeRates: [],
+    planStatus: emptyPlanStatus(300),
+    settings: { primaryCurrency: 'CNY', snapshotFocusAccountIds: [] },
+  });
+
+  assert.equal(snapshot.accountCount, 2);
+  assert.equal(snapshot.includedAccountCount, 1);
+  assert.equal(snapshot.hiddenAccountCount, 1);
+  assert.equal(snapshot.totals.assets, 300);
+  assert.deepEqual(snapshot.categorySummary.map(row => [row.category, row.value]), [['银行存款', 300]]);
+  assert.equal(snapshot.accounts.find(account => account.id === hiddenAccount.id)?.includedInTotals, true);
+  assert.equal(snapshot.accounts.find(account => account.id === hiddenAccount.id)?.hiddenInApp, true);
+  assert.equal(snapshot.accounts.find(account => account.id === excludedAccount.id)?.includedInTotals, false);
+  assert.equal(snapshot.accounts.find(account => account.id === excludedAccount.id)?.hiddenInApp, false);
 });
 
 test('automatic snapshot keeps unavailable conversions as unknown instead of zero', () => {

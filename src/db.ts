@@ -24,6 +24,8 @@ export interface Account {
   portfolio?: boolean;     // platform-managed equity account: holdings live in `holdings`/`holdingTxns`
   cashBalance?: number;    // portfolio accounts: idle cash on the platform (account currency)
   archivedAt?: number;     // archived accounts are hidden from active totals but keep all history
+  includeInTotals?: boolean; // false = keep tracking, but exclude from asset/liability/net-worth totals
+  hidden?: boolean;        // presentation-only: hidden from regular overviews/charts until restored in Settings
 }
 
 export interface AccountRecord {
@@ -482,7 +484,7 @@ export async function exportData(): Promise<string> {
   const planTargets = await db.planTargets.toArray();
   const holdings = await db.holdings.toArray();
   const holdingTxns = await db.holdingTxns.toArray();
-  const data = { version: 11, timestamp: Date.now(), accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns };
+  const data = { version: 12, timestamp: Date.now(), accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns };
   return JSON.stringify(data);
 }
 
@@ -543,7 +545,7 @@ export async function exportToExcel(): Promise<string> {
   });
   const metadataExport = [{
     format: 'Fortuna Excel Backup',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
   }];
 
@@ -671,12 +673,18 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
     const backupVersion = Number(metadata?.version) || 0;
     const needsLegacyMetalMigration = !recognizedBackup || backupVersion < 2;
     
+    const parseBoolean = (value: unknown, fallback: boolean): boolean => {
+      if (value === undefined || value === null || value === '') return fallback;
+      return value === true || value === 1 || String(value).toLowerCase() === 'true';
+    };
     const rawAccounts = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsAccounts);
     const accounts: Account[] = rawAccounts.map((row) => {
       const { productData, latestBalance: _latestBalance, ...rest } = row;
       void _latestBalance;
       return {
         ...rest,
+        includeInTotals: parseBoolean(rest.includeInTotals, true),
+        hidden: parseBoolean(rest.hidden, false),
         productData: typeof productData === 'string' ? (() => { try { return JSON.parse(productData) as Record<string, string>; } catch { return undefined; } })() : undefined,
       } as Account;
     });
@@ -770,10 +778,6 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
     const parseJson = <T,>(value: unknown, fallback: T): T => {
       if (typeof value !== 'string' || !value) return fallback;
       try { return JSON.parse(value) as T; } catch { return fallback; }
-    };
-    const parseBoolean = (value: unknown, fallback: boolean): boolean => {
-      if (value === undefined || value === null || value === '') return fallback;
-      return value === true || value === 1 || String(value).toLowerCase() === 'true';
     };
     const settingsRaw = wsSettings ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsSettings) : [];
     const restoredSettings: Settings[] = settingsRaw.flatMap(row => {

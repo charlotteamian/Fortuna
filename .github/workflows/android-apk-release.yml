@@ -94,7 +94,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > release-notes.md <<EOF
+          NOTES_SOURCE="release/github/$TAG.md"
+          if [[ -f "$NOTES_SOURCE" ]]; then
+            cp "$NOTES_SOURCE" release-notes.md
+          else
+            cat > release-notes.md <<EOF
           ## Fortuna $VERSION
 
           ### Core app
@@ -109,9 +113,11 @@ jobs:
 
           Download the APK on an Android device, allow installation from unknown apps when prompted, and install it. This is a debug-signed sideload build for GitHub distribution and personal, non-commercial use.
           EOF
+          fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK_PATH" --clobber
+            gh release edit "$TAG" --title "Fortuna $VERSION" --notes-file release-notes.md
           else
             gh release create "$TAG" "$APK_PATH" --title "Fortuna $VERSION" --notes-file release-notes.md
           fi

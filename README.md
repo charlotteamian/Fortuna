@@ -18,7 +18,7 @@
 
 | 核心能力 | Fortuna 解决的问题 |
 | --- | --- |
-| **1. 把散落资产归集到一处** | 将银行、券商、基金平台、现金、房产、信用卡和贷款统一到一张多币种资产负债表。一个平台可作为组合账户，继续管理其中的现金、股票、基金、期权、存款或理财产品。 |
+| **1. 把散落资产归集到一处** | 将银行、券商、基金平台、现金、房产、信用卡和贷款统一到一张多币种资产负债表。一个平台可作为组合账户，继续管理其中的现金、股票、基金、期权、存款或理财产品；每项还可独立选择是否计入总额或暂时隐藏。 |
 | **2. 让价格自动回到持仓** | 对支持的 A 股、港股、美股和 ETF、国内场外基金、美股期权、黄金等贵金属以及外汇汇率自动尝试刷新。进入组合账户时会静默更新，也可一键手动刷新，不必再到多个平台逐项搜索价格。 |
 | **3. 把资产规划和真实持仓连起来** | 设置一级目标和二级子目标，并直接关联具体账户、持仓或组合现金。Fortuna 会计算当前占比、目标金额、差额和完成进度；同一笔资产分配给多个目标时按实际金额处理，避免重复计算。 |
 | **4. 本地保存，但不把数据困在 App 里** | 账本默认只保存在本机。资产页可导出图片报告或分类 Excel，设置中可生成可恢复的完整 Excel 备份；还可授权 App 把机器可读 JSON 写入指定目录。若选择云盘同步目录，手机更新后，电脑上的个人脚本或 AI 工作流即可读取最新快照。 |
@@ -76,7 +76,7 @@ It goes beyond recording a balance. Fortuna helps answer four recurring question
 
 | Core capability | What Fortuna solves |
 | --- | --- |
-| **1. Consolidate scattered assets** | Bring banks, brokers, fund platforms, cash, property, cards, and loans into one multi-currency balance sheet. A platform can be a portfolio account containing cash, equities, funds, options, deposits, or other products. |
+| **1. Consolidate scattered assets** | Bring banks, brokers, fund platforms, cash, property, cards, and loans into one multi-currency balance sheet. A platform can be a portfolio account containing cash, equities, funds, options, deposits, or other products; each account can be independently included in totals or hidden from regular views. |
 | **2. Bring prices back to the holdings** | Automatically attempt to refresh supported A-share, Hong Kong, US equity and ETF quotes, Chinese OTC funds, US equity options, precious metals such as gold, and FX rates. Portfolio accounts refresh silently when opened and can also be updated manually—without checking each provider one by one. |
 | **3. Connect allocation plans to real positions** | Create top-level goals and nested targets, then link exact accounts, holdings, or portfolio cash. Fortuna shows current weight, target amount, gap, and progress; shared assets are allocated by real amount instead of being counted twice. |
 | **4. Keep data local without trapping it** | The ledger stays on-device by default. Export an image report or category Excel report, create a complete restorable Excel backup, or authorise a machine-readable JSON snapshot in a chosen folder. If that folder is cloud-synced, a personal script or AI workflow on your computer can read the updated snapshot after you change a position on your phone. |

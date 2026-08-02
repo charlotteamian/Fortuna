@@ -17,6 +17,7 @@ import {
 import { getHoldingMode } from './productPortfolio.ts';
 import { minorToMajor } from './allocationPlan.ts';
 import { getHoldingContractMultiplier, resolveUsOptionContract, toUsOptionSymbol } from './usOption.ts';
+import { isAccountHidden, isAccountIncludedInTotals } from './accountPreferences.ts';
 
 export const AUTOMATIC_SNAPSHOT_FILE = 'fortuna_asset_snapshot.json';
 
@@ -151,15 +152,17 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       missingAssetCount: 0,
       missingLiabilityCount: 0,
     };
-    if (account.type === 'asset') {
-      if (nativeMonetaryValue == null) currencyTotals.missingAssetCount += 1;
-      else currencyTotals.knownAssets = round(currencyTotals.knownAssets + nativeMonetaryValue);
-    } else if (nativeMonetaryValue == null) {
-      currencyTotals.missingLiabilityCount += 1;
-    } else {
-      currencyTotals.knownLiabilities = round(currencyTotals.knownLiabilities + nativeMonetaryValue);
+    if (isAccountIncludedInTotals(account)) {
+      if (account.type === 'asset') {
+        if (nativeMonetaryValue == null) currencyTotals.missingAssetCount += 1;
+        else currencyTotals.knownAssets = round(currencyTotals.knownAssets + nativeMonetaryValue);
+      } else if (nativeMonetaryValue == null) {
+        currencyTotals.missingLiabilityCount += 1;
+      } else {
+        currencyTotals.knownLiabilities = round(currencyTotals.knownLiabilities + nativeMonetaryValue);
+      }
+      currencyTotalsWork[account.currency] = currencyTotals;
     }
-    currencyTotalsWork[account.currency] = currencyTotals;
 
     if (account.latestDate === '-') warnings.push(`${account.name}: no account snapshot record`);
     if (conversionUnavailable) warnings.push(`${account.name}: converted value unavailable because no valid cached rate or quote exists`);
@@ -211,6 +214,8 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       type: account.type,
       currency: account.currency,
       isFocusAccount: focusAccountIds.has(account.id),
+      includedInTotals: isAccountIncludedInTotals(account),
+      hiddenInApp: isAccountHidden(account),
       portfolio: Boolean(account.portfolio),
       unit: account.unit ?? 'currency',
       metalType: account.metalType ?? null,
@@ -229,10 +234,11 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
     };
   });
 
-  const knownAssets = round(accounts.filter(a => a.type === 'asset').reduce((sum, a) => sum + (a.convertedValue ?? 0), 0));
-  const knownLiabilities = round(accounts.filter(a => a.type === 'liability').reduce((sum, a) => sum + (a.convertedValue ?? 0), 0));
-  const missingAssetCount = accounts.filter(a => a.type === 'asset' && a.convertedValue == null).length;
-  const missingLiabilityCount = accounts.filter(a => a.type === 'liability' && a.convertedValue == null).length;
+  const includedAccounts = accounts.filter(a => a.includedInTotals);
+  const knownAssets = round(includedAccounts.filter(a => a.type === 'asset').reduce((sum, a) => sum + (a.convertedValue ?? 0), 0));
+  const knownLiabilities = round(includedAccounts.filter(a => a.type === 'liability').reduce((sum, a) => sum + (a.convertedValue ?? 0), 0));
+  const missingAssetCount = includedAccounts.filter(a => a.type === 'asset' && a.convertedValue == null).length;
+  const missingLiabilityCount = includedAccounts.filter(a => a.type === 'liability' && a.convertedValue == null).length;
   const totalAssets = missingAssetCount > 0 ? null : knownAssets;
   const totalLiabilities = missingLiabilityCount > 0 ? null : knownLiabilities;
   const categoryMap = new Map<string, {
@@ -242,6 +248,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
     missingAccountCount: number;
   }>();
   for (const account of accounts) {
+    if (!account.includedInTotals) continue;
     const key = `${account.type}:${account.category}`;
     const current = categoryMap.get(key) ?? {
       category: account.category,
@@ -381,6 +388,8 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
     primaryCurrency: input.settings.primaryCurrency,
     fileName: AUTOMATIC_SNAPSHOT_FILE,
     accountCount: accounts.length,
+    includedAccountCount: includedAccounts.length,
+    hiddenAccountCount: accounts.filter(account => account.hiddenInApp).length,
     focusAccountCount: accounts.filter(account => account.isFocusAccount).length,
     totals: {
       assets: totalAssets,
@@ -408,7 +417,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
     accounts,
     dataQualityWarnings: warnings,
     dataBoundary: {
-      ledger: 'All active Fortuna accounts and ledgers at generatedAt; archived accounts are excluded.',
+      ledger: 'All active Fortuna accounts and ledgers at generatedAt; archived accounts are excluded. includedInTotals controls totals; hiddenInApp is presentation-only.',
       currentValues: 'Account latestRecordDate and holding priceDate are independent freshness boundaries.',
       exchangeRates: 'Converted values use Fortuna cached exchange rates. A null converted value or total is unknown, never zero; inspect conversionStatus, missing counts, and each rate date.',
       allocation: 'Allocation targets are user-defined comparisons, not investment advice or trade instructions. Current values and gaps are null whenever cached valuation is incomplete.',

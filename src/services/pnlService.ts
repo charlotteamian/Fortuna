@@ -1,6 +1,7 @@
 import { db, initializeSettings, type AccountRecord, type Holding, type HoldingTxn } from '../db';
 import { getHoldingContractMultiplier } from '../lib/usOption';
 import { convertAmountFromCache } from './rateService';
+import { isAccountHidden } from '../lib/accountPreferences';
 
 export interface MonthlyPnl {
   month: string;    // 'YYYY-MM'
@@ -77,7 +78,8 @@ export async function getMonthlyRealizedPnl(): Promise<MonthlyPnl[]> {
     db.holdingTxns.toArray(),
   ]);
   const primary = settings.primaryCurrency;
-  const acctById = new Map(accounts.map(a => [a.id, a]));
+  const visibleAccounts = accounts.filter(account => !isAccountHidden(account));
+  const acctById = new Map(visibleAccounts.map(a => [a.id, a]));
   const events: RealizedEvent[] = [];
 
   // Portfolio holdings (stocks / ETFs / funds / futures ...)
@@ -91,7 +93,7 @@ export async function getMonthlyRealizedPnl(): Promise<MonthlyPnl[]> {
   }
 
   // Precious-metal accounts
-  const metalAccounts = accounts.filter(a => a.unit === 'gram');
+  const metalAccounts = visibleAccounts.filter(a => a.unit === 'gram');
   if (metalAccounts.length) {
     const recByAccount: Record<string, AccountRecord[]> = {};
     for (const r of await db.records.toArray()) (recByAccount[r.accountId] ??= []).push(r);

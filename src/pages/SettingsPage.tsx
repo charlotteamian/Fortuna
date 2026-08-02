@@ -19,6 +19,8 @@ import type { PortableSnapshotStatus as AutomaticSnapshotStatus } from '../nativ
 import UserGuide from '../components/UserGuide';
 import { formatLocalDate } from '../lib/localDate';
 import { Capacitor } from '@capacitor/core';
+import { updateAccount } from '../services/assetService';
+import { isAccountHidden } from '../lib/accountPreferences';
 
 interface Props { onRefresh: () => void; onOpenOnboarding: () => void; }
 
@@ -95,6 +97,13 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
     }
     catch { showToast(t('rates_failed'), 'error'); }
     setSyncing(false);
+  };
+
+  const handleUnhideAccount = async (accountId: string) => {
+    await updateAccount(accountId, { hidden: false });
+    setSnapshotAccounts(current => current.map(account => account.id === accountId ? { ...account, hidden: false } : account));
+    onRefresh();
+    showToast(t('account_unhidden_toast'));
   };
 
   const newFieldKey = (i: number) => {
@@ -333,6 +342,9 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
   const availableCurrencies = Object.keys(CURRENCY_NAMES).filter(c => !settings.currencies.includes(c));
   const snapshotCandidates = snapshotAccounts.filter(isSnapshotFocusCandidate);
   const selectedSnapshotIds = new Set(getSnapshotFocusAccountIds(snapshotAccounts, settings.snapshotFocusAccountIds));
+  const hiddenAccounts = snapshotAccounts
+    .filter(isAccountHidden)
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt - right.createdAt);
   const automaticSnapshotUnavailableLabel = Capacitor.getPlatform() === 'ios'
     ? t('snapshot_ios_unavailable')
     : t('snapshot_android_only');
@@ -394,6 +406,29 @@ export default function SettingsPage({ onRefresh, onOpenOnboarding }: Props) {
             {(settings.showArchivedAccounts ?? true) ? t('shown') : t('hidden')}
           </button>
         </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">{t('hidden_accounts')}</div>
+        <div className="settings-note">{t('hidden_accounts_hint')}</div>
+        {hiddenAccounts.length === 0 ? (
+          <div className="settings-item">
+            <span className="settings-item-label">{t('no_hidden_accounts')}</span>
+          </div>
+        ) : hiddenAccounts.map(account => (
+          <div className="settings-item" key={account.id}>
+            <div>
+              <div className="settings-item-label">{account.name}</div>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                {[account.institution, t(account.category), account.currency].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            <button type="button" className="btn btn-sm btn-secondary"
+              onClick={() => void handleUnhideAccount(account.id)}>
+              👁️ {t('unhide_account')}
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* Color Theme */}

@@ -9,6 +9,7 @@ import { isProductPortfolioCategory } from '../lib/productPortfolio';
 import { setAccountPortfolioMode } from '../services/holdingService';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 import { formatLocalDate } from '../lib/localDate';
+import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
 interface EditingAccountState {
@@ -19,6 +20,7 @@ interface EditingAccountState {
   currency: string;
   type: 'asset' | 'liability';
   portfolio: boolean;
+  includeInTotals: boolean;
 }
 
 const SCROLL_Y_KEY = 'fortuna-record-scroll-y';
@@ -30,6 +32,8 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const { theme, amountVisible, setAmountVisible, settings: appSettings } = useAppContext();
   const [accounts, setAccounts] = useState<AccountWithLatest[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountWithLatest[]>([]);
+  const [activeAccountCount, setActiveAccountCount] = useState(0);
+  const [hiddenAccountCount, setHiddenAccountCount] = useState(0);
   const [totals, setTotals] = useState({ totalAssets: 0, totalLiabilities: 0, netWorth: 0 });
   const [unavailableValuations, setUnavailableValuations] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -55,16 +59,20 @@ export default function RecordPage({ onOpenAccount }: Props) {
     try {
       const allData = await getAccountsWithLatest({ includeArchived: true, settings: appSettings });
       const active = allData.accounts.filter(account => !account.archivedAt);
+      const visibleActive = active.filter(account => !isAccountHidden(account));
       const archived = allData.accounts
-        .filter(account => Boolean(account.archivedAt))
+        .filter(account => Boolean(account.archivedAt) && !isAccountHidden(account))
         .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
-      const totalAssets = active.filter(account => account.type === 'asset').reduce((sum, account) => sum + account.convertedAmount, 0);
-      const totalLiabilities = active.filter(account => account.type === 'liability').reduce((sum, account) => sum + account.convertedAmount, 0);
+      const included = active.filter(isAccountIncludedInTotals);
+      const totalAssets = included.filter(account => account.type === 'asset').reduce((sum, account) => sum + account.convertedAmount, 0);
+      const totalLiabilities = included.filter(account => account.type === 'liability').reduce((sum, account) => sum + account.convertedAmount, 0);
       setSettings(appSettings);
-      setAccounts(active);
+      setAccounts(visibleActive);
       setArchivedAccounts(archived);
+      setActiveAccountCount(active.length);
+      setHiddenAccountCount(allData.accounts.filter(isAccountHidden).length);
       setTotals({ totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities });
-      setUnavailableValuations(active.filter(account => account.conversionUnavailable).length);
+      setUnavailableValuations(included.filter(account => account.conversionUnavailable).length);
     } catch (error) {
       console.error('Failed to load asset overview', error);
       setLoadError(true);
@@ -105,6 +113,12 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const handleDelete = async (id: string) => { await deleteAccount(id); setConfirmDelete(null); setContextMenu(null); showToast(t('deleted_toast')); load(); };
   const handleArchive = async (id: string) => { await archiveAccount(id); setContextMenu(null); showToast(t('archived_toast')); load(); };
   const handleRestore = async (id: string) => { await restoreAccount(id); setContextMenu(null); showToast(t('restored_toast')); load(); };
+  const handleHide = async (id: string) => {
+    await updateAccount(id, { hidden: true });
+    setContextMenu(null);
+    showToast(t('account_hidden_toast'));
+    load();
+  };
   const toggleArchivedAccounts = async () => {
     if (!settings) return;
     const updated = { ...settings, showArchivedAccounts: !(settings.showArchivedAccounts ?? true) };
@@ -124,6 +138,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
       institution: editingAcct.institution.trim() || undefined,
       currency: editingAcct.currency,
       icon: settings?.categories.find(c => c.name === editingAcct.category)?.icon,
+      includeInTotals: editingAcct.includeInTotals,
     });
     if (!currentAcct?.portfolio && nextPortfolio) await setAccountPortfolioMode(editingAcct.id, true);
     if (currentAcct?.portfolio && nextPortfolio) await setAccountPortfolioMode(editingAcct.id, true);
@@ -188,7 +203,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
       for (const a of accounts) {
         if (!catMap[a.category]) catMap[a.category] = { accounts: [], total: 0, type: a.type };
         catMap[a.category].accounts.push(a);
-        catMap[a.category].total += a.convertedAmount;
+        if (isAccountIncludedInTotals(a)) catMap[a.category].total += a.convertedAmount;
       }
       const groups = Object.entries(catMap).sort(([, a], [, b]) => {
         if (a.type !== b.type) return a.type === 'asset' ? -1 : 1;
@@ -290,7 +305,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const masked = (text: string) => amountVisible ? text : '****';
   const assetAccounts = accounts.filter(a => a.type === 'asset');
   const liabilityAccounts = accounts.filter(a => a.type === 'liability');
-  const hasAnyAccounts = accounts.length > 0 || archivedAccounts.length > 0;
+  const hasAnyAccounts = accounts.length > 0 || archivedAccounts.length > 0 || hiddenAccountCount > 0;
   const showArchivedAccounts = settings?.showArchivedAccounts ?? true;
 
   // Long-press handlers
@@ -344,33 +359,40 @@ export default function RecordPage({ onOpenAccount }: Props) {
   };
 
   const renderEntryItem = (acct: AccountWithLatest) => (
-    <div className="entry-item" key={acct.id}
-      role="button"
-      tabIndex={0}
-      aria-label={`${acct.name}, ${t('view_details')}`}
-      style={acct.archivedAt ? { opacity: 0.72 } : undefined}
-      onClick={() => handleItemClick(acct.id)}
-      onKeyDown={event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          handleItemClick(acct.id);
-        } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
-          event.preventDefault();
-          setContextMenu({ acctId: acct.id, x: Math.max(16, window.innerWidth / 2 - 90), y: Math.max(16, window.innerHeight / 2 - 70) });
-        }
-      }}
-      onTouchStart={e => startLongPress(acct.id, e)}
-      onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
-      onContextMenu={e => { e.preventDefault(); setContextMenu({ acctId: acct.id, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 140) }); }}>
-      <div className="entry-info">
-        <div className="entry-category">{acct.name}</div>
-        <div className="entry-note-text">
-          {acct.archivedAt && <span style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{t('archived_badge')}</span>}
-          {acct.institution && <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{acct.institution}</span>}
-          {t(acct.category)} · {acct.unit === 'gram' ? t('precious_metal_label') : acct.currency}
+    <div className="entry-row" key={acct.id}>
+      <div className="entry-item"
+        role="button"
+        tabIndex={0}
+        aria-label={`${acct.name}, ${t('view_details')}`}
+        style={acct.archivedAt ? { opacity: 0.72 } : undefined}
+        onClick={() => handleItemClick(acct.id)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handleItemClick(acct.id);
+          } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault();
+            setContextMenu({ acctId: acct.id, x: Math.max(16, window.innerWidth / 2 - 90), y: Math.max(16, window.innerHeight / 2 - 70) });
+          }
+        }}
+        onTouchStart={e => startLongPress(acct.id, e)}
+        onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
+        onContextMenu={e => { e.preventDefault(); setContextMenu({ acctId: acct.id, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 140) }); }}>
+        <div className="entry-info">
+          <div className="entry-category">{acct.name}</div>
+          <div className="entry-note-text">
+            {acct.archivedAt && <span style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{t('archived_badge')}</span>}
+            {!isAccountIncludedInTotals(acct) && <span style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{t('excluded_from_totals_badge')}</span>}
+            {acct.institution && <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{acct.institution}</span>}
+            {t(acct.category)} · {acct.unit === 'gram' ? t('precious_metal_label') : acct.currency}
+          </div>
         </div>
+        {renderAmount(acct)}
       </div>
-      {renderAmount(acct)}
+      {!acct.archivedAt && (
+        <button type="button" className="entry-hide-button" title={t('hide_account')} aria-label={t('hide_account_named', { name: acct.name })}
+          onClick={() => void handleHide(acct.id)}>🙈</button>
+      )}
     </div>
   );
 
@@ -391,7 +413,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
         </div>
       </div>
 
-      {accounts.length > 0 && settings && (
+      {activeAccountCount > 0 && settings && (
         <div className={`summary-strip ${i18n.language.startsWith('en') ? 'no-box' : ''}`}>
           <div className="summary-strip-item">
             <span className="stat-label">{t('total_assets')}</span>
@@ -440,9 +462,9 @@ export default function RecordPage({ onOpenAccount }: Props) {
         <>
           {accounts.length === 0 && (
             <div className="empty-state" style={{ padding: '2rem 1rem' }}>
-              <div className="empty-icon">📦</div>
-              <div className="empty-text">{t('no_active_accounts')}</div>
-              <div className="empty-hint">{t('archived_accounts_hint')}</div>
+              <div className="empty-icon">{hiddenAccountCount > 0 ? '🙈' : '📦'}</div>
+              <div className="empty-text">{hiddenAccountCount > 0 ? t('all_accounts_hidden') : t('no_active_accounts')}</div>
+              <div className="empty-hint">{hiddenAccountCount > 0 ? t('all_accounts_hidden_hint') : t('archived_accounts_hint')}</div>
             </div>
           )}
           {assetAccounts.length > 0 && (
@@ -453,7 +475,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
                 acc[acct.category].push(acct);
                 return acc;
               }, {} as Record<string, AccountWithLatest[]>)).map(([category, items]) => {
-                const subtotal = items.reduce((sum, item) => sum + (item.convertedAmount || 0), 0);
+                const subtotal = items.filter(isAccountIncludedInTotals).reduce((sum, item) => sum + (item.convertedAmount || 0), 0);
                 return (
                   <div key={category} style={{ marginBottom: '0.75rem' }}>
                     <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -477,7 +499,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
                 acc[acct.category].push(acct);
                 return acc;
               }, {} as Record<string, AccountWithLatest[]>)).map(([category, items]) => {
-                const subtotal = items.reduce((sum, item) => sum + (item.convertedAmount || 0), 0);
+                const subtotal = items.filter(isAccountIncludedInTotals).reduce((sum, item) => sum + (item.convertedAmount || 0), 0);
                 return (
                   <div key={category} style={{ marginBottom: '0.75rem' }}>
                     <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -565,10 +587,16 @@ export default function RecordPage({ onOpenAccount }: Props) {
                         currency: acct.currency,
                         type: acct.type,
                         portfolio: Boolean(acct.portfolio),
+                        includeInTotals: isAccountIncludedInTotals(acct),
                       });
                       setContextMenu(null);
                     }}>
                       ✏️ {t('edit_account')}
+                    </button>
+                  )}
+                  {!acct.archivedAt && (
+                    <button className="context-menu-item" onClick={() => handleHide(acct.id)}>
+                      🙈 {t('hide_account')}
                     </button>
                   )}
                   {acct.archivedAt ? (
@@ -653,6 +681,20 @@ export default function RecordPage({ onOpenAccount }: Props) {
                 onChange={e => setEditingAcct(prev => prev ? { ...prev, currency: e.target.value } : null)}>
                 {settings.currencies.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+            <div className="form-group">
+              <div className="settings-item" style={{ padding: '10px 0' }}>
+                <div>
+                  <div className="settings-item-label">{t('include_in_totals')}</div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('include_in_totals_hint')}</div>
+                </div>
+                <button type="button"
+                  className={`btn btn-sm ${editingAcct.includeInTotals ? 'btn-primary' : 'btn-secondary'}`}
+                  role="switch" aria-checked={editingAcct.includeInTotals}
+                  onClick={() => setEditingAcct(prev => prev ? { ...prev, includeInTotals: !prev.includeInTotals } : null)}>
+                  {editingAcct.includeInTotals ? t('included_in_totals') : t('excluded_from_totals')}
+                </button>
+              </div>
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary btn-block" onClick={() => setEditingAcct(null)}>{t('cancel')}</button>

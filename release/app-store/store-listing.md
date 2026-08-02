@@ -64,10 +64,10 @@ Fortuna 是记录与估算工具，不提供贷款、授信、证券或数字货
 资产管理,净资产,持仓,负债,资产配置,投资记录,多币种,个人财务,本地账本,Excel备份
 ```
 
-### 1.2.0 更新说明
+### 1.2.1 更新说明
 
 ```text
-首次 iOS 正式版本：支持多账户资产负债表、组合持仓与交易、资产配置计划、净资产图表、行情与汇率刷新、Excel 备份恢复、系统分享和日历提醒。
+新增逐项“计入统计”和“隐藏”控制：可继续记录但不计入总资产/净资产，也可只从首页和图表明细隐藏而保持统计不变；同时支持多账户资产负债表、组合持仓、资产配置、Excel 备份恢复、系统分享和日历提醒。
 ```
 
 ## English (U.S.)
@@ -112,8 +112,8 @@ Fortuna is a record-keeping and estimation tool. It does not provide loans, cred
 wealth,net worth,assets,liabilities,portfolio,allocation,holdings,finance,local,backup
 ```
 
-### Version 1.2.0 Release Notes
+### Version 1.2.1 Release Notes
 
 ```text
-Initial iOS release with multi-account assets and liabilities, portfolio holdings and trades, allocation plans, net-worth charts, quote and FX refresh, Excel backup and restore, system sharing, and calendar reminders.
+Adds independent per-account inclusion and hiding controls: keep tracking an item without counting it in totals, or hide it from regular views without changing net worth. Also includes multi-account assets and liabilities, portfolio holdings, allocation plans, Excel backup and restore, system sharing, and calendar reminders.
 ```

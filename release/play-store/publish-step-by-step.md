@@ -162,11 +162,11 @@ Test and release -> Testing -> Internal testing
 1. Create new release
 2. 选择 Play App Signing，接受条款。
 3. 上传正式签名的 `app-release.aab`
-4. Release name: `1.2.0`
+4. Release name: `1.2.1`
 5. Release notes:
 
 ```text
-Initial internal test release of Fortuna, a local-first personal wealth tracker.
+Adds independent account inclusion and hiding controls while preserving Fortuna's local-first asset, liability, portfolio, chart, plan, and backup workflows.
 ```
 
 6. Save -> Review release -> Start rollout to Internal testing

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../app-context';
 import { formatLocalDate, parseLocalDate } from '../lib/localDate';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
+import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
 
 type TimeRange = '3m' | '6m' | '1y' | 'all' | 'quarter' | 'year';
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
@@ -102,15 +103,20 @@ export default function ChartPage() {
       const [data, settings, acctData, pnl] = await Promise.all([getChartData(), initializeSettings(), getAccountsWithLatest(), getMonthlyRealizedPnl()]);
       setChartData(data);
       setMonthlyPnl(pnl);
-      setUnavailableValuations(acctData.accounts.filter(account => account.conversionUnavailable).length);
+      setUnavailableValuations(acctData.accounts.filter(account => isAccountIncludedInTotals(account) && account.conversionUnavailable).length);
       setPrimaryCurrency(settings.primaryCurrency);
       const isDark = settings.themeMode === 'dark'
         || (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       setThemeColors(getTheme(settings.colorTheme, isDark ? 'dark' : 'light'));
-      const assetAccts = acctData.accounts.filter(a => a.type === 'asset' && a.convertedAmount > 0);
+      const assetAccts = acctData.accounts.filter(a => (
+        a.type === 'asset'
+        && !isAccountHidden(a)
+        && isAccountIncludedInTotals(a)
+        && a.convertedAmount > 0
+      ));
       setPieData(assetAccts.map(a => ({ name: a.name, category: a.category, currency: a.currency, value: Math.round(a.convertedAmount) })));
       const byInstitution: Record<string, number> = {};
-      for (const a of acctData.accounts.filter(x => x.type === 'asset' && x.convertedAmount > 0)) {
+      for (const a of assetAccts) {
         const inst = a.institution?.trim() || t('no_institution');
         byInstitution[inst] = (byInstitution[inst] || 0) + Math.round(a.convertedAmount);
       }
