@@ -3,6 +3,22 @@ export interface AllocationTargetLike {
   targetPercent?: number;
 }
 
+/** Either input describes the same percentage-based plan. Round currency to cents,
+ * but retain the derived percentage so amount -> percentage -> amount is lossless. */
+export function planPercentFromInput(raw: string, mode: 'percent' | 'amount', base: number): number {
+  if (!raw.trim()) return NaN;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return NaN;
+  if (mode === 'percent') return value;
+  if (!Number.isFinite(base) || base <= 0) return NaN;
+  return targetPercentFromAmount(base, majorToMinor(value) / 100);
+}
+
+export function planProgress(current: number, target: number): number | undefined {
+  if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(current)) return undefined;
+  return Math.max(0, current / target * 100);
+}
+
 export interface LinkedTargetLike {
   refKey?: string;
   refKeys?: string[];
@@ -135,4 +151,13 @@ export function remainingTargetPercent(
   excludeId?: string,
 ): number {
   return Math.max(0, finiteOrZero(limitPercent) - sumTargetPercents(targets, excludeId));
+}
+
+/** Parses user purchase notes into discrete target items (splitting on newlines, semicolons, commas, or enumeration marks). */
+export function parsePlannedPurchases(text?: string): string[] {
+  if (!text) return [];
+  return text
+    .split(/[\n\r;；,，、]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
 }

@@ -86,12 +86,23 @@ export async function getPlanItems(): Promise<PlanItem[]> {
   return items.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
 }
 
-export async function createPlanItem(data: Pick<PlanItem, 'name' | 'targetPercent' | 'categories' | 'allocations'>): Promise<string> {
+export async function createPlanItem(data: Pick<PlanItem, 'name' | 'targetPercent' | 'categories' | 'allocations' | 'plannedPurchases'>): Promise<string> {
   const count = await db.planItems.count();
   const id = uuidv4();
   await db.planItems.add({ ...data, id, sortOrder: count, createdAt: Date.now() });
   requestPortableSnapshot('allocation-plan-item-created');
   return id;
+}
+
+/** Seed an empty plan atomically so retries cannot leave a partial or duplicate plan. */
+export async function createInitialPlanItems(items: Parameters<typeof createPlanItem>[0][]): Promise<void> {
+  await db.transaction('rw', db.planItems, async () => {
+    if (await db.planItems.count() > 0) throw new Error('PLAN_ALREADY_EXISTS');
+    await db.planItems.bulkAdd(items.map((item, sortOrder) => ({
+      ...item, id: uuidv4(), sortOrder, createdAt: Date.now(),
+    })));
+  });
+  requestPortableSnapshot('allocation-plan-initialized');
 }
 
 export async function updatePlanItem(id: string, updates: Partial<PlanItem>): Promise<void> {

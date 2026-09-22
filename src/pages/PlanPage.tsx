@@ -1,29 +1,32 @@
 import type React from 'react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { initializeSettings, type Settings, type PlanItem, type PlanResourceAllocation } from '../db';
 import {
-  getPlanStatus, createPlanItem, updatePlanItem, deletePlanItem, setPlanTargetTotal,
+  getPlanStatus, createPlanItem, createInitialPlanItems, updatePlanItem, deletePlanItem, setPlanTargetTotal,
   createPlanTarget, updatePlanTarget, deletePlanTarget,
   splitScope, makeScope, makeAccountScope, makeHoldingScope, makeCashScope, MARKET_KEYS, MARKET_LABEL_KEYS, EQUITY_PLAN_CATEGORIES,
   type PlanStatus, type PlanItemStatus, type PlanTargetStatus, type UnplannedEntry, type MarketKey,
 } from '../services/planService';
 import { useAppContext } from '../app-context';
 import {
+  parsePlannedPurchases,
+  planPercentFromInput,
+  planProgress,
   getResourceAllocation,
   majorToMinor,
   minorToMajor,
   remainingTargetPercent,
   targetAmountFromPercent,
 } from '../lib/allocationPlan';
+import './PlanPage.css';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 
 const COLORS = ['#818cf8', '#34d399', '#60a5fa', '#c084fc', '#fbbf24', '#f472b6', '#22d3ee', '#a3e635', '#fb923c', '#2dd4bf'];
-const UNPLANNED_COLOR = 'rgba(128,128,128,0.35)';
 
 export default function PlanPage() {
   const { t, i18n } = useTranslation();
-  const { theme, amountVisible, setAmountVisible } = useAppContext();
+  const { amountVisible, setAmountVisible } = useAppContext();
   const [status, setStatus] = useState<PlanStatus | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +37,12 @@ export default function PlanPage() {
   const [editingItem, setEditingItem] = useState<PlanItem | null>(null);
   const [formName, setFormName] = useState('');
   const [formPercent, setFormPercent] = useState('');
+  const [formInputMode, setFormInputMode] = useState<'percent' | 'amount'>('percent');
+  const [formPurchases, setFormPurchases] = useState('');
+  const [purchaseItem, setPurchaseItem] = useState<PlanItemStatus | null>(null);
+  const [purchaseInput, setPurchaseInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [formCats, setFormCats] = useState<string[]>([]);
   const [formExpandedCats, setFormExpandedCats] = useState<string[]>([]);
   const [formAllocationAmounts, setFormAllocationAmounts] = useState<Record<string, string>>({});
@@ -43,27 +52,13 @@ export default function PlanPage() {
   const [showTarget, setShowTarget] = useState(false);
   const [targetInput, setTargetInput] = useState('');
 
-  // Second-level subcategory modal with third-level product links
+  // Second-level subcategory modal with third-level product links (legacy support)
   const [targetItem, setTargetItem] = useState<PlanItemStatus | null>(null);
   const [editingTarget, setEditingTarget] = useState<PlanTargetStatus | null>(null);
   const [tgRefKeys, setTgRefKeys] = useState<string[]>([]);
   const [tgLabel, setTgLabel] = useState('');
   const [tgPercent, setTgPercent] = useState('');
   const [tgAllocationAmounts, setTgAllocationAmounts] = useState<Record<string, string>>({});
-
-  // Long-press context menu on plan item cards
-  const [contextMenu, setContextMenu] = useState<{ itemId: string; x: number; y: number } | null>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startLongPress = (itemId: string, e: React.TouchEvent | React.MouseEvent) => {
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    longPressTimer.current = setTimeout(() => {
-      setContextMenu({ itemId, x: Math.min(clientX, window.innerWidth - 180), y: Math.min(clientY, window.innerHeight - 140) });
-    }, 500);
-  };
-  const cancelLongPress = () => {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-  };
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
@@ -88,10 +83,46 @@ export default function PlanPage() {
   }, [load]);
 
   useEffect(() => {
-    const hasOpenModal = showForm || showTarget || Boolean(confirmDelete) || Boolean(targetItem);
+    const hasOpenModal = showForm || showTarget || Boolean(confirmDelete) || Boolean(targetItem) || Boolean(purchaseItem);
     document.documentElement.classList.toggle('modal-open', hasOpenModal);
     return () => document.documentElement.classList.remove('modal-open');
-  }, [showForm, showTarget, confirmDelete, targetItem]);
+  }, [showForm, showTarget, confirmDelete, targetItem, purchaseItem]);
+
+  useEffect(() => {
+    if (!showForm && !showTarget && !confirmDelete && !targetItem && !purchaseItem) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
+    const dialog = dialogs[dialogs.length - 1];
+    if (!dialog) return;
+    const controls = () => [...dialog.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
+    )].filter(element => element.getClientRects().length > 0);
+    if (!dialog.contains(document.activeElement)) controls()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) {
+        event.preventDefault();
+        if (confirmDelete) setConfirmDelete(null);
+        else if (purchaseItem) setPurchaseItem(null);
+        else if (targetItem) setTargetItem(null);
+        else if (showTarget) setShowTarget(false);
+        else setShowForm(false);
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = controls();
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault(); first?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [showForm, showTarget, confirmDelete, targetItem, purchaseItem, saving]);
 
   const masked = (text: string) => amountVisible ? text : '****';
   const fmt = (n: number) => {
@@ -157,14 +188,21 @@ export default function PlanPage() {
     setEditingItem(null);
     setFormName(preset ? scopeLabel(makeScope(preset.category, preset.market)) : '');
     setFormPercent('');
+    setFormInputMode('percent');
+    setFormPurchases('');
+    setSaveError(false);
     setFormCats(preset ? [makeScope(preset.category, preset.market)] : []);
     setFormExpandedCats(preset ? [preset.category] : []);
     setFormAllocationAmounts({});
     setShowForm(true);
   };
+
   const openEdit = (item: PlanItem) => {
     setEditingItem(item);
     setFormName(item.name);
+    setFormInputMode('percent');
+    setFormPurchases(item.plannedPurchases ?? '');
+    setSaveError(false);
     setFormPercent(String(item.targetPercent));
     setFormCats([...item.categories]);
     setFormExpandedCats([...new Set(item.categories.map(scope => {
@@ -180,8 +218,10 @@ export default function PlanPage() {
     setFormAllocationAmounts(allocationInputs(item.allocations));
     setShowForm(true);
   };
+
   const handleSaveItem = async () => {
-    const pct = parseFloat(formPercent);
+    if (!itemFormValid || saving) return;
+    const pct = planPercentFromInput(formPercent, formInputMode, status?.base ?? 0);
     const usedByOthers = status?.items.reduce((sum, item) => sum + (item.id === editingItem?.id ? 0 : item.targetPercent), 0) ?? 0;
     const concreteTargetMinimum = editingItem
       ? status?.items.find(item => item.id === editingItem.id)?.targetPercentSum ?? 0
@@ -200,37 +240,42 @@ export default function PlanPage() {
     });
     const data = {
       name: formName.trim(),
+      plannedPurchases: formPurchases.trim(),
       targetPercent: pct,
       categories: formCats,
       allocations: allocationsFromInputs(exactRefs, formAllocationAmounts),
     };
-    if (editingItem) await updatePlanItem(editingItem.id, data);
-    else await createPlanItem(data);
-    setShowForm(false); setEditingItem(null);
-    load();
+    await saveAction(async () => {
+      if (editingItem) await updatePlanItem(editingItem.id, data);
+      else await createPlanItem(data);
+      setShowForm(false); setEditingItem(null);
+    });
   };
+
   const handleDelete = async (id: string) => {
-    await deletePlanItem(id);
-    setConfirmDelete(null);
-    load();
+    await saveAction(async () => {
+      await deletePlanItem(id);
+      setConfirmDelete(null);
+      setShowForm(false);
+    });
   };
 
   // ---- Second-level subcategories + third-level product links ----
   const openAddTarget = (item: PlanItemStatus) => {
-    if (contextMenu) return;
+    setSaveError(false);
     setTargetItem(item); setEditingTarget(null);
     setTgRefKeys([]); setTgLabel(''); setTgPercent('');
     setTgAllocationAmounts({});
   };
   const openEditTarget = (item: PlanItemStatus, tg: PlanTargetStatus) => {
-    if (contextMenu) return;
+    setSaveError(false);
     setTargetItem(item); setEditingTarget(tg);
-    setTgRefKeys(tg.linkedProducts.map(product => product.refKey));
-    setTgLabel(tg.name); setTgPercent(fmtPct(tg.targetPercent));
+    setTgRefKeys(tg.refKeys);
+    setTgLabel(tg.name); setTgPercent(String(tg.targetPercent));
     setTgAllocationAmounts(allocationInputs(tg.allocations));
   };
   const handleSaveTarget = async () => {
-    if (!targetItem) return;
+    if (!targetItem || !targetFormValid || saving) return;
     const pct = parseFloat(tgPercent);
     const label = tgLabel.trim();
     const remaining = remainingTargetPercent(targetItem.targetPercent, targetItem.targets, editingTarget?.id);
@@ -241,27 +286,68 @@ export default function PlanPage() {
       allocations: allocationsFromInputs(tgRefKeys, tgAllocationAmounts),
       targetPercent: pct,
     };
-    if (editingTarget) await updatePlanTarget(editingTarget.id, { ...data, refKey: undefined, currency: undefined });
-    else await createPlanTarget({ planItemId: targetItem.id, ...data });
-    setTargetItem(null); setEditingTarget(null);
-    load();
+    await saveAction(async () => {
+      if (editingTarget) await updatePlanTarget(editingTarget.id, { ...data, refKey: undefined, currency: undefined });
+      else await createPlanTarget({ planItemId: targetItem.id, ...data });
+      setTargetItem(null); setEditingTarget(null);
+    });
   };
   const handleDeleteTarget = async (id: string) => {
-    await deletePlanTarget(id);
-    setTargetItem(null); setEditingTarget(null);
-    load();
+    await saveAction(async () => {
+      await deletePlanTarget(id);
+      setTargetItem(null); setEditingTarget(null);
+    });
   };
 
   // ---- Target total ----
   const openTarget = () => {
     setTargetInput(status?.targetTotal ? String(status.targetTotal) : '');
+    setSaveError(false);
     setShowTarget(true);
   };
   const handleSaveTargetTotal = async () => {
-    const v = parseFloat(targetInput);
-    await setPlanTargetTotal(!isNaN(v) && v > 0 ? v : undefined);
-    setShowTarget(false);
-    load();
+    const v = Number(targetInput);
+    if (targetInput.trim() && (!Number.isFinite(v) || v <= 0)) return;
+    await saveAction(async () => {
+      await setPlanTargetTotal(targetInput.trim() ? majorToMinor(v) / 100 : undefined);
+      setShowTarget(false);
+    });
+  };
+
+  const saveAction = async (action: () => Promise<void>) => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(false);
+    try {
+      await action();
+      await load();
+    } catch (error) {
+      console.error('Plan save failed', error);
+      setSaveError(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openPurchases = (item: PlanItemStatus) => {
+    setPurchaseItem(item);
+    setPurchaseInput(item.plannedPurchases ?? '');
+    setSaveError(false);
+  };
+
+  // Quick batch create plans from current unplanned assets
+  const handleAutoCreateFromAssets = async () => {
+    if (!status || status.items.length > 0 || status.unplanned.length === 0 || saving) return;
+    const total = status.unplanned.reduce((sum, entry) => sum + entry.value, 0);
+    if (total <= 0) return;
+    await saveAction(async () => {
+      await createInitialPlanItems(status.unplanned.map(entry => ({
+        name: scopeLabel(makeScope(entry.category, entry.market)),
+        targetPercent: entry.value / total * 100,
+        categories: [makeScope(entry.category, entry.market)],
+        plannedPurchases: '',
+      })));
+    });
   };
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
@@ -281,7 +367,6 @@ export default function PlanPage() {
   );
   const sumOk = Math.abs(status.targetPercentSum - 100) < 0.01;
   const unplannedValue = status.unplanned.reduce((s, u) => s + u.value, 0);
-  const unplannedPercent = status.totalAssets > 0 ? (unplannedValue / status.totalAssets) * 100 : 0;
   const editingItemStatus = editingItem ? status.items.find(item => item.id === editingItem.id) : undefined;
   const itemPercentUsedByOthers = status.items.reduce(
     (sum, item) => sum + (item.id === editingItem?.id ? 0 : item.targetPercent),
@@ -289,7 +374,7 @@ export default function PlanPage() {
   );
   const formPercentMin = editingItemStatus?.targetPercentSum ?? 0;
   const formPercentMax = Math.max(0, 100 - itemPercentUsedByOthers);
-  const parsedFormPercent = parseFloat(formPercent);
+  const parsedFormPercent = planPercentFromInput(formPercent, formInputMode, status.base);
   const resourceCurrentValues = new Map<string, number>();
   for (const account of status.equityAccounts) {
     if (account.cash) resourceCurrentValues.set(account.cash.refKey, account.cash.currentValue);
@@ -369,8 +454,7 @@ export default function PlanPage() {
     parsedTargetPercent,
   );
 
-  // Exact scopes already claimed by other plan items. Different granularities may overlap —
-  // ownership resolves finest-first (holding > account > market > category) so values never double-count.
+  // Exact scopes already claimed by other plan items.
   const othersWhole = new Set<string>();   // whole categories
   const othersMarket = new Set<string>();  // market scopes 'cat@m'
   const othersAcct = new Set<string>();    // account ids
@@ -404,7 +488,6 @@ export default function PlanPage() {
     return p.category ?? acctCatById.get(p.accountId!) ?? '';
   };
   const scopesOf = (cat: string) => formCats.filter(s => scopeCategory(s) === cat);
-  // Only the exact same scope conflicts; equity categories can always be refined further
   const catDisabled = (cat: string) => !isRefinableCat(cat) && othersWhole.has(cat);
   const toggleCategory = (cat: string) => {
     if (scopesOf(cat).length > 0) {
@@ -424,7 +507,7 @@ export default function PlanPage() {
   const toggleMarket = (cat: string, m: MarketKey) => {
     const scope = makeScope(cat, m);
     setFormCats(prev => {
-      const without = prev.filter(s => s !== cat && s !== scope);  // drop whole-category & this slice
+      const without = prev.filter(s => s !== cat && s !== scope);
       return prev.includes(scope) ? without : [...without, scope];
     });
   };
@@ -464,108 +547,163 @@ export default function PlanPage() {
     }
   };
 
-  const renderStackBar = (label: string, segments: { color: string; pct: number }[]) => {
-    const sum = segments.reduce((s, x) => s + x.pct, 0);
-    return (
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-        <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', background: 'var(--bg-glass)' }}>
-          {segments.filter(s => s.pct > 0).map((s, i) => (
-            <div key={i} style={{ width: `${Math.min(s.pct, 100)}%`, background: s.color, transition: 'width 0.3s ease' }} />
-          ))}
-          {sum < 100 && <div style={{ flex: 1 }} />}
-        </div>
-      </div>
-    );
-  };
-
+  // Render a single plan item card
   const renderItem = (item: PlanItemStatus, idx: number) => {
     const color = itemColor(idx);
-    // within 1% of the base amount counts as on track (consistent whether or not a target total is set)
-    const onTrack = status.base > 0 && Math.abs(item.gapValue) < status.base * 0.01;
-    const gapChip = onTrack
-      ? { text: `✓ ${t('on_track')}`, color: theme.assetColor, bg: theme.assetDim }
-      : item.gapValue > 0
-        ? { text: `${t('need_buy')} ${masked(fmt(item.gapValue))}`, color: theme.assetColor, bg: theme.assetDim }
-        : { text: `${t('need_sell')} ${masked(fmt(-item.gapValue))}`, color: theme.liabilityColor, bg: theme.liabilityDim };
+    const progress = planProgress(item.currentValue, item.targetValue);
+    const gap = Math.round(item.gapValue * 100) / 100;
+    const isAtTarget = progress !== undefined && Math.abs(gap) < 0.01;
+    const targets = parsePlannedPurchases(item.plannedPurchases);
+
     return (
-      <div key={item.id} style={S.itemCard}
-        onTouchStart={e => startLongPress(item.id, e)}
-        onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
-        onContextMenu={e => { e.preventDefault(); setContextMenu({ itemId: item.id, x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 140) }); }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-          <span style={{ flex: 1, minWidth: 0, fontSize: '0.9rem', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 8px', paddingLeft: 18 }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: '0.66rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {item.categories.map(scopeLabel).join(' · ')}
-          </span>
-          <span style={{ flexShrink: 0, fontSize: '0.68rem', fontWeight: 700, color: gapChip.color, background: gapChip.bg, borderRadius: 10, padding: '3px 9px', whiteSpace: 'nowrap' }}>
-            {gapChip.text}
-          </span>
-        </div>
-        {/* progress toward this item's own target: full bar = planned amount */}
-        <div style={{ position: 'relative', height: 8, background: 'var(--bg-glass)', borderRadius: 4, margin: '0 2px' }}>
-          <div style={{ width: `${item.targetValue > 0 ? Math.min((item.currentValue / item.targetValue) * 100, 100) : 0}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.3s ease' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '2px 8px', marginTop: 8, fontSize: '0.72rem' }}>
-          <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            {t('current_label')} <b style={{ fontFamily: 'var(--font-mono)' }}>{item.currentPercent.toFixed(1)}%</b>
-            <span style={{ color: 'var(--text-muted)' }}> · {masked(fmt(item.currentValue))}</span>
-          </span>
-          <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            {t('target_label')} <b style={{ fontFamily: 'var(--font-mono)' }}>{fmtPct(item.targetPercent)}%</b>
-            <span style={{ color: 'var(--text-muted)' }}> · {masked(fmt(item.targetValue))}</span>
-          </span>
+      <article key={item.id} className="plan-card" style={{ '--plan-color': color } as React.CSSProperties}>
+        {/* Keep the asset name and edit action easy to scan on a phone. */}
+        <div className="plan-card-heading">
+          <h2><span className="plan-dot" />{item.name}</h2>
+          <div className="plan-card-heading-actions">
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              aria-label={t('plan_edit_named', { name: item.name })}
+              onClick={() => openEdit(item)}
+            >
+              {t('edit')}
+            </button>
+          </div>
         </div>
 
-        {/* Second-level subcategories, each rolling up linked third-level products */}
-        {item.targets.length > 0 && (
-          <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
-            <div style={{ fontSize: '0.64rem', color: item.targetPercentSum > item.targetPercent + 0.000001 ? theme.liabilityColor : 'var(--text-muted)', padding: '3px 0 2px' }}>
-              {t('plan_target_allocated', { sum: fmtPct(item.targetPercentSum), limit: fmtPct(item.targetPercent) })}
-            </div>
-            {item.targets.map(tg => {
-              const onTk = tg.targetAmount > 0 && Math.abs(tg.gapValue) < tg.targetAmount * 0.01;
-              const tgChip = onTk
-                ? { text: `✓ ${t('on_track')}`, color: theme.assetColor }
-                : tg.gapValue > 0
-                  ? { text: `${t('need_buy')} ${masked(fmt(tg.gapValue))}`, color: theme.assetColor }
-                  : { text: `${t('need_sell')} ${masked(fmt(-tg.gapValue))}`, color: theme.liabilityColor };
-              return (
-                <div key={tg.id} style={{ padding: '6px 0', cursor: 'pointer' }} onClick={() => openEditTarget(item, tg)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.78rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {tg.linkedProducts.length === 0 && <span style={{ color: 'var(--text-muted)' }}>◌ </span>}{tg.name}
-                    </span>
-                    <span style={{ flexShrink: 0, fontSize: '0.64rem', fontWeight: 700, color: tgChip.color, whiteSpace: 'nowrap' }}>{tgChip.text}</span>
-                  </div>
-                  <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: 2 }}>
-                    {t('current_label')} {masked(fmt(tg.currentValue))} / {t('target_label')} {fmtPct(tg.targetPercent)}% · {masked(fmt(tg.targetAmount))} {primary}
-                  </div>
-                  {tg.linkedProducts.length > 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
-                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>{t('plan_linked_products')}:</span>
-                      {tg.linkedProducts.map(product => (
-                        <span key={product.refKey} style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 10, padding: '2px 7px' }}>
-                          {resourceLabel(product)} · {masked(fmt(product.currentValue))} {product.currency}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('plan_no_linked_products')}</div>
-                  )}
-                </div>
-              );
-            })}
+        {/* The plan and actual position share the same two-column layout. */}
+        <div className="plan-metrics">
+          <div className="plan-metric-col">
+            <span className="plan-label">{t('plan_planned_amount')}</span>
+            <strong>{masked(fmt(item.targetValue))}</strong>
+            <span className="plan-share">{t('plan_share', { percent: fmtPct(item.targetPercent) })}</span>
           </div>
-        )}
-        <button disabled={item.targetPercentSum >= item.targetPercent - 0.000001} onClick={() => openAddTarget(item)}
-          style={{ background: 'none', border: 'none', color: 'var(--asset-color)', fontSize: '0.72rem', fontWeight: 600, cursor: item.targetPercentSum >= item.targetPercent - 0.000001 ? 'not-allowed' : 'pointer', opacity: item.targetPercentSum >= item.targetPercent - 0.000001 ? 0.4 : 1, padding: '6px 0 0', marginTop: item.targets.length > 0 ? 0 : 4 }}>
-          ＋ {t('add_plan_target')}
-        </button>
-      </div>
+          <div className="plan-metric-col">
+            <span className="plan-label">{t('plan_actual_amount')}</span>
+            <strong>{masked(fmt(item.currentValue))}</strong>
+            <span className="plan-share">{t('plan_share', { percent: fmtPct(item.currentPercent) })}</span>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div
+          className="plan-progress"
+          role="progressbar"
+          aria-label={t('plan_progress_named', { name: item.name })}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress === undefined ? undefined : Math.min(progress, 100)}
+        >
+          <div style={{ width: `${Math.min(progress ?? 0, 100)}%` }} />
+        </div>
+        <div className="plan-progress-caption">
+          <span>{progress === undefined ? t('plan_no_base') : t('plan_progress_value', { percent: fmtPct(progress) })}</span>
+          {progress !== undefined && (
+            <span className={gap < 0 ? 'plan-gap-over' : ''}>
+              {isAtTarget ? t('plan_at_target') : t(gap > 0 ? 'plan_gap_short' : 'plan_gap_over', { amount: masked(fmt(Math.abs(gap))) })}
+            </span>
+          )}
+        </div>
+
+        {/* Planned Target Assets (Tags & quick add/edit) */}
+        <div className="plan-targets-box">
+          <div className="plan-targets-heading">
+            <span className="plan-targets-title">🎯 {t('plan_intended_targets')}</span>
+            <button
+              type="button"
+              className="plan-text-button"
+              aria-label={t('plan_edit_purchases_named', { name: item.name })}
+              onClick={() => openPurchases(item)}
+            >
+              {targets.length > 0 ? t('edit') : t('plan_write_purchases')}
+            </button>
+          </div>
+
+          <div className="plan-tags-wrap">
+            {targets.map((tgt, tIdx) => (
+              <button type="button" key={`${tIdx}-${tgt}`} className="plan-tag" onClick={() => openPurchases(item)}>
+                {tgt}
+              </button>
+            ))}
+            {targets.length === 0 && (
+              <button type="button" className="plan-tag-add" onClick={() => openPurchases(item)}>
+                {t('plan_add_target_tag')}
+              </button>
+            )}
+          </div>
+
+          {/* Legacy subcategories (if user previously configured plan targets) */}
+          {item.targets.length > 0 && (
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {item.targets.map(tg => (
+                <button
+                  type="button"
+                  key={tg.id}
+                  className="plan-tag"
+                  style={{ opacity: 0.85, fontSize: '0.75rem', cursor: 'pointer' }}
+                  onClick={() => openEditTarget(item, tg)}
+                >
+                  📌 {tg.name} ({fmtPct(tg.targetPercent)}%)
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Details: Actual value sources & candidates */}
+        <details className="plan-details">
+          <summary>{t('plan_details')}</summary>
+          <p className="plan-help">{t('plan_actual_from', { scopes: item.categories.map(scopeLabel).join(' · ') })}</p>
+          {item.candidates.length > 0 && (
+            <ul className="plan-source-list">
+              {item.candidates.filter(candidate => candidate.primaryValue !== 0).map(candidate => (
+                <li key={candidate.refKey}>
+                  <span>{resourceLabel(candidate)}</span>
+                  <span>{masked(fmt(candidate.primaryValue))} {primary}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Legacy subcategories management inside details */}
+          {item.targets.length > 0 && (
+            <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: 6 }}>
+                {t('plan_target_allocated', { sum: fmtPct(item.targetPercentSum), limit: fmtPct(item.targetPercent) })}
+              </div>
+              {item.targets.map(tg => (
+                <button
+                  type="button"
+                  key={tg.id}
+                  className="plan-target-row"
+                  onClick={() => openEditTarget(item, tg)}
+                >
+                  <span>{tg.name} · {fmtPct(tg.targetPercent)}%</span>
+                  <span>{masked(fmt(tg.currentValue))} / {masked(fmt(tg.targetAmount))} {primary}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            disabled={item.targetPercentSum >= item.targetPercent - 0.000001}
+            onClick={() => openAddTarget(item)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--asset-color)',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              cursor: item.targetPercentSum >= item.targetPercent - 0.000001 ? 'not-allowed' : 'pointer',
+              opacity: item.targetPercentSum >= item.targetPercent - 0.000001 ? 0.4 : 1,
+              padding: '6px 0 0',
+              marginTop: 4,
+            }}
+          >
+            ＋ {t('add_plan_target')}
+          </button>
+        </details>
+      </article>
     );
   };
 
@@ -576,87 +714,166 @@ export default function PlanPage() {
           <h1 className="page-title">{t('plan_title')}</h1>
           <p className="page-subtitle">{t('plan_subtitle')}</p>
         </div>
-        <button className="btn btn-sm btn-secondary" onClick={() => setAmountVisible(!amountVisible)}
-          title={amountVisible ? t('hide_amount') : t('show_amount')}>
+        <button
+          className="btn btn-sm btn-secondary"
+          onClick={() => setAmountVisible(!amountVisible)}
+          title={amountVisible ? t('hide_amount') : t('show_amount')}
+        >
           {amountVisible ? '👁️' : '🔒'}
         </button>
       </div>
 
-      {/* Summary strip */}
-      <div className="summary-strip">
-        <div className="summary-strip-item">
-          <span className="stat-label">{t('current_total_assets')}</span>
-          <span className="stat-value" style={{ color: theme.assetColor }}>{masked(fmt(status.totalAssets))}</span>
-          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '-1px' }}>{primary}</span>
+      {/* Top Overview & Allocation Distribution Board */}
+      <section className="plan-overview">
+        <div className="plan-section-heading">
+          <span className="plan-label">{t('plan_budget')} · {primary}</span>
+          <button type="button" className="plan-text-button" onClick={openTarget}>{t('plan_change_budget')}</button>
         </div>
-        <div className="summary-strip-item" style={{ cursor: 'pointer' }} onClick={openTarget}>
-          <span className="stat-label">{t('target_total_assets')} ✏️</span>
-          <span className="stat-value" style={{ color: status.targetTotal ? '#818cf8' : 'var(--text-muted)' }}>
-            {status.targetTotal ? masked(fmt(status.targetTotal)) : t('not_set')}
+
+        <div className="plan-budget-grid">
+          <div className="plan-budget-col">
+            <div className="plan-budget-amount">{masked(fmt(status.base))}</div>
+          </div>
+          <div className="plan-budget-col">
+            <span className="plan-label">{t('total_assets')}</span>
+            <div className="plan-budget-sub">{masked(fmt(status.totalAssets))}</div>
+          </div>
+        </div>
+        <p className="plan-help">{t(status.targetTotal ? 'plan_base_fixed' : 'plan_base_live')}</p>
+
+        {/* Allocation distribution visual bars */}
+        {status.items.length > 0 && (
+          <details className="plan-distribution">
+            <summary>{t('plan_compare_allocation')}</summary>
+            {/* Target Allocation Bar */}
+            <div className="plan-dist-row">
+              <div className="plan-dist-header">
+                <span>{t('plan_target_allocation')}</span>
+                <span>{fmtPct(status.targetPercentSum)}%</span>
+              </div>
+              <div className="plan-dist-track" role="img" aria-label={t('plan_target_allocation')}>
+                {status.items.map((it, idx) => (
+                  <div
+                    key={`target-bar-${it.id}`}
+                    className="plan-dist-seg"
+                    style={{ width: `${Math.max(0, it.targetPercent)}%`, background: itemColor(idx) }}
+                    title={`${it.name}: ${fmtPct(it.targetPercent)}%`}
+                  />
+                ))}
+                {status.targetPercentSum < 100 && (
+                  <div
+                    className="plan-dist-seg plan-dist-seg-unassigned"
+                    style={{ width: `${100 - status.targetPercentSum}%` }}
+                    title={t('plan_budget_left', { percent: fmtPct(100 - status.targetPercentSum), amount: '' })}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Actual Allocation Bar */}
+            <div className="plan-dist-row">
+              <div className="plan-dist-header">
+                <span>{t('plan_actual_allocation')}</span>
+                <span>{status.totalAssets > 0 ? fmtPct(Math.min(100, (status.totalAssets - unplannedValue) / status.totalAssets * 100)) : 0}%</span>
+              </div>
+              <div className="plan-dist-track" role="img" aria-label={t('plan_actual_allocation')}>
+                {status.items.map((it, idx) => (
+                  <div
+                    key={`actual-bar-${it.id}`}
+                    className="plan-dist-seg"
+                    style={{ width: `${Math.max(0, it.currentPercent)}%`, background: itemColor(idx) }}
+                    title={`${it.name}: ${fmtPct(it.currentPercent)}%`}
+                  />
+                ))}
+                {status.totalAssets > 0 && unplannedValue > 0 && (
+                  <div
+                    className="plan-dist-seg plan-dist-seg-unassigned"
+                    style={{ width: `${Math.min(100, (unplannedValue / status.totalAssets) * 100)}%` }}
+                    title={`${t('unplanned_categories')}: ${((unplannedValue / status.totalAssets) * 100).toFixed(1)}%`}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Distribution Legend */}
+            <div className="plan-dist-legend">
+              {status.items.map((it, idx) => (
+                <span key={`legend-${it.id}`} className="plan-legend-item">
+                  <span className="plan-dot" style={{ background: itemColor(idx), width: 7, height: 7 }} />
+                  <span>{it.name}</span>
+                  <span>{t('plan_allocation_pair', { target: fmtPct(it.targetPercent), actual: fmtPct(it.currentPercent) })}</span>
+                </span>
+              ))}
+            </div>
+          </details>
+        )}
+
+        <div className="plan-budget-footer">
+          <span>{t('plan_assigned', { percent: fmtPct(status.targetPercentSum) })}</span>
+          <span className={status.targetPercentSum > 100.01 ? 'plan-error-text' : ''}>
+            {sumOk ? t('plan_fully_assigned') : t(status.targetPercentSum > 100 ? 'plan_budget_over' : 'plan_budget_left', {
+              percent: fmtPct(Math.abs(100 - status.targetPercentSum)),
+              amount: masked(fmt(Math.abs(100 - status.targetPercentSum) / 100 * status.base)),
+            })}
           </span>
-          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '-1px' }}>{status.targetTotal ? primary : ''}</span>
         </div>
-        <div className="summary-strip-item">
-          <span className="stat-label">{t('plan_total_target')}</span>
-          <span className="stat-value" style={{ color: sumOk ? theme.assetColor : '#fbbf24' }}>
-            {fmtPct(status.targetPercentSum)}%
-          </span>
-          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '-1px' }}>/ 100%</span>
-        </div>
+      </section>
+
+      {/* Categories section title + Add button */}
+      <div className="plan-section-heading plan-list-heading">
+        <h2>{t('plan_my_categories')}</h2>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => openCreate()}>{t('add_plan_item')}</button>
       </div>
 
-      {status.items.length > 0 && !sumOk && (
-        <div style={{ fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 10, padding: '8px 12px', marginBottom: 14 }}>
-          ⚠️ {t('plan_sum_warning', { sum: fmtPct(status.targetPercentSum) })}
+      {loadError && (
+        <div className="valuation-warning" role="alert">
+          {t('load_failed')} <button className="plan-text-button" onClick={() => void load()}>{t('retry')}</button>
         </div>
       )}
-
       {status.unavailableValuationCount > 0 && (
         <div className="valuation-warning" role="status">
           ⚠️ {t('some_values_excluded', { count: status.unavailableValuationCount })}
         </div>
       )}
-
       {status.allocationWarnings.length > 0 && (
         <div style={{ fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 10, padding: '8px 12px', marginBottom: 14 }}>
           ⚠️ {t('plan_allocation_warning', { count: status.allocationWarnings.length })}
         </div>
       )}
 
+      {/* Plan items list or empty state */}
       {status.items.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">🎯</div>
           <div className="empty-text">{t('plan_empty')}</div>
           <div className="empty-hint">{t('plan_empty_hint')}</div>
+          {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
+          {status.unplanned.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: 12 }}
+              onClick={handleAutoCreateFromAssets}
+              disabled={saving}
+            >
+              ⚡ {t('plan_auto_create_from_assets')}
+            </button>
+          )}
         </div>
       ) : (
         <>
-          {/* Structure comparison */}
-          {status.totalAssets > 0 && (
-            <div className="chart-card" style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 10, color: 'var(--text-secondary)' }}>📊 {t('structure_compare')}</div>
-              {renderStackBar(t('current_label'), [
-                ...status.items.map((it, i) => ({ color: itemColor(i), pct: it.currentPercent })),
-                { color: UNPLANNED_COLOR, pct: unplannedPercent },
-              ])}
-              {renderStackBar(t('target_label'), status.items.map((it, i) => ({ color: itemColor(i), pct: it.targetPercent })))}
-            </div>
-          )}
-
           {status.items.map((item, idx) => renderItem(item, idx))}
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', margin: '4px 0 8px' }}>{t('plan_long_press_hint')}</div>
+          <p className="plan-help plan-basis-note">{t('plan_basis_note', { currency: primary, total: masked(fmt(status.totalAssets)) })}</p>
         </>
       )}
 
       {/* Unplanned assets */}
       {status.unplanned.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <div className="entry-group-title">
-            <span className="dot" style={{ background: UNPLANNED_COLOR }} />{t('unplanned_categories')}
-          </div>
+        <details className="plan-unplanned">
+          <summary>{t('unplanned_categories')} · {masked(fmt(unplannedValue))} {primary}</summary>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 8 }}>{t('unplanned_hint')}</div>
           {status.unplanned.map(u => (
-            <div key={makeScope(u.category, u.market)} className="entry-item" style={{ padding: '0.625rem 0.5rem' }} onClick={() => openCreate(u)}>
+            <div key={makeScope(u.category, u.market)} className="entry-item" style={{ padding: '0.625rem 0.5rem', cursor: 'pointer' }} onClick={() => openCreate(u)}>
               <div className="entry-info">
                 <div className="entry-category" style={{ fontSize: '0.8125rem' }}>{scopeLabel(makeScope(u.category, u.market))}</div>
                 <div className="entry-note-text">
@@ -668,38 +885,19 @@ export default function PlanPage() {
               </div>
             </div>
           ))}
-        </div>
+        </details>
       )}
 
-      <button className="fab" onClick={() => openCreate()}>+</button>
-
-      {/* Item create / edit modal */}
+      {/* Create / Edit Plan Item Modal */}
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); setEditingItem(null); }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label={editingItem ? t('edit_plan_item') : t('add_plan_item')} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{editingItem ? t('edit_plan_item') : t('add_plan_item')}</h2>
               <button className="modal-close" onClick={() => { setShowForm(false); setEditingItem(null); }}>✕</button>
             </div>
-            <div className="form-group">
-              <label className="form-label">{t('name')}</label>
-              <input className="form-input" placeholder={t('plan_item_name_ph')} value={formName} onChange={e => setFormName(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('target_percent')}</label>
-              <input className="form-input mono" type="number" inputMode="decimal" step="0.1" min={Math.max(0.01, formPercentMin)} max={formPercentMax}
-                placeholder="20" value={formPercent} onChange={e => setFormPercent(e.target.value)} />
-              {formPercent && !isNaN(parseFloat(formPercent)) && parseFloat(formPercent) > 0 && status.base > 0 && (
-                <div style={{ fontSize: '0.72rem', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
-                  = {masked(fmt((parseFloat(formPercent) / 100) * status.base))} {primary}
-                </div>
-              )}
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 6 }}>
-                {formPercentMin > 0
-                  ? t('plan_percent_range', { min: fmtPct(formPercentMin), max: fmtPct(formPercentMax) })
-                  : t('plan_percent_available', { percent: fmtPct(formPercentMax) })}
-              </div>
-            </div>
+
+            {/* Step 1: Select Category Chips */}
             <div className="form-group">
               <label className="form-label">{t('linked_categories')}</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -707,15 +905,111 @@ export default function PlanPage() {
                   const used = catDisabled(c.name);
                   const active = scopesOf(c.name).length > 0 || formExpandedCats.includes(c.name);
                   return (
-                    <button key={c.name} disabled={used}
+                    <button
+                      key={c.name}
+                      type="button"
+                      disabled={used}
+                      aria-pressed={scopesOf(c.name).length > 0}
                       style={{ ...S.chip, ...(active ? S.chipActive : {}), ...(used ? { opacity: 0.35, cursor: 'not-allowed' } : {}) }}
-                      onClick={() => !used && toggleCategory(c.name)}>
+                      onClick={() => {
+                        if (!used) {
+                          toggleCategory(c.name);
+                          if (!formName.trim()) setFormName(t(c.name));
+                        }
+                      }}
+                    >
                       {c.icon} {t(c.name)}
                     </button>
                   );
                 })}
               </div>
-              {/* Market/account/resource refinement for selected or expanded categories. */}
+            </div>
+
+            {/* Plan Name */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="plan-name">{t('name')}</label>
+              <input
+                id="plan-name"
+                className="form-input"
+                placeholder={t('plan_item_name_ph')}
+                value={formName}
+                onChange={e => setFormName(e.target.value)}
+              />
+            </div>
+
+            {/* Step 2: Target Percent or Amount */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="plan-value">
+                {t(formInputMode === 'percent' ? 'target_percent' : 'plan_amount_input', { currency: primary })}
+              </label>
+              <div className="plan-input-modes" role="group" aria-label={t('plan_input_mode')}>
+                {(['percent', 'amount'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={formInputMode === mode}
+                    disabled={mode === 'amount' && status.base <= 0}
+                    onClick={() => {
+                      if (mode === formInputMode) return;
+                      setFormPercent(Number.isFinite(parsedFormPercent)
+                        ? String(mode === 'amount' ? Math.round(targetAmountFromPercent(status.base, parsedFormPercent) * 100) / 100 : parsedFormPercent)
+                        : '');
+                      setFormInputMode(mode);
+                    }}
+                  >
+                    {t(mode === 'percent' ? 'plan_by_percent' : 'plan_by_amount')}
+                  </button>
+                ))}
+              </div>
+              <input
+                id="plan-value"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min="0.01"
+                placeholder={formInputMode === 'percent' ? '20' : '100000'}
+                value={formPercent}
+                onChange={e => setFormPercent(e.target.value)}
+              />
+              {Number.isFinite(parsedFormPercent) && parsedFormPercent > 0 && (
+                <p className="plan-value-preview">
+                  {formInputMode === 'percent'
+                    ? `${masked(fmt(targetAmountFromPercent(status.base, parsedFormPercent)))} ${primary}`
+                    : `${fmtPct(parsedFormPercent)}%`}
+                </p>
+              )}
+              <p className="plan-help">
+                {formPercentMin > 0
+                  ? t('plan_percent_range', { min: fmtPct(formPercentMin), max: fmtPct(formPercentMax) })
+                  : t('plan_percent_available', { percent: fmtPct(formPercentMax) })}
+              </p>
+              {formInputMode === 'amount' && <p className="plan-help">{t('plan_amount_converted')}</p>}
+              {status.base <= 0 && <p className="plan-help">{t('plan_amount_needs_base')}</p>}
+              {formPercent.trim() && (!Number.isFinite(parsedFormPercent) || parsedFormPercent <= 0 || parsedFormPercent > formPercentMax + 0.000001 || parsedFormPercent < formPercentMin - 0.000001) && (
+                <p className="plan-error-text" role="alert">{t('plan_percent_invalid')}</p>
+              )}
+            </div>
+
+            {/* Step 3: Planned Purchases (Target list) */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="plan-purchases">{t('plan_intended_targets')}</label>
+              <textarea
+                id="plan-purchases"
+                className="form-input plan-textarea"
+                rows={3}
+                placeholder={t('plan_purchases_placeholder')}
+                value={formPurchases}
+                onChange={e => setFormPurchases(e.target.value)}
+              />
+              <p className="plan-help">{t('plan_targets_input_hint')}</p>
+            </div>
+
+            {/* Advanced: Refine Scopes (Markets, Accounts, Exact holdings) */}
+            <details className="plan-details">
+              <summary>{t('plan_advanced_settings')}</summary>
+              <p className="plan-help">{formCats.map(scopeLabel).join(' · ')}</p>
+
               {assetCategories.filter(c => isRefinableCat(c.name) && formExpandedCats.includes(c.name)).map(c => {
                 const cat = c.name;
                 const wholeActive = formCats.includes(cat);
@@ -725,9 +1019,11 @@ export default function PlanPage() {
                   <div key={cat} style={{ marginTop: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t(cat)}:</span>
-                      <button disabled={wholeBlocked}
+                      <button
+                        disabled={wholeBlocked}
                         style={{ ...S.chip, ...(wholeActive ? S.chipActive : {}), ...(wholeBlocked ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
-                        onClick={() => !wholeBlocked && setWholeCat(cat)}>
+                        onClick={() => !wholeBlocked && setWholeCat(cat)}
+                      >
                         {t('plan_market_all')}
                       </button>
                       {isEquityCat(cat) && MARKET_KEYS.map(m => {
@@ -735,9 +1031,12 @@ export default function PlanPage() {
                         const mUsed = othersMarket.has(scope);
                         const mActive = formCats.includes(scope);
                         return (
-                          <button key={m} disabled={mUsed}
+                          <button
+                            key={m}
+                            disabled={mUsed}
                             style={{ ...S.chip, ...(mActive ? S.chipActive : {}), ...(mUsed ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
-                            onClick={() => !mUsed && toggleMarket(cat, m)}>
+                            onClick={() => !mUsed && toggleMarket(cat, m)}
+                          >
                             {t(MARKET_LABEL_KEYS[m])}
                           </button>
                         );
@@ -751,16 +1050,18 @@ export default function PlanPage() {
                           const aUsed = othersAcct.has(a.id);
                           const aActive = formCats.includes(scope);
                           return (
-                            <button key={a.id} disabled={aUsed}
+                            <button
+                              key={a.id}
+                              disabled={aUsed}
                               style={{ ...S.chip, ...(aActive ? S.chipActive : {}), ...(aUsed ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
-                              onClick={() => !aUsed && toggleAccount(a.id)}>
+                              onClick={() => !aUsed && toggleAccount(a.id)}
+                            >
                               {a.name}
                             </button>
                           );
                         })}
                       </div>
                     )}
-                    {/* Exact holding shares can override or split broader account/category claims. */}
                     {catAccounts.filter(a => a.holdings.length > 0).map(a => (
                       <div key={`hold-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_holdings_of', { name: a.name })}:</span>
@@ -775,7 +1076,8 @@ export default function PlanPage() {
                             <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                               <button
                                 style={{ ...S.chip, ...(hActive ? S.chipActive : {}), padding: '4px 10px', fontSize: '0.72rem' }}
-                                onClick={() => toggleHolding(h.id)}>
+                                onClick={() => toggleHolding(h.id)}
+                              >
                                 {h.name} · {masked(fmt(h.currentValue))} {a.currency}{hUsed ? ` · ${t('plan_resource_shared')}` : ''}
                               </button>
                               {hActive && (
@@ -788,10 +1090,9 @@ export default function PlanPage() {
                                   placeholder={t('plan_allocation_remainder')}
                                   value={formAllocationAmounts[h.refKey] ?? ''}
                                   onChange={event => setFormAllocationAmounts(previous => ({ ...previous, [h.refKey]: event.target.value }))}
-                                  style={{ width: 150, padding: '5px 8px', fontSize: '0.72rem' }}
+                                  style={{ width: 140, padding: '4px 8px', fontSize: '0.72rem' }}
                                 />
                               )}
-                              {hActive && <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{a.currency}</span>}
                             </div>
                           );
                         })}
@@ -809,24 +1110,22 @@ export default function PlanPage() {
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{a.name}:</span>
                           <button
                             style={{ ...S.chip, ...(active ? S.chipActive : {}), padding: '4px 10px', fontSize: '0.72rem' }}
-                            onClick={() => toggleCash(a.id)}>
+                            onClick={() => toggleCash(a.id)}
+                          >
                             {t('cash_balance')} · {masked(fmt(a.cash?.currentValue ?? 0))} {a.currency}{used ? ` · ${t('plan_resource_shared')}` : ''}
                           </button>
                           {active && a.cash && (
-                            <>
-                              <input
-                                className="form-input mono"
-                                type="number"
-                                inputMode="decimal"
-                                min="0.01"
-                                step="100"
-                                placeholder={t('plan_allocation_remainder')}
-                                value={formAllocationAmounts[a.cash.refKey] ?? ''}
-                                onChange={event => setFormAllocationAmounts(previous => ({ ...previous, [a.cash!.refKey]: event.target.value }))}
-                                style={{ width: 150, padding: '5px 8px', fontSize: '0.72rem' }}
-                              />
-                              <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{a.currency}</span>
-                            </>
+                            <input
+                              className="form-input mono"
+                              type="number"
+                              inputMode="decimal"
+                              min="0.01"
+                              step="100"
+                              placeholder={t('plan_allocation_remainder')}
+                              value={formAllocationAmounts[a.cash.refKey] ?? ''}
+                              onChange={event => setFormAllocationAmounts(previous => ({ ...previous, [a.cash!.refKey]: event.target.value }))}
+                              style={{ width: 140, padding: '4px 8px', fontSize: '0.72rem' }}
+                            />
                           )}
                         </div>
                       );
@@ -834,50 +1133,78 @@ export default function PlanPage() {
                   </div>
                 );
               })}
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 6 }}>{t('linked_categories_hint')}</div>
-              <div style={{ fontSize: '0.66rem', color: itemAllocationInvalid ? theme.liabilityColor : 'var(--text-muted)', marginTop: 4 }}>
-                {itemAllocationInvalid ? t('plan_allocation_invalid') : t('plan_allocation_hint')}
-              </div>
-            </div>
+              {itemAllocationInvalid && <p className="plan-error-text" role="alert" style={{ marginTop: 6 }}>{t('plan_allocation_invalid')}</p>}
+            </details>
+
+            {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
+            {editingItem && (
+              <button type="button" className="plan-text-button plan-error-text" onClick={() => setConfirmDelete(editingItem.id)}>
+                {t('delete_plan_item')}
+              </button>
+            )}
+
             <div className="modal-actions">
               <button className="btn btn-secondary btn-block" onClick={() => { setShowForm(false); setEditingItem(null); }}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" disabled={!itemFormValid} onClick={handleSaveItem}>{editingItem ? t('save') : t('create')}</button>
+              <button className="btn btn-primary btn-block" disabled={!itemFormValid || saving} onClick={handleSaveItem}>
+                {saving ? t('plan_saving') : editingItem ? t('save') : t('create')}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Target total modal */}
+      {/* Target Total Budget Modal */}
       {showTarget && (
         <div className="confirm-overlay" onClick={() => setShowTarget(false)}>
-          <div className="modal-content" style={{ maxWidth: 380, width: '90%', borderRadius: 16, padding: '20px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label={t('plan_budget')} style={{ maxWidth: 380, width: '90%', borderRadius: 16, padding: '20px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{t('target_total_assets')}</h2>
               <button className="modal-close" onClick={() => setShowTarget(false)}>✕</button>
             </div>
             <div className="form-group">
-              <label className="form-label">{t('target_total_assets')} ({primary})</label>
-              <input className="form-input mono" type="number" inputMode="decimal" step="10000" min="0"
-                placeholder="1000000" value={targetInput} onChange={e => setTargetInput(e.target.value)} autoFocus />
+              <label className="form-label" htmlFor="plan-total">{t('plan_budget')} ({primary})</label>
+              <input
+                id="plan-total"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0.01"
+                placeholder="1000000"
+                value={targetInput}
+                onChange={e => setTargetInput(e.target.value)}
+                autoFocus
+              />
               {targetInput && !isNaN(parseFloat(targetInput)) && parseFloat(targetInput) > 0 && (
                 <div style={{ fontSize: '0.78rem', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
                   = {fmt(parseFloat(targetInput))} {primary}
                 </div>
               )}
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>{t('target_total_hint')}</div>
+              {targetInput.trim() && (!Number.isFinite(Number(targetInput)) || Number(targetInput) < 0.01) && (
+                <p className="plan-error-text" role="alert">{t('plan_total_invalid')}</p>
+              )}
+              <button type="button" className="plan-text-button" onClick={() => setTargetInput('')}>{t('plan_use_current')}</button>
+              {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary btn-block" onClick={() => setShowTarget(false)}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" onClick={handleSaveTargetTotal}>{t('save')}</button>
+              <button
+                className="btn btn-primary btn-block"
+                disabled={saving || Boolean(targetInput.trim() && (!Number.isFinite(Number(targetInput)) || Number(targetInput) < 0.01))}
+                onClick={handleSaveTargetTotal}
+              >
+                {saving ? t('plan_saving') : t('save')}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Second-level subcategory modal with third-level product associations */}
+      {/* Legacy Subcategory Modal */}
       {targetItem && (
         <div className="modal-overlay" onClick={() => { setTargetItem(null); setEditingTarget(null); }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label={editingTarget ? t('edit_plan_target') : t('add_plan_target')} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{editingTarget ? t('edit_plan_target') : t('add_plan_target')} · {targetItem.name}</h2>
               <button className="modal-close" onClick={() => { setTargetItem(null); setEditingTarget(null); }}>✕</button>
@@ -888,16 +1215,22 @@ export default function PlanPage() {
             </div>
             <div className="form-group">
               <label className="form-label">{t('plan_target_percent')}</label>
-              <input className="form-input mono" type="number" inputMode="decimal" step="0.1" min="0.01" max={targetPercentMax}
-                placeholder="10" value={tgPercent} onChange={e => setTgPercent(e.target.value)} />
+              <input
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                min="0.01"
+                max={targetPercentMax}
+                placeholder="10"
+                value={tgPercent}
+                onChange={e => setTgPercent(e.target.value)}
+              />
               {Number.isFinite(parsedTargetPercent) && parsedTargetPercent > 0 && status.base > 0 && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
                   {t('plan_target_derived_amount')} = {masked(fmt(targetAmountPreview))} {primary}
                 </div>
               )}
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 6 }}>
-                {t('plan_target_percent_hint')} {t('plan_percent_available', { percent: fmtPct(targetPercentMax) })}
-              </div>
             </div>
             <div className="form-group">
               <label className="form-label">{t('plan_target_pick')}</label>
@@ -912,6 +1245,8 @@ export default function PlanPage() {
                     return (
                       <div key={cd.refKey} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <button
+                          type="button"
+                          aria-pressed={active}
                           style={{ ...S.chip, ...(active ? S.chipActive : {}) }}
                           onClick={() => {
                             setTgRefKeys(previous => active
@@ -933,6 +1268,7 @@ export default function PlanPage() {
                         {active && (
                           <>
                             <input
+                              aria-label={`${resourceLabel(cd)} · ${t('plan_amount_input', { currency: cd.currency })}`}
                               className="form-input mono"
                               type="number"
                               inputMode="decimal"
@@ -951,10 +1287,11 @@ export default function PlanPage() {
                   })}
                 </div>
               )}
-              <div style={{ fontSize: '0.66rem', color: targetAllocationInvalid ? theme.liabilityColor : 'var(--text-muted)', marginTop: 8 }}>
+              <div style={{ fontSize: '0.66rem', color: targetAllocationInvalid ? 'var(--liability-color)' : 'var(--text-muted)', marginTop: 8 }}>
                 {targetAllocationInvalid ? t('plan_allocation_invalid') : t('plan_allocation_hint')}
               </div>
             </div>
+            {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
             {editingTarget && (
               <button className="btn btn-danger btn-block" onClick={() => handleDeleteTarget(editingTarget.id)}>
                 🗑️ {t('delete')}
@@ -962,49 +1299,85 @@ export default function PlanPage() {
             )}
             <div className="modal-actions">
               <button className="btn btn-secondary btn-block" onClick={() => { setTargetItem(null); setEditingTarget(null); }}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" disabled={!targetFormValid} onClick={handleSaveTarget}>{editingTarget ? t('save') : t('create')}</button>
+              <button className="btn btn-primary btn-block" disabled={!targetFormValid || saving} onClick={handleSaveTarget}>
+                {editingTarget ? t('save') : t('create')}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete confirm */}
+      {/* Delete Confirmation Modal */}
       {confirmDelete && (
         <div className="confirm-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="confirm-box" onClick={e => e.stopPropagation()}>
+          <div className="confirm-box" role="dialog" aria-modal="true" aria-label={t('delete_plan_item')} onClick={e => e.stopPropagation()}>
             <div className="confirm-msg">{t('delete_plan_confirm')}</div>
+            {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
             <div className="confirm-actions">
               <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>{t('cancel')}</button>
-              <button className="btn btn-danger" onClick={() => handleDelete(confirmDelete)}>{t('confirm_delete')}</button>
+              <button className="btn btn-danger" disabled={saving} onClick={() => handleDelete(confirmDelete)}>{t('confirm_delete')}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Long-press context menu on plan item cards */}
-      {contextMenu && (
-        <>
-          <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
-          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <button className="context-menu-item" onClick={() => {
-              const it = status.items.find(i => i.id === contextMenu.itemId);
-              setContextMenu(null);
-              if (it) openEdit(it);
-            }}>
-              ✏️ {t('edit_plan_item')}
-            </button>
-            <button className="context-menu-item danger" onClick={() => { setConfirmDelete(contextMenu.itemId); setContextMenu(null); }}>
-              🗑️ {t('delete')}
-            </button>
+      {/* Quick Edit Targets Modal */}
+      {purchaseItem && (
+        <div className="modal-overlay" onClick={() => !saving && setPurchaseItem(null)}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="purchases-title" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 id="purchases-title" className="modal-title">🎯 {t('plan_intended_targets')} · {purchaseItem.name}</h2>
+              <button className="modal-close" aria-label={t('close')} onClick={() => setPurchaseItem(null)}>✕</button>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="purchase-notes">{t('plan_targets_input_hint')}</label>
+              <textarea
+                id="purchase-notes"
+                autoFocus
+                className="form-input plan-textarea"
+                rows={5}
+                placeholder={t('plan_purchases_placeholder')}
+                value={purchaseInput}
+                onChange={e => setPurchaseInput(e.target.value)}
+              />
+              <p className="plan-help">{t('plan_purchases_hint')}</p>
+            </div>
+            {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
+            <div className="modal-actions">
+              <button className="btn btn-secondary btn-block" disabled={saving} onClick={() => setPurchaseItem(null)}>{t('cancel')}</button>
+              <button
+                className="btn btn-primary btn-block"
+                disabled={saving}
+                onClick={() => void saveAction(async () => {
+                  await updatePlanItem(purchaseItem.id, { plannedPurchases: purchaseInput.trim() });
+                  setPurchaseItem(null);
+                })}
+              >
+                {saving ? t('plan_saving') : t('save')}
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </>
   );
 }
 
 const S: Record<string, React.CSSProperties> = {
-  itemCard: { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px', marginBottom: 10, backdropFilter: 'blur(12px)' },
-  chip: { padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 },
-  chipActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
+  chip: {
+    padding: '6px 12px',
+    borderRadius: 20,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-glass)',
+    color: 'var(--text-secondary)',
+    fontSize: '0.78rem',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  chipActive: {
+    background: 'var(--asset-dim)',
+    border: '1px solid var(--asset-color)',
+    color: 'var(--asset-color)',
+    fontWeight: 600,
+  },
 };

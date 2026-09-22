@@ -78,6 +78,7 @@ const planStatus: PlanStatus = {
   items: [
     {
       id: 'plan-growth', name: '成长配置', targetPercent: 60, categories: [`acct:${focusAccount.id}`],
+      plannedPurchases: '宽基 ETF\n尚未持有的黄金 ETF',
       allocations: [{ refKey: 'h:holding', amountMinor: 60_000 }], sortOrder: 0, createdAt: 1,
       currentValue: 700, currentPercent: 70, targetValue: 600, gapValue: -100, gapPercent: -10,
       targets: [{
@@ -158,6 +159,7 @@ test('automatic snapshot v7 exports all active accounts and marks optional focus
   assert.equal(snapshot.accounts[1].isFocusAccount, false);
   assert.equal(snapshot.accounts[1].productData?.maturity, '2026-12-31');
   assert.equal(snapshot.allocationPlan.items[0].action, 'reduce');
+  assert.equal(snapshot.allocationPlan.items[0].plannedPurchases, '宽基 ETF\n尚未持有的黄金 ETF');
   assert.equal(snapshot.allocationPlan.items[0].targets[0].targetPercent, 50);
   assert.equal(snapshot.allocationPlan.items[0].targets[0].targetAmount, 500);
   assert.deepEqual(snapshot.allocationPlan.items[0].targets[0].refKeys, ['h:holding']);

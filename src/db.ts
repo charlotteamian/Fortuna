@@ -89,6 +89,7 @@ export interface PlanItem {
   id: string;
   name: string;
   targetPercent: number;   // 0–100
+  plannedPurchases?: string; // user's purchase intentions, independent of existing holdings
   categories: string[];    // scopes covered by this bucket
   allocations?: PlanResourceAllocation[]; // explicit shares for exact holding/cash/account scopes
   sortOrder: number;
@@ -731,6 +732,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       id: String(p.id),
       name: String(p.name ?? ''),
       targetPercent: Number(p.targetPercent) || 0,
+      plannedPurchases: typeof p.plannedPurchases === 'string' ? p.plannedPurchases : undefined,
       categories: typeof p.categories === 'string' && p.categories ? String(p.categories).split('|') : [],
       allocations: parseAllocations(p.allocations),
       sortOrder: Number(p.sortOrder) || 0,

@@ -312,6 +312,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       id: item.id,
       name: item.name,
       scopes: item.categories,
+      plannedPurchases: item.plannedPurchases ?? '',
       targetPercent: round(item.targetPercent),
       currentPercent: allocationValuationComplete ? round(item.currentPercent) : null,
       knownCurrentPercent: round(item.currentPercent),

@@ -63,6 +63,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test data and update behavior
+        run: npm test
+
       - name: Lint and build web app
         run: npm run release:web
 
@@ -106,7 +109,7 @@ jobs:
           APK_NAME="Fortuna-${VERSION}-release.apk"
           APK_SOURCE="$(find android/app/build/outputs/apk/release -maxdepth 1 -type f -name 'Fortuna-*.apk' -print -quit)"
           if [[ -z "$APK_SOURCE" ]]; then
-            echo "No Fortuna APK found in the Gradle debug output directory" >&2
+            echo "No Fortuna APK found in the Gradle release output directory" >&2
             exit 1
           fi
           cp "$APK_SOURCE" "release/$APK_NAME"

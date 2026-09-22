@@ -4,6 +4,22 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-09-22
+
+### Simpler allocation plans
+
+- Show each asset class's planned and current amounts and percentages together, followed by progress and the remaining or excess amount.
+- Record intended purchases by name or code without first creating holdings or allocating subcategory percentages.
+- Make edit buttons visible; keep allocation charts, account/holding splits and existing subcategories available on demand.
+- Support amount or percentage entry with an explicit calculation basis; preserve precise amounts and existing product links.
+- Preserve purchase notes in Excel backup/restore and automatic snapshots.
+- Create initial plans atomically from existing assets without rounding the total allocation above or below 100%.
+
+### Android release
+
+- Version code 7, using the same pinned release certificate as 1.3.0 and 1.3.1 for in-place updates through Settings → About.
+- Run data and update regression tests before every signed GitHub APK build.
+
 ## [1.3.1] - 2026-08-02
 
 ### Account controls and layout
