@@ -104,3 +104,70 @@ test('initial plan rolls back all categories if one write fails', async () => {
     db.planItems.hook('creating').unsubscribe(failSecond);
   }
 });
+
+
+test('deleted plan links are cleaned persistently while excluded-account labels remain accurate', async () => {
+  await seedAccount();
+  await db.accounts.update('qa-account', { includeInTotals: false });
+  const id = await createPlanItem({ name: 'Cleanup', targetPercent: 15, categories: ['acct:gone', 'acct:qa-account', 'hold:gone'], plannedPurchases: 'keep this' });
+  const status = await getPlanStatus();
+  assert.deepEqual(status.items[0].categories, ['acct:qa-account']);
+  assert.equal(status.scopeNames?.['acct:qa-account']?.inactive, true);
+  assert.equal(status.scopeNames?.['acct:qa-account']?.name, 'Synthetic cash');
+  assert.deepEqual((await db.planItems.get(id))?.categories, ['acct:qa-account']);
+});
+
+test('dividend budget, overrides, grid and cache survive JSON and Excel backup with ledger preserved', async () => {
+  const { exportData, importData } = await import('../src/db.ts');
+  const { loadDividendWorkbench, saveDividendBudget, saveDividendStock } = await import('../src/services/dividendService.ts');
+  await seedAccount();
+  const initial = await loadDividendWorkbench();
+  assert.equal(initial.stocks.length, 19);
+  assert.equal(initial.budgetMinor, 0);
+  await saveDividendBudget(32100012);
+  await saveDividendStock({ ...initial.stocks[0], shareMode: 'manual', manualShares: 1234, manualDpsMicros: 310300, buyLevels: [{ yieldBps: 550, portionBps: 10000, priceMinor: 512 }], note: 'my note' });
+  const json = await exportData();
+  const excel = await exportToExcel();
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await db.dividendStocks.clear();
+    await saveDividendBudget(0);
+    assert.equal(await restore(), true);
+    const actual = await loadDividendWorkbench();
+    assert.equal(actual.budgetMinor, 32100012);
+    const stock = actual.stocks.find(s => s.code === initial.stocks[0].code)!;
+    assert.equal(stock.manualShares, 1234);
+    assert.equal(stock.manualDpsMicros, 310300);
+    assert.equal(stock.buyLevels?.[0].priceMinor, 512);
+    assert.equal(stock.note, 'my note');
+    assert.equal(await db.records.count(), 1);
+  }
+  const bad = JSON.parse(json); bad.dividendStocks[0].weightBps = -1;
+  assert.equal(await importData(JSON.stringify(bad)), false);
+  assert.equal(await db.records.count(), 1);
+});
+
+test('market refresh preserves manual edits, keeps dated cache on failure and clears failure markers on recovery', async () => {
+  const { loadDividendWorkbench, refreshDividendStock, saveDividendStock } = await import('../src/services/dividendService.ts');
+  const data = await loadDividendWorkbench();
+  const stock = data.stocks.find(s => s.code === '601398')!;
+  await saveDividendStock({ ...stock, manualDpsMicros: 500000, manualShares: 1234, quote: { priceMinor: 700, date: '2026-09-24 15:00', fetchedAt: 1 } });
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new Error('offline'); };
+    assert.equal(await refreshDividendStock(stock.code), false);
+    const failed = await db.dividendStocks.get(stock.code);
+    assert.equal(failed?.quote?.priceMinor, 700);
+    assert.ok(failed?.quoteFailedAt);
+    assert.equal(failed?.dividend, undefined);
+    const fields = Array(50).fill(''); fields[2] = stock.code; fields[3] = '8.13'; fields[30] = '20260924161400';
+    globalThis.fetch = async input => new Response(String(input).startsWith('/qt-api') ? `v_sh601398="${fields.join('~')}"` : JSON.stringify({success: true, result: {pages: 1, data: [{ SECURITY_CODE: stock.code, PRETAX_BONUS_RMB: 1.689, EX_DIVIDEND_DATE: new Date().toISOString().slice(0,10), REPORT_DATE: '2025-12-31 00:00:00', ASSIGN_PROGRESS: '实施分配' }]}}));
+    assert.equal(await refreshDividendStock(stock.code), true);
+    const recovered = await db.dividendStocks.get(stock.code);
+    assert.equal(recovered?.manualDpsMicros, 500000);
+    assert.equal(recovered?.manualShares, 1234);
+    assert.equal(recovered?.quote?.priceMinor, 813);
+    assert.equal(recovered?.quoteFailedAt, undefined);
+    assert.equal(recovered?.dividendFailedAt, undefined);
+    assert.equal(recovered?.dividend?.payments[0].dpsMicros, 168900);
+  } finally { globalThis.fetch = originalFetch; }
+});

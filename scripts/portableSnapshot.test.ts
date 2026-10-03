@@ -137,7 +137,7 @@ test('automatic snapshot v7 exports all active accounts and marks optional focus
     trigger: 'test',
   });
 
-  assert.equal(snapshot.schemaVersion, 7);
+  assert.equal(snapshot.schemaVersion, 8);
   assert.equal(snapshot.accountCount, 2);
   assert.equal(snapshot.focusAccountCount, 1);
   assert.deepEqual(snapshot.totals, {

@@ -756,3 +756,9 @@ html, body, #root {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+.app-topbar { display: flex; justify-content: space-between; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + .45rem) 1rem .4rem; border-bottom: 1px solid var(--border); background: var(--bg-primary); }
+.app-topbar > span { font-weight: 700; font-size: .85rem; letter-spacing: .08em; color: var(--text-secondary); }
+.app-topbar .btn { min-height: 42px; padding: .4rem .8rem; font-size: .8rem; }
+
+.app-topbar + .app-content { padding-top: 1rem; }

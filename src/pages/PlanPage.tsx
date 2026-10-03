@@ -168,6 +168,11 @@ export default function PlanPage() {
   // scope = category, market, account, holding or a portfolio cash pool
   const scopeLabel = (scope: string) => {
     const p = splitScope(scope);
+    const named = status?.scopeNames?.[scope];
+    if (named) {
+      const name = p.cashAccountId ? `${named.name} · ${t('cash_balance')}` : named.name;
+      return named.inactive ? t('plan_source_inactive', { name }) : name;
+    }
     if (p.holdingId) {
       for (const a of status?.equityAccounts ?? []) {
         const h = a.holdings.find(x => x.id === p.holdingId);
@@ -610,14 +615,14 @@ export default function PlanPage() {
         <div className="plan-targets-box">
           <div className="plan-targets-heading">
             <span className="plan-targets-title">🎯 {t('plan_intended_targets')}</span>
-            <button
+            {targets.length > 0 && <button
               type="button"
               className="plan-text-button"
               aria-label={t('plan_edit_purchases_named', { name: item.name })}
               onClick={() => openPurchases(item)}
             >
-              {targets.length > 0 ? t('edit') : t('plan_write_purchases')}
-            </button>
+              {t('edit')}
+            </button>}
           </div>
 
           <div className="plan-tags-wrap">
@@ -654,7 +659,7 @@ export default function PlanPage() {
         {/* Details: Actual value sources & candidates */}
         <details className="plan-details">
           <summary>{t('plan_details')}</summary>
-          <p className="plan-help">{t('plan_actual_from', { scopes: item.categories.map(scopeLabel).join(' · ') })}</p>
+          <p className="plan-help">{t('plan_actual_from', { scopes: item.categories.length ? item.categories.map(scopeLabel).join(' · ') : t('plan_sources_empty') })}</p>
           {item.candidates.length > 0 && (
             <ul className="plan-source-list">
               {item.candidates.filter(candidate => candidate.primaryValue !== 0).map(candidate => (

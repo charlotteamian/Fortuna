@@ -1,3 +1,4 @@
+import { repairPlanReferences } from '../lib/planReferences';
 import { v4 as uuidv4 } from 'uuid';
 import { db, initializeSettings, type PlanItem, type PlanTarget } from '../db';
 import { getAccountsWithLatest } from './assetService';
@@ -201,6 +202,7 @@ export interface PlanStatus {
   unplanned: UnplannedEntry[];  // asset value not covered by any item
   // For the scope form. The legacy field name is retained, but all asset accounts
   // are included so any portfolio holding/cash pool can be allocated explicitly.
+  scopeNames?: Record<string, { name: string; inactive: boolean }>;
   equityAccounts: {
     id: string;
     name: string;
@@ -225,9 +227,30 @@ interface Atom {
 }
 
 export async function getPlanStatus(): Promise<PlanStatus> {
-  const [items, allTargets, settings, acctData] = await Promise.all([
-    getPlanItems(), db.planTargets.toArray(), initializeSettings(), getAccountsWithLatest(),
-  ]);
+  // Read and repair links under one transaction so an automatic snapshot cannot
+  // overwrite a concurrent plan edit with an older copy of the plan.
+  const { repaired, allAccounts, allHoldings } = await db.transaction('rw', [db.planItems, db.planTargets, db.accounts, db.holdings], async () => {
+    const [storedItems, storedTargets, allAccounts, allHoldings] = await Promise.all([
+      getPlanItems(), db.planTargets.toArray(), db.accounts.toArray(), db.holdings.toArray(),
+    ]);
+    const repaired = repairPlanReferences(storedItems, storedTargets, allAccounts, allHoldings);
+    if (repaired.changedItems.length) await db.planItems.bulkPut(repaired.changedItems);
+    if (repaired.changedTargets.length) await db.planTargets.bulkPut(repaired.changedTargets);
+    return { repaired, allAccounts, allHoldings };
+  });
+  const [settings, acctData] = await Promise.all([initializeSettings(), getAccountsWithLatest()]);
+  const items = repaired.items;
+  const allTargets = repaired.targets;
+  if (repaired.changedItems.length || repaired.changedTargets.length) requestPortableSnapshot('obsolete-plan-references-cleaned');
+  const scopeNames: NonNullable<PlanStatus['scopeNames']> = {};
+  for (const account of allAccounts) {
+    const inactive = Boolean(account.archivedAt) || !isAccountIncludedInTotals(account);
+    scopeNames[makeAccountScope(account.id)] = { name: account.name, inactive };
+    scopeNames[makeCashScope(account.id)] = { name: account.name, inactive };
+    for (const holding of allHoldings.filter(entry => entry.accountId === account.id)) {
+      scopeNames[makeHoldingScope(holding.id)] = { name: holding.name, inactive };
+    }
+  }
   const primary = settings.primaryCurrency;
   const assetAccounts = acctData.accounts.filter(a => a.type === 'asset' && isAccountIncludedInTotals(a));
 
@@ -650,6 +673,7 @@ export async function getPlanStatus(): Promise<PlanStatus> {
 
   return {
     items: statuses,
+    scopeNames,
     totalAssets,
     base,
     targetTotal,

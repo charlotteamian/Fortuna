@@ -12,14 +12,16 @@ import { refreshRatesInBackground } from './services/rateService';
 
 const AccountDetail = lazy(() => import('./pages/AccountDetail'));
 const ChartPage = lazy(() => import('./pages/ChartPage'));
+const DividendPage = lazy(() => import('./pages/DividendPage'));
 const PlanPage = lazy(() => import('./pages/PlanPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
-type Tab = 'record' | 'plan' | 'chart' | 'products' | 'settings';
+type Tab = 'record' | 'plan' | 'chart' | 'products' | 'dividend' | 'settings';
 
 function App() {
   const { t, i18n } = useTranslation();
+  const [returnTab, setReturnTab] = useState<Tab>('record');
   const [tab, setTab] = useState<Tab>('record');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -154,10 +156,15 @@ function App() {
   return (
     <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
       <div className="app">
+        <header className="app-topbar"><span>Fortuna</span><button className="btn btn-secondary" onClick={() => {
+          if (tab === 'settings') setTab(returnTab);
+          else { setReturnTab(tab); setTab('settings'); }
+        }}>{tab === 'settings' ? `← ${t('back')}` : `⚙ ${t('settings')}`}</button></header>
         <main className="app-content">
           {tab === 'record' && <RecordPage key={refreshKey} onOpenAccount={openAccount} onRefresh={refresh} />}
           <Suspense fallback={pageFallback}>
             {tab === 'plan' && <PlanPage key={refreshKey} />}
+            {tab === 'dividend' && <DividendPage key={refreshKey} />}
             {tab === 'chart' && <ChartPage key={refreshKey} />}
             {tab === 'products' && <ProductsPage />}
             {tab === 'settings' && <SettingsPage onRefresh={() => { void loadSettings(); refresh(); }} onAccountsChanged={refresh} onOpenOnboarding={() => setOnboardingOpen(true)} />}
@@ -188,6 +195,15 @@ function App() {
               ),
             },
             {
+              key: 'dividend' as Tab,
+              label: t('div_tab'),
+              icon: (active: boolean) => (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? 'var(--asset-color)' : 'var(--text-muted)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 21V11M12 15C5 15 3 10 3 5c6 0 9 3 9 10ZM12 11c0-5 3-8 9-8 0 5-3 8-9 8Z" />
+                </svg>
+              ),
+            },
+            {
               key: 'chart' as Tab,
               label: t('net_worth'),
               icon: (active: boolean) => (
@@ -211,20 +227,7 @@ function App() {
                 </svg>
               ),
             },
-            {
-              key: 'settings' as Tab,
-              label: t('settings'),
-              icon: (active: boolean) => (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? 'var(--asset-color)' : 'var(--text-muted)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="4" y1="6" x2="20" y2="6"/>
-                  <line x1="4" y1="12" x2="20" y2="12"/>
-                  <line x1="4" y1="18" x2="20" y2="18"/>
-                  <circle cx="9" cy="6" r="2.5" fill={active ? 'var(--asset-color)' : 'var(--text-muted)'} stroke="none"/>
-                  <circle cx="15" cy="12" r="2.5" fill={active ? 'var(--asset-color)' : 'var(--text-muted)'} stroke="none"/>
-                  <circle cx="9" cy="18" r="2.5" fill={active ? 'var(--asset-color)' : 'var(--text-muted)'} stroke="none"/>
-                </svg>
-              ),
-            },
+
           ] as { key: Tab; label: string; icon: (active: boolean) => React.ReactNode }[]).map(({ key, label, icon }) => {
             const active = tab === key;
             return (

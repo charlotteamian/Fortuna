@@ -1,3 +1,4 @@
+import { isDividendStock, type DividendStock } from './lib/dividendWorkbench';
 import Dexie, { type Table } from 'dexie';
 import i18n from './i18n';
 import { getHoldingMode, type HoldingMode } from './lib/productPortfolio';
@@ -159,6 +160,8 @@ export interface Settings {
   language?: 'auto' | 'zh' | 'en';
   goldPriceSource?: GoldPriceSource;  // which gold price convention to value precious metals with
   metalTxnMigrated?: boolean;         // legacy metal snapshot records converted to buy/sell deltas
+  dividendBudgetMinor?: number; // CNY cents
+  dividendWorkbenchInitialized?: boolean;
   planTargetTotal?: number;           // optional target total assets for the allocation plan (primary currency)
   onboardingVersion?: number;         // 0 = show first-install guide; current version = completed/skipped
   snapshotFocusAccountIds?: string[]; // optional focus labels in the portable automatic snapshot
@@ -269,6 +272,7 @@ class AssetManagerDB extends Dexie {
   planTargets!: Table<PlanTarget>;
   holdings!: Table<Holding>;
   holdingTxns!: Table<HoldingTxn>;
+  dividendStocks!: Table<DividendStock>;
 
   constructor() {
     super('AssetManagerDB');
@@ -335,6 +339,7 @@ class AssetManagerDB extends Dexie {
       holdings: 'id, accountId, sortOrder',
       holdingTxns: 'id, accountId, holdingId, date, createdAt',
     });
+    this.version(10).stores({ dividendStocks: 'code, group' });
   }
 }
 
@@ -485,7 +490,8 @@ export async function exportData(): Promise<string> {
   const planTargets = await db.planTargets.toArray();
   const holdings = await db.holdings.toArray();
   const holdingTxns = await db.holdingTxns.toArray();
-  const data = { version: 12, timestamp: Date.now(), accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns };
+  const dividendStocks = await db.dividendStocks.toArray();
+  const data = { version: 13, timestamp: Date.now(), accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks };
   return JSON.stringify(data);
 }
 
@@ -493,8 +499,9 @@ export async function importData(jsonData: string): Promise<boolean> {
   try {
     const data = JSON.parse(jsonData);
     if (!data.accounts || !data.records || !data.settings) return false;
+    if (data.dividendStocks !== undefined && (!Array.isArray(data.dividendStocks) || !data.dividendStocks.every(isDividendStock))) return false;
 
-    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns], async () => {
+    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
       await db.accounts.clear();
       await db.records.clear();
       await db.settings.clear();
@@ -504,6 +511,7 @@ export async function importData(jsonData: string): Promise<boolean> {
       await db.planTargets.clear();
       await db.holdings.clear();
       await db.holdingTxns.clear();
+      await db.dividendStocks.clear();
 
       if (data.accounts.length > 0) await db.accounts.bulkAdd(data.accounts);
       if (data.records.length > 0) await db.records.bulkAdd(data.records);
@@ -514,6 +522,7 @@ export async function importData(jsonData: string): Promise<boolean> {
       if (data.planTargets && data.planTargets.length > 0) await db.planTargets.bulkAdd(data.planTargets);
       if (data.holdings && data.holdings.length > 0) await db.holdings.bulkAdd(data.holdings);
       if (data.holdingTxns && data.holdingTxns.length > 0) await db.holdingTxns.bulkAdd(data.holdingTxns);
+      if (data.dividendStocks?.length) await db.dividendStocks.bulkAdd(data.dividendStocks);
     });
     return true;
   } catch (e) {
@@ -534,6 +543,7 @@ export async function exportToExcel(): Promise<string> {
   const holdings = await db.holdings.toArray();
   const holdingTxns = await db.holdingTxns.toArray();
 
+  const dividendStocks = await db.dividendStocks.toArray();
   const settingsExport = settingsRows.map(row => {
     const publicRow = { ...row } as Record<string, unknown>;
     delete publicRow[LEGACY_SNAPSHOT_FOCUS_KEY];
@@ -546,7 +556,7 @@ export async function exportToExcel(): Promise<string> {
   });
   const metadataExport = [{
     format: 'Fortuna Excel Backup',
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
   }];
 
@@ -637,6 +647,7 @@ export async function exportToExcel(): Promise<string> {
   const wsHoldingTxns = XLSX.utils.json_to_sheet(holdingTxns);
   const wsHistory = XLSX.utils.json_to_sheet(historyExport);
 
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dividendStocks.map(s => ({ code: s.code, data: JSON.stringify(s) }))), "DividendStocks");
   XLSX.utils.book_append_sheet(wb, wsMetadata, "BackupInfo");
   XLSX.utils.book_append_sheet(wb, wsSettings, "Settings");
   XLSX.utils.book_append_sheet(wb, wsExchangeRates, "ExchangeRates");
@@ -666,6 +677,9 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
     const wsSettings = wb.Sheets["Settings"];
     const wsExchangeRates = wb.Sheets["ExchangeRates"];
     const wsMetadata = wb.Sheets["BackupInfo"];
+    const dividendStocks: DividendStock[] = wb.Sheets.DividendStocks
+      ? XLSX.utils.sheet_to_json<{ data: string }>(wb.Sheets.DividendStocks).map(row => JSON.parse(row.data)) : [];
+    if (!dividendStocks.every(isDividendStock) || new Set(dividendStocks.map(s => s.code)).size !== dividendStocks.length) return false;
     if (!wsAccounts || !wsRecords) return false;
     const metadata = wsMetadata
       ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsMetadata)[0]
@@ -805,6 +819,8 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
           [],
         ),
         automaticSnapshotSchemaVersion: Number(row.automaticSnapshotSchemaVersion) || 0,
+        dividendWorkbenchInitialized: parseBoolean(row.dividendWorkbenchInitialized, false),
+        dividendBudgetMinor: Number.isSafeInteger(Number(row.dividendBudgetMinor)) && Number(row.dividendBudgetMinor) >= 0 ? Number(row.dividendBudgetMinor) : undefined,
       };
       const targetTotal = Number(row.planTargetTotal);
       if (Number.isFinite(targetTotal) && targetTotal > 0) restored.planTargetTotal = targetTotal;
@@ -865,7 +881,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       && Number.isFinite(rate.updatedAt)
     ))) return false;
 
-    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns], async () => {
+    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
       await db.accounts.clear();
       await db.records.clear();
       await db.products.clear();
@@ -873,6 +889,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       await db.planTargets.clear();
       await db.holdings.clear();
       await db.holdingTxns.clear();
+      await db.dividendStocks.clear();
       if (restoredSettings.length > 0) await db.settings.clear();
       if (wsExchangeRates) await db.exchangeRates.clear();
       if (accounts.length > 0) await db.accounts.bulkAdd(accounts);
@@ -882,8 +899,12 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       if (planTargets.length > 0) await db.planTargets.bulkAdd(planTargets);
       if (holdings.length > 0) await db.holdings.bulkAdd(holdings);
       if (holdingTxns.length > 0) await db.holdingTxns.bulkAdd(holdingTxns);
+      if (dividendStocks.length) await db.dividendStocks.bulkAdd(dividendStocks);
       if (restoredSettings.length > 0) await db.settings.bulkAdd(restoredSettings);
-      else if (needsLegacyMetalMigration) await db.settings.update('main', { metalTxnMigrated: false });
+      else {
+        await db.settings.update('main', { dividendWorkbenchInitialized: dividendStocks.length > 0, dividendBudgetMinor: undefined });
+        if (needsLegacyMetalMigration) await db.settings.update('main', { metalTxnMigrated: false });
+      }
       if (exchangeRates.length > 0) await db.exchangeRates.bulkAdd(exchangeRates);
     });
     return true;
