@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { db, initializeSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, exportToExcel, importFromExcel, type Account, type Settings, type CustomField } from '../db';
+import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, exportToExcel, importFromExcel, type Account, type Settings, type CustomField } from '../db';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
 import {
@@ -108,8 +108,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
 
   const save = async (updates: Partial<Settings>) => {
     if (!settings) return;
-    const updated = { ...settings, ...updates };
-    await db.settings.put(updated); setSettings(updated); onRefresh();
+    const updated = await updateSettings(updates);
+    setSettings(updated); onRefresh();
     scheduleAutomaticSnapshot('settings-updated');
   };
 

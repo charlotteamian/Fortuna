@@ -356,6 +356,17 @@ export async function initializeSettings(): Promise<Settings> {
   }
 }
 
+/** Persist only edited fields so stale page state cannot replace newer budgets or preferences. */
+export async function updateSettings(updates: Partial<Omit<Settings, 'id'>>): Promise<Settings> {
+  await initializeSettings();
+  return db.transaction('rw', db.settings, async () => {
+    await db.settings.update('main', updates);
+    const settings = await db.settings.get('main');
+    if (!settings) throw new Error('SETTINGS_NOT_FOUND');
+    return settings;
+  });
+}
+
 async function initializeSettingsOnce(): Promise<Settings> {
   let settings = await db.settings.get('main');
   const isNewInstall = !settings;

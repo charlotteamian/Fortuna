@@ -1,7 +1,7 @@
 import { parseTencentDividendTrend } from '../lib/dividendTrend';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { db, initializeSettings } from '../db';
-import { defaultDividendStocks, isDividendStock, linkedDividendPositions, parseDividendQuote, parseDividendResponse, quoteSymbol, type DividendStock } from '../lib/dividendWorkbench';
+import { db, initializeSettings, updateSettings } from '../db';
+import { defaultDividendStocks, isDividendStock, linkedDividendPositions, parseDividendQuote, parseDividendResponse, quoteSymbol, redistributeDividendWeights, type DividendStock } from '../lib/dividendWorkbench';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 
@@ -17,11 +17,11 @@ export async function loadDividendWorkbench() {
   const [stocks, settings, accounts, holdings, txns] = await Promise.all([
     db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
   ]);
-  return { stocks, budgetMinor: settings?.dividendBudgetMinor ?? 0, positions: linkedDividendPositions(accounts, holdings, txns) };
+  return { stocks, budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
 }
 export async function saveDividendBudget(budgetMinor: number) {
   if (!Number.isSafeInteger(budgetMinor) || budgetMinor < 0 || budgetMinor > 1e14) throw new Error('INVALID_BUDGET');
-  await db.settings.update('main', { dividendBudgetMinor: budgetMinor });
+  await updateSettings({ dividendBudgetMinor: budgetMinor });
   requestPortableSnapshot('dividend-budget');
 }
 export async function saveDividendStock(stock: DividendStock) {
@@ -30,8 +30,38 @@ export async function saveDividendStock(stock: DividendStock) {
   requestPortableSnapshot('dividend-stock');
 }
 export async function deleteDividendStock(code: string) {
-  await db.dividendStocks.delete(code);
+  await db.transaction('rw', db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    const remaining = redistributeDividendWeights(stocks, code);
+    await db.dividendStocks.delete(code);
+    for (const stock of remaining) {
+      if (stock.weightBps !== stocks.find(original => original.code === stock.code)?.weightBps) {
+        await db.dividendStocks.update(stock.code, { weightBps: stock.weightBps });
+      }
+    }
+  });
   requestPortableSnapshot('dividend-stock-deleted');
+}
+
+export async function addLinkedDividendStocks(codes: string[]): Promise<number> {
+  const count = await db.transaction('rw', db.dividendStocks, db.accounts, db.holdings, db.holdingTxns, async () => {
+    const [stocks, accounts, holdings, txns] = await Promise.all([
+      db.dividendStocks.toArray(), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
+    ]);
+    const existing = new Set(stocks.map(stock => stock.code));
+    const positions = linkedDividendPositions(accounts, holdings, txns);
+    const additions: DividendStock[] = [...new Set(codes)].flatMap(code => {
+      const position = positions.get(code);
+      return !existing.has(code) && position ? [{
+        code, name: position.name, group: 'watch', weightBps: 0, shareMode: 'linked', manualShares: 0,
+        lotSize: code.startsWith('68') ? 200 : 100,
+      }] : [];
+    });
+    if (additions.length) await db.dividendStocks.bulkAdd(additions);
+    return additions.length;
+  });
+  if (count) requestPortableSnapshot('dividend-linked-stocks-added');
+  return count;
 }
 
 async function readSource(url: string, proxy: string): Promise<string> {

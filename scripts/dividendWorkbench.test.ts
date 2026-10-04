@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
+import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
 import { repairPlanReferences } from '../src/lib/planReferences.ts';
 import type { Account, Holding, HoldingTxn, PlanItem, PlanTarget } from '../src/db.ts';
 const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
@@ -53,6 +53,34 @@ test('budgets scale, grid shares round down, no sell signal without holdings, ma
   assert.equal(buildGrid(stock, 500000, 0, 'buy')[0].priceMinor, 1234);
   assert.equal(buildGrid(stock, 500000, 0, 'buy')[0].displayYieldBps, 500000 / 1234);
   stock.buyLevels = [{ yieldBps: 500, portionBps: 11000 }]; assert.equal(isDividendStock(stock), false);
+});
+
+test('deleting an allocation redistributes proportionally, including hidden stocks but preserving zero weights', () => {
+  const stocks = defaultDividendStocks().slice(0, 4).map((stock, i) => ({ ...stock, weightBps: [5000, 3000, 2000, 0][i], ...(i === 1 ? { group: 'hidden' as const, note: 'keep', manualShares: 123 } : {}) }));
+  const remaining = redistributeDividendWeights(stocks, stocks[2].code);
+  assert.deepEqual(remaining.map(stock => stock.weightBps), [6250, 3750, 0]);
+  assert.equal(remaining[1].note, 'keep');
+  assert.equal(remaining[1].manualShares, 123);
+  assert.ok(remaining.every(isDividendStock));
+  assert.equal(stockBudgetMinor(32000000, remaining[0].weightBps), 20000000);
+  assert.equal(stocks[0].weightBps, 5000);
+  assert.deepEqual(redistributeDividendWeights(stocks, stocks[3].code).map(stock => stock.weightBps), [5000, 3000, 2000]);
+});
+
+test('redistribution keeps exact basis-point totals, unallocated budget and safe empty/overallocated cases', () => {
+  const stocks = defaultDividendStocks().slice(0, 4).map(stock => ({ ...stock, weightBps: 1 }));
+  const rounded = redistributeDividendWeights(stocks, stocks[3].code);
+  assert.deepEqual(rounded.map(stock => stock.weightBps), [1, 2, 1]); // code 600036 wins the tie
+  assert.equal(rounded.reduce((sum, stock) => sum + stock.weightBps, 0), 4);
+  const underallocated = stocks.slice(0, 3).map((stock, i) => ({ ...stock, weightBps: [2000, 1000, 1000][i] }));
+  assert.deepEqual(redistributeDividendWeights(underallocated, underallocated[0].code).map(stock => stock.weightBps), [2000, 2000]);
+  assert.deepEqual(redistributeDividendWeights([{ ...stocks[0], weightBps: 10000 }, { ...stocks[1], weightBps: 0 }], stocks[0].code).map(stock => stock.weightBps), [0]);
+  assert.deepEqual(redistributeDividendWeights([stocks[0]], stocks[0].code), []);
+  assert.deepEqual(redistributeDividendWeights(stocks, 'missing'), stocks);
+  const overallocated = stocks.map(stock => ({ ...stock, weightBps: 6000 }));
+  const clamped = redistributeDividendWeights(overallocated, overallocated[0].code);
+  assert.equal(clamped.reduce((sum, stock) => sum + stock.weightBps, 0), 10000);
+  assert.ok(clamped.every(isDividendStock));
 });
 const account: Account = { id: 'a', name: 'account', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, createdAt: 1, sortOrder: 0 };
 const holding: Holding = { id: 'h', accountId: 'a', name: 'ICBC', symbol: '601398.SH', market: 'A股', lastPrice: 7, createdAt: 1, sortOrder: 0 };

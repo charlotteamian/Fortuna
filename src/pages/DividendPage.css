@@ -20,6 +20,7 @@
 .div-stock-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1rem; align-items: start; }
 .div-stock { padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
 .div-stock-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
+.div-stock-heading > button { flex-shrink: 0; white-space: nowrap; }
 .div-stock-heading h2 { font-size: 1.07rem; margin: 0 0 .3rem; }
 .div-stock-heading h2 span { font-size: .76rem; font-weight: 400; color: var(--text-secondary); }
 .div-stock-heading small { color: var(--asset-color); }
@@ -27,7 +28,9 @@
 .div-metrics > div { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
 .div-metrics span, .div-metrics small { color: var(--text-secondary); font-size: .75rem; }
 .div-metrics strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.div-budget-line { display: flex; justify-content: space-between; padding: .75rem 0; margin-top: .8rem; border-top: 1px solid var(--border); font-size: .85rem; }
+.div-budget-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; padding: .75rem 0; margin-bottom: .8rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .85rem; }
+.div-budget-line > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; color: var(--text-secondary); }
+.div-budget-line strong { color: var(--asset-color); font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .div-details { border-top: 1px solid var(--border); padding-top: .5rem; }
 .div-grid h3, .div-payments h3, .div-dialog h3 { font-size: .85rem; margin: 1rem 0 .5rem; }
 .div-table-scroll { overflow-x: auto; }
@@ -36,7 +39,10 @@
 .dividend-page th, .div-dialog th { color: var(--text-secondary); font-weight: 500; }
 .div-touched { background: var(--asset-dim); }
 .div-touched small { display: block; color: var(--asset-color); font-size: .65rem; }
-.div-payments p, .div-note { font-size: .8rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.div-payments p, .div-note p { font-size: .8rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.div-note { margin: 0 0 1rem; padding: .7rem .8rem; border-radius: 9px; background: var(--bg-secondary); }
+.div-note > span { color: var(--text-secondary); font-size: .75rem; }
+.div-note p { margin: .3rem 0 0; }
 .div-warning { color: var(--liability-color); font-size: .8rem; line-height: 1.6; margin: .65rem 0; }
 .div-notice { background: var(--asset-dim); color: var(--asset-color); font-size: .85rem; padding: .75rem; border-radius: 10px; margin: .5rem 0; }
 .div-dialog { margin: auto; padding: 1.1rem; width: min(94vw, 600px); max-height: 88dvh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-primary); color: var(--text-primary); }
@@ -44,4 +50,11 @@
 .div-form-fields { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
 .div-form-fields label, .div-form-note { display: flex; flex-direction: column; gap: .45rem; font-size: .8rem; }
 .div-dialog td input { min-width: 70px; padding: .6rem .35rem; }
+.div-linked-all, .div-linked-option { display: flex; align-items: center; gap: .7rem; cursor: pointer; font-size: .85rem; }
+.div-linked-all { padding: .75rem 0; }
+.div-linked-list { display: grid; gap: .5rem; margin-bottom: 1rem; }
+.div-linked-option { padding: .8rem; border: 1px solid var(--border); border-radius: 9px; }
+.div-linked-option > span { display: flex; flex-direction: column; gap: .35rem; min-width: 0; overflow-wrap: anywhere; }
+.div-linked-option small { font-weight: 400; color: var(--text-secondary); font-size: .75rem; }
+.div-dialog .div-linked-all input, .div-dialog .div-linked-option input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--asset-color); }
 @media (max-width: 360px) { .div-form-fields { grid-template-columns: 1fr; } .div-stock { padding: .8rem; } }

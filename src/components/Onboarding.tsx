@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CURRENT_ONBOARDING_VERSION, db, type Settings } from '../db';
+import { CURRENT_ONBOARDING_VERSION, updateSettings, type Settings } from '../db';
 import { requestPortableSnapshot } from '../services/portableSnapshotEvents';
 
 interface Props {
@@ -63,14 +63,12 @@ export default function Onboarding({ settings, onComplete }: Props) {
   };
 
   const finish = async (destination: 'assets' | 'settings') => {
-    const updated: Settings = {
-      ...settings,
+    const updated = await updateSettings({
       language,
       primaryCurrency,
       amountVisible,
       onboardingVersion: CURRENT_ONBOARDING_VERSION,
-    };
-    await db.settings.put(updated);
+    });
     requestPortableSnapshot('onboarding-settings-updated');
     onComplete(updated, destination);
   };

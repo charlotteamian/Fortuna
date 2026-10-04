@@ -1,6 +1,6 @@
 import { repairPlanReferences } from '../lib/planReferences';
 import { v4 as uuidv4 } from 'uuid';
-import { db, initializeSettings, type PlanItem, type PlanTarget } from '../db';
+import { db, initializeSettings, updateSettings, type PlanItem, type PlanTarget } from '../db';
 import { getAccountsWithLatest } from './assetService';
 import { isAccountIncludedInTotals } from '../lib/accountPreferences';
 import { computeBalanceHoldingPosition, computeHoldingPosition } from './holdingService';
@@ -118,8 +118,7 @@ export async function deletePlanItem(id: string): Promise<void> {
 }
 
 export async function setPlanTargetTotal(value: number | undefined): Promise<void> {
-  const settings = await initializeSettings();
-  await db.settings.put({ ...settings, planTargetTotal: value });
+  await updateSettings({ planTargetTotal: value });
   requestPortableSnapshot('allocation-plan-total-updated');
 }
 

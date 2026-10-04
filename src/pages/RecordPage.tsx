@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { getAccountsWithLatest, deleteAccount, updateAccount, archiveAccount, restoreAccount, type AccountWithLatest } from '../services/assetService';
-import { db, type Settings } from '../db';
+import { updateSettings, type Settings } from '../db';
 import { useAppContext } from '../app-context';
 import AccountForm from '../components/AccountForm';
 import { useTranslation } from 'react-i18next';
@@ -128,8 +128,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   };
   const toggleArchivedAccounts = async () => {
     if (!settings) return;
-    const updated = { ...settings, showArchivedAccounts: !(settings.showArchivedAccounts ?? true) };
-    await db.settings.put(updated);
+    const updated = await updateSettings({ showArchivedAccounts: !(settings.showArchivedAccounts ?? true) });
     setSettings(updated);
   };
 

@@ -26,7 +26,7 @@ registerHooks({
   },
 });
 
-const { db, initializeSettings, exportToExcel, importFromExcel } = await import('../src/db.ts');
+const { db, initializeSettings, updateSettings, exportToExcel, importFromExcel } = await import('../src/db.ts');
 const { createPlanItem, createInitialPlanItems, updatePlanItem, getPlanStatus, createPlanTarget, updatePlanTarget, setPlanTargetTotal } = await import('../src/services/planService.ts');
 
 beforeEach(async () => {
@@ -144,6 +144,110 @@ test('dividend budget, overrides, grid and cache survive JSON and Excel backup w
   const bad = JSON.parse(json); bad.dividendStocks[0].weightBps = -1;
   assert.equal(await importData(JSON.stringify(bad)), false);
   assert.equal(await db.records.count(), 1);
+});
+
+test('saved dividend budgets survive stale-page preference edits, simultaneous plan edits and database reopen', async () => {
+  const { loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
+  const stalePageSettings = await initializeSettings();
+  await loadDividendWorkbench();
+  await saveDividendBudget(12345678);
+  await updateSettings({ showArchivedAccounts: !stalePageSettings.showArchivedAccounts });
+  assert.equal((await loadDividendWorkbench()).budgetMinor, 12345678);
+  assert.equal((await initializeSettings()).dividendWorkbenchInitialized, true);
+  await Promise.all([
+    saveDividendBudget(32100012),
+    setPlanTargetTotal(1000000),
+    updateSettings({ language: 'en', fontSize: 'large' }),
+  ]);
+  db.close();
+  await db.open();
+  const reopened = await loadDividendWorkbench();
+  assert.equal(reopened.budgetMinor, 32100012);
+  assert.equal(reopened.budgetConfigured, true);
+  const settings = await initializeSettings();
+  assert.equal(settings.planTargetTotal, 1000000);
+  assert.equal(settings.fontSize, 'large');
+  await saveDividendBudget(0);
+  assert.equal((await loadDividendWorkbench()).budgetConfigured, true);
+  await assert.rejects(saveDividendBudget(0.5), /INVALID_BUDGET/);
+  await assert.rejects(saveDividendBudget(-1), /INVALID_BUDGET/);
+  await db.settings.delete('main');
+  await saveDividendBudget(123);
+  assert.equal((await loadDividendWorkbench()).budgetMinor, 123);
+});
+
+async function seedLinkedStocks() {
+  await db.accounts.add({ id: 'stocks', name: 'Synthetic broker', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, createdAt: 1, sortOrder: 0 });
+  for (const [i, code] of ['600519', '688981', '002594'].entries()) {
+    await db.holdings.add({ id: code, accountId: 'stocks', name: `Fixture ${code}`, symbol: code, market: 'A股', lastPrice: 10, createdAt: 1, sortOrder: i });
+    await db.holdingTxns.add({ id: `buy-${code}`, holdingId: code, accountId: 'stocks', kind: 'buy', shares: 200, price: 10, date: '2020-01-01', createdAt: 1 });
+  }
+}
+
+test('held-stock import adds only selected, still-held codes and preserves existing edits and ledgers', async () => {
+  const { addLinkedDividendStocks, loadDividendWorkbench, saveDividendStock } = await import('../src/services/dividendService.ts');
+  await seedLinkedStocks();
+  const initial = await loadDividendWorkbench();
+  const existing = { ...initial.stocks[0], shareMode: 'manual' as const, manualShares: 345, note: 'retain override' };
+  await saveDividendStock(existing);
+  await db.holdingTxns.add({ id: 'sell-002594', holdingId: '002594', accountId: 'stocks', kind: 'sell', shares: 200, price: 10, date: '2020-01-02', createdAt: 2 });
+  assert.equal(await addLinkedDividendStocks(['600519', '600519', existing.code, '002594', 'missing']), 1);
+  const added = await db.dividendStocks.get('600519');
+  assert.equal(added?.shareMode, 'linked');
+  assert.equal(added?.weightBps, 0);
+  assert.equal(added?.lotSize, 100);
+  assert.equal(await db.dividendStocks.get('688981'), undefined);
+  assert.equal(await db.dividendStocks.get('002594'), undefined);
+  assert.deepEqual(await db.dividendStocks.get(existing.code), existing);
+  assert.equal(await addLinkedDividendStocks(['600519']), 0);
+  assert.equal(await addLinkedDividendStocks(['688981']), 1);
+  assert.equal((await db.dividendStocks.get('688981'))?.lotSize, 200);
+  assert.equal((await loadDividendWorkbench()).positions.get('600519')?.shares, 200);
+  assert.equal(await db.holdings.count(), 3);
+  assert.equal(await db.holdingTxns.count(), 4);
+});
+
+test('stock removal and reallocation commit together, persist on re-entry and preserve the ledger', async () => {
+  const { deleteDividendStock, loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
+  await seedLinkedStocks();
+  const initial = await loadDividendWorkbench();
+  await saveDividendBudget(32000000);
+  await deleteDividendStock('601398');
+  const reloaded = await loadDividendWorkbench();
+  assert.equal(reloaded.stocks.length, initial.stocks.length - 1);
+  assert.equal(reloaded.stocks.some(stock => stock.code === '601398'), false);
+  assert.equal(reloaded.stocks.reduce((sum, stock) => sum + stock.weightBps, 0), 10000);
+  assert.ok(reloaded.stocks.find(stock => stock.code === '600036')!.weightBps > 1000);
+  assert.ok(reloaded.stocks.find(stock => stock.group === 'hidden')!.weightBps > 400);
+  assert.equal(reloaded.stocks.find(stock => stock.code === '600900')!.weightBps, 0);
+  assert.equal(reloaded.budgetMinor, 32000000);
+  assert.equal(await db.holdings.count(), 3);
+  assert.equal(await db.holdingTxns.count(), 3);
+  const failReallocation = () => { throw new Error('simulated reallocation failure'); };
+  db.dividendStocks.hook('updating', failReallocation);
+  try {
+    await assert.rejects(deleteDividendStock('600036'), /simulated reallocation failure/);
+    assert.deepEqual((await loadDividendWorkbench()).stocks, reloaded.stocks);
+  } finally {
+    db.dividendStocks.hook('updating').unsubscribe(failReallocation);
+  }
+});
+
+test('held-stock batch rolls back completely if one selected stock cannot be written', async () => {
+  const { addLinkedDividendStocks, loadDividendWorkbench } = await import('../src/services/dividendService.ts');
+  await seedLinkedStocks();
+  const initial = await loadDividendWorkbench();
+  const failSecond = (_key: unknown, stock: { code: string }) => {
+    if (stock.code === '688981') throw new Error('simulated import failure');
+  };
+  db.dividendStocks.hook('creating', failSecond);
+  try {
+    await assert.rejects(addLinkedDividendStocks(['600519', '688981']), /simulated import failure/);
+    assert.equal(await db.dividendStocks.get('600519'), undefined);
+    assert.equal(await db.dividendStocks.count(), initial.stocks.length);
+  } finally {
+    db.dividendStocks.hook('creating').unsubscribe(failSecond);
+  }
 });
 
 test('market refresh preserves manual edits, keeps dated cache on failure and clears failure markers on recovery', async () => {

@@ -132,6 +132,25 @@ export function linkedDividendPositions(accounts: Account[], holdings: Holding[]
 export function effectiveDps(stock: DividendStock): number | undefined { return stock.manualDpsMicros ?? stock.dividend?.dpsMicros; }
 export function dividendEstimateMinor(shares: number, dpsMicros: number): number { return Math.round(shares * dpsMicros / 10000); }
 export function stockBudgetMinor(budgetMinor: number, weightBps: number): number { return Math.round(budgetMinor * weightBps / 10000); }
+
+/** Reassign a removed allocation proportionally, preserving unallocated budget and zero weights. */
+export function redistributeDividendWeights(stocks: DividendStock[], removedCode: string): DividendStock[] {
+  const removed = stocks.find(stock => stock.code === removedCode);
+  const remaining = stocks.filter(stock => stock.code !== removedCode);
+  const remainingWeight = remaining.reduce((sum, stock) => sum + stock.weightBps, 0);
+  if (!removed?.weightBps || remainingWeight === 0) return remaining;
+  const targetWeight = Math.min(10000, remainingWeight + removed.weightBps);
+  const allocations = remaining.map(stock => {
+    const numerator = stock.weightBps * targetWeight;
+    return { stock, weightBps: Math.floor(numerator / remainingWeight), remainder: numerator % remainingWeight };
+  });
+  const leftover = targetWeight - allocations.reduce((sum, row) => sum + row.weightBps, 0);
+  // Largest remainders keep the stored total exact to 0.01%, with stable code ordering for ties.
+  const ranked = [...allocations].sort((a, b) => b.remainder - a.remainder || a.stock.code.localeCompare(b.stock.code));
+  for (let i = 0; i < leftover; i++) ranked[i].weightBps++;
+  return allocations.map(({ stock, weightBps }) => ({ ...stock, weightBps }));
+}
+
 export function buildGrid(stock: DividendStock, budgetMinor: number, shares: number, side: 'buy' | 'sell') {
   let cumulative = 0;
   let cumulativeBuyShares = 0;
