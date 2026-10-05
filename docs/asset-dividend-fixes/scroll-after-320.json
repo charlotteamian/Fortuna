@@ -1,0 +1,213 @@
+{
+  "mode": "after-320",
+  "results": [
+    {
+      "category": "银行存款",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1661,
+      "scrollTop": 817,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "现金",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1584,
+      "scrollTop": 740,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "股票/ETF",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1751,
+      "scrollTop": 907,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "场外基金",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1664,
+      "scrollTop": 820,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "债券",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1631,
+      "scrollTop": 787,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "理财产品",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1661,
+      "scrollTop": 817,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "贵金属",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 2201,
+      "scrollTop": 1357,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "债权",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1631,
+      "scrollTop": 787,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "房产",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1584,
+      "scrollTop": 740,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "数字货币",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1664,
+      "scrollTop": 820,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "其他资产",
+      "portfolio": true,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1661,
+      "scrollTop": 817,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "信用卡",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 2277,
+      "scrollTop": 1433,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "房贷",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 2111,
+      "scrollTop": 1267,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "车贷",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 2111,
+      "scrollTop": 1267,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "消费贷",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 2137,
+      "scrollTop": 1293,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "其他负债",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 2141,
+      "scrollTop": 1297,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    },
+    {
+      "category": "股票/ETF",
+      "portfolio": false,
+      "viewport": 844,
+      "clientHeight": 844,
+      "scrollHeight": 1614,
+      "scrollTop": 770,
+      "hostHeight": 844,
+      "bodyScrollHeight": 844,
+      "rootHeight": 844
+    }
+  ],
+  "largeFont": {
+    "clientHeight": 844,
+    "scrollHeight": 2642,
+    "scrollTop": 1798
+  },
+  "touchScroll": 385,
+  "settingsRoundTrip": {
+    "hidden": {
+      "hidden": true,
+      "height": 0
+    },
+    "restoredDate": "2026-10-03",
+    "scrollBeforeSettings": 385,
+    "scrollAfterSettings": 385,
+    "restoredLayout": {
+      "clientHeight": 844,
+      "scrollHeight": 2698,
+      "scrollTop": 1854
+    }
+  },
+  "errors": []
+}

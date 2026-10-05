@@ -1,0 +1,26 @@
+{
+  "width": 390,
+  "layout": {
+    "width": 390,
+    "bodyWidth": 390,
+    "rootWidth": 390
+  },
+  "weights": {
+    "600900": 1500,
+    "601939": 2000,
+    "000001": 1666
+  },
+  "errors": [],
+  "checks": [
+    "redistribution preview and exact result",
+    "deletion with/without redistribution",
+    "xlsx template roundtrip",
+    "individual selection and unequal weights",
+    "partial valid-row selection",
+    "existing trading plans preserved",
+    "UTF-8 CSV",
+    "over-budget blocking",
+    "amount privacy",
+    "reload persistence"
+  ]
+}

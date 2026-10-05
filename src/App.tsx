@@ -150,7 +150,7 @@ function App() {
   if (editingAccountId) {
     return (
       <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
-        <div hidden={holdingApiSettingsOpen}>
+        <div className="account-detail-host" hidden={holdingApiSettingsOpen}>
           <Suspense fallback={pageFallback}><AccountDetail accountId={editingAccountId} onBack={closeAccount}
             onOpenApiSettings={() => setHoldingApiSettingsOpen(true)} apiConfigRevision={holdingApiConfigRevision} /></Suspense>
         </div>

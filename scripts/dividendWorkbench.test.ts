@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
+import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
 import { repairPlanReferences } from '../src/lib/planReferences.ts';
 import type { Account, Holding, HoldingTxn, PlanItem, PlanTarget } from '../src/db.ts';
 const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
@@ -65,6 +65,17 @@ test('deleting an allocation redistributes proportionally, including hidden stoc
   assert.equal(stockBudgetMinor(32000000, remaining[0].weightBps), 20000000);
   assert.equal(stocks[0].weightBps, 5000);
   assert.deepEqual(redistributeDividendWeights(stocks, stocks[3].code).map(stock => stock.weightBps), [5000, 3000, 2000]);
+});
+
+test('allocating unused budget keeps relative weights, hidden allocations and exact rounded totals', () => {
+  const stocks = defaultDividendStocks().slice(0, 4).map((stock, i) => ({ ...stock, weightBps: [1, 1, 1, 0][i], group: i === 1 ? 'hidden' as const : stock.group }));
+  const allocated = scaleDividendWeights(stocks);
+  assert.deepEqual(allocated.map(stock => stock.weightBps), [3333, 3334, 3333, 0]);
+  assert.equal(allocated.reduce((sum, stock) => sum + stock.weightBps, 0), 10000);
+  assert.equal(allocated[1].group, 'hidden');
+  assert.equal(stocks[0].weightBps, 1);
+  assert.deepEqual(scaleDividendWeights(stocks.map(stock => ({ ...stock, weightBps: 0 }))).map(stock => stock.weightBps), [0, 0, 0, 0]);
+  assert.throws(() => scaleDividendWeights(stocks, 10001), /INVALID_DIVIDEND_WEIGHT/);
 });
 
 test('redistribution keeps exact basis-point totals, unallocated budget and safe empty/overallocated cases', () => {

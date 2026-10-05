@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../app-context';
-import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, dividendEstimateMinor, effectiveDps, mainlandCode, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
-import { addLinkedDividendStocks, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, refreshDividendTrend, saveDividendBudget, saveDividendStock } from '../services/dividendService';
+import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, dividendEstimateMinor, effectiveDps, mainlandCode, redistributeDividendWeights, scaleDividendWeights, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
+import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, refreshDividendTrend, saveDividendBudget, saveDividendStock } from '../services/dividendService';
+import DividendImportDialog from '../components/DividendImportDialog';
 import './DividendPage.css';
 
 type Workbench = Awaited<ReturnType<typeof loadDividendWorkbench>>;
@@ -15,6 +16,10 @@ export default function DividendPage() {
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [linkedPickerOpen, setLinkedPickerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [allocationOpen, setAllocationOpen] = useState(false);
+  const [allocationResult, setAllocationResult] = useState<{ before: DividendStock[]; after: DividendStock[] } | null>(null);
+  const allocationResultRef = useRef<HTMLElement>(null);
   const [group, setGroup] = useState('all');
   const [search, setSearch] = useState('');
   const [editor, setEditor] = useState<DividendStock | null>(null);
@@ -47,6 +52,7 @@ export default function DividendPage() {
     window.addEventListener('focus', onFocus);
     return () => { alive.current = false; window.removeEventListener('focus', onFocus); };
   }, [load, t]);
+  useEffect(() => { allocationResultRef.current?.scrollIntoView({ block: 'start' }); }, [allocationResult]);
   const money = (minor: number) => amountVisible ? `¥${numeric(minor / 100)}` : '••••';
   const quantity = (shares: number) => amountVisible ? numeric(shares, 4) : '••••';
   const refresh = async (codes: string[]) => {
@@ -69,6 +75,7 @@ export default function DividendPage() {
       const budget = Math.round(amount * 100);
       await saveDividendBudget(budget);
       await load();
+      setAllocationResult(null);
       if (alive.current) { setBudgetInput(String(budget / 100)); setError(''); setMessage(t('div_saved')); }
     } catch { if (alive.current) setError(t('div_save_error')); }
     finally { if (alive.current) setBudgetSaving(false); }
@@ -92,11 +99,20 @@ export default function DividendPage() {
       <p className="div-muted">{t('div_estimate_note')}</p>
       <form className="div-budget" onSubmit={e => { e.preventDefault(); void persistBudget(); }}><label htmlFor="div-budget">{t('div_budget')}</label><div className="div-actions"><input id="div-budget" inputMode="decimal" type={amountVisible ? "number" : "password"} min="0" max="1000000000000" step="0.01" placeholder={t('div_budget_placeholder')} value={budgetInput} disabled={budgetSaving} onChange={e => setBudgetInput(e.target.value)} /><button type="submit" className="btn btn-primary" disabled={budgetSaving}>{t(budgetSaving ? 'loading' : 'save')}</button></div></form>
       <p className={weight > 10000 ? 'div-warning' : 'div-muted'}>{t('div_allocated', { percent: numeric(weight / 100), remaining: money(Math.max(0, data.budgetMinor - stockBudgetMinor(data.budgetMinor, weight))) })}{weight > 10000 ? ` · ${t('div_over_budget')}` : ''}</p>
+      <p className="div-muted">{t('div_allocation_rule')}</p>
+      <button className="btn btn-secondary" disabled={Boolean(progress) || weight <= 0 || weight >= 10000} onClick={() => setAllocationOpen(true)}>{t('div_allocate_unused')}</button>
+      {weight === 0 && <p className="div-muted">{t('div_no_positive_weights')}</p>}
     </section>
     <div className="div-actions div-toolbar"><button className="btn btn-primary" disabled={Boolean(progress)} onClick={() => void refresh(data.stocks.map(s => s.code))}>{progress ? t('div_refresh_progress', progress) : t('div_refresh')}</button>
       <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => { setIsNew(true); setEditor({ code: '', name: '', group: 'watch', weightBps: 0, shareMode: 'linked', manualShares: 0, lotSize: 100 }); }}>{t('div_add')}</button>
-      <button className="btn btn-secondary" disabled={Boolean(progress) || untracked.length === 0} onClick={() => setLinkedPickerOpen(true)}>{t('div_add_linked', { count: untracked.length })}</button></div>
+      <button className="btn btn-secondary" disabled={Boolean(progress) || untracked.length === 0} onClick={() => setLinkedPickerOpen(true)}>{t('div_add_linked', { count: untracked.length })}</button>
+      <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => setImportOpen(true)}>{t('div_import')}</button></div>
     {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
+    {allocationResult && <section className="div-allocation-result" ref={allocationResultRef}>
+      <div className="div-stock-heading"><h2>{t('div_allocation_result')}</h2><button className="btn btn-secondary" onClick={() => setAllocationResult(null)}>{t('close')}</button></div>
+      <p className="div-muted">{t('div_allocation_formula', { before: numeric(allocationResult.before.reduce((sum, s) => sum + s.weightBps, 0) / 100), after: numeric(allocationResult.after.reduce((sum, s) => sum + s.weightBps, 0) / 100) })}</p>
+      <details className="div-details"><summary>{t('div_allocation_changes')}</summary><AllocationPreview before={allocationResult.before} after={allocationResult.after} budgetMinor={data.budgetMinor} amountVisible={amountVisible} /></details>
+    </section>}
     <details className="div-method"><summary>{t('div_method')}</summary><p>{t('div_template_note')}</p><p>{t('div_link_note')}</p><p>{t('div_grid_note')}</p><p>{t('div_source_note')}</p></details>
     <input className="div-search" aria-label={t('div_search')} placeholder={t('div_search')} value={search} onChange={e => setSearch(e.target.value)} />
     <div className="div-filters" aria-label={t('div_group')}>{['all', 'held', 'core', 'watch', 'hidden'].map(g => <button key={g} className={group === g ? 'selected' : ''} aria-pressed={group === g} onClick={() => setGroup(g)}>{t(`div_group_${g}`)}</button>)}</div>
@@ -142,9 +158,20 @@ export default function DividendPage() {
       </article>;
     })}</div>
     {displayed.length === 0 && <p className="div-notice">{t('div_empty')}</p>}
-    {editor && <StockEditor initial={editor} isNew={isNew} existingCodes={data.stocks.map(s => s.code)} onClose={() => setEditor(null)} onSaved={async () => { setEditor(null); await load(); }} />}
+    {editor && <StockEditor initial={editor} isNew={isNew} stocks={data.stocks} budgetMinor={data.budgetMinor} amountVisible={amountVisible} onClose={() => setEditor(null)} onSaved={async action => {
+      const before = data.stocks.filter(stock => stock.code !== editor.code);
+      setEditor(null); const next = await load();
+      setAllocationResult(action === 'redistributed' && before.some(stock => stock.weightBps > 0) ? { before, after: next.stocks } : null);
+      setError(''); setMessage(t(action === 'redistributed' ? 'div_deleted_redistributed' : action === 'deleted' ? 'div_deleted_unallocated' : 'div_saved'));
+    }} />}
+    {importOpen && <DividendImportDialog stocks={data.stocks} budgetMinor={data.budgetMinor} amountVisible={amountVisible} onClose={() => setImportOpen(false)} onSaved={async result => {
+      setImportOpen(false); await load(); setAllocationResult(null); setError(''); setMessage(t('div_import_done', result));
+    }} />}
+    {allocationOpen && <AllocationDialog stocks={data.stocks} budgetMinor={data.budgetMinor} amountVisible={amountVisible} onClose={() => setAllocationOpen(false)} onSaved={async () => {
+      setAllocationOpen(false); const next = await load(); setAllocationResult({ before: data.stocks, after: next.stocks }); setError(''); setMessage(t('div_allocation_done'));
+    }} />}
     {linkedPickerOpen && <LinkedStockPicker positions={untracked} amountVisible={amountVisible} onClose={() => setLinkedPickerOpen(false)} onSaved={async count => {
-      setLinkedPickerOpen(false); await load(); setMessage(t('div_linked_added', { count })); setError('');
+      setLinkedPickerOpen(false); await load(); setAllocationResult(null); setMessage(t('div_linked_added', { count })); setError('');
     }} />}
   </div>;
 }
@@ -181,20 +208,25 @@ function LinkedStockPicker({ positions, amountVisible, onClose, onSaved }: { pos
   </form></dialog>;
 }
 
-function StockEditor({ initial, isNew, existingCodes, onClose, onSaved }: { initial: DividendStock; isNew: boolean; existingCodes: string[]; onClose: () => void; onSaved: () => Promise<void> }) {
+function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClose, onSaved }: { initial: DividendStock; isNew: boolean; stocks: DividendStock[]; budgetMinor: number; amountVisible: boolean; onClose: () => void; onSaved: (action?: 'deleted' | 'redistributed') => Promise<void> }) {
   const { t } = useTranslation();
   const dialog = useRef<HTMLDialogElement>(null);
+  const deletePreview = useRef<HTMLElement>(null);
   const [stock, setStock] = useState(initial);
   const [dps, setDps] = useState(initial.manualDpsMicros === undefined ? '' : String(initial.manualDpsMicros / 1e6));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [redistribute, setRedistribute] = useState(true);
+  const afterDelete = redistribute ? redistributeDividendWeights(stocks, initial.code) : stocks.filter(s => s.code !== initial.code);
   useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => { if (confirmDelete) deletePreview.current?.scrollIntoView({ block: 'start' }); }, [confirmDelete]);
   const patch = (value: Partial<DividendStock>) => setStock(s => ({ ...s, ...value }));
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = mainlandCode(stock.code);
-    if (!code || (isNew && existingCodes.includes(code)) || !stock.name.trim() || (dps !== '' && (!Number.isFinite(Number(dps)) || Number(dps) < 0))) { setError(t('div_invalid_stock')); return; }
+    if (saving) return;
+    if (!code || (isNew && stocks.some(s => s.code === code)) || !stock.name.trim() || (dps !== '' && (!Number.isFinite(Number(dps)) || Number(dps) < 0))) { setError(t('div_invalid_stock')); return; }
     setSaving(true);
     try {
       await saveDividendStock({ ...stock, code, name: stock.name.trim(), manualDpsMicros: dps === '' ? undefined : Math.round(Number(dps) * 1e6) });
@@ -203,12 +235,13 @@ function StockEditor({ initial, isNew, existingCodes, onClose, onSaved }: { init
     finally { setSaving(false); }
   };
   const remove = async () => {
+    if (saving) return;
     setSaving(true);
-    try { await deleteDividendStock(initial.code); await onSaved(); } catch { setError(t('div_save_error')); }
+    try { await deleteDividendStock(initial.code, redistribute); await onSaved(redistribute ? 'redistributed' : 'deleted'); } catch { setError(t('div_save_error')); }
     finally { setSaving(false); }
   };
-  return <dialog className="div-dialog" ref={dialog} onCancel={onClose} aria-labelledby="div-editor-title"><form onSubmit={e => void save(e)}>
-    <div className="div-stock-heading"><h2 id="div-editor-title">{t(isNew ? 'div_add' : 'div_edit')}</h2><button type="button" className="btn btn-secondary" onClick={onClose}>{t('close')}</button></div>
+  return <dialog className="div-dialog" ref={dialog} onCancel={e => { if (saving) e.preventDefault(); else onClose(); }} aria-labelledby="div-editor-title"><form onSubmit={e => void save(e)}>
+    <div className="div-stock-heading"><h2 id="div-editor-title">{t(isNew ? 'div_add' : 'div_edit')}</h2><button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('close')}</button></div>
     <div className="div-form-fields">
       <label>{t('div_code')}<input required disabled={!isNew} value={stock.code} onChange={e => patch({ code: e.target.value, ...(isNew ? { lotSize: e.target.value.replace(/\D/g, '').startsWith('68') ? 200 : 100 } : {}) })} /></label>
       <label>{t('name')}<input required maxLength={80} value={stock.name} onChange={e => patch({ name: e.target.value })} /></label>
@@ -231,8 +264,49 @@ function StockEditor({ initial, isNew, existingCodes, onClose, onSaved }: { init
       </tr>)}</tbody></table></div></div>;
     })}<button type="button" className="btn btn-secondary" onClick={() => patch({ buyLevels: undefined, sellLevels: undefined })}>{t('div_reset_grid')}</button></details>
     {error && <p className="div-warning" role="alert">{error}</p>}
-    <div className="div-actions"><button type="submit" className="btn btn-primary" disabled={saving}>{t('save')}</button><button type="button" className="btn btn-secondary" onClick={onClose}>{t('cancel')}</button>
+    <div className="div-actions"><button type="submit" className="btn btn-primary" disabled={saving}>{t('save')}</button><button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('cancel')}</button>
       {!isNew && <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => setConfirmDelete(true)}>{t('delete')}</button>}</div>
-    {confirmDelete && <div className="div-warning"><p>{t('div_delete_confirm')}</p><button type="button" className="btn btn-danger" disabled={saving} onClick={() => void remove()}>{t('delete')}</button></div>}
+    {confirmDelete && <section className="div-delete-preview" ref={deletePreview}><p className="div-warning">{t('div_delete_confirm', { name: initial.name })}</p>
+      <label className="div-linked-all"><input type="checkbox" checked={redistribute} disabled={saving} onChange={e => setRedistribute(e.target.checked)} />{t('div_delete_redistribute')}</label>
+      <p className="div-muted">{t(redistribute ? 'div_redistribute_note' : 'div_delete_keep_unused')}</p>
+      <AllocationPreview before={stocks.filter(s => s.code !== initial.code)} after={afterDelete} budgetMinor={budgetMinor} amountVisible={amountVisible} />
+      <div className="div-actions"><button type="button" className="btn btn-danger" disabled={saving} onClick={() => void remove()}>{t('div_delete_apply')}</button><button type="button" className="btn btn-secondary" disabled={saving} onClick={() => setConfirmDelete(false)}>{t('cancel')}</button></div>
+    </section>}
   </form></dialog>;
+}
+
+function AllocationPreview({ before, after, budgetMinor, amountVisible }: { before: DividendStock[]; after: DividendStock[]; budgetMinor: number; amountVisible: boolean }) {
+  const { t } = useTranslation();
+  const oldTotal = before.reduce((sum, stock) => sum + stock.weightBps, 0);
+  const newTotal = after.reduce((sum, stock) => sum + stock.weightBps, 0);
+  return <div className="div-allocation-preview">
+    <p className="div-muted">{oldTotal > 0 && t('div_allocation_formula', { before: numeric(oldTotal / 100), after: numeric(newTotal / 100) })}</p>
+    <p className="div-muted">{t('div_allocation_remaining', { percent: numeric(Math.max(0, 10000 - newTotal) / 100), amount: amountVisible ? `¥${numeric(Math.max(0, budgetMinor - stockBudgetMinor(budgetMinor, newTotal)) / 100)}` : '••••' })}</p>
+    <div className="div-table-scroll"><table><caption>{t('div_allocation_preview')}</caption><thead><tr><th>{t('name')}</th><th>{t('div_allocation_before')}</th><th>{t('div_allocation_after')}</th><th>{t('div_stock_budget')}</th></tr></thead><tbody>{after.map(stock => <tr key={stock.code}>
+      <td>{stock.name}<small className="div-preview-code">{stock.code}{stock.group === 'hidden' ? ` · ${t('div_group_hidden')}` : ''}</small></td>
+      <td>{numeric((before.find(s => s.code === stock.code)?.weightBps ?? 0) / 100)}%</td><td>{numeric(stock.weightBps / 100)}%</td><td>{amountVisible ? `¥${numeric(stockBudgetMinor(budgetMinor, stock.weightBps) / 100)}` : '••••'}</td>
+    </tr>)}</tbody></table></div>
+  </div>;
+}
+
+function AllocationDialog({ stocks, budgetMinor, amountVisible, onClose, onSaved }: { stocks: DividendStock[]; budgetMinor: number; amountVisible: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  const apply = async () => {
+    if (saving) return;
+    setSaving(true);
+    try { await allocateDividendBudget(); await onSaved(); }
+    catch { setError(t('div_save_error')); }
+    finally { setSaving(false); }
+  };
+  return <dialog className="div-dialog" ref={dialog} aria-labelledby="div-allocation-title" onCancel={e => { if (saving) e.preventDefault(); else onClose(); }}>
+    <div className="div-stock-heading"><h2 id="div-allocation-title">{t('div_allocate_unused')}</h2><button className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('close')}</button></div>
+    <p className="div-muted">{t('div_allocate_unused_note')}</p>
+    <AllocationPreview before={stocks} after={scaleDividendWeights(stocks)} budgetMinor={budgetMinor} amountVisible={amountVisible} />
+    {error && <p role="alert" className="div-warning">{error}</p>}
+    <div className="div-actions"><button className="btn btn-primary" disabled={saving} onClick={() => void apply()}>{t('div_allocation_apply')}</button><button className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('cancel')}</button></div>
+  </dialog>;
 }

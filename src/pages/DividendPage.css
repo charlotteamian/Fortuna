@@ -57,4 +57,15 @@
 .div-linked-option > span { display: flex; flex-direction: column; gap: .35rem; min-width: 0; overflow-wrap: anywhere; }
 .div-linked-option small { font-weight: 400; color: var(--text-secondary); font-size: .75rem; }
 .div-dialog .div-linked-all input, .div-dialog .div-linked-option input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--asset-color); }
+.div-delete-preview { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.div-allocation-preview { margin: .75rem 0 1rem; }
+.div-allocation-result { margin: 1rem 0; padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.div-allocation-preview table { table-layout: fixed; }
+.div-allocation-preview th:first-child { width: 30%; }
+.div-allocation-preview th:nth-child(2), .div-allocation-preview th:nth-child(3) { width: 18%; }
+.div-allocation-preview td { overflow-wrap: anywhere; }
+.div-allocation-preview caption { text-align: left; font-weight: 600; padding: .5rem 0; }
+.div-allocation-preview th:first-child, .div-allocation-preview td:first-child { text-align: left; }
+.div-preview-code { display: block; font-size: .65rem; color: var(--text-secondary); }
+.div-import-paste { margin: 1rem 0 .6rem; }
 @media (max-width: 360px) { .div-form-fields { grid-template-columns: 1fr; } .div-stock { padding: .8rem; } }

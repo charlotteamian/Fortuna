@@ -140,7 +140,15 @@ export function redistributeDividendWeights(stocks: DividendStock[], removedCode
   const remainingWeight = remaining.reduce((sum, stock) => sum + stock.weightBps, 0);
   if (!removed?.weightBps || remainingWeight === 0) return remaining;
   const targetWeight = Math.min(10000, remainingWeight + removed.weightBps);
-  const allocations = remaining.map(stock => {
+  return scaleDividendWeights(remaining, targetWeight);
+}
+
+/** Allocate an explicit total in the existing proportions, keeping zero weights at zero. */
+export function scaleDividendWeights(stocks: DividendStock[], targetWeight = 10000): DividendStock[] {
+  if (!Number.isSafeInteger(targetWeight) || targetWeight < 0 || targetWeight > 10000) throw new Error('INVALID_DIVIDEND_WEIGHT');
+  const remainingWeight = stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
+  if (remainingWeight === 0) return stocks.map(stock => ({ ...stock }));
+  const allocations = stocks.map(stock => {
     const numerator = stock.weightBps * targetWeight;
     return { stock, weightBps: Math.floor(numerator / remainingWeight), remainder: numerator % remainingWeight };
   });

@@ -78,8 +78,10 @@ html, body, #root {
 
 /* ---- App Layout ---- */
 .app { display: flex; flex-direction: column; height: 100%; }
+/* Keep the mounted account detail bounded when its API settings view is opened. */
+.account-detail-host { height: 100%; min-height: 0; }
 .app-content {
-  flex: 1; overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   padding: calc(env(safe-area-inset-top, 24px) + 1.5rem) clamp(0.75rem, 4vw, 1.25rem) calc(7.5rem + env(safe-area-inset-bottom, 0px));
   -webkit-overflow-scrolling: touch;
 }
