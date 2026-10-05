@@ -1,6 +1,6 @@
 # Play Console App Content Answers
 
-Last verified against the Fortuna source: 2026-07-28.
+Last reviewed against the Fortuna source: 2026-10-05.
 
 Play Console wording changes over time. Re-check the released AAB and the current form before submitting. Do not reuse the earlier `No data collected/shared` answer: Fortuna now sends user-entered market identifiers to independent quote services, including during automatic refreshes.
 
@@ -34,7 +34,7 @@ Google defines collection as transmitting user data off the device, including tr
 
 ### Data that stays on the device
 
-Account names, institutions, balances, quantities, transactions, notes, allocation plans, settings, and the full local database are not sent to a developer-operated server. Do not declare these as collected merely because they are stored in IndexedDB.
+Account names, institutions, balances, quantities, transactions, notes, allocation plans, settings, and the full local database are not sent to a developer-operated server. Local IndexedDB storage alone is not off-device collection. However, financial details visible in a user-selected recognition screenshot can be sent to the user's configured provider; do not describe all financial information as staying on the device.
 
 ### Network requests that leave the device
 
@@ -43,13 +43,23 @@ Fortuna can contact the following HTTPS services automatically or after a manual
 - `api.frankfurter.dev`: currency codes;
 - `api.gold-api.com`: metal and currency codes;
 - `qt.gtimg.cn`: equity and exchange-traded security codes;
+- `web.ifzq.gtimg.cn`: equity codes for adjusted daily price histories;
 - `fundgz.1234567.com.cn`: fund codes;
+- `datacenter.eastmoney.com`: equity codes for public dividend histories;
 - `hq.sinajs.cn`: futures codes; and
 - `cdn.cboe.com`: US option-underlying or contract lookup identifiers.
 
 The services also receive ordinary connection metadata such as the device's IP address and HTTP request headers. Fortuna does not intentionally include account labels, balances, quantities, transactions, or notes in these requests.
 
-### Conservative form answers for the current build
+### Optional screenshot recognition: submission audit required
+
+After the user configures a domestic or other compatible vision API and selects a screenshot for recognition, the app sends that complete image, extraction instructions, and API authentication directly to the configured provider. Account labels, balances, security names/codes, quantities, prices, costs, transaction dates, and execution references visible in the screenshot can leave the device. Returned holdings and completed trades are reviewed before they are written to the selected stock/ETF account. The app does not attach the full local database, operate a recognition backend, or upload screenshots automatically.
+
+This feature is optional; manual entry and Excel holdings imports work locally without a recognition API. API configuration and the key are kept in a separate local IndexedDB database, excluded from ledger backups and automatic asset snapshots. Provider billing, retention, privacy, and deletion follow the service chosen by the user.
+
+Before a Play submission, audit the screenshot/image and financial content sent, any visible identifiers, API-account linkage, connection metadata, each supported provider's retention, and the actual released form/build. Do not assume a user-triggered upload is exempt from collection or select ephemeral processing without evidence. A sharing exception depends on the applicable disclosure and user-action conditions. This section records the changed data flow, not final required questionnaire selections; see [Google Play's current guidance](https://support.google.com/googleplay/android-developer/answer/10787469). Publishing the GitHub release does not submit these store answers.
+
+### Existing conservative quote-lookup answers; re-audit with recognition before store submission
 
 - Does the app collect or share any required user data types? `Yes`
 - Data type: `Financial info → Other financial info`
@@ -62,7 +72,7 @@ The services also receive ordinary connection metadata such as the device's IP a
 - Approximate location:
   - Fortuna does not request Android location permission or send a location field.
   - Confirm each provider's current handling of IP addresses. If a provider retains or uses the IP to infer location, declare `Location → Approximate location` for app functionality. Do not guess or claim the provider discards it without evidence.
-- Is all collected data encrypted in transit? `Yes` for the app's current network endpoints; they use HTTPS.
+- Is all collected data encrypted in transit? Public data/update endpoints and remote recognition API addresses use HTTPS. The recognition configuration also allows HTTP loopback addresses for local testing. Recheck the submitted build and applicable form before selecting an encryption answer; do not assume every configurable request is HTTPS.
 - Data deletion request mechanism:
   - Users can delete local records, clear app storage, or uninstall without making a request.
   - Fortuna has no server account or developer-held asset database.
@@ -96,7 +106,7 @@ Fortuna is a local-first personal asset and liability record-keeping tool. It do
 
 Current manifest permissions:
 
-- `INTERNET`: retrieves public exchange rates, precious-metal prices, and supported market quotes.
+- `INTERNET`: retrieves public exchange rates, precious-metal prices, and supported market quotes; also sends a screenshot to the user's configured vision API only when the user selects it for recognition.
 - `READ_CALENDAR` and `WRITE_CALENDAR`: the implemented flow opens a system prompt only after the user chooses to add a repayment reminder. The app does not scan, upload, or send calendar data to a developer server.
 
 Suggested explanation:

@@ -12,6 +12,7 @@ import {
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { getHoldingContractMultiplier } from '../lib/usOption';
 import { formatLocalDate } from '../lib/localDate';
+import { normalizeHoldingIdentity } from '../lib/holdingImportIdentity';
 
 export { computeBalanceHoldingPosition, computeHoldingPnl, computeHoldingPosition } from '../lib/holdingPosition';
 export type { HoldingPnl, HoldingPosition } from '../lib/holdingPosition';
@@ -130,6 +131,346 @@ export async function updatePrices(accountId: string, prices: Record<string, num
     if (price > 0) await db.holdings.update(holdingId, { lastPrice: price, priceDate: date });
   }
   await syncPortfolioSnapshot(accountId);
+}
+
+export interface HoldingPositionUpdate {
+  holdingId: string;
+  shares: number;
+  price: number;
+  /** Average buy cost per share, in the account currency; omitted retains the current average. */
+  costPrice?: number;
+}
+
+export interface HoldingPositionImportRow {
+  name: string;
+  symbol: string;
+  market?: string;
+  shares: number;
+  price: number;
+  costPrice?: number;
+}
+
+export interface HoldingTradeImportRow {
+  name?: string;
+  symbol: string;
+  market?: string;
+  date: string;
+  kind: 'buy' | 'sell';
+  shares: number;
+  price: number;
+  brokerRef?: string;
+}
+
+export interface HoldingScreenshotImport {
+  holdings: HoldingPositionImportRow[];
+  trades: HoldingTradeImportRow[];
+}
+
+export interface HoldingScreenshotImportResult {
+  created: number;
+  updated: number;
+  insertedTrades: number;
+  skippedTrades: number;
+}
+
+function validatePositionValues(row: Pick<HoldingPositionUpdate, 'shares' | 'price' | 'costPrice'>): void {
+  if (!Number.isFinite(row.shares) || row.shares < 0
+    || !Number.isFinite(row.price) || row.price < 0 || (row.shares > 0 && row.price === 0)
+    || (row.costPrice !== undefined && (!Number.isFinite(row.costPrice) || row.costPrice < 0))
+    || !Number.isFinite(row.shares * row.price)
+    || (row.costPrice !== undefined && !Number.isFinite(row.shares * row.costPrice))) {
+    throw new Error('HOLDING_POSITION_VALUES_INVALID');
+  }
+}
+
+function validatePositionDate(date: string): void {
+  const parsed = new Date(`${date}T12:00:00`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime())
+    || formatLocalDate(parsed) !== date || date > formatLocalDate()) {
+    throw new Error('HOLDING_POSITION_DATE_INVALID');
+  }
+}
+
+async function requireStockPortfolio(accountId: string) {
+  const account = await db.accounts.get(accountId);
+  if (!account || !account.portfolio || account.type !== 'asset' || account.archivedAt
+    || !['股票/ETF', '股票'].includes(account.category)) {
+    throw new Error('HOLDING_POSITION_ACCOUNT_INVALID');
+  }
+  return account;
+}
+
+function requireSupportedHolding(holding: Holding, allowOptions = false): void {
+  if (holding.mode === 'balance' || (!allowOptions && holding.instrumentType === 'us_option')) {
+    throw new Error('HOLDING_POSITION_HOLDING_UNSUPPORTED');
+  }
+}
+
+function requireCurrentPositionDate(holding: Holding, txns: HoldingTxn[], date: string): void {
+  if ((holding.priceDate && holding.priceDate > date) || txns.some(txn => txn.date > date)) {
+    throw new Error('HOLDING_POSITION_DATE_STALE');
+  }
+}
+
+async function applyPositionUpdate(holding: Holding, txns: HoldingTxn[], update: HoldingPositionUpdate, date: string): Promise<boolean> {
+  const multiplier = getHoldingContractMultiplier(holding);
+  const position = computeHoldingPosition(txns, multiplier);
+  if (update.shares > 0 && position.shares === 0 && update.costPrice === undefined) {
+    throw new Error('HOLDING_POSITION_COST_REQUIRED');
+  }
+  const costPrice = update.costPrice ?? position.avgCost;
+  if (!Number.isFinite(update.shares * update.price * multiplier)
+    || !Number.isFinite(update.shares * costPrice * multiplier)) throw new Error('HOLDING_POSITION_VALUES_INVALID');
+  const quantityChanged = Math.abs(position.shares - update.shares) > 1e-9;
+  const costChanged = update.shares > 0 && Math.abs(position.avgCost - costPrice) > 1e-9;
+  if (quantityChanged || costChanged) {
+    await db.holdingTxns.add({
+      id: uuidv4(), accountId: holding.accountId, holdingId: holding.id,
+      date, kind: 'buy', shares: 0, price: 0,
+      quantitySnapshot: update.shares,
+      costPriceSnapshot: costPrice,
+      createdAt: Math.max(Date.now(), ...txns.map(txn => txn.createdAt)) + 1,
+    });
+  }
+  const priceChanged = holding.lastPrice !== update.price || holding.priceDate !== date;
+  if (priceChanged) await db.holdings.update(holding.id, { lastPrice: update.price, priceDate: date });
+  return quantityChanged || costChanged || priceChanged;
+}
+
+/** Correct current quantities and quotes together, without manufacturing trades or changing cash. */
+export async function updateHoldingPositions(accountId: string, updates: HoldingPositionUpdate[], date: string): Promise<void> {
+  validatePositionDate(date);
+  if (!updates.length) throw new Error('HOLDING_POSITION_EMPTY');
+  if (new Set(updates.map(update => update.holdingId)).size !== updates.length) throw new Error('HOLDING_POSITION_DUPLICATE');
+  updates.forEach(validatePositionValues);
+  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+    await requireStockPortfolio(accountId);
+    const prepared = await Promise.all(updates.map(async update => {
+      const holding = await db.holdings.get(update.holdingId);
+      if (!holding || holding.accountId !== accountId) throw new Error('HOLDING_POSITION_HOLDING_SCOPE');
+      requireSupportedHolding(holding, true);
+      const txns = await db.holdingTxns.where('holdingId').equals(holding.id).toArray();
+      if (txns.some(txn => txn.accountId !== accountId)) throw new Error('HOLDING_POSITION_HOLDING_SCOPE');
+      requireCurrentPositionDate(holding, txns, date);
+      return { holding, txns, update };
+    }));
+    for (const { holding, txns, update } of prepared) await applyPositionUpdate(holding, txns, update, date);
+    await syncPortfolioSnapshot(accountId, false);
+  });
+  requestPortableSnapshot('holding-positions-updated');
+}
+
+/** Merge only this stock account by code + market. Omitted holdings and other assets stay intact. */
+export async function importHoldingPositions(accountId: string, rows: HoldingPositionImportRow[], date: string): Promise<{ created: number; updated: number }> {
+  const { created, updated } = await importHoldingScreenshot(accountId, { holdings: rows, trades: [] }, date);
+  return { created, updated };
+}
+
+function tradeFingerprint(trade: Pick<HoldingTxn, 'date' | 'kind' | 'shares' | 'price'>): string {
+  return JSON.stringify([trade.date, trade.kind, trade.shares, trade.price]);
+}
+
+function validateTradeTimeline(txns: HoldingTxn[]): void {
+  let shares = 0;
+  for (const txn of [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)) {
+    if (txn.quantitySnapshot !== undefined) shares = txn.quantitySnapshot;
+    else if (txn.kind === 'buy') shares += txn.shares;
+    else {
+      if (txn.shares > shares + 1e-9) throw new Error('HOLDING_POSITION_TRADE_UNDERFLOW');
+      shares = Math.max(0, shares - txn.shares);
+    }
+  }
+}
+
+/** Import confirmed screenshot rows atomically; actual dated fills precede the final position reconciliation. */
+export async function importHoldingScreenshot(accountId: string, input: HoldingScreenshotImport, date: string): Promise<HoldingScreenshotImportResult> {
+  validatePositionDate(date);
+  if (!input.holdings.length && !input.trades.length) throw new Error('HOLDING_POSITION_EMPTY');
+  input.holdings.forEach(row => {
+    validatePositionValues(row);
+  });
+  input.trades.forEach(trade => {
+    validatePositionDate(trade.date);
+    validatePositionValues(trade);
+    if (!['buy', 'sell'].includes(trade.kind) || trade.shares <= 0 || trade.price <= 0
+      || (trade.brokerRef !== undefined && !trade.brokerRef.trim())) throw new Error('HOLDING_POSITION_VALUES_INVALID');
+  });
+  const result = await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+    const account = await requireStockPortfolio(accountId);
+    const holdings = await getHoldings(accountId);
+    const byIdentity = new Map<string, Holding[]>();
+    for (const holding of holdings) {
+      if (!holding.symbol?.trim()) continue;
+      try {
+        const { key } = normalizeHoldingIdentity(holding.symbol, holding.market, account.currency);
+        byIdentity.set(key, [...(byIdentity.get(key) ?? []), holding]);
+      } catch {
+        // Legacy holdings with an unsupported code remain untouched by this importer.
+      }
+    }
+    let sortOrder = Math.max(-1, ...holdings.map(holding => holding.sortOrder)) + 1;
+    const prepared = new Map<string, {
+      holding: Holding;
+      isNew: boolean;
+      txns: HoldingTxn[];
+      snapshot?: HoldingPositionImportRow;
+      trades: HoldingTradeImportRow[];
+      added: HoldingTxn[];
+      adoptedRefs: { txnId: string; brokerRef: string }[];
+    }>();
+    async function prepare(row: { name?: string; symbol: string; market?: string }) {
+      const identity = normalizeHoldingIdentity(row.symbol, row.market, account.currency);
+      const cached = prepared.get(identity.key);
+      if (cached) return cached;
+      const matches = byIdentity.get(identity.key) ?? [];
+      if (matches.length > 1) throw new Error('HOLDING_POSITION_AMBIGUOUS_MATCH');
+      let holding = matches[0];
+      const isNew = !holding;
+      if (isNew) {
+        if (!row.name?.trim()) throw new Error('HOLDING_POSITION_VALUES_INVALID');
+        holding = {
+          id: uuidv4(), accountId, name: row.name.trim(),
+          symbol: identity.symbol, market: identity.market, mode: 'unit',
+          lastPrice: 0, sortOrder: sortOrder++, createdAt: Date.now(),
+        };
+      }
+      requireSupportedHolding(holding);
+      const txns = isNew ? [] : await db.holdingTxns.where('holdingId').equals(holding.id).toArray();
+      if (txns.some(txn => txn.accountId !== accountId)) throw new Error('HOLDING_POSITION_HOLDING_SCOPE');
+      const item = { holding, isNew, txns, trades: [] as HoldingTradeImportRow[], added: [] as HoldingTxn[], adoptedRefs: [] as { txnId: string; brokerRef: string }[], snapshot: undefined as HoldingPositionImportRow | undefined };
+      prepared.set(identity.key, item);
+      return item;
+    }
+    for (const row of input.holdings) {
+      const item = await prepare(row);
+      if (item.snapshot) throw new Error('HOLDING_POSITION_DUPLICATE');
+      if (item.isNew && row.shares > 0 && row.costPrice === undefined) throw new Error('HOLDING_POSITION_COST_REQUIRED');
+      item.snapshot = row;
+    }
+    for (const trade of input.trades) (await prepare(trade)).trades.push(trade);
+
+    let insertedTrades = 0, skippedTrades = 0;
+    for (const item of prepared.values()) {
+      const counts = new Map<string, number>();
+      const anonymousCounts = new Map<string, number>();
+      const anonymousTxns = new Map<string, HoldingTxn[]>();
+      const refs = new Map<string, string>();
+      const refTxns = new Map<string, HoldingTxn>();
+      const fingerprintTxns = new Map<string, HoldingTxn[]>();
+      for (const txn of item.txns) {
+        if (txn.quantitySnapshot !== undefined || txn.balanceSnapshot !== undefined) continue;
+        const fingerprint = tradeFingerprint(txn);
+        counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
+        fingerprintTxns.set(fingerprint, [...(fingerprintTxns.get(fingerprint) ?? []), txn]);
+        if (txn.brokerRef) {
+          refs.set(txn.brokerRef, fingerprint);
+          refTxns.set(txn.brokerRef, txn);
+        }
+        else {
+          anonymousCounts.set(fingerprint, (anonymousCounts.get(fingerprint) ?? 0) + 1);
+          anonymousTxns.set(fingerprint, [...(anonymousTxns.get(fingerprint) ?? []), txn]);
+        }
+      }
+      const occurrences = new Map<string, number>();
+      const anonymousOccurrences = new Map<string, number>();
+      const incomingRefs = new Map<string, string>();
+      const newFillDates = new Set<string>();
+      const matchedByDate = new Map<string, Set<string>>();
+      const matchExisting = (txn: HoldingTxn) => {
+        if (newFillDates.has(txn.date)) throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+        const matched = matchedByDate.get(txn.date) ?? new Set<string>();
+        matched.add(txn.id);
+        matchedByDate.set(txn.date, matched);
+      };
+      let createdAt = Math.max(Date.now(), ...item.txns.map(txn => txn.createdAt));
+      for (const trade of [...item.trades].sort((a, b) => a.date.localeCompare(b.date))) {
+        const fingerprint = tradeFingerprint(trade);
+        const brokerRef = trade.brokerRef?.trim();
+        if (brokerRef && (refs.has(brokerRef) || incomingRefs.has(brokerRef))) {
+          if ((refs.get(brokerRef) ?? incomingRefs.get(brokerRef)) !== fingerprint) throw new Error('HOLDING_POSITION_TRADE_REFERENCE_CONFLICT');
+          if (incomingRefs.has(brokerRef)) {
+            const matched = refTxns.get(brokerRef);
+            if (matched) matchExisting(matched);
+            skippedTrades++;
+            continue;
+          }
+        }
+        if (brokerRef) incomingRefs.set(brokerRef, fingerprint);
+        if (brokerRef && refs.has(brokerRef)) {
+          matchExisting(refTxns.get(brokerRef)!);
+          skippedTrades++;
+          continue;
+        }
+        const sourceOccurrences = brokerRef ? anonymousOccurrences : occurrences;
+        const occurrence = (sourceOccurrences.get(fingerprint) ?? 0) + 1;
+        sourceOccurrences.set(fingerprint, occurrence);
+        const availableMatches = brokerRef ? anonymousCounts.get(fingerprint) ?? 0 : counts.get(fingerprint) ?? 0;
+        if (occurrence <= availableMatches) {
+          const matched = (brokerRef ? anonymousTxns : fingerprintTxns).get(fingerprint)![occurrence - 1];
+          matchExisting(matched);
+          if (brokerRef) {
+            // Preserve the existing fill and remember its newly recognized reference,
+            // so a later distinct reference cannot reuse the same anonymous match.
+            item.adoptedRefs.push({ txnId: matched.id, brokerRef });
+            refs.set(brokerRef, fingerprint);
+            refTxns.set(brokerRef, matched);
+          }
+          skippedTrades++;
+          continue;
+        }
+        newFillDates.add(trade.date);
+        item.added.push({
+          id: uuidv4(), accountId, holdingId: item.holding.id,
+          date: trade.date, kind: trade.kind, shares: trade.shares, price: trade.price,
+          ...(brokerRef ? { brokerRef } : {}), createdAt: ++createdAt,
+        });
+        insertedTrades++;
+      }
+      for (const txn of item.txns) {
+        if (!newFillDates.has(txn.date)) continue;
+        if (txn.quantitySnapshot !== undefined) {
+          if (!item.snapshot || item.snapshot.costPrice === undefined
+            || item.added.some(trade => trade.date === txn.date && trade.kind === 'sell')) {
+            throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+          }
+          continue;
+        }
+        if (txn.balanceSnapshot !== undefined) continue;
+        if (!matchedByDate.get(txn.date)?.has(txn.id)) throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+      }
+      const combined = [...item.txns, ...item.added];
+      if (item.added.length) validateTradeTimeline(combined);
+      if (item.snapshot) requireCurrentPositionDate(item.holding, combined, date);
+    }
+
+    let created = 0, updated = 0;
+    for (const item of prepared.values()) {
+      const holding = item.holding;
+      if (item.isNew) {
+        const latestTrade = [...item.trades].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+        holding.lastPrice = item.snapshot?.price ?? latestTrade?.price ?? 0;
+        holding.priceDate = item.snapshot ? date : latestTrade?.date;
+        await db.holdings.add(holding);
+        created++;
+      }
+      for (const { txnId, brokerRef } of item.adoptedRefs) await db.holdingTxns.update(txnId, { brokerRef });
+      if (item.added.length) await db.holdingTxns.bulkAdd(item.added);
+      let changed = item.added.length > 0 || item.adoptedRefs.length > 0;
+      if (item.snapshot) {
+        changed = await applyPositionUpdate(holding, [...item.txns, ...item.added], { ...item.snapshot, holdingId: holding.id }, date) || changed;
+      } else if (!item.isNew) {
+        const latestTrade = item.added.at(-1);
+        if (latestTrade && (!holding.priceDate || latestTrade.date >= holding.priceDate)) {
+          await db.holdings.update(holding.id, { lastPrice: latestTrade.price, priceDate: latestTrade.date });
+        }
+      }
+      if (!item.isNew && changed) updated++;
+    }
+    await syncPortfolioSnapshot(accountId, false);
+    return { created, updated, insertedTrades, skippedTrades };
+  });
+  requestPortableSnapshot('holding-screenshot-imported');
+  return result;
 }
 
 export async function setHoldingBalance(accountId: string, holdingId: string, targetBalance: number, date: string, note?: string): Promise<void> {
@@ -256,7 +597,7 @@ export async function setAccountPortfolioMode(accountId: string, portfolio: bool
  * total value (cash + Σ shares × lastPrice) as today's snapshot record — at most one per day.
  * Charts, totals and exports then need no special-casing.
  */
-export async function syncPortfolioSnapshot(accountId: string): Promise<void> {
+export async function syncPortfolioSnapshot(accountId: string, notify = true): Promise<void> {
   const account = await db.accounts.get(accountId);
   if (!account?.portfolio) return;
   const withPos = await getHoldingsWithPositions(accountId);
@@ -267,6 +608,6 @@ export async function syncPortfolioSnapshot(accountId: string): Promise<void> {
     .filter(r => r.date === today)
     .sort((a, b) => b.createdAt - a.createdAt);
   if (todayRecs.length > 0) await db.records.update(todayRecs[0].id, { amount: rounded });
-  else await addRecord(accountId, today, rounded);
-  requestPortableSnapshot('portfolio-changed');
+  else await db.records.add({ id: uuidv4(), accountId, date: today, amount: rounded, createdAt: Date.now() });
+  if (notify) requestPortableSnapshot('portfolio-changed');
 }

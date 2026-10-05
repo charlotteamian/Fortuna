@@ -18,9 +18,9 @@ import {
 } from '../lib/balanceFlow';
 import { formatLocalDate } from '../lib/localDate';
 
-interface Props { accountId: string; onBack: () => void; }
+interface Props { accountId: string; onBack: () => void; onOpenApiSettings: () => void; apiConfigRevision: number; }
 
-export default function AccountDetail({ accountId, onBack }: Props) {
+export default function AccountDetail({ accountId, onBack, onOpenApiSettings, apiConfigRevision }: Props) {
   const { t, i18n } = useTranslation();
   const { theme, amountVisible, setAmountVisible } = useAppContext();
   const [account, setAccount] = useState<Account | null>(null);
@@ -464,7 +464,7 @@ export default function AccountDetail({ accountId, onBack }: Props) {
         )}
 
         {/* Portfolio account: holdings managed inside the account */}
-        {isPortfolio && !isArchived && <PortfolioPanel account={account} onChanged={() => load()} />}
+        {isPortfolio && !isArchived && <PortfolioPanel account={account} onChanged={() => load()} onOpenApiSettings={onOpenApiSettings} apiConfigRevision={apiConfigRevision} />}
 
         {/* Latest value (non-metal) */}
         {!isMetal && !isPortfolio && records.length > 0 && (

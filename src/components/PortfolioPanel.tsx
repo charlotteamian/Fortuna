@@ -6,6 +6,7 @@ import {
   getHoldingsWithPositions, getAccountTxns, createHolding, updateHolding, deleteHolding,
   addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, updatePrices, updateBalances, setHoldingBalance,
   updateHoldingBalanceSnapshot,
+  updateHoldingPositions,
   type HoldingWithPosition,
 } from '../services/holdingService';
 import { fetchQuotes } from '../services/quoteService';
@@ -34,18 +35,20 @@ import {
   type UsOptionRight,
 } from '../lib/usOption';
 import { formatLocalDate } from '../lib/localDate';
+import HoldingImportModal from './HoldingImportModal';
 
-interface Props { account: Account; onChanged: () => void; }
+interface Props { account: Account; onChanged: () => void; onOpenApiSettings: () => void; apiConfigRevision: number; }
 
 const MARKET_OPTS = ['opt_a_share', 'opt_us_market', 'opt_hk_market', 'opt_other'];
 
 const today = () => formatLocalDate();
 
-export default function PortfolioPanel({ account, onChanged }: Props) {
+export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, apiConfigRevision }: Props) {
   const { t, i18n } = useTranslation();
   const { theme, amountVisible } = useAppContext();
   const defaultHoldingMode = getDefaultHoldingModeForCategory(account.category);
   const isBalancePortfolio = defaultHoldingMode === 'balance';
+  const isStockPortfolio = account.type === 'asset' && ['股票/ETF', '股票'].includes(account.category);
   const balanceFlow = isBalancePortfolio ? getBalanceFlowConfig(account.category, account.type) : null;
   const usesDerivedBalance = Boolean(balanceFlow?.transactionOnly);
   const quoteRefreshEnabled = usesLiveQuotes(account.category);
@@ -93,6 +96,10 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   const [showPrices, setShowPrices] = useState(false);
   const [priceDate, setPriceDate] = useState(today());
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
+  const [shareInputs, setShareInputs] = useState<Record<string, string>>({});
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchError, setBatchError] = useState('');
+  const [showHoldingImport, setShowHoldingImport] = useState(false);
 
   // Cash balance modal
   const [showCash, setShowCash] = useState(false);
@@ -424,19 +431,38 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
   // ---- Batch prices ----
   const openPrices = () => {
     setPriceDate(today());
+    setBatchError('');
+    setShareInputs(Object.fromEntries(activeHoldings.map(h => [h.id, String(h.position.shares)])));
     setPriceInputs(Object.fromEntries(activeHoldings.map(h => [h.id, isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : '')])));
     setShowPrices(true);
   };
   const handleSavePrices = async () => {
-    const parsed: Record<string, number> = {};
-    for (const [id, v] of Object.entries(priceInputs)) {
-      const p = parseFloat(v);
-      if (!isNaN(p) && (isBalancePortfolio ? p >= 0 : p > 0)) parsed[id] = p;
-    }
-    if (isBalancePortfolio) await updateBalances(account.id, parsed, priceDate);
-    else await updatePrices(account.id, parsed, priceDate);
-    setShowPrices(false);
-    await changed();
+    if (batchBusy) return;
+    setBatchError('');
+    setBatchBusy(true);
+    try {
+      if (isStockPortfolio) {
+        const updates = activeHoldings.map(h => {
+          const sharesText = shareInputs[h.id]?.trim() ?? '';
+          const priceText = priceInputs[h.id]?.trim() ?? '';
+          return { holdingId: h.id, shares: sharesText === '' ? NaN : Number(sharesText), price: priceText === '' ? NaN : Number(priceText) };
+        });
+        await updateHoldingPositions(account.id, updates, priceDate);
+      } else {
+        const parsed: Record<string, number> = {};
+        for (const [id, v] of Object.entries(priceInputs)) {
+          const p = parseFloat(v);
+          if (!isNaN(p) && (isBalancePortfolio ? p >= 0 : p > 0)) parsed[id] = p;
+        }
+        if (isBalancePortfolio) await updateBalances(account.id, parsed, priceDate);
+        else await updatePrices(account.id, parsed, priceDate);
+      }
+      setShowPrices(false);
+      await changed();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '';
+      setBatchError(t('holding_import_error_' + message.replace(/^HOLDING_POSITION_/, '').toLowerCase(), { defaultValue: t('holding_import_failed') }));
+    } finally { setBatchBusy(false); }
   };
 
   // ---- Cash ----
@@ -452,12 +478,14 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
     const isSell = tx.kind === 'sell';
     const holdingIsBalance = usesBalanceHoldings(account.category, h);
     const isBalanceAdjustment = holdingIsBalance && tx.balanceSnapshot != null;
+    const isPositionAdjustment = !holdingIsBalance && tx.quantitySnapshot != null;
+    const isAdjustment = isBalanceAdjustment || isPositionAdjustment;
     const txnColor = isSell ? theme.liabilityColor : theme.assetColor;
     const multiplier = getHoldingContractMultiplier(h);
     return (
       <div key={tx.id} style={S.txnRow}>
-        <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isBalanceAdjustment ? 'var(--bg-glass)' : isSell ? theme.liabilityDim : theme.assetDim, color: isBalanceAdjustment ? 'var(--text-muted)' : txnColor, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
-          {isBalanceAdjustment
+        <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isAdjustment ? 'var(--bg-glass)' : isSell ? theme.liabilityDim : theme.assetDim, color: isAdjustment ? 'var(--text-muted)' : txnColor, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
+          {isPositionAdjustment ? t('holding_position_adjustment') : isBalanceAdjustment
             ? t('balance_adjustment')
             : holdingIsBalance && balanceFlow
             ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
@@ -465,15 +493,17 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
         </span>
         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{tx.date}</span>
         <span style={{ flex: 1, minWidth: 0, fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {isBalanceAdjustment
+          {isPositionAdjustment
+            ? masked('= ' + tx.quantitySnapshot!.toLocaleString('en-US', { maximumFractionDigits: 4 }) + ' · ' + t('holding_cost_price') + ' ' + (tx.costPriceSnapshot ?? 0).toFixed(3))
+            : isBalanceAdjustment
             ? masked(`= ${tx.balanceSnapshot!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`)
             : holdingIsBalance
             ? masked(`${isSell ? '-' : '+'}${tx.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`)
             : masked(`${tx.shares.toLocaleString('en-US', { maximumFractionDigits: 4 })}${multiplier > 1 ? ` × ${multiplier}` : ''} × ${tx.price.toFixed(account.currency === 'JPY' ? 0 : 3)}`)}
         </span>
         <div className="entry-actions" style={{ flexShrink: 0 }}>
-          <button className="btn btn-sm btn-secondary" onClick={() => isBalanceAdjustment ? openBalanceAdjustment(h, tx) : openEditTxn(h, tx)}>✏️</button>
-          <button className="btn btn-sm btn-danger" onClick={() => handleDeleteTxn(tx.id)}>✕</button>
+          {!isPositionAdjustment && <button className="btn btn-sm btn-secondary" onClick={() => isBalanceAdjustment ? openBalanceAdjustment(h, tx) : openEditTxn(h, tx)}>✏️</button>}
+          <button className="btn btn-sm btn-danger" aria-label={t('delete')} onClick={() => handleDeleteTxn(tx.id)}>✕</button>
         </div>
       </div>
     );
@@ -645,9 +675,10 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <button className="btn btn-primary btn-block" onClick={openCreateHolding}>＋ {t(isBalancePortfolio ? 'add_product' : 'add_holding')}</button>
         {activeHoldings.length > 0 && !usesDerivedBalance && (
-          <button className="btn btn-secondary btn-block" onClick={openPrices}>💱 {t(isBalancePortfolio ? 'batch_update_balances' : 'batch_update_prices')}</button>
+          <button className="btn btn-secondary btn-block" onClick={openPrices}>💱 {t(isStockPortfolio ? 'batch_update_positions' : isBalancePortfolio ? 'batch_update_balances' : 'batch_update_prices')}</button>
         )}
       </div>
+      {isStockPortfolio && <button className="btn btn-secondary btn-block" style={{ marginTop: -10, marginBottom: 20 }} onClick={() => setShowHoldingImport(true)}>{t('holding_import_entry')}</button>}
 
       <div className="entry-group-title">
         <span className="dot" style={{ background: theme.assetColor }} />{t(isBalancePortfolio ? 'products_in_account' : 'holdings_title')} ({activeHoldings.length})
@@ -695,6 +726,8 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
               <h2 className="modal-title">{editingHolding ? t(isBalancePortfolio ? 'edit_product' : 'edit_holding') : t(isBalancePortfolio ? 'add_product' : 'add_holding')}</h2>
               <button className="modal-close" onClick={() => { setShowHoldingForm(false); setEditingHolding(null); }}>✕</button>
             </div>
+            {isStockPortfolio && !editingHolding && <button className="btn btn-secondary btn-block" style={{ marginBottom: 16 }}
+              onClick={() => { setShowHoldingForm(false); setShowHoldingImport(true); }}>{t('holding_import_entry')}</button>}
             <div className="form-group">
               <label className="form-label">{t('name')}</label>
               <input className="form-input" placeholder={t(isBalancePortfolio ? 'product_holding_name_ph' : 'holding_name_ph')} value={hName} onChange={e => setHName(e.target.value)} autoFocus={!editingHolding} />
@@ -930,35 +963,49 @@ export default function PortfolioPanel({ account, onChanged }: Props) {
 
       {/* Batch price/balance update */}
       {showPrices && (
-        <div className="modal-overlay" onClick={() => setShowPrices(false)}>
+        <div className="modal-overlay" onClick={() => !batchBusy && setShowPrices(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{t(isBalancePortfolio ? 'batch_update_balances' : 'batch_update_prices')}</h2>
-              <button className="modal-close" onClick={() => setShowPrices(false)}>✕</button>
+              <h2 className="modal-title">{t(isStockPortfolio ? 'batch_update_positions' : isBalancePortfolio ? 'batch_update_balances' : 'batch_update_prices')}</h2>
+              <button className="modal-close" disabled={batchBusy} onClick={() => setShowPrices(false)}>✕</button>
             </div>
             <div className="form-group">
-              <label className="form-label">{t(isBalancePortfolio ? 'balance_date_label' : 'price_date_label')}</label>
-              <input className="form-input" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
+              <label className="form-label">{t(isStockPortfolio ? 'holding_import_date' : isBalancePortfolio ? 'balance_date_label' : 'price_date_label')}</label>
+              <input className="form-input" type="date" max={isStockPortfolio ? today() : undefined} disabled={batchBusy} value={priceDate} onChange={e => setPriceDate(e.target.value)} />
             </div>
+            {isStockPortfolio && <p className="holding-import-note">{t('holding_batch_hint')}</p>}
+            {batchError && <p className="holding-import-error" role="alert">{batchError}</p>}
             {activeHoldings.map(h => (
-              <div className="form-group" key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="form-group" key={h.id} style={{ display: isStockPortfolio ? 'block' : 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '0.8125rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
                   {h.symbol && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{h.symbol}</div>}
                 </div>
-                <input className="form-input mono" type="number" inputMode="decimal" step={isBalancePortfolio ? '0.01' : '0.0001'} min="0"
+                {isStockPortfolio ? <div className="holding-batch-fields" style={{ marginTop: 8 }}>
+                  <label className="form-label">{t(h.instrumentType === 'us_option' ? 'option_contracts_unit' : 'holding_import_header_shares')}
+                    <input className="form-input" aria-label={h.name + ' ' + t('holding_import_header_shares')} type="number" inputMode="decimal" min="0" step="any" disabled={batchBusy}
+                      value={shareInputs[h.id] ?? ''} onChange={e => setShareInputs(prev => ({ ...prev, [h.id]: e.target.value }))} />
+                  </label>
+                  <label className="form-label">{t('last_price')} ({account.currency})
+                    <input className="form-input" aria-label={h.name + ' ' + t('last_price')} type="number" inputMode="decimal" min="0" step="any" disabled={batchBusy}
+                      value={priceInputs[h.id] ?? ''} onChange={e => setPriceInputs(prev => ({ ...prev, [h.id]: e.target.value }))} />
+                  </label>
+                </div> : <input className="form-input mono" type="number" inputMode="decimal" step={isBalancePortfolio ? '0.01' : '0.0001'} min="0"
                   style={{ width: 130, flexShrink: 0 }}
                   value={priceInputs[h.id] ?? ''}
-                  onChange={e => setPriceInputs(prev => ({ ...prev, [h.id]: e.target.value }))} />
+                  onChange={e => setPriceInputs(prev => ({ ...prev, [h.id]: e.target.value }))} />}
               </div>
             ))}
             <div className="modal-actions">
-              <button className="btn btn-secondary btn-block" onClick={() => setShowPrices(false)}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" onClick={handleSavePrices}>{t('save')}</button>
+              <button className="btn btn-secondary btn-block" disabled={batchBusy} onClick={() => setShowPrices(false)}>{t('cancel')}</button>
+              <button className="btn btn-primary btn-block" disabled={batchBusy} onClick={handleSavePrices}>{t('save')}</button>
             </div>
           </div>
         </div>
       )}
+      {showHoldingImport && <HoldingImportModal account={account} holdings={holdings} onClose={() => setShowHoldingImport(false)}
+        onOpenApiSettings={onOpenApiSettings} configRevision={apiConfigRevision}
+        onImported={async () => { await changed(); void refreshQuotes(true); }} />}
 
       {/* Cash balance */}
       {showCash && (

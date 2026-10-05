@@ -1,0 +1,6 @@
+.holding-recognition-settings { scroll-margin-top: 1rem; }
+.holding-recognition-note { font-size: .78rem; line-height: 1.55; color: var(--text-secondary); margin: 8px 0 14px; overflow-wrap: anywhere; }
+.holding-recognition-summary { cursor: pointer; font-size: .85rem; font-weight: 600; padding: 12px 0; }
+.holding-recognition-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.holding-recognition-actions .btn { flex: 1 1 140px; }
+.holding-recognition-error { font-size: .8rem; color: var(--liability-color); line-height: 1.5; }

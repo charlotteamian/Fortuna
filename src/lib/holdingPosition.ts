@@ -65,7 +65,11 @@ export function computeHoldingPosition(txns: HoldingTxn[], multiplier = 1): Hold
   let realizedCostBasis = 0;
 
   for (const tx of chron) {
-    if (tx.kind === 'sell') {
+    if (tx.quantitySnapshot != null) {
+      const previousAvg = shares > 0 ? costBasis / (shares * safeMultiplier) : 0;
+      shares = Math.max(0, tx.quantitySnapshot);
+      costBasis = shares * safeMultiplier * (tx.costPriceSnapshot ?? previousAvg);
+    } else if (tx.kind === 'sell') {
       const avg = shares > 0 ? costBasis / (shares * safeMultiplier) : 0;
       const sold = Math.min(tx.shares, shares);
       realizedCostBasis += sold * safeMultiplier * avg;

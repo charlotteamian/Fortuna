@@ -179,14 +179,17 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
         return {
           id: txn.id,
           date: txn.date,
-          kind: txn.kind,
+          kind: txn.quantitySnapshot != null ? 'position_adjustment' : txn.kind,
           holdingId: txn.holdingId,
           holdingName: holding?.name ?? null,
           symbol: holding?.symbol ?? null,
-          shares: txn.balanceSnapshot == null ? round(txn.shares) : null,
-          price: txn.balanceSnapshot == null ? round(txn.price) : null,
+          shares: txn.balanceSnapshot == null && txn.quantitySnapshot == null ? round(txn.shares) : null,
+          price: txn.balanceSnapshot == null && txn.quantitySnapshot == null ? round(txn.price) : null,
           balanceSnapshot: txn.balanceSnapshot == null ? null : round(txn.balanceSnapshot),
-          amount: txn.balanceSnapshot == null
+          quantitySnapshot: txn.quantitySnapshot == null ? null : round(txn.quantitySnapshot),
+          costPriceSnapshot: txn.costPriceSnapshot == null ? null : round(txn.costPriceSnapshot),
+          brokerRef: txn.brokerRef ?? null,
+          amount: txn.quantitySnapshot != null ? null : txn.balanceSnapshot == null
             ? round(txn.shares * txn.price * (holding ? getHoldingContractMultiplier(holding) : 1))
             : round(txn.balanceSnapshot),
           currency: account.currency,

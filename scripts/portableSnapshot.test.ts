@@ -124,7 +124,7 @@ test('snapshot focus labels are optional and only accept active accounts', () =>
   );
 });
 
-test('automatic snapshot v7 exports all active accounts and marks optional focus accounts', () => {
+test('automatic snapshot v9 exports all active accounts and marks optional focus accounts', () => {
   const snapshot = buildAutomaticSnapshot({
     accounts: [focusAccount, reserveAccount, archivedAccount],
     records,
@@ -137,7 +137,7 @@ test('automatic snapshot v7 exports all active accounts and marks optional focus
     trigger: 'test',
   });
 
-  assert.equal(snapshot.schemaVersion, 8);
+  assert.equal(snapshot.schemaVersion, 9);
   assert.equal(snapshot.accountCount, 2);
   assert.equal(snapshot.focusAccountCount, 1);
   assert.deepEqual(snapshot.totals, {
@@ -186,6 +186,27 @@ test('automatic snapshot v7 exports all active accounts and marks optional focus
   assert.equal(position.priceDate, '2026-07-10');
 
   assert.doesNotMatch(JSON.stringify(snapshot), /哨兵|GPT|Claude|快账户/i);
+});
+
+test('automatic snapshot identifies quantity adjustments and preserves their cost anchors and fill references', () => {
+  const snapshot = buildAutomaticSnapshot({
+    accounts: [focusAccount], records, holdings: [holding],
+    transactions: [
+      ...transactions.map(txn => ({ ...txn, brokerRef: txn.id === 'sell' ? 'execution-123' : undefined })),
+      { id: 'position-anchor', accountId: focusAccount.id, holdingId: holding.id, date: '2026-07-13',
+        kind: 'buy', shares: 0, price: 0, quantitySnapshot: 8, costPriceSnapshot: 101.25, createdAt: 30 },
+    ],
+    exchangeRates: [], planStatus: emptyPlanStatus(920),
+    settings: { primaryCurrency: 'CNY', snapshotFocusAccountIds: [] },
+  });
+  const anchor = snapshot.accounts[0].transactions.find(txn => txn.id === 'position-anchor')!;
+  assert.equal(anchor.kind, 'position_adjustment');
+  assert.equal(anchor.quantitySnapshot, 8);
+  assert.equal(anchor.costPriceSnapshot, 101.25);
+  assert.equal(anchor.amount, null);
+  assert.equal(anchor.shares, null);
+  assert.equal(snapshot.accounts[0].transactions.find(txn => txn.id === 'sell')?.brokerRef, 'execution-123');
+  assert.equal(snapshot.accounts[0].holdings[0].shares, 8);
 });
 
 test('hidden accounts still count in totals while excluded accounts do not', () => {

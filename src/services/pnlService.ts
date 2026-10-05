@@ -14,7 +14,7 @@ interface RealizedEvent { date: string; amount: number; currency: string; }
 // computeHoldingPosition / computeMetalPosition. Because it walks every sell in history,
 // sold-out (archived) holdings are naturally included: their sells still contribute.
 export function holdingRealizedEvents(
-  txns: Pick<HoldingTxn, 'date' | 'kind' | 'shares' | 'price' | 'createdAt'>[],
+  txns: Pick<HoldingTxn, 'date' | 'kind' | 'shares' | 'price' | 'createdAt' | 'quantitySnapshot' | 'costPriceSnapshot'>[],
   currency: string,
   holding: Pick<Holding, 'instrumentType' | 'contractMultiplier'> = {},
 ): RealizedEvent[] {
@@ -23,7 +23,11 @@ export function holdingRealizedEvents(
   let shares = 0, costBasis = 0;
   const events: RealizedEvent[] = [];
   for (const tx of chron) {
-    if (tx.kind === 'sell') {
+    if (tx.quantitySnapshot != null) {
+      const previousAvg = shares > 0 ? costBasis / (shares * multiplier) : 0;
+      shares = Math.max(0, tx.quantitySnapshot);
+      costBasis = shares * multiplier * (tx.costPriceSnapshot ?? previousAvg);
+    } else if (tx.kind === 'sell') {
       const avg = shares > 0 ? costBasis / (shares * multiplier) : 0;
       const sold = Math.min(tx.shares, shares);
       events.push({ date: tx.date, amount: sold * multiplier * (tx.price - avg), currency });

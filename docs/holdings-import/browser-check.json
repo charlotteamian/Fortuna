@@ -1,0 +1,21 @@
+{
+  "viewportChecks": [
+    390,
+    320
+  ],
+  "apiRequestsMocked": 2,
+  "scopeIsolated": true,
+  "reimportIdempotent": true,
+  "keyExcludedFromLedgerBackup": true,
+  "domesticProviderPresets": [
+    "aliyun",
+    "zhipu",
+    "moonshot",
+    "volcengine"
+  ],
+  "providerSwitchClearsKey": true,
+  "apiConfigurationInSettings": true,
+  "normalSettingsEntryAndClear": true,
+  "returnsToImportWithoutLosingDraft": true,
+  "pageErrors": []
+}

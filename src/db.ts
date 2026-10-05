@@ -143,6 +143,9 @@ export interface HoldingTxn {
   shares: number;          // positive magnitude
   price: number;           // per share, account currency
   balanceSnapshot?: number; // balance-mode holdings: direct balance anchor, excluded from principal-flow totals
+  quantitySnapshot?: number; // unit holdings: direct quantity anchor, never a synthetic buy/sell
+  costPriceSnapshot?: number; // optional average buy cost per share at the quantity anchor
+  brokerRef?: string; // optional broker fill/reference ID, scoped to this holding for import deduplication
   note?: string;
   createdAt: number;
 }
@@ -623,6 +626,7 @@ export async function exportToExcel(): Promise<string> {
         ? getBalanceFlowConfig(acct.category, acct.type)
         : null;
       const isBalanceAdjustment = tx.balanceSnapshot != null;
+      const isPositionAdjustment = tx.quantitySnapshot != null;
       return {
         [t('xh_date')]: tx.date,
         [t('xh_account')]: acct?.name ?? tx.accountId,
@@ -630,14 +634,17 @@ export async function exportToExcel(): Promise<string> {
         [t('xh_name')]: h?.name ?? tx.holdingId,
         [t('xh_symbol')]: h?.symbol ?? '',
         [t('xh_market')]: h?.market ?? '',
-        [t('xh_action')]: isBalanceAdjustment
+        [t('xh_action')]: isPositionAdjustment
+          ? t('holding_position_adjustment')
+          : isBalanceAdjustment
           ? t('balance_adjustment')
           : balanceFlow
           ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
           : (tx.kind === 'buy' ? t('xh_buy') : t('xh_sell')),
-        [t('xh_shares')]: isBalanceAdjustment ? '' : tx.shares,
-        [t('xh_price')]: isBalanceAdjustment ? '' : tx.price,
-        [t('xh_amount')]: isBalanceAdjustment
+        [t('xh_shares')]: isPositionAdjustment ? tx.quantitySnapshot : isBalanceAdjustment ? '' : tx.shares,
+        [t('xh_price')]: isBalanceAdjustment || isPositionAdjustment ? '' : tx.price,
+        [t('holding_cost_price')]: isPositionAdjustment ? tx.costPriceSnapshot ?? '' : '',
+        [t('xh_amount')]: isPositionAdjustment ? '' : isBalanceAdjustment
           ? tx.balanceSnapshot
           : Math.round(tx.shares * tx.price * multiplier * 100) / 100,
         [t('xh_currency')]: acct?.currency ?? '',
@@ -880,6 +887,8 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       && Number.isFinite(transaction.shares)
       && Number.isFinite(transaction.price)
       && Number.isFinite(transaction.createdAt)
+      && (transaction.quantitySnapshot === undefined || (Number.isFinite(transaction.quantitySnapshot) && transaction.quantitySnapshot >= 0))
+      && (transaction.costPriceSnapshot === undefined || (transaction.quantitySnapshot !== undefined && Number.isFinite(transaction.costPriceSnapshot) && transaction.costPriceSnapshot >= 0))
     ))) return false;
     if (!uniqueIds(products) || !uniqueIds(planItems) || !uniqueIds(planTargets)) return false;
     if (restoredSettings.length > 0 && !restoredSettings.every(row => validId(row.id))) return false;

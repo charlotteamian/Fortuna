@@ -24,6 +24,8 @@ function App() {
   const [returnTab, setReturnTab] = useState<Tab>('record');
   const [tab, setTab] = useState<Tab>('record');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [holdingApiSettingsOpen, setHoldingApiSettingsOpen] = useState(false);
+  const [holdingApiConfigRevision, setHoldingApiConfigRevision] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [amountVisible, setAmountVisible] = useState(false);
@@ -148,7 +150,20 @@ function App() {
   if (editingAccountId) {
     return (
       <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
-        <Suspense fallback={pageFallback}><AccountDetail accountId={editingAccountId} onBack={closeAccount} /></Suspense>
+        <div hidden={holdingApiSettingsOpen}>
+          <Suspense fallback={pageFallback}><AccountDetail accountId={editingAccountId} onBack={closeAccount}
+            onOpenApiSettings={() => setHoldingApiSettingsOpen(true)} apiConfigRevision={holdingApiConfigRevision} /></Suspense>
+        </div>
+        {holdingApiSettingsOpen && <div className="app">
+          <header className="app-topbar"><span>Fortuna</span><button className="btn btn-secondary" onClick={() => {
+            setHoldingApiConfigRevision(revision => revision + 1); setHoldingApiSettingsOpen(false);
+          }}>← {t('back')}</button></header>
+          <main className="app-content">
+            <Suspense fallback={pageFallback}><SettingsPage focusHoldingRecognition
+              onRefresh={() => { void loadSettings(); refresh(); }} onAccountsChanged={refresh}
+              onOpenOnboarding={() => setOnboardingOpen(true)} /></Suspense>
+          </main>
+        </div>}
       </AppContext.Provider>
     );
   }

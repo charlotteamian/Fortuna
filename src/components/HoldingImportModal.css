@@ -1,0 +1,17 @@
+.holding-import-modal { max-width: 600px; }
+.holding-import-note { font-size: .78rem; line-height: 1.55; color: var(--text-secondary); margin: 8px 0 14px; overflow-wrap: anywhere; white-space: pre-line; }
+.holding-import-api-status { margin-bottom: 16px; }
+.holding-import-section-title { font-size: .9rem; margin: 18px 0 10px; }
+.holding-import-sources { display: flex; flex-wrap: wrap; gap: 8px; }
+.holding-import-sources .btn { flex: 1 1 140px; white-space: normal; }
+.holding-import-error { font-size: .8rem; line-height: 1.5; color: var(--liability-color); white-space: pre-line; }
+.holding-import-row { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin: 0 0 14px; min-width: 0; }
+.holding-import-row legend { font-size: .78rem; font-weight: 600; color: var(--text-secondary); padding: 0 6px; }
+.holding-import-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+.holding-import-grid .form-label { display: block; margin: 0; overflow-wrap: anywhere; }
+.holding-import-grid .form-input, .holding-import-grid .form-select { margin-top: 5px; min-width: 0; width: 100%; }
+.holding-batch-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.holding-batch-fields .form-label { font-size: .72rem; }
+@media (max-width: 360px) {
+  .holding-import-grid { grid-template-columns: minmax(0, 1fr); }
+}

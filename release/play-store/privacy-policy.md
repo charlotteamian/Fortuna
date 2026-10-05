@@ -1,12 +1,12 @@
 # Privacy Policy for Fortuna
 
-Effective date: 2026-08-02
+Effective date: 2026-10-05
 
 Fortuna is a local-first personal asset, liability, holdings, and net-worth tracking app. This policy explains what the app stores, when it connects to other services, and what choices you have.
 
 ## Data Stored on Your Device
 
-Fortuna stores the information you enter in the app's local IndexedDB database. This may include account and institution names, asset and liability categories, balances, holdings, security or fund codes, transactions, notes, currencies, product details, allocation plans, cached market data, and settings.
+Fortuna stores the information you enter in the app's local IndexedDB database. This may include account and institution names, asset and liability categories, balances, holdings, security or fund codes, transactions, notes, currencies, product details, allocation plans, dividend workbench budgets and overrides, cached market data, and settings.
 
 Fortuna does not require an account and does not operate a server that receives your asset database. Except for the limited transfers described below, the developer does not receive your financial records.
 
@@ -18,12 +18,23 @@ Depending on the feature and instrument, the app may contact:
 
 - Frankfurter (`api.frankfurter.dev`) for currency exchange rates;
 - Gold API (`api.gold-api.com`) for precious-metal prices;
-- Tencent (`qt.gtimg.cn`) for supported equity and exchange-traded security quotes;
+- Tencent (`qt.gtimg.cn` and `web.ifzq.gtimg.cn`) for supported equity quotes and adjusted daily price history;
 - Eastmoney/Tiantian Fund (`fundgz.1234567.com.cn`) for supported fund estimates;
+- Eastmoney (`datacenter.eastmoney.com`) for public dividend histories when you refresh the dividend workbench;
 - Sina Finance (`hq.sinajs.cn`) for supported futures quotes; and
 - Cboe (`cdn.cboe.com`) for delayed US equity-option quotes.
 
 These requests send only the public identifiers needed for a lookup, such as currency or metal codes and fund, security, futures, option-underlying, or option-contract codes. They do not intentionally send your account names, balances, quantities, transaction history, or notes. As with any internet request, the receiving service can see ordinary connection information such as your IP address and request headers. Those services are independent of Fortuna and handle request data under their own terms and privacy practices.
+
+## Optional Screenshot Recognition Through Your Selected API
+
+You can configure a vision API provider and model, including domestic or other compatible services, and select a brokerage screenshot for recognition. Selecting the screenshot sends the complete selected image and extraction instructions to the provider address you configured. Visible content may include account labels, security names and codes, balances, position quantities, prices, costs, transaction dates, and execution references. Fortuna asks the provider to extract stock/ETF holdings and completed transactions; it does not automatically remove other private information visible in the image.
+
+Fortuna does not operate a recognition backend, attach your full local asset database, or upload screenshots in the background. API recognition happens only after you choose an image for that purpose. The provider also receives API authentication and ordinary connection information. You can use manual entry and local Excel holdings imports without calling a recognition API.
+
+The provider address, model, and API key are stored locally in a separate IndexedDB database and are excluded from Fortuna's ledger backups and automatic asset snapshots. The recognized result is shown for review before you confirm changes to the selected stock/ETF account. Other accounts and asset types are not replaced by that holdings import.
+
+The selected provider may require its own account and charge for API usage. Its terms, privacy policy, account settings, retention practices, and deletion process govern the image and request content it receives. Fortuna does not promise that a provider discards requests or excludes them from other uses. Review the chosen service's terms and remove unnecessary sensitive content before selecting a screenshot.
 
 ## Android App Updates
 
@@ -45,23 +56,23 @@ Exports and snapshots can contain sensitive financial information in readable fo
 
 ## Device and System Backups
 
-Android or iOS may back up and later restore some local app-container data, potentially including the IndexedDB database, according to your device, account, and system backup settings. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your Android backup or iCloud Backup settings if you do not want this behavior.
+Android or iOS may back up and later restore some local app-container data, potentially including the asset database and locally saved recognition API settings, according to your device, account, and system backup settings. This is controlled by the operating system and backup provider, not by Fortuna's developer. Review your Android backup or iCloud Backup settings if you do not want this behavior.
 
 ## Data Sharing and Advertising
 
-Fortuna does not sell personal data and does not include advertising or analytics SDKs. The developer does not receive your locally stored asset database. Data can leave the app only through the market-data and update requests, system calendar, user-authorized exports or snapshot destination, and operating-system backup paths described above.
+Fortuna does not sell personal data and does not include advertising or analytics SDKs. The developer does not receive your locally stored asset database. Data can leave the app only through the market-data and update requests, optional screenshot-recognition requests to your selected provider, system calendar, user-authorized exports or snapshot destination, and operating-system backup paths described above.
 
 ## Retention and Deletion
 
 Local records remain on the device until you delete them in the app, clear the app's storage, or uninstall the app. Clearing storage or uninstalling can permanently remove records that you have not exported. Android or iOS may restore previously backed-up data after reinstalling, depending on system settings.
 
-Deleting local data does not remove copies in exported files, automatic snapshots, calendar entries, shared destinations, or system/cloud backups. Delete those copies separately in the relevant app or service. Disconnecting an automatic snapshot directory does not delete existing snapshot files.
+Deleting local data does not remove copies in exported files, automatic snapshots, calendar entries, shared destinations, recognition-provider records, or system/cloud backups. Delete those copies separately in the relevant app or service. Disconnecting an automatic snapshot directory does not delete existing snapshot files.
 
-Fortuna does not maintain a server-side account or server-side asset database to delete. Third-party market-data services may retain connection or request information according to their own policies.
+Fortuna does not maintain a server-side account or server-side asset database to delete. Third-party market-data and recognition services may retain connection information, images, or request content according to their own policies. Deleting records in Fortuna does not delete copies held by a recognition provider.
 
 ## Security
 
-Market-data requests use HTTPS. Local data is protected by the security controls of your device; Fortuna does not add a separate database password or end-to-end encryption layer. Use a device passcode or biometric lock and keep exported files and selected snapshot directories secure.
+Market-data requests use HTTPS. Remote recognition API addresses must use HTTPS; local loopback addresses may use HTTP for local testing. Local data and API configuration are protected by the security controls of your device; Fortuna does not add a separate database password or end-to-end encryption layer. Use a device passcode or biometric lock and keep exported files and selected snapshot directories secure.
 
 ## Financial Disclaimer
 

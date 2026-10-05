@@ -17,6 +17,7 @@ import {
 } from '../services/portableSnapshotService';
 import type { PortableSnapshotStatus as AutomaticSnapshotStatus } from '../native/portableSnapshot';
 import UserGuide from '../components/UserGuide';
+import HoldingRecognitionSettings from '../components/HoldingRecognitionSettings';
 import { formatLocalDate } from '../lib/localDate';
 import { Capacitor } from '@capacitor/core';
 import { updateAccount } from '../services/assetService';
@@ -31,11 +32,11 @@ import {
   type AppUpdateInstallResult,
 } from '../native/appUpdater';
 
-interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; }
+interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; focusHoldingRecognition?: boolean; }
 
 type AppUpdateState = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installer-opened' | 'error';
 
-export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding }: Props) {
+export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding, focusHoldingRecognition = false }: Props) {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -434,6 +435,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
     <>
       {toast && <div className={`toast ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>}
       <div className="page-header"><div><h1 className="page-title">{t('settings')}</h1><p className="page-subtitle">{t('about_title')} {t('app_name')}</p></div></div>
+
+      <HoldingRecognitionSettings focus={focusHoldingRecognition} />
 
       {/* Theme Mode & Font Size & Language */}
       <div className="settings-section">
