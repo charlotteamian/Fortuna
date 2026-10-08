@@ -80,4 +80,25 @@
 .div-allocation-preview th:first-child, .div-allocation-preview td:first-child { text-align: left; }
 .div-preview-code { display: block; font-size: .65rem; color: var(--text-secondary); }
 .div-import-paste { margin: 1rem 0 .6rem; }
+.df-comparison { min-width: 0; }
+.df-comparison-table table { text-align: left; table-layout: fixed; }
+.df-comparison-table caption { text-align: left; padding: .5rem 0; }
+.df-comparison-table th, .df-comparison-table td { padding: .8rem .45rem; vertical-align: top; overflow-wrap: anywhere; }
+.df-comparison-table th:first-child { width: 32%; }
+.df-comparison-table th:last-child { width: 18%; }
+.df-comparison-table th[scope="row"] { color: var(--text-primary); font-weight: 400; }
+.df-comparison-table th[scope="row"] strong, .df-comparison-table td > div { display: flex; flex-direction: column; gap: .3rem; }
+.df-comparison-code { display: block; margin: .3rem 0; color: var(--text-secondary); }
+.df-comparison-table a { color: var(--asset-color); display: inline-flex; align-items: center; min-height: 44px; }
+.df-comparison-table button { padding: .6rem; width: 100%; }
+.df-bond-example { border-top: 1px solid var(--border); margin-top: .8rem; padding-top: .6rem; }
+@media (max-width: 600px) {
+  .df-comparison-table table, .df-comparison-table tbody, .df-comparison-table tr, .df-comparison-table th, .df-comparison-table td { display: block; width: auto; }
+  .df-comparison-table caption, .df-comparison-table th:first-child, .df-comparison-table th:last-child { display: block; width: auto; }
+  .df-comparison-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .df-comparison-table tr { padding: .7rem 0; border-bottom: 1px solid var(--border); }
+  .df-comparison-table th[scope="row"], .df-comparison-table td { border-bottom: 0; padding: .35rem 0; }
+  .df-comparison-table td[data-label] { display: grid; grid-template-columns: minmax(0, 6rem) minmax(0, 1fr); gap: .7rem; }
+  .df-comparison-table td[data-label]::before { content: attr(data-label); color: var(--text-secondary); }
+}
 @media (max-width: 360px) { .div-form-fields { grid-template-columns: 1fr; } .div-stock { padding: .8rem; } }

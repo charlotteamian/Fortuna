@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendFundAllocation, dividendFundEntry, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
 import { deleteDividendFund, saveDividendFund, saveDividendFundConfig } from '../services/dividendFundService';
+import DividendFundComparison from './DividendFundComparison';
 
 const number = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
 const optionalNumber = (value: number | undefined, scale: number) => value === undefined ? '' : String(value / scale);
@@ -85,7 +86,11 @@ export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: 
       </article>;
     })}</div>
     {funds.length === 0 && <p className="div-notice">{t(plan.funds.length ? 'df_no_match' : 'df_empty')}</p>}
-    <details className="div-method"><summary>{t('df_method')}</summary><p>{t('df_method_modes')}</p><p>{t('df_method_selection')}</p><p>{t('df_method_cost')}</p><p><a href="https://etf.sse.com.cn/fundtrends/c/5733322.shtml" target="_blank" rel="noreferrer">{t('df_example_source')}</a></p></details>
+    <details className="div-method"><summary>{t('df_method')}</summary><p>{t('df_method_modes')}</p><p>{t('df_method_types')}</p><p>{t('df_method_selection')}</p><p>{t('df_method_returns')}</p><p>{t('df_method_cost')}</p></details>
+    <DividendFundComparison plan={plan} disabled={saving} onSelect={fund => {
+      setMessage('');
+      setEditor(plan.funds.find(row => row.code === fund.code) ?? { id: crypto.randomUUID(), name: t(fund.nameKey), code: fund.code, indexKind: fund.indexKind, weightBps: 0 });
+    }} />
     {editor && <FundEditor initial={editor} plan={plan} amountVisible={amountVisible} onClose={() => setEditor(null)} onSaved={async () => { setEditor(null); await onSaved(); setError(''); setMessage(t('div_saved')); }} />}
   </>;
 }

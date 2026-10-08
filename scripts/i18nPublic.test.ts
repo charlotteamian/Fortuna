@@ -8,7 +8,7 @@ const loadMessages = (locale: 'zh' | 'en') => JSON.parse(
 
 const zh = loadMessages('zh');
 const en = loadMessages('en');
-const privateTerms = /哨兵|GPT|Claude|快账户/i;
+const privateTerms = /哨兵|GPT|Claude|快账户|会议|meeting|charlotte|restartday|IMPERIUM/i;
 const singleBraceInterpolation = /\{[A-Za-z_][A-Za-z0-9_.-]*\}/u;
 
 test('Chinese and English translation resources have matching keys', () => {

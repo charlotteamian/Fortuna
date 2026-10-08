@@ -9,8 +9,8 @@ Validated on 2026-10-08. Browser checks used isolated synthetic data at `http://
 - Fund entries accept a name, optional six-digit code, index type, weight and note. Plan edits, funds and display preferences update transactionally using the latest settings, preserving concurrent edits.
 - Weights divide the dividend-fund sleeve. In 70:30 mode, 70% of the overall strategy budget is the fund sleeve and 30% is a bond reserve. The reserve is a plan, not an actual bond holding. A largest-remainder calculation accounts for every cent, including unassigned funds.
 - Deleting a fund leaves its released allocation unassigned. Total fund weight cannot exceed 100%. Fund plans do not affect actual asset totals.
-- Long-term holding, annual 70:30 rebalancing and pullback trading follow the supplied meeting notes. Entry thresholds and AND/OR combination are editable. Reference data is manually entered with a date/source; incomplete or old observations cannot produce a current entry flag. Index yield is distinct from fund cash distribution yield.
-- No meeting return or success-rate claim is presented as an established backtest. The 563020 example links to the [Shanghai Stock Exchange product information](https://etf.sse.com.cn/fundtrends/c/5733322.shtml); no suggested fund is added automatically.
+- Supported approaches are long-term holding, annual 70:30 rebalancing and pullback trading. Entry thresholds and AND/OR combination are editable. Reference data is manually entered with a date/source; incomplete or old observations cannot produce a current entry flag. Index yield is distinct from fund cash distribution yield.
+- Strategy descriptions do not promise returns or a success rate. Fund examples use public product information and require an explicit plan edit before saving. The updated comparison and public-copy checks are recorded in [public-copy-validation.md](public-copy-validation.md).
 - Existing JSON and Excel backups remain readable; new backups retain all fund settings and observations. Automatic snapshot schema 10 adds the selected strategy and fund plan while retaining stock data and actual account totals.
 
 ## Checks

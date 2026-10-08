@@ -4,6 +4,14 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-08
+
+- Use public-facing strategy explanations in Chinese and English, retaining editable entry references and the existing holding approaches.
+- Add a comparison of ten dividend funds by code, index, product type, venue, management/custody fees and public product source, plus a separate bond allocation example.
+- Open an editable allocation when adding a comparison fund to a plan; reopen the existing plan for an already saved code.
+- Adapt the comparison to narrow phone screens and keep product information separate from saved plans.
+- Android version code 13, using the same pinned release certificate for in-place updates.
+
 ## [1.3.2] - 2026-09-22
 
 ### Simpler allocation plans
