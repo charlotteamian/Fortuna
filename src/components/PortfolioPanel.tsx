@@ -525,11 +525,11 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     const totalIn = hTxns.filter(tx => tx.balanceSnapshot == null && tx.kind === 'buy').reduce((s, tx) => s + tx.shares, 0);
     const totalOut = hTxns.filter(tx => tx.balanceSnapshot == null && tx.kind === 'sell').reduce((s, tx) => s + tx.shares, 0);
     return (
-      <div key={h.id} className="holding-card" style={{ ...S.holdingCard, ...(archived ? S.archivedHoldingCard : {}), border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
+      <div key={h.id} className={`holding-card${archived ? ' holding-card-archived' : ''}`} style={{ ...S.holdingCard, ...(archived ? S.archivedHoldingCard : {}), border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
         <div style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expanded ? null : h.id)}>
           <div className="holding-card-summary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="holding-card-name" style={{ fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</span>
-            {h.symbol && <span style={S.badge}>{optionContract ? formatUsOptionLabel(optionContract) : h.symbol}</span>}
+            {!archived && h.symbol && <span style={S.badge}>{optionContract ? formatUsOptionLabel(optionContract) : h.symbol}</span>}
             {h.market && <span style={S.badge}>{h.market}</span>}
             {archived && <span style={S.archivedBadge}>{t('archived_holding_badge')}</span>}
             <span className="holding-card-spacer" style={{ flex: 1 }} />

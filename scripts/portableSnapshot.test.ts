@@ -124,7 +124,7 @@ test('snapshot focus labels are optional and only accept active accounts', () =>
   );
 });
 
-test('automatic snapshot v9 exports all active accounts and marks optional focus accounts', () => {
+test('automatic snapshot v10 exports all active accounts and marks optional focus accounts', () => {
   const snapshot = buildAutomaticSnapshot({
     accounts: [focusAccount, reserveAccount, archivedAccount],
     records,
@@ -137,7 +137,7 @@ test('automatic snapshot v9 exports all active accounts and marks optional focus
     trigger: 'test',
   });
 
-  assert.equal(snapshot.schemaVersion, 9);
+  assert.equal(snapshot.schemaVersion, 10);
   assert.equal(snapshot.accountCount, 2);
   assert.equal(snapshot.focusAccountCount, 1);
   assert.deepEqual(snapshot.totals, {
@@ -334,4 +334,13 @@ test('automatic snapshot applies an option contract multiplier to transaction am
   assert.equal(exportedHolding.marketValue, 501);
   assert.equal(exportedTransactions.find(transaction => transaction.id === 'option-buy')?.amount, 800);
   assert.equal(exportedTransactions.find(transaction => transaction.id === 'option-sell')?.amount, 500);
+});
+
+test('automatic snapshot carries both dividend strategies without adding planned money to actual assets', () => {
+  const fundPlan = { mode: 'rebalance' as const, entryRule: 'both' as const, drawdownBps: 1000, indexYieldBps: 500, budgetMinor: 32000000, funds: [{ id: 'fund-plan', name: 'Planned only', indexKind: 'low_volatility' as const, weightBps: 10000 }] };
+  const snapshot = buildAutomaticSnapshot({ accounts: [reserveAccount], records, holdings: [], transactions: [], exchangeRates: [], planStatus: emptyPlanStatus(300), settings: { primaryCurrency: 'CNY', dividendStrategy: 'funds', dividendBudgetMinor: 123456, dividendFundPlan: fundPlan } });
+  assert.equal(snapshot.dividendWorkbench.strategy, 'funds');
+  assert.deepEqual(snapshot.dividendWorkbench.fundPlan, fundPlan);
+  assert.equal(snapshot.dividendWorkbench.budgetMinor, 123456);
+  assert.equal(snapshot.totals.assets, 300);
 });

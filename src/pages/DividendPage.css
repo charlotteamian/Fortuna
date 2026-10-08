@@ -1,4 +1,15 @@
 .dividend-page { max-width: 1100px; margin: 0 auto; }
+.div-strategy { margin-bottom: 1rem; }
+.div-strategy > span { display: block; font-size: .85rem; color: var(--text-secondary); margin-bottom: .5rem; }
+.div-strategy-options { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.div-strategy-options button { padding: .85rem .5rem; border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); background: var(--bg-card); font: inherit; font-weight: 600; }
+.div-strategy-options button.selected { border-color: var(--asset-color); background: var(--asset-dim); color: var(--asset-color); }
+.dividend-page fieldset, .div-dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.df-config label { margin-bottom: 0; }
+.df-plan-settings { margin-bottom: 0; }
+.df-plan-settings .div-budget { margin-top: .5rem; padding-top: .5rem; }
+.df-entry-guide { padding: .8rem 1rem; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 10px; font-size: .85rem; line-height: 1.6; }
+.df-fund-list { margin-top: 1rem; }
 .div-hero { border: 1px solid var(--border); background: linear-gradient(130deg, var(--asset-dim), var(--bg-card)); border-radius: var(--radius); padding: 1.2rem; margin-bottom: 1rem; }
 .div-estimate { display: flex; flex-direction: column; gap: .35rem; }
 .div-estimate > span { font-size: .88rem; color: var(--text-secondary); }
@@ -8,7 +19,7 @@
 .div-budget label { display: block; margin-bottom: .5rem; font-size: .9rem; }
 .div-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
 .div-budget input { flex: 1; min-width: 120px; }
-.dividend-page input, .div-dialog input, .div-dialog select, .div-dialog textarea { border: 1px solid var(--border); border-radius: 9px; color: var(--text-primary); background: var(--bg-secondary); padding: .7rem; font: inherit; min-width: 0; width: 100%; box-sizing: border-box; }
+.dividend-page input, .dividend-page select, .div-dialog input, .div-dialog select, .div-dialog textarea { border: 1px solid var(--border); border-radius: 9px; color: var(--text-primary); background: var(--bg-secondary); padding: .7rem; font: inherit; min-width: 0; width: 100%; box-sizing: border-box; }
 .dividend-page button, .div-dialog button { min-height: 44px; }
 .div-toolbar { margin-bottom: .75rem; }
 .div-method { margin: 1rem 0; padding: .8rem; background: var(--bg-secondary); border-radius: 10px; font-size: .8rem; line-height: 1.65; }
@@ -22,6 +33,7 @@
 .div-stock-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
 .div-stock-heading > button { flex-shrink: 0; white-space: nowrap; }
 .div-stock-heading h2 { font-size: 1.07rem; margin: 0 0 .3rem; }
+.div-stock-heading > div, .div-stock-heading > h2 { min-width: 0; overflow-wrap: anywhere; }
 .div-stock-heading h2 span { font-size: .76rem; font-weight: 400; color: var(--text-secondary); }
 .div-stock-heading small { color: var(--asset-color); }
 .div-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem .65rem; }
@@ -48,7 +60,7 @@
 .div-dialog { margin: auto; padding: 1.1rem; width: min(94vw, 600px); max-height: 88dvh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-primary); color: var(--text-primary); }
 .div-dialog::backdrop { background: rgba(0,0,0,.65); }
 .div-form-fields { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
-.div-form-fields label, .div-form-note { display: flex; flex-direction: column; gap: .45rem; font-size: .8rem; }
+.div-form-fields label, .div-form-note { display: flex; flex-direction: column; gap: .45rem; font-size: .8rem; min-width: 0; }
 .div-dialog td input { min-width: 70px; padding: .6rem .35rem; }
 .div-linked-all, .div-linked-option { display: flex; align-items: center; gap: .7rem; cursor: pointer; font-size: .85rem; }
 .div-linked-all { padding: .75rem 0; }

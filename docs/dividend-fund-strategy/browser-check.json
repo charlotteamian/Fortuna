@@ -1,0 +1,27 @@
+{
+  "archive320": {
+    "fullyVisible": true,
+    "name": "科创创业人工智能主题ETF（归档名称完整显示验证）",
+    "overflow": false,
+    "summary": "科创创业人工智能主题ETF（归档名称完整显示验证）已归档0.00",
+    "width": 320
+  },
+  "englishLarge320": {
+    "fontLarge": true,
+    "funds": [
+      {
+        "allocation": "Share of dividend fund sleeve (%) 60%Planned amount ¥192,000",
+        "exit": true,
+        "name": "易方达中证红利低波动ETF（测试计划）"
+      },
+      {
+        "allocation": "Share of dividend fund sleeve (%) 40%Planned amount ¥128,000",
+        "exit": false,
+        "name": "红利低波100联接基金（虚构计划）"
+      }
+    ],
+    "overflow": false,
+    "pageOverflow": false,
+    "width": 320
+  }
+}

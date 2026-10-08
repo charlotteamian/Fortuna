@@ -4,6 +4,9 @@ import { useAppContext } from '../app-context';
 import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, dividendEstimateMinor, effectiveDps, mainlandCode, redistributeDividendWeights, scaleDividendWeights, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
 import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, refreshDividendTrend, saveDividendBudget, saveDividendStock } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
+import DividendFundWorkbench from '../components/DividendFundWorkbench';
+import { saveDividendStrategy } from '../services/dividendFundService';
+import type { DividendStrategy } from '../lib/dividendFundPlan';
 import './DividendPage.css';
 
 type Workbench = Awaited<ReturnType<typeof loadDividendWorkbench>>;
@@ -15,6 +18,7 @@ export default function DividendPage() {
   const [data, setData] = useState<Workbench | null>(null);
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
+  const [strategySaving, setStrategySaving] = useState(false);
   const [linkedPickerOpen, setLinkedPickerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [allocationOpen, setAllocationOpen] = useState(false);
@@ -81,6 +85,18 @@ export default function DividendPage() {
     finally { if (alive.current) setBudgetSaving(false); }
   };
   if (!data) return <div role="status">{error || t('loading')}</div>;
+  const changeStrategy = async (strategy: DividendStrategy) => {
+    if (strategySaving) return;
+    setStrategySaving(true); setError('');
+    try { await saveDividendStrategy(strategy); await load(); setMessage(''); }
+    catch { setError(t('div_save_error')); }
+    finally { setStrategySaving(false); }
+  };
+  const header = <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><p className="page-subtitle">{t(data.strategy === 'funds' ? 'df_subtitle' : 'div_subtitle')}</p></div>
+    <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button>
+  </div>;
+  const strategySelector = <section className="div-strategy"><span>{t('div_strategy')}</span><div className="div-strategy-options" role="group" aria-label={t('div_strategy')}>{(['stocks', 'funds'] as const).map(strategy => <button key={strategy} className={data.strategy === strategy ? 'selected' : ''} aria-pressed={data.strategy === strategy} disabled={strategySaving || budgetSaving || Boolean(progress)} onClick={() => void changeStrategy(strategy)}>{t(`div_strategy_${strategy}`)}</button>)}</div><p className="div-muted">{t('div_strategy_preserved')}</p></section>;
+  if (data.strategy === 'funds') return <div className="dividend-page">{header}{strategySelector}{error && <p className="div-warning" role="alert">{error}</p>}<DividendFundWorkbench plan={data.fundPlan} amountVisible={amountVisible} onSaved={load} /></div>;
   const sharesFor = (stock: DividendStock) => stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
   const held = data.stocks.filter(s => sharesFor(s) > 0);
   const covered = held.filter(s => effectiveDps(s) !== undefined);
@@ -91,9 +107,7 @@ export default function DividendPage() {
   const untracked = [...data.positions.values()].filter(position => !data.stocks.some(stock => stock.code === position.code)).sort((a, b) => a.code.localeCompare(b.code));
   const displayed = data.stocks.filter(s => (group === 'all' ? s.group !== 'hidden' : group === 'held' ? sharesFor(s) > 0 : s.group === group) && `${s.name} ${s.code}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a,b) => ({core:0,watch:1,hidden:2}[a.group] - {core:0,watch:1,hidden:2}[b.group]) || b.weightBps - a.weightBps || a.code.localeCompare(b.code));
   return <div className="dividend-page">
-    <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><p className="page-subtitle">{t('div_subtitle')}</p></div>
-      <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button>
-    </div>
+    {header}{strategySelector}
     <section className="div-hero">
       <div className="div-estimate"><span>{t('div_annual_estimate')}</span><strong>{held.length > 0 && covered.length === 0 ? '—' : money(estimated)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}{staleCount > 0 ? ` · ${t('div_cached_count', { count: staleCount })}` : ''}</small></div>
       <p className="div-muted">{t('div_estimate_note')}</p>

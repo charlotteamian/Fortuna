@@ -176,6 +176,74 @@ test('saved dividend budgets survive stale-page preference edits, simultaneous p
   assert.equal((await loadDividendWorkbench()).budgetMinor, 123);
 });
 
+test('fund strategy switches preserve stock plans and concurrent settings/fund edits survive reopening', async () => {
+  const { loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
+  const { saveDividendFundConfig, saveDividendFund, saveDividendStrategy, deleteDividendFund } = await import('../src/services/dividendFundService.ts');
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  const initial = await loadDividendWorkbench();
+  assert.equal(initial.strategy, 'stocks');
+  assert.equal(initial.fundPlan.funds.length, 0);
+  await saveDividendBudget(32100012);
+  await saveDividendStrategy('funds');
+  await Promise.all([
+    saveDividendFundConfig({ ...defaultDividendFundPlan(), budgetMinor: 20000000, mode: 'rebalance' }),
+    saveDividendFund({ id: 'fund-a', name: 'Synthetic dividend fund', code: '563020', indexKind: 'low_volatility', weightBps: 6000 }),
+    saveDividendFund({ id: 'fund-b', name: 'Name-only fund', indexKind: 'low_volatility_100', weightBps: 4000, note: 'keep my plan' }),
+    updateSettings({ language: 'en', fontSize: 'large' }),
+  ]);
+  await saveDividendStrategy('stocks');
+  db.close(); await db.open();
+  const reopened = await loadDividendWorkbench();
+  assert.equal(reopened.strategy, 'stocks');
+  assert.equal(reopened.budgetMinor, 32100012);
+  assert.deepEqual(reopened.stocks, initial.stocks);
+  assert.equal(reopened.fundPlan.budgetMinor, 20000000);
+  assert.equal(reopened.fundPlan.mode, 'rebalance');
+  assert.equal(reopened.fundPlan.funds.length, 2);
+  assert.equal((await initializeSettings()).language, 'en');
+  await assert.rejects(saveDividendFund({ id: 'fund-c', name: 'too much', indexKind: 'other', weightBps: 1 }), /DIVIDEND_FUND_OVERWEIGHT/);
+  await assert.rejects(saveDividendFund({ id: 'fund-c', name: 'duplicate', code: '563020', indexKind: 'other', weightBps: 0 }), /DIVIDEND_FUND_DUPLICATE/);
+  assert.equal((await loadDividendWorkbench()).fundPlan.funds.length, 2);
+  await deleteDividendFund('fund-a');
+  assert.equal((await loadDividendWorkbench()).fundPlan.funds[0].weightBps, 4000);
+  await saveDividendFundConfig({ ...defaultDividendFundPlan(), budgetMinor: 0 });
+  assert.equal((await loadDividendWorkbench()).fundPlan.budgetMinor, 0);
+  assert.equal((await loadDividendWorkbench()).fundPlan.funds.length, 1);
+});
+
+test('fund plans and strategy choices round-trip through JSON and Excel without touching actual balances', async () => {
+  const { exportData, importData } = await import('../src/db.ts');
+  const { loadDividendWorkbench } = await import('../src/services/dividendService.ts');
+  const { saveDividendFundConfig, saveDividendFund, saveDividendStrategy } = await import('../src/services/dividendFundService.ts');
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  const { dateInChina } = await import('../src/lib/dividendWorkbench.ts');
+  await seedAccount();
+  await saveDividendStrategy('funds');
+  await saveDividendFundConfig({ ...defaultDividendFundPlan(), budgetMinor: 32000000, mode: 'swing', entryRule: 'either' });
+  await saveDividendFund({ id: 'fund-a', name: 'Synthetic dividend fund', code: '005827', indexKind: 'other', weightBps: 3750, note: 'my long-term plan', reference: { priceMicros: 901234, highMicros: 1100000, indexYieldBps: 501, asOf: dateInChina(), source: 'Synthetic manual reference' } });
+  const before = await loadDividendWorkbench();
+  const json = await exportData(); const excel = await exportToExcel();
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await updateSettings({ dividendStrategy: 'stocks', dividendFundPlan: undefined });
+    assert.equal(await restore(), true);
+    const after = await loadDividendWorkbench();
+    assert.deepEqual(after.fundPlan, before.fundPlan);
+    assert.equal(after.strategy, 'funds');
+    assert.equal((await db.records.get('qa-record'))?.amount, 240000);
+    assert.equal(await db.holdings.count(), 0);
+  }
+  const bad = JSON.parse(json); bad.settings[0].dividendFundPlan.funds[0].weightBps = 10001;
+  assert.equal(await importData(JSON.stringify(bad)), false);
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(excel, { type: 'base64' });
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Settings);
+  rows[0].dividendFundPlan = JSON.stringify(bad.settings[0].dividendFundPlan);
+  workbook.Sheets.Settings = XLSX.utils.json_to_sheet(rows);
+  assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' })), false);
+  assert.deepEqual((await loadDividendWorkbench()).fundPlan, before.fundPlan);
+  assert.equal((await db.records.get('qa-record'))?.amount, 240000);
+});
+
 async function seedLinkedStocks() {
   await db.accounts.add({ id: 'stocks', name: 'Synthetic broker', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, createdAt: 1, sortOrder: 0 });
   for (const [i, code] of ['600519', '688981', '002594'].entries()) {

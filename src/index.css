@@ -725,6 +725,8 @@ html, body, #root {
 .font-large .account-amount-toggle { margin-left: auto; }
 .font-large .collapsible-section-title { align-items: flex-start; flex-wrap: wrap; }
 .font-large .collapsible-section-title > .btn { margin-left: 16px; }
+.holding-card-archived .holding-card-summary { align-items: flex-start !important; flex-wrap: wrap; }
+.holding-card-archived .holding-card-name { flex: 1 1 100%; min-width: 0; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere; }
 .font-large .holding-card-summary { align-items: flex-start !important; flex-wrap: wrap; }
 .font-large .holding-card-name { flex: 1 1 100%; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
 .font-large .holding-card-spacer { display: none; }

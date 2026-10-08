@@ -5,6 +5,7 @@ import { defaultDividendStocks, isDividendStock, linkedDividendPositions, mainla
 import type { DividendImportRow } from '../lib/dividendImport';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
+import { defaultDividendFundPlan } from '../lib/dividendFundPlan';
 
 export async function loadDividendWorkbench() {
   await initializeSettings();
@@ -18,7 +19,7 @@ export async function loadDividendWorkbench() {
   const [stocks, settings, accounts, holdings, txns] = await Promise.all([
     db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
   ]);
-  return { stocks, budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
+  return { stocks, strategy: settings?.dividendStrategy ?? 'stocks', fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(), budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
 }
 export async function saveDividendBudget(budgetMinor: number) {
   if (!Number.isSafeInteger(budgetMinor) || budgetMinor < 0 || budgetMinor > 1e14) throw new Error('INVALID_BUDGET');

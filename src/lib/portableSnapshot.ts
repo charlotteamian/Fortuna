@@ -29,7 +29,7 @@ export interface PortableSnapshotInput {
   transactions: HoldingTxn[];
   exchangeRates: ExchangeRate[];
   planStatus: PlanStatus;
-  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'dividendBudgetMinor'>;
+  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan'>;
   dividendStocks?: DividendStock[];
   generatedAt?: Date;
   trigger?: string;
@@ -387,7 +387,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
 
   return {
     schemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION,
-    dividendWorkbench: { currency: 'CNY', budgetMinor: input.settings.dividendBudgetMinor ?? null, stocks: input.dividendStocks ?? [] },
+    dividendWorkbench: { currency: 'CNY', strategy: input.settings.dividendStrategy ?? 'stocks', budgetMinor: input.settings.dividendBudgetMinor ?? null, stocks: input.dividendStocks ?? [], fundPlan: input.settings.dividendFundPlan ?? null },
     source: 'Fortuna',
     scope: 'all active accounts, liabilities, allocation plan, holdings, and ledgers',
     generatedAt: generatedAt.toISOString(),
