@@ -1,0 +1,29 @@
+.archive-controls {
+  margin: 10px 0 12px; padding: 12px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--bg-card); min-width: 0;
+}
+.archive-controls label { display: block; min-width: 0; }
+.archive-controls label > span { display: block; margin-bottom: 5px; color: var(--text-secondary); font-size: .7rem; }
+.archive-controls .form-input, .archive-controls .form-select { min-width: 0; max-width: 100%; min-height: 2.5rem; font-size: .75rem; }
+.archive-controls input[type="date"] { width: 100%; appearance: none; }
+.archive-controls input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+.archive-controls input[type="date"]::-webkit-calendar-picker-indicator { padding: 0; margin: 0; }
+.dark-mode .archive-controls input[type="date"] { color-scheme: dark; }
+.archive-search { margin-bottom: 10px; }
+.archive-control-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.archive-full-width { grid-column: 1 / -1; }
+.archive-date-hint { margin: 8px 0 0; color: var(--text-muted); font-size: .68rem; line-height: 1.5; }
+.archive-date-error { color: var(--liability-color); }
+.archive-results-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: .72rem; color: var(--text-secondary); }
+.archive-results-bar button { min-height: 2.25rem; padding: 5px 0 5px 8px; border: 0; background: transparent; color: var(--asset-color); font: inherit; cursor: pointer; }
+.archive-results-bar button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.archive-empty { padding: 12px 0 0; color: var(--text-muted); font-size: .75rem; line-height: 1.5; }
+.archive-pnl-total { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 12px; font-size: .75rem; color: var(--text-secondary); }
+.archive-pnl-total strong { font-variant-numeric: tabular-nums; }
+.archive-pnl-total small { flex-basis: 100%; font-size: .66rem; color: var(--text-muted); line-height: 1.5; }
+.font-large .archive-control-grid { grid-template-columns: minmax(0, 1fr); }
+.font-large .archive-full-width { grid-column: auto; }
+@media (max-width: 360px) {
+  .archive-control-grid { grid-template-columns: minmax(0, 1fr); }
+  .archive-full-width { grid-column: auto; }
+}

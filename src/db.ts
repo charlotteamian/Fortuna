@@ -9,6 +9,7 @@ import { getHoldingContractMultiplier, type UsOptionRight } from './lib/usOption
 import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 
 export { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
+export { COLOR_THEMES, getTheme, type ColorTheme } from './lib/colorThemes';
 
 export interface Account {
   id: string;
@@ -59,15 +60,6 @@ export interface CustomField {
 export interface CategoryDef {
   name: string; type: 'asset' | 'liability'; icon: string;
   fields?: CustomField[];
-}
-
-export interface ColorTheme {
-  id: string;
-  name: string;
-  assetColor: string;
-  assetDim: string;
-  liabilityColor: string;
-  liabilityDim: string;
 }
 
 export interface ProductEntry {
@@ -189,23 +181,6 @@ export const CURRENT_ONBOARDING_VERSION = 1;
 // Both persisted modes use global spot. 'domestic' keeps the legacy CNY-per-gram
 // conversion path for compatibility; it is not a Shanghai Gold Exchange quote.
 export type GoldPriceSource = 'international' | 'domestic';
-
-// ---- Color Themes ----
-export const COLOR_THEMES: ColorTheme[] = [
-  { id: 'emerald-rose', name: '资产翠绿 / 负债玫红', assetColor: '#34d399', assetDim: 'rgba(52,211,153,0.10)', liabilityColor: '#fb7185', liabilityDim: 'rgba(251,113,133,0.10)' },
-  { id: 'rose-emerald', name: '资产玫红 / 负债翠绿', assetColor: '#fb7185', assetDim: 'rgba(251,113,133,0.10)', liabilityColor: '#34d399', liabilityDim: 'rgba(52,211,153,0.10)' },
-  { id: 'sky-amber', name: '资产天蓝 / 负债琥珀', assetColor: '#60a5fa', assetDim: 'rgba(96,165,250,0.10)', liabilityColor: '#fbbf24', liabilityDim: 'rgba(251,191,36,0.10)' },
-  { id: 'cyan-violet', name: '资产青碧 / 负债紫罗', assetColor: '#22d3ee', assetDim: 'rgba(34,211,238,0.10)', liabilityColor: '#c084fc', liabilityDim: 'rgba(192,132,252,0.10)' },
-  { id: 'teal-pink', name: '资产松石 / 负债桃粉', assetColor: '#2dd4bf', assetDim: 'rgba(45,212,191,0.10)', liabilityColor: '#f472b6', liabilityDim: 'rgba(244,114,182,0.10)' },
-];
-
-const LIGHT_THEME_COLORS: Record<string, Pick<ColorTheme, 'assetColor' | 'assetDim' | 'liabilityColor' | 'liabilityDim'>> = {
-  'emerald-rose': { assetColor: '#047857', assetDim: 'rgba(4,120,87,0.10)', liabilityColor: '#be123c', liabilityDim: 'rgba(190,18,60,0.10)' },
-  'rose-emerald': { assetColor: '#be123c', assetDim: 'rgba(190,18,60,0.10)', liabilityColor: '#047857', liabilityDim: 'rgba(4,120,87,0.10)' },
-  'sky-amber': { assetColor: '#0369a1', assetDim: 'rgba(3,105,161,0.10)', liabilityColor: '#92400e', liabilityDim: 'rgba(146,64,14,0.10)' },
-  'cyan-violet': { assetColor: '#0e7490', assetDim: 'rgba(14,116,144,0.10)', liabilityColor: '#7e22ce', liabilityDim: 'rgba(126,34,206,0.10)' },
-  'teal-pink': { assetColor: '#0f766e', assetDim: 'rgba(15,118,110,0.10)', liabilityColor: '#be185d', liabilityDim: 'rgba(190,24,93,0.10)' },
-};
 
 // ---- Precious Metals ----
 export const METAL_TYPES = [
@@ -487,13 +462,6 @@ async function migrateMetalRecords(): Promise<void> {
       prev = r.amount;
     }
   }
-}
-
-export function getTheme(id: string, appearance: 'dark' | 'light' = 'dark'): ColorTheme {
-  const theme = COLOR_THEMES.find(t => t.id === id) || COLOR_THEMES[0];
-  return appearance === 'light' && LIGHT_THEME_COLORS[theme.id]
-    ? { ...theme, ...LIGHT_THEME_COLORS[theme.id] }
-    : theme;
 }
 
 // ---- Data Import / Export ----

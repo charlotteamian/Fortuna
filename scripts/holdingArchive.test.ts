@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitHoldingsByArchive } from '../src/lib/holdingArchive.ts';
+import { getArchivedHoldingMarket, getHoldingLastRecordDates, splitHoldingsByArchive } from '../src/lib/holdingArchive.ts';
 
 type HoldingLike = {
   id: string;
@@ -35,4 +35,26 @@ test('splitHoldingsByArchive preserves display order within each group', () => {
 
   assert.deepEqual(result.active.map(holding => holding.id), ['active-first', 'active-second']);
   assert.deepEqual(result.archived.map(holding => holding.id), ['archived-first', 'archived-second']);
+});
+
+test('archived market filters use existing aliases and infer only when the explicit market is absent', () => {
+  assert.equal(getArchivedHoldingMarket({ market: 'NASDAQ', symbol: 'AAPL' }), '美股');
+  assert.equal(getArchivedHoldingMarket({ market: 'HK', symbol: '00700' }), '港股');
+  assert.equal(getArchivedHoldingMarket({ symbol: '000001' }), 'A股');
+  assert.equal(getArchivedHoldingMarket({ market: '其他', symbol: 'AAPL' }), '其他');
+  assert.equal(getArchivedHoldingMarket({ instrumentType: 'us_option', symbol: 'AAPL' }), '美股');
+  assert.equal(getArchivedHoldingMarket({}), '其他');
+});
+
+test('last record date includes calibration/withdrawals, ignores input ordering and leaves missing dates unset', () => {
+  const result = getHoldingLastRecordDates([
+    { holdingId: 'stock', date: '2026-10-13' },
+    { holdingId: 'stock', date: '2026-09-01' },
+    { holdingId: 'deposit', date: '2026-10-01' },
+    { holdingId: 'stock', date: '2026-10-15' },
+    { holdingId: 'undated', date: '' },
+  ]);
+  assert.equal(result.get('stock'), '2026-10-15');
+  assert.equal(result.get('deposit'), '2026-10-01');
+  assert.equal(result.has('undated'), false);
 });

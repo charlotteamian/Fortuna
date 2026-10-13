@@ -1,0 +1,63 @@
+{
+  "syntheticData": true,
+  "layouts": [
+    {
+      "label": "zh-normal-390",
+      "width": 390,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "zh-normal-light-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "zh-large-light-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "en-normal-dark-390",
+      "width": 390,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "en-large-dark-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "account-archive-390",
+      "width": 390,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "palettes-light-390",
+      "width": 390,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "palettes-en-large-dark-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    }
+  ],
+  "checks": [
+    "All six date/name/P&L orders, negative/zero/positive results, undated last, and -50.00 CNY filtered total.",
+    "Name/code/full-width/case-insensitive search, combined inclusive/open date ranges, market aliases, invalid ranges, empty state, reset, and complete trade details.",
+    "Archived deposit principal histories support dates/search/name ordering without fabricated P&L; unit funds support code search and realised profit.",
+    "Archived accounts across deposits/property/debt support product-code search, category/date filtering and preserve archive dates.",
+    "All 11 palettes selectable; all six new IDs persist; CSS colours match the chosen appearance; reload retains selection; mobile English large-font palette grid fits.",
+    "Privacy masking applies to filtered totals; searches, sorting, filters and palette switches leave all records unchanged."
+  ],
+  "errors": [],
+  "passed": true
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, exportToExcel, importFromExcel, type Account, type Settings, type CustomField } from '../db';
+import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, type Account, type Settings, type CustomField } from '../db';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
 import {
@@ -422,6 +422,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   if (!settings) return null;
 
   const availableCurrencies = Object.keys(CURRENCY_NAMES).filter(c => !settings.currencies.includes(c));
+  const themeAppearance = settings.themeMode === 'dark' || (settings.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  const previewThemes = COLOR_THEMES.map(item => getTheme(item.id, themeAppearance));
   const snapshotCandidates = snapshotAccounts.filter(isSnapshotFocusCandidate);
   const selectedSnapshotIds = new Set(getSnapshotFocusAccountIds(snapshotAccounts, settings.snapshotFocusAccountIds));
   const hiddenAccounts = snapshotAccounts
@@ -502,11 +504,12 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       {/* Color Theme */}
       <div className="settings-section">
         <div className="settings-section-title">{t('color_theme')}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {COLOR_THEMES.map(themeItem => (
-            <button key={themeItem.id} className="theme-option" onClick={() => save({ colorTheme: themeItem.id })}
+        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>{t('color_theme_hint')}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
+          {previewThemes.map(themeItem => (
+            <button key={themeItem.id} type="button" className="theme-option" aria-pressed={settings.colorTheme === themeItem.id} onClick={() => save({ colorTheme: themeItem.id })}
               style={{ border: settings.colorTheme === themeItem.id ? `2px solid var(--accent)` : '1px solid var(--border)',
-                background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', padding: '12px', cursor: 'pointer', textAlign: 'left' }}>
+                background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', padding: '12px', cursor: 'pointer', textAlign: 'left', minWidth: 0, overflowWrap: 'anywhere' }}>
               <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.assetColor, display: 'inline-block' }} />
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.liabilityColor, display: 'inline-block' }} />

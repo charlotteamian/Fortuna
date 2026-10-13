@@ -11,7 +11,8 @@ import {
 } from '../services/holdingService';
 import { fetchQuotes } from '../services/quoteService';
 import { useAppContext } from '../app-context';
-import { splitHoldingsByArchive } from '../lib/holdingArchive';
+import { getArchivedHoldingMarket, getHoldingLastRecordDates, splitHoldingsByArchive } from '../lib/holdingArchive';
+import { DEFAULT_ARCHIVE_FILTERS, queryArchive } from '../lib/archiveQuery';
 import { summarizeHoldingTrades } from '../lib/holdingTradeReview';
 import {
   getDefaultHoldingModeForCategory,
@@ -37,6 +38,7 @@ import {
 } from '../lib/usOption';
 import { formatLocalDate } from '../lib/localDate';
 import HoldingImportModal from './HoldingImportModal';
+import ArchiveControls from './ArchiveControls';
 import './PortfolioPanel.css';
 
 interface Props { account: Account; onChanged: () => void; onOpenApiSettings: () => void; apiConfigRevision: number; }
@@ -62,6 +64,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const [txns, setTxns] = useState<HoldingTxn[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showArchivedHoldings, setShowArchivedHoldings] = useState(false);
+  const [archiveFilters, setArchiveFilters] = useState({ ...DEFAULT_ARCHIVE_FILTERS });
   const [oldestTxnFirst, setOldestTxnFirst] = useState(false);
   const [confirmDeleteTxn, setConfirmDeleteTxn] = useState<{ holding: HoldingWithPosition; txn: HoldingTxn } | null>(null);
 
@@ -233,6 +236,20 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
 
   const cash = account.cashBalance || 0;
   const { active: activeHoldings, archived: archivedHoldings } = splitHoldingsByArchive(holdings);
+  const lastRecordDates = getHoldingLastRecordDates(txns);
+  const archiveItems = archivedHoldings.map(holding => ({
+    id: holding.id, name: holding.name, holding,
+    searchTerms: [holding.symbol, holding.optionUnderlying],
+    type: isStockPortfolio ? getArchivedHoldingMarket(holding) : account.category,
+    date: lastRecordDates.get(holding.id) ?? null,
+    pnlMinor: usesBalanceHoldings(account.category, holding) ? null : Math.round(holding.position.realizedPnl * 100),
+  }));
+  const filteredArchive = queryArchive(archiveItems, archiveFilters, i18n.language);
+  const archiveHasPnl = archiveItems.some(item => item.pnlMinor != null);
+  const filteredPnlMinor = filteredArchive.reduce((sum, item) => sum + (item.pnlMinor ?? 0), 0);
+  const archiveTypeOptions = isStockPortfolio
+    ? ['A股', '美股', '港股', '其他'].map((value, index) => ({ value, label: t(MARKET_OPTS[index]) }))
+    : [{ value: account.category, label: t(account.category) }];
   const positionValue = activeHoldings.reduce((s, h) => s + h.marketValue, 0);
   const totalValue = positionValue + cash;
   const costBasis = isBalancePortfolio ? 0 : activeHoldings.reduce((s, h) => s + h.position.costBasis, 0);
@@ -755,7 +772,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       )}
 
       {archivedHoldings.length > 0 && (
-        <div style={{ marginTop: 18 }}>
+        <div className="archived-holdings" style={{ marginTop: 18 }}>
           <div className="entry-group-title collapsible-section-title">
             <span className="dot" style={{ background: 'var(--text-muted)' }} />
             <span className="collapsible-section-label">{t(isBalancePortfolio ? 'archived_products_title' : 'archived_holdings_title')} ({archivedHoldings.length})</span>
@@ -771,7 +788,20 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
           </div>
           {showArchivedHoldings && <>
             <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t(isBalancePortfolio ? 'archived_products_hint' : 'archived_holdings_hint')}</div>
-            {archivedHoldings.map(h => renderHolding(h, true))}
+            <ArchiveControls filters={archiveFilters} onChange={setArchiveFilters} typeOptions={archiveTypeOptions}
+              allowPnlSort={archiveHasPnl} dateHint={t('archive_holding_date_hint')}
+              resultCount={filteredArchive.length} totalCount={archivedHoldings.length} />
+            {archiveHasPnl && filteredArchive.length > 0 && <div className="archive-pnl-total">
+              <span>{t('archive_filtered_pnl')}</span>
+              <strong style={{ color: pnlColor(filteredPnlMinor) }}>{masked(`${filteredPnlMinor >= 0 ? '+' : ''}${fmtFull(filteredPnlMinor / 100)} ${account.currency}`)}</strong>
+              <small>{t('archive_filtered_pnl_hint')}</small>
+            </div>}
+            {filteredArchive.map(item => <div key={item.id}>
+              {usesBalanceHoldings(account.category, item.holding) && <div className="holding-archive-date">
+                {t('archive_last_record')} {item.date ?? t('archive_date_unknown')}
+              </div>}
+              {renderHolding(item.holding, true)}
+            </div>)}
           </>}
         </div>
       )}

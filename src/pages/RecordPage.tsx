@@ -10,6 +10,8 @@ import { setAccountPortfolioMode } from '../services/holdingService';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 import { formatLocalDate } from '../lib/localDate';
 import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
+import { DEFAULT_ARCHIVE_FILTERS, queryArchive } from '../lib/archiveQuery';
+import ArchiveControls from '../components/ArchiveControls';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
 interface EditingAccountState {
@@ -32,6 +34,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const { theme, amountVisible, setAmountVisible, settings: appSettings } = useAppContext();
   const [accounts, setAccounts] = useState<AccountWithLatest[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountWithLatest[]>([]);
+  const [archiveFilters, setArchiveFilters] = useState({ ...DEFAULT_ARCHIVE_FILTERS });
   const [activeAccountCount, setActiveAccountCount] = useState(0);
   const [hiddenAccountCount, setHiddenAccountCount] = useState(0);
   const [totals, setTotals] = useState({ totalAssets: 0, totalLiabilities: 0, netWorth: 0 });
@@ -313,6 +316,17 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const liabilityAccounts = accounts.filter(a => a.type === 'liability');
   const hasAnyAccounts = accounts.length > 0 || archivedAccounts.length > 0 || hiddenAccountCount > 0;
   const showArchivedAccounts = settings?.showArchivedAccounts ?? true;
+  const archiveItems = archivedAccounts.map(account => ({
+    id: account.id, name: account.name, account,
+    searchTerms: [account.institution, account.productData?.code],
+    type: `${account.type}:${account.category}`,
+    date: account.archivedAt ? formatLocalDate(new Date(account.archivedAt)) : null,
+    pnlMinor: null,
+  }));
+  const filteredArchive = queryArchive(archiveItems, archiveFilters, i18n.language);
+  const archiveTypeOptions = [...new Map(archiveItems.map(item => [item.type, {
+    value: item.type, label: t(item.account.category),
+  }])).values()].sort((a, b) => a.label.localeCompare(b.label, i18n.language));
 
   // Long-press handlers
   const startLongPress = useCallback((acctId: string, e: React.TouchEvent | React.MouseEvent) => {
@@ -391,6 +405,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
             {acct.institution && <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{acct.institution}</span>}
             {t(acct.category)} · {acct.unit === 'gram' ? t('precious_metal_label') : acct.currency}
           </div>
+          {acct.archivedAt && <div className="entry-note-text">{t('archive_account_date')} {formatLocalDate(new Date(acct.archivedAt))}</div>}
         </div>
         {renderAmount(acct)}
       </div>
@@ -515,7 +530,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
             </div>
           )}
           {archivedAccounts.length > 0 && (
-            <div style={{ marginBottom: '2rem' }}>
+            <div className="archived-accounts" style={{ marginBottom: '2rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '1rem 0 0.5rem' }}>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-muted)' }}>{t('archived_accounts')} ({archivedAccounts.length})</h2>
                 <button
@@ -535,7 +550,10 @@ export default function RecordPage({ onOpenAccount }: Props) {
                     </div>
                     <div>{t('history_records')}</div>
                   </div>
-                  {archivedAccounts.map(acct => renderEntryItem(acct))}
+                  <ArchiveControls filters={archiveFilters} onChange={setArchiveFilters} typeOptions={archiveTypeOptions}
+                    allowPnlSort={false} dateHint={t('archive_account_date_hint')} searchPlaceholder={t('archive_account_search_placeholder')}
+                    resultCount={filteredArchive.length} totalCount={archivedAccounts.length} />
+                  {filteredArchive.map(item => renderEntryItem(item.account))}
                 </>
               )}
             </div>

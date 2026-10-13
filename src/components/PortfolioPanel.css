@@ -49,3 +49,4 @@
 .holding-action-link.holding-action-delete { color: var(--liability-color); margin-left: auto; }
 .font-large .holding-review-summary { grid-template-columns: minmax(0, 1fr); }
 .holding-archived-result { font-size: .62rem; font-family: var(--font); font-weight: 400; color: var(--text-muted); }
+.holding-archive-date { font-size: .68rem; color: var(--text-muted); margin: 12px 0 5px; }
