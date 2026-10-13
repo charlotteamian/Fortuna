@@ -1,0 +1,54 @@
+{
+  "syntheticData": true,
+  "layouts": [
+    {
+      "label": "zh-normal-390",
+      "width": 390,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "zh-normal-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "zh-large-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "zh-settings-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "en-large-dark-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    },
+    {
+      "label": "en-settings-large-dark-320",
+      "width": 320,
+      "bad": [],
+      "overflow": false
+    }
+  ],
+  "checks": [
+    "Six fills show complete prices, shares, dates, turnover, note and fill reference; correct aggregate totals.",
+    "Newest/oldest sorting works and preserves same-day fill order.",
+    "Editing a fill updates detail, totals and P&L, while preserving note and broker reference.",
+    "Deletion requires confirmation; cancel preserves data, confirm recalculates the position and archive membership.",
+    "Calibration anchors remain distinct from actual fills and are excluded from trade totals.",
+    "Balance-mode principal and snapshot rows still display their correct amount and edit controls.",
+    "Settings exposes the API card at the top; configuration saves and survives refresh with a clear provider/model status.",
+    "Import opens the same Settings configuration; returning preserves an unconfirmed mocked screenshot preview.",
+    "Amount privacy hides trade prices, quantities, turnover and summary amounts."
+  ],
+  "errors": [],
+  "passed": true
+}

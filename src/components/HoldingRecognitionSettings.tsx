@@ -22,17 +22,18 @@ export default function HoldingRecognitionSettings({ focus = false }: { focus?: 
   const [expanded, setExpanded] = useState(focus);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [configured, setConfigured] = useState(false);
+  const [savedConfig, setSavedConfig] = useState<HoldingRecognitionConfig | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const selectedProviderId = inferHoldingRecognitionProvider(config);
   const selectedProvider = getHoldingRecognitionProvider(selectedProviderId);
+  const configured = savedConfig != null;
 
   useEffect(() => {
     let active = true;
     void loadHoldingRecognitionConfig().then(saved => {
       if (!active) return;
-      if (saved) { setConfig(saved); setConfigured(true); }
+      if (saved) { setConfig(saved); setSavedConfig(saved); }
     }).catch(() => { if (active) setError(t('holding_import_config_failed')); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -55,7 +56,7 @@ export default function HoldingRecognitionSettings({ focus = false }: { focus?: 
     setBusy(true); setError(''); setNotice('');
     try {
       await saveHoldingRecognitionConfig(config);
-      setConfigured(true); setNotice(t('holding_import_config_saved'));
+      setSavedConfig({ ...config }); setNotice(t('holding_import_config_saved'));
     } catch (cause) {
       const code = cause instanceof Error ? cause.message.replace(/^HOLDING_RECOGNITION_/, '').toLowerCase() : '';
       setError(t('holding_recognition_error_' + code, { defaultValue: t('holding_import_config_failed') }));
@@ -66,17 +67,25 @@ export default function HoldingRecognitionSettings({ focus = false }: { focus?: 
     setBusy(true); setError(''); setNotice('');
     try {
       await clearHoldingRecognitionConfig();
-      setConfig(EMPTY_CONFIG); setConfigured(false); setNotice(t('holding_api_config_cleared'));
+      setConfig(EMPTY_CONFIG); setSavedConfig(null); setNotice(t('holding_api_config_cleared'));
     } catch { setError(t('holding_import_config_failed')); }
     finally { setBusy(false); }
   };
 
   return (
     <section className="settings-section holding-recognition-settings" id="holding-recognition-settings" ref={sectionRef}>
-      <h2 className="settings-section-title">{t('holding_import_api_config')}</h2>
+      <div className="holding-recognition-heading">
+        <h2 className="settings-section-title">{t('holding_import_api_config')}</h2>
+        <button type="button" className="btn btn-sm btn-secondary" disabled={loading || busy}
+          aria-expanded={expanded} aria-controls="holding-recognition-form" onClick={() => setExpanded(value => !value)}>
+          {t(expanded ? 'holding_api_close_config' : configured ? 'holding_api_modify_config' : 'holding_api_configure')}
+        </button>
+      </div>
+      <p className="holding-recognition-status">{loading ? t('loading') : savedConfig
+        ? t('holding_api_ready', { provider: t(getHoldingRecognitionProvider(inferHoldingRecognitionProvider(savedConfig)).nameKey), model: savedConfig.model })
+        : t('holding_api_not_configured')}</p>
       <p className="holding-recognition-note">{t('holding_api_settings_description')}</p>
-      <details open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
-        <summary className="holding-recognition-summary">{t(configured ? 'holding_api_configured' : 'holding_api_not_configured')}</summary>
+      <div id="holding-recognition-form" hidden={!expanded}>
         <div className="form-group">
           <label className="form-label" htmlFor="holding-api-provider">{t('holding_import_api_provider')}</label>
           <select className="form-select" id="holding-api-provider" disabled={busy || loading} value={selectedProviderId}
@@ -119,7 +128,7 @@ export default function HoldingRecognitionSettings({ focus = false }: { focus?: 
           <button className="btn btn-primary" disabled={busy || loading} onClick={() => void saveConfig()}>{t('holding_import_save_config')}</button>
           {configured && <button className="btn btn-secondary" disabled={busy || loading} onClick={() => void clearConfig()}>{t('holding_api_clear_config')}</button>}
         </div>
-      </details>
+      </div>
       {error && <p className="holding-recognition-error" role="alert">{error}</p>}
       {notice && <p className="holding-recognition-note" role="status">{notice}</p>}
     </section>

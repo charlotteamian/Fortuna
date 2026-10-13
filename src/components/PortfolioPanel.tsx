@@ -12,6 +12,7 @@ import {
 import { fetchQuotes } from '../services/quoteService';
 import { useAppContext } from '../app-context';
 import { splitHoldingsByArchive } from '../lib/holdingArchive';
+import { summarizeHoldingTrades } from '../lib/holdingTradeReview';
 import {
   getDefaultHoldingModeForCategory,
   getProductHoldingFields,
@@ -36,12 +37,15 @@ import {
 } from '../lib/usOption';
 import { formatLocalDate } from '../lib/localDate';
 import HoldingImportModal from './HoldingImportModal';
+import './PortfolioPanel.css';
 
 interface Props { account: Account; onChanged: () => void; onOpenApiSettings: () => void; apiConfigRevision: number; }
 
 const MARKET_OPTS = ['opt_a_share', 'opt_us_market', 'opt_hk_market', 'opt_other'];
 
 const today = () => formatLocalDate();
+const editIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z" /></svg>;
+const deleteIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" /></svg>;
 
 export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, apiConfigRevision }: Props) {
   const { t, i18n } = useTranslation();
@@ -58,6 +62,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const [txns, setTxns] = useState<HoldingTxn[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showArchivedHoldings, setShowArchivedHoldings] = useState(false);
+  const [oldestTxnFirst, setOldestTxnFirst] = useState(false);
+  const [confirmDeleteTxn, setConfirmDeleteTxn] = useState<{ holding: HoldingWithPosition; txn: HoldingTxn } | null>(null);
 
   // Holding create/edit modal
   const [showHoldingForm, setShowHoldingForm] = useState(false);
@@ -220,6 +226,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     return n.toFixed(2);
   };
   const fmtFull = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtPrice = (n: number, precision = 8) => n.toLocaleString('en-US', { minimumFractionDigits: account.currency === 'JPY' ? 0 : 2, maximumFractionDigits: precision });
+  const fmtShares = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 8 });
   const pnlColor = (n: number) => n >= 0 ? theme.assetColor : theme.liabilityColor;
   const signed = (n: number) => (n >= 0 ? '+' : '') + fmt(n);
 
@@ -398,7 +406,11 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     setTxnHolding(null); setEditingTxn(null);
     await changed();
   };
-  const handleDeleteTxn = async (id: string) => { await deleteHoldingTxn(id); await changed(); };
+  const handleDeleteTxn = async (id: string) => {
+    await deleteHoldingTxn(id);
+    setConfirmDeleteTxn(null);
+    await changed();
+  };
 
   // ---- Direct balance adjustment ----
   const openBalanceAdjustment = (h: HoldingWithPosition, txn: HoldingTxn | null = null) => {
@@ -474,7 +486,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     await changed();
   };
 
-  const renderTxnRow = (h: HoldingWithPosition, tx: HoldingTxn) => {
+  const renderTxnRow = (h: HoldingWithPosition, tx: HoldingTxn, readOnly = false) => {
     const isSell = tx.kind === 'sell';
     const holdingIsBalance = usesBalanceHoldings(account.category, h);
     const isBalanceAdjustment = holdingIsBalance && tx.balanceSnapshot != null;
@@ -482,30 +494,46 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     const isAdjustment = isBalanceAdjustment || isPositionAdjustment;
     const txnColor = isSell ? theme.liabilityColor : theme.assetColor;
     const multiplier = getHoldingContractMultiplier(h);
+    const quantityUnit = t(resolveUsOptionContract(h) ? 'option_contracts_unit' : 'shares_unit');
     return (
-      <div key={tx.id} style={S.txnRow}>
-        <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isAdjustment ? 'var(--bg-glass)' : isSell ? theme.liabilityDim : theme.assetDim, color: isAdjustment ? 'var(--text-muted)' : txnColor, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
-          {isPositionAdjustment ? t('holding_position_adjustment') : isBalanceAdjustment
-            ? t('balance_adjustment')
-            : holdingIsBalance && balanceFlow
-            ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
-            : t(isSell ? 'sell_out' : 'buy_in')}
-        </span>
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{tx.date}</span>
-        <span style={{ flex: 1, minWidth: 0, fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {isPositionAdjustment
-            ? masked('= ' + tx.quantitySnapshot!.toLocaleString('en-US', { maximumFractionDigits: 4 }) + ' · ' + t('holding_cost_price') + ' ' + (tx.costPriceSnapshot ?? 0).toFixed(3))
-            : isBalanceAdjustment
-            ? masked(`= ${tx.balanceSnapshot!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`)
-            : holdingIsBalance
-            ? masked(`${isSell ? '-' : '+'}${tx.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`)
-            : masked(`${tx.shares.toLocaleString('en-US', { maximumFractionDigits: 4 })}${multiplier > 1 ? ` × ${multiplier}` : ''} × ${tx.price.toFixed(account.currency === 'JPY' ? 0 : 3)}`)}
-        </span>
-        <div className="entry-actions" style={{ flexShrink: 0 }}>
-          {!isPositionAdjustment && <button className="btn btn-sm btn-secondary" onClick={() => isBalanceAdjustment ? openBalanceAdjustment(h, tx) : openEditTxn(h, tx)}>✏️</button>}
-          <button className="btn btn-sm btn-danger" aria-label={t('delete')} onClick={() => handleDeleteTxn(tx.id)}>✕</button>
+      <article key={tx.id} className="holding-txn">
+        <div className="holding-txn-heading">
+          <div className="holding-txn-identity">
+            <span className="holding-txn-kind" style={{ background: isAdjustment ? 'var(--bg-glass)' : isSell ? theme.liabilityDim : theme.assetDim, color: isAdjustment ? 'var(--text-muted)' : txnColor }}>
+              {isPositionAdjustment ? t('holding_position_adjustment') : isBalanceAdjustment
+                ? t('balance_adjustment')
+                : holdingIsBalance && balanceFlow
+                ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
+                : t(isSell ? 'sell_out' : 'buy_in')}
+            </span>
+            <time className="holding-txn-date" dateTime={tx.date}>{tx.date}</time>
+          </div>
+          {!readOnly && <div className="holding-txn-actions">
+            {!isPositionAdjustment && <button type="button" className="holding-action" aria-label={t('edit_record')} title={t('edit_record')} onClick={() => isBalanceAdjustment ? openBalanceAdjustment(h, tx) : openEditTxn(h, tx)}>{editIcon}</button>}
+            <button type="button" className="holding-action holding-action-delete" aria-label={t('holding_delete_txn')} title={t('holding_delete_txn')} onClick={() => setConfirmDeleteTxn({ holding: h, txn: tx })}>{deleteIcon}</button>
+          </div>}
         </div>
-      </div>
+        <dl className="holding-txn-fields">
+          {holdingIsBalance ? (
+            <div className="holding-txn-total">
+              <dt>{t(isBalanceAdjustment ? 'current_balance' : 'amount')} ({account.currency})</dt>
+              <dd>{masked(isBalanceAdjustment ? fmtFull(tx.balanceSnapshot!) : `${isSell ? '-' : '+'}${fmtFull(tx.shares)}`)}</dd>
+            </div>
+          ) : (
+            <>
+              <div><dt>{t(isPositionAdjustment ? 'holding_cost_price' : 'holding_import_trade_price')} ({account.currency})</dt>
+                <dd>{isPositionAdjustment && tx.costPriceSnapshot == null ? '—' : masked(fmtPrice(isPositionAdjustment ? tx.costPriceSnapshot! : tx.price))}</dd></div>
+              <div><dt>{t('shares')}</dt><dd>{masked(fmtShares(isPositionAdjustment ? tx.quantitySnapshot! : tx.shares))} {quantityUnit}</dd></div>
+              {!isPositionAdjustment && <div className="holding-txn-total">
+                <dt>{t('holding_trade_amount')} ({account.currency}){multiplier > 1 ? ` · ${t('option_multiplier')} × ${multiplier}` : ''}</dt>
+                <dd>{masked(fmtFull(Math.round(tx.shares * tx.price * multiplier * 100) / 100))}</dd>
+              </div>}
+            </>
+          )}
+        </dl>
+        {tx.note && <p className="holding-txn-note">{tx.note}</p>}
+        {tx.brokerRef && <p className="holding-txn-reference">{t('holding_trade_reference')} · {tx.brokerRef}</p>}
+      </article>
     );
   };
 
@@ -522,28 +550,35 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       ? ''
       : ` (${h.totalPnlRate >= 0 ? '+' : ''}${h.totalPnlRate.toFixed(1)}%)`;
     const hTxns = txns.filter(tx => tx.holdingId === h.id);
+    const review = summarizeHoldingTrades(hTxns, multiplier);
+    const reviewDates = review.firstDate == null ? '—' : review.firstDate === review.lastDate ? review.firstDate : `${review.firstDate} → ${review.lastDate}`;
+    const displayTxns = oldestTxnFirst ? [...hTxns].reverse() : hTxns;
     const totalIn = hTxns.filter(tx => tx.balanceSnapshot == null && tx.kind === 'buy').reduce((s, tx) => s + tx.shares, 0);
     const totalOut = hTxns.filter(tx => tx.balanceSnapshot == null && tx.kind === 'sell').reduce((s, tx) => s + tx.shares, 0);
     return (
-      <div key={h.id} className={`holding-card${archived ? ' holding-card-archived' : ''}`} style={{ ...S.holdingCard, ...(archived ? S.archivedHoldingCard : {}), border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
-        <div style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expanded ? null : h.id)}>
+      <div key={h.id} className={`holding-card${archived ? ' holding-card-archived' : ''}`} style={{ ...S.holdingCard, border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
+        <div role="button" tabIndex={0} aria-expanded={expanded} aria-label={h.name} style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expanded ? null : h.id)} onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpandedId(expanded ? null : h.id); }
+        }}>
           <div className="holding-card-summary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="holding-card-name" style={{ fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</span>
             {!archived && h.symbol && <span style={S.badge}>{optionContract ? formatUsOptionLabel(optionContract) : h.symbol}</span>}
             {h.market && <span style={S.badge}>{h.market}</span>}
             {archived && <span style={S.archivedBadge}>{t('archived_holding_badge')}</span>}
             <span className="holding-card-spacer" style={{ flex: 1 }} />
-            <span className="holding-card-amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9375rem', whiteSpace: 'nowrap' }}>
-              {masked(fmt(h.marketValue))}
+            <span className="holding-card-amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9375rem', whiteSpace: 'nowrap', color: archived && !holdingIsBalance ? pnlColor(h.position.realizedPnl) : undefined }}>
+              {archived && !holdingIsBalance && <span className="holding-archived-result">{t('realized_pnl')} </span>}
+              {masked(archived && !holdingIsBalance ? `${h.position.realizedPnl >= 0 ? '+' : ''}${fmtFull(h.position.realizedPnl)}` : fmt(h.marketValue))}
             </span>
           </div>
           <div className="holding-card-detail" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-            <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span className={archived && !holdingIsBalance ? 'holding-archived-period' : undefined} style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {holdingIsBalance
                 ? `${t(balanceFlow?.balanceLabelKey ?? 'current_balance')} ${masked(h.marketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))} ${account.currency}`
+                : archived ? `${reviewDates} · ${t('holding_trade_count', { count: review.buys.count + review.sells.count })}`
                 : `${masked(h.position.shares.toLocaleString('en-US', { maximumFractionDigits: 4 }))} ${t(optionContract ? 'option_contracts_unit' : 'shares_unit')} · ${t('last_price')} ${h.lastPrice > 0 ? masked(h.lastPrice.toFixed(3)) : '—'}${h.priceDate ? ` (${h.priceDate.slice(5)})` : ''}`}
             </span>
-            {!holdingIsBalance && hasPnl && (
+            {!archived && !holdingIsBalance && hasPnl && (
               <span className="holding-card-pnl" style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontWeight: 600, color: pnlColor(h.totalPnl), whiteSpace: 'nowrap' }}>
                 {masked(`${signed(h.totalPnl)}${pnlRateText}`)}
               </span>
@@ -560,6 +595,25 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
 
         {expanded && (
           <div style={{ marginTop: 10 }}>
+            {archived && !holdingIsBalance ? (
+              <>
+                <dl className="holding-review-summary">
+                  {([{ side: review.buys, label: 'holding_review_buys' }, { side: review.sells, label: 'holding_review_sells' }] as const).map(({ side, label }) => (
+                    <div key={label}>
+                      <dt>{t(label)}</dt>
+                      <dd>{masked(fmtFull(side.amountMinor / 100))} {account.currency}</dd>
+                      <small className="holding-review-fill-count"><span>{masked(fmtShares(side.shares))} {t(optionContract ? 'option_contracts_unit' : 'shares_unit')}</span><span>· {t('holding_trade_count', { count: side.count })}</span></small>
+                      <small>{t('holding_review_average')} {side.averagePrice == null ? '—' : masked(fmtPrice(side.averagePrice, 4))} {account.currency}</small>
+                    </div>
+                  ))}
+                  <div><dt>{t('realized_pnl')} ({account.currency})</dt>
+                    <dd style={{ color: pnlColor(h.position.realizedPnl) }}>{masked(`${h.position.realizedPnl >= 0 ? '+' : ''}${fmtFull(h.position.realizedPnl)}${pnlRateText}`)}</dd></div>
+                  <div><dt>{t('holding_review_period')}</dt><dd>{reviewDates}</dd></div>
+                </dl>
+                <p className="holding-review-hint">{t('holding_review_amount_hint')}</p>
+                {review.adjustmentCount > 0 && <p className="holding-review-hint">{t('holding_review_adjustment_hint', { count: review.adjustmentCount })}</p>}
+              </>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {holdingIsBalance ? (
                 <>
@@ -583,7 +637,19 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 </>
               )}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            )}
+            {hTxns.length > 0 && (
+              <div>
+                <div className="holding-history-heading">
+                  <span className="holding-history-title">{t('txn_history')} ({hTxns.length})</span>
+                  <button type="button" className="holding-history-sort" onClick={() => setOldestTxnFirst(value => !value)} aria-label={t(oldestTxnFirst ? 'holding_trade_sort_newest' : 'holding_trade_sort_oldest')}>
+                    {t(oldestTxnFirst ? 'holding_trade_oldest_first' : 'holding_trade_newest_first')} ↕
+                  </button>
+                </div>
+                {displayTxns.map(tx => renderTxnRow(h, tx))}
+              </div>
+            )}
+            <div className="holding-management-actions">
               <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }} onClick={() => openTxn(h, 'buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
               {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: '#fff', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>}
               {holdingIsBalance && usesDerivedBalance && (
@@ -591,17 +657,9 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                   {t('balance_adjustment')}
                 </button>
               )}
-              <button className="btn btn-sm btn-secondary" onClick={() => openEditHolding(h)}>✏️</button>
-              <button className="btn btn-sm btn-danger" onClick={() => setConfirmDeleteHolding(h.id)}>🗑️</button>
+              <button type="button" className="holding-action-link" onClick={() => openEditHolding(h)}>{editIcon}{t(isBalancePortfolio ? 'edit_product' : 'edit_holding')}</button>
+              <button type="button" className="holding-action-link holding-action-delete" onClick={() => setConfirmDeleteHolding(h.id)}>{deleteIcon}{t(isBalancePortfolio ? 'delete_product' : 'delete_holding')}</button>
             </div>
-            {hTxns.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-                  {t('txn_history')} ({hTxns.length})
-                </div>
-                {hTxns.map(tx => renderTxnRow(h, tx))}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1028,6 +1086,19 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         </div>
       )}
 
+      {confirmDeleteTxn && (
+        <div className="confirm-overlay" onClick={() => setConfirmDeleteTxn(null)}>
+          <div className="confirm-box" role="dialog" aria-modal="true" aria-labelledby="holding-delete-txn-title" onClick={event => event.stopPropagation()}>
+            <div className="confirm-msg" id="holding-delete-txn-title">{t('holding_delete_txn_confirm', { name: confirmDeleteTxn.holding.name, date: confirmDeleteTxn.txn.date })}</div>
+            {renderTxnRow(confirmDeleteTxn.holding, confirmDeleteTxn.txn, true)}
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={() => setConfirmDeleteTxn(null)}>{t('cancel')}</button>
+              <button className="btn btn-danger" onClick={() => void handleDeleteTxn(confirmDeleteTxn.txn.id)}>{t('confirm_delete')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete holding confirm */}
       {confirmDeleteHolding && (
         <div className="confirm-overlay" onClick={() => setConfirmDeleteHolding(null)}>
@@ -1046,13 +1117,11 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
 
 const S: Record<string, React.CSSProperties> = {
   holdingCard: { background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 8 },
-  archivedHoldingCard: { opacity: 0.72 },
   badge: { fontSize: '0.62rem', fontWeight: 600, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 7px', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' },
   archivedBadge: { fontSize: '0.62rem', fontWeight: 700, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 7px', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' },
   posCell: { background: 'var(--bg-glass)', borderRadius: 10, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 },
   posKey: { fontSize: '0.66rem', color: 'var(--text-muted)' },
   posVal: { fontSize: '0.85rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' },
-  txnRow: { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', marginBottom: 6 },
   chip: { padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 },
   chipActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
   divider: { display: 'flex', alignItems: 'center', margin: '4px 0 12px', gap: 8 },

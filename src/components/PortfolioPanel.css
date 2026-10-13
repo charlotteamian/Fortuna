@@ -1,0 +1,51 @@
+.holding-txn {
+  margin-bottom: 8px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.holding-txn-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.holding-txn-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.holding-txn-kind { font-size: .6875rem; font-weight: 700; border-radius: 6px; padding: 3px 7px; }
+.holding-txn-date { font-size: .75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.holding-txn-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.holding-action {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.25rem; height: 2.25rem; padding: 0;
+  background: transparent; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+}
+.holding-action svg { width: 1rem; height: 1rem; }
+.holding-action-delete { color: var(--liability-color); }
+.holding-action:hover { background: var(--bg-glass); border-color: var(--border-active); }
+.holding-action:focus-visible, .holding-action-link:focus-visible, .holding-history-sort:focus-visible {
+  outline: 2px solid var(--asset-color); outline-offset: 2px;
+}
+.holding-txn-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin: 8px 0 0; }
+.holding-txn-fields > div { min-width: 0; }
+.holding-txn-fields dt { font-size: .66rem; color: var(--text-muted); margin-bottom: 3px; }
+.holding-txn-fields dd { margin: 0; font-size: .875rem; font-family: var(--font-mono); color: var(--text-primary); overflow-wrap: anywhere; }
+.holding-txn-total { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 8px; }
+.holding-txn-total dd { font-weight: 600; }
+.holding-txn-note, .holding-txn-reference { margin: 8px 0 0; font-size: .75rem; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.holding-txn-reference { color: var(--text-muted); font-family: var(--font-mono); }
+.holding-history-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin: 14px 0 8px; }
+.holding-history-title { font-size: .78rem; font-weight: 700; color: var(--text-secondary); }
+.holding-history-sort { border: 0; background: transparent; padding: 6px 0 6px 8px; min-height: 2.25rem; font: inherit; font-size: .72rem; color: var(--asset-color); cursor: pointer; }
+.holding-review-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin: 0; }
+.holding-review-summary > div { min-width: 0; padding: 10px; background: var(--bg-glass); border-radius: 10px; }
+.holding-review-summary dt { font-size: .7rem; color: var(--text-secondary); margin-bottom: 5px; }
+.holding-review-summary dd { margin: 0; font-family: var(--font-mono); font-size: .85rem; font-weight: 700; overflow-wrap: anywhere; }
+.holding-review-summary small { display: block; font-size: .7rem; line-height: 1.5; font-weight: 400; color: var(--text-secondary); margin-top: 4px; overflow-wrap: anywhere; }
+.holding-review-summary .holding-review-fill-count { display: flex; flex-wrap: wrap; gap: 2px 5px; }
+.holding-review-fill-count > span { white-space: nowrap; }
+.holding-review-hint { margin: 8px 0 0; font-size: .7rem; color: var(--text-muted); line-height: 1.5; }
+.holding-archived-period { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+.holding-management-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.holding-management-actions > .btn { flex: 1 1 100%; }
+.holding-action-link { display: inline-flex; align-items: center; gap: 5px; min-height: 2.25rem; padding: 6px 8px; border: 0; border-radius: 6px; font: inherit; font-size: .75rem; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.holding-action-link svg { width: .9rem; height: .9rem; }
+.holding-action-link.holding-action-delete { color: var(--liability-color); margin-left: auto; }
+.font-large .holding-review-summary { grid-template-columns: minmax(0, 1fr); }
+.holding-archived-result { font-size: .62rem; font-family: var(--font); font-weight: 400; color: var(--text-muted); }

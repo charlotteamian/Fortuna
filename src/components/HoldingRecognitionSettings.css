@@ -1,6 +1,8 @@
-.holding-recognition-settings { scroll-margin-top: 1rem; }
+.holding-recognition-settings { scroll-margin-top: 1rem; padding: 14px; border: 1px solid var(--border-active); border-radius: var(--radius-sm); background: var(--bg-glass); }
+.holding-recognition-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.holding-recognition-heading .settings-section-title { margin: 0; font-size: .875rem; color: var(--text-primary); }
+.holding-recognition-status { font-size: .78rem; line-height: 1.5; color: var(--asset-color); overflow-wrap: anywhere; margin: 10px 0 0; }
 .holding-recognition-note { font-size: .78rem; line-height: 1.55; color: var(--text-secondary); margin: 8px 0 14px; overflow-wrap: anywhere; }
-.holding-recognition-summary { cursor: pointer; font-size: .85rem; font-weight: 600; padding: 12px 0; }
 .holding-recognition-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .holding-recognition-actions .btn { flex: 1 1 140px; }
 .holding-recognition-error { font-size: .8rem; color: var(--liability-color); line-height: 1.5; }
