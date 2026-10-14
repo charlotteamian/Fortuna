@@ -28,7 +28,16 @@ export async function saveDividendFundConfig(config: Omit<DividendFundPlan, 'fun
 }
 export async function saveDividendFund(fund: DividendFund) {
   if (!isDividendFund(fund)) throw new Error('INVALID_DIVIDEND_FUND');
-  await editPlan(current => ({ ...current, funds: [...current.funds.filter(row => row.id !== fund.id), fund] }));
+  await editPlan(current => {
+    const previous = current.funds.find(row => row.id === fund.id);
+    const saved = { ...fund };
+    delete saved.quote; delete saved.quoteFailedAt;
+    if (previous?.code === fund.code) {
+      if (previous?.quote) saved.quote = previous.quote;
+      if (previous?.quoteFailedAt !== undefined) saved.quoteFailedAt = previous.quoteFailedAt;
+    }
+    return { ...current, funds: [...current.funds.filter(row => row.id !== fund.id), saved] };
+  });
 }
 export async function deleteDividendFund(id: string) {
   await editPlan(current => ({ ...current, funds: current.funds.filter(fund => fund.id !== id) }));

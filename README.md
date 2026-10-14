@@ -23,6 +23,10 @@
 | **3. 把资产规划和真实持仓连起来** | 设置一级目标和二级子目标，并直接关联具体账户、持仓或组合现金。Fortuna 会计算当前占比、目标金额、差额和完成进度；同一笔资产分配给多个目标时按实际金额处理，避免重复计算。 |
 | **4. 本地保存，但不把数据困在 App 里** | 账本默认只保存在本机。资产页可导出图片报告或分类 Excel，设置中可生成可恢复的完整 Excel 备份；还可授权 App 把机器可读 JSON 写入指定目录。若选择云盘同步目录，手机更新后，电脑上的个人脚本或 AI 工作流即可读取最新快照。 |
 
+红利工作台支持股票与基金两种独立计划。已保存的股票和场内 ETF / LOF 报价会在打开红利页、回到前台时更新，页面可见时每分钟刷新，并保留行情来源、实际报价时间和失败提示。前高与指数股息率参考数据仍由用户维护。
+
+设置中的配色、分类、币种、汇率与金价、自动快照和视觉识别配置使用可展开的菜单，摘要显示当前选择或配置状态。
+
 ### 它和普通资产管理 App 有什么不同
 
 - **不是只看余额：**既保留账户全景，也能管理组合内的现金、持仓、交易、已实现/未实现盈亏和已归档仓位。
@@ -80,6 +84,10 @@ It goes beyond recording a balance. Fortuna helps answer four recurring question
 | **2. Bring prices back to the holdings** | Automatically attempt to refresh supported A-share, Hong Kong, US equity and ETF quotes, Chinese OTC funds, US equity options, precious metals such as gold, and FX rates. Portfolio accounts refresh silently when opened and can also be updated manually—without checking each provider one by one. |
 | **3. Connect allocation plans to real positions** | Create top-level goals and nested targets, then link exact accounts, holdings, or portfolio cash. Fortuna shows current weight, target amount, gap, and progress; shared assets are allocated by real amount instead of being counted twice. |
 | **4. Keep data local without trapping it** | The ledger stays on-device by default. Export an image report or category Excel report, create a complete restorable Excel backup, or authorise a machine-readable JSON snapshot in a chosen folder. If that folder is cloud-synced, a personal script or AI workflow on your computer can read the updated snapshot after you change a position on your phone. |
+
+The dividend workbench keeps separate stock and fund plans. Saved mainland stock and listed ETF/LOF quotes refresh on opening the page, returning to the foreground, and every minute while visible, with source times and failure indicators. Reference highs and index yields remain user-maintained observations.
+
+Settings use expandable menus for colours, categories, currencies, exchange rates/gold, automatic snapshots and vision configuration, with summaries of current selections or setup status.
 
 ### How it differs from a typical asset tracker
 

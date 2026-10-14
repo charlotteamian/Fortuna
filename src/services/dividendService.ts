@@ -28,7 +28,14 @@ export async function saveDividendBudget(budgetMinor: number) {
 }
 export async function saveDividendStock(stock: DividendStock) {
   if (!isDividendStock(stock)) throw new Error('INVALID_DIVIDEND_STOCK');
-  await db.dividendStocks.put(stock);
+  await db.transaction('rw', db.dividendStocks, async () => {
+    const current = await db.dividendStocks.get(stock.code);
+    const saved = { ...stock };
+    for (const key of ['quote', 'quoteFailedAt', 'dividend', 'dividendFailedAt', 'trend', 'trendFailedAt'] as const) {
+      if (current && Object.hasOwn(current, key)) Object.assign(saved, { [key]: current[key] });
+    }
+    await db.dividendStocks.put(saved);
+  });
   requestPortableSnapshot('dividend-stock');
 }
 export async function deleteDividendStock(code: string, redistribute = true) {

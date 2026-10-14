@@ -1,0 +1,155 @@
+{
+  "syntheticData": true,
+  "quoteRequests": 15,
+  "defaultSettingsScrollHeight": 2055,
+  "checks": [
+    "entry refresh",
+    "60-second refresh",
+    "background suspension",
+    "foreground/focus/online coalescing",
+    "ETF precision",
+    "manual NAV",
+    "old reference date retained",
+    "unsaved budget retained",
+    "partial failure",
+    "offline cache",
+    "automatic recovery",
+    "route cleanup",
+    "collapsed menus",
+    "single open menu",
+    "keyboard toggle",
+    "palette persistence",
+    "category edit",
+    "currency edit",
+    "API menu",
+    "ledger preserved"
+  ],
+  "layouts": [
+    {
+      "label": "settings-zh-normal-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-zh-normal-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-zh-normal-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-zh-normal-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-zh-normal-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-zh-normal-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-zh-large-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-zh-large-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-zh-large-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-zh-large-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-zh-large-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-zh-large-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-en-normal-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-en-normal-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-en-normal-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-en-normal-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-en-normal-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-en-normal-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-en-large-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-en-large-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-en-large-320",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "settings-en-large-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "colours-en-large-390",
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "label": "funds-en-large-390",
+      "overflow": false,
+      "bad": []
+    }
+  ],
+  "ledger": {
+    "records": 1,
+    "amount": 12345.67,
+    "stockOverrides": 500000
+  },
+  "runtimeErrors": []
+}

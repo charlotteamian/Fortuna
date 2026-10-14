@@ -55,6 +55,11 @@ public class PortableSnapshotPlugin extends Plugin {
         notifyListeners("appBackgrounded", new JSObject(), false);
     }
 
+    @Override
+    protected void handleOnResume() {
+        notifyListeners("appForegrounded", new JSObject(), false);
+    }
+
     @PluginMethod
     public void chooseDirectory(PluginCall call) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);

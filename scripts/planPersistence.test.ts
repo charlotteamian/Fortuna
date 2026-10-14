@@ -38,6 +38,147 @@ beforeEach(async () => {
 });
 after(() => db.close());
 
+function quoteRow(code: string, price = '1.234') {
+  const fields = Array(50).fill('');
+  fields[2] = code; fields[3] = price; fields[30] = '20261013161454';
+  const prefix = /^[56]/.test(code) ? 'sh' : /^[489]/.test(code) ? 'bj' : 'sz';
+  return `v_${prefix}${code}="${fields.join('~')}";`;
+}
+
+test('batched quote requests deduplicate codes and retain successes when another batch fails', async () => {
+  const { fetchDividendMarketQuotes } = await import('../src/services/dividendQuoteService.ts');
+  const codes = Array.from({ length: 101 }, (_, i) => String(500000 + i));
+  const originalFetch = globalThis.fetch;
+  const requests: string[][] = [];
+  try {
+    globalThis.fetch = async input => {
+      const batch = String(input).split('=')[1].split(',').map(symbol => symbol.slice(2));
+      requests.push(batch);
+      if (batch.includes('500100')) throw new Error('second batch unavailable');
+      return new Response(batch.map(code => quoteRow(code)).join('\n'));
+    };
+    const result = await fetchDividendMarketQuotes([...codes, codes[0], codes[1]]);
+    assert.deepEqual(requests.map(batch => batch.length), [100, 1]);
+    assert.equal(result.quotes.size, 100);
+    assert.deepEqual(result.failed, ['500100']);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('automatic dividend refresh batches stocks and listed funds, keeps references and excludes off-exchange NAVs', async () => {
+  const { refreshDividendMarketQuotes } = await import('../src/services/dividendQuoteService.ts');
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  const { saveDividendFund } = await import('../src/services/dividendFundService.ts');
+  const stock = { code: '601398', name: 'Fixture stock', group: 'core' as const, weightBps: 5000, shareMode: 'manual' as const, manualShares: 1234, manualDpsMicros: 500000, lotSize: 100, note: 'retain' };
+  await db.dividendStocks.add(stock);
+  const reference = { priceMicros: 900000, highMicros: 1400000, indexYieldBps: 501, asOf: '2026-10-12', source: 'manual fixture' };
+  await updateSettings({ dividendFundPlan: { ...defaultDividendFundPlan(), budgetMinor: 32000000, funds: ['512890', '159581', '161716', '005561'].map((code, i) => ({ id: code, code, name: `Fixture ${code}`, indexKind: 'other', weightBps: i === 0 ? 6000 : 0, reference })) } });
+  const originalFetch = globalThis.fetch;
+  let requested = '';
+  try {
+    globalThis.fetch = async (input, init) => {
+      requested = String(input);
+      assert.equal(init?.cache, 'no-store');
+      return new Response(['601398', '512890', '159581', '161716'].map(code => quoteRow(code)).join('\n'));
+    };
+    const result = await refreshDividendMarketQuotes();
+    assert.equal(result.done, 4); assert.equal(result.failed, 0);
+    assert.equal(requested, '/qt-api/q=sh601398,sh512890,sz159581,sz161716');
+    const savedStock = await db.dividendStocks.get('601398');
+    assert.equal(savedStock?.quote?.priceMinor, 123);
+    assert.equal(savedStock?.manualDpsMicros, stock.manualDpsMicros);
+    assert.equal(savedStock?.manualShares, stock.manualShares);
+    const plan = (await initializeSettings()).dividendFundPlan!;
+    assert.equal(plan.budgetMinor, 32000000);
+    for (const code of ['512890', '159581', '161716']) {
+      assert.equal(plan.funds.find(fund => fund.code === code)?.quote?.priceMicros, 1234000);
+      assert.deepEqual(plan.funds.find(fund => fund.code === code)?.reference, reference);
+    }
+    assert.equal(plan.funds.find(fund => fund.code === '005561')?.quote, undefined);
+    assert.equal(plan.funds.find(fund => fund.code === '005561')?.quoteFailedAt, undefined);
+    const editorBefore = plan.funds[0];
+    globalThis.fetch = async () => new Response(['601398', '512890', '159581', '161716'].map(code => quoteRow(code, '1.235')).join('\n'));
+    await refreshDividendMarketQuotes();
+    await saveDividendFund({ ...editorBefore, note: 'edited while prices update' });
+    assert.equal((await initializeSettings()).dividendFundPlan?.funds.find(fund => fund.id === '512890')?.quote?.priceMicros, 1235000);
+    await saveDividendFund({ ...editorBefore, code: '563020' });
+    assert.equal((await initializeSettings()).dividendFundPlan?.funds.find(fund => fund.id === '512890')?.quote, undefined);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('partial and offline quote failures retain dated caches and recover independently', async () => {
+  const { refreshDividendMarketQuotes } = await import('../src/services/dividendQuoteService.ts');
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  const oldQuote = { priceMicros: 1000000, date: '2026-10-12 15:00', fetchedAt: 1 };
+  await updateSettings({ dividendFundPlan: { ...defaultDividendFundPlan(), funds: ['512890', '159581'].map(code => ({ id: code, code, name: code, indexKind: 'other', weightBps: 0, quote: oldQuote })) } });
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(quoteRow('512890'));
+    assert.equal((await refreshDividendMarketQuotes()).failed, 1);
+    let plan = (await initializeSettings()).dividendFundPlan!;
+    assert.equal(plan.funds[0].quote?.priceMicros, 1234000);
+    assert.deepEqual(plan.funds[1].quote, oldQuote);
+    assert.ok(plan.funds[1].quoteFailedAt);
+    globalThis.fetch = async () => new Response('', { status: 503 });
+    assert.equal((await refreshDividendMarketQuotes()).failed, 2);
+    plan = (await initializeSettings()).dividendFundPlan!;
+    assert.equal(plan.funds[0].quote?.priceMicros, 1234000);
+    assert.deepEqual(plan.funds[1].quote, oldQuote);
+    globalThis.fetch = async () => new Response(quoteRow('512890') + quoteRow('159581'));
+    assert.equal((await refreshDividendMarketQuotes()).failed, 0);
+    assert.ok((await initializeSettings()).dividendFundPlan?.funds.every(fund => fund.quoteFailedAt === undefined));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('quote responses merge with concurrent fund edits without restoring deleted funds/stocks or changing ledger data', async () => {
+  const { refreshDividendMarketQuotes } = await import('../src/services/dividendQuoteService.ts');
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  const { saveDividendFund, deleteDividendFund } = await import('../src/services/dividendFundService.ts');
+  const { loadDividendWorkbench, saveDividendStock } = await import('../src/services/dividendService.ts');
+  await seedAccount();
+  const stock = (await loadDividendWorkbench()).stocks[0];
+  await updateSettings({ dividendFundPlan: { ...defaultDividendFundPlan(), funds: ['512890', '159581', '161716'].map(code => ({ id: code, code, name: code, indexKind: 'other', weightBps: 0 })) } });
+  const originalFetch = globalThis.fetch;
+  let complete!: (response: Response) => void;
+  let started!: () => void;
+  const requestStarted = new Promise<void>(resolve => { started = resolve; });
+  try {
+    globalThis.fetch = async () => { started(); return new Promise<Response>(resolve => { complete = resolve; }); };
+    const refresh = refreshDividendMarketQuotes();
+    await requestStarted;
+    await saveDividendFund({ id: '512890', code: '512890', name: 'edited name', indexKind: 'other', weightBps: 5000, note: 'keep concurrent note' });
+    await saveDividendFund({ id: '159581', code: '563020', name: 'changed symbol', indexKind: 'other', weightBps: 0 });
+    await deleteDividendFund('161716');
+    await db.dividendStocks.delete('600036');
+    complete(new Response(quoteRow('601398', '8.49') + quoteRow('512890') + quoteRow('159581') + quoteRow('161716')));
+    await refresh;
+    const plan = (await initializeSettings()).dividendFundPlan!;
+    assert.equal(plan.funds.length, 2);
+    assert.equal(plan.funds.find(fund => fund.id === '512890')?.note, 'keep concurrent note');
+    assert.equal(plan.funds.find(fund => fund.id === '512890')?.weightBps, 5000);
+    assert.equal(plan.funds.find(fund => fund.id === '159581')?.quote, undefined);
+    assert.equal(await db.dividendStocks.get('600036'), undefined);
+    await saveDividendStock({ ...stock, note: 'stale editor saved' });
+    assert.equal((await db.dividendStocks.get('601398'))?.quote?.priceMinor, 849);
+    assert.equal(await db.records.count(), 1);
+    assert.equal((await db.records.get('qa-record'))?.amount, 240000);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('automatic quote precision and manual references survive both JSON and Excel restore', async () => {
+  const { exportData, importData } = await import('../src/db.ts');
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  const plan = { ...defaultDividendFundPlan(), funds: [{ id: 'f', code: '512890', name: 'Fixture ETF', indexKind: 'other' as const, weightBps: 0,
+    quote: { priceMicros: 1234001, date: '2026-10-13 16:14', fetchedAt: 100 }, quoteFailedAt: 101,
+    reference: { highMicros: 1400000, indexYieldBps: 501, asOf: '2026-10-12', source: 'manual reference' } }] };
+  await updateSettings({ dividendFundPlan: plan });
+  const json = await exportData(), excel = await exportToExcel();
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await updateSettings({ dividendFundPlan: defaultDividendFundPlan() });
+    assert.equal(await restore(), true);
+    assert.deepEqual((await initializeSettings()).dividendFundPlan, plan);
+  }
+});
+
 async function seedAccount() {
   await db.accounts.add({ id: 'qa-account', name: 'Synthetic cash', category: '现金', type: 'asset', currency: 'CNY', createdAt: 1, sortOrder: 0 });
   await db.records.add({ id: 'qa-record', accountId: 'qa-account', date: '2026-09-22', amount: 240000, createdAt: 1 });

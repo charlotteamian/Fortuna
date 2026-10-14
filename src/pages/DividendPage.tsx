@@ -7,6 +7,8 @@ import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import { saveDividendStrategy } from '../services/dividendFundService';
 import type { DividendStrategy } from '../lib/dividendFundPlan';
+import { isExchangeTradedFundCode } from '../lib/dividendQuote';
+import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import './DividendPage.css';
 
 type Workbench = Awaited<ReturnType<typeof loadDividendWorkbench>>;
@@ -57,10 +59,13 @@ export default function DividendPage() {
     return () => { alive.current = false; window.removeEventListener('focus', onFocus); };
   }, [load, t]);
   useEffect(() => { allocationResultRef.current?.scrollIntoView({ block: 'start' }); }, [allocationResult]);
+  const quoteTargets = data ? [...data.stocks.map(stock => stock.code), ...data.fundPlan.funds
+    .filter(fund => isExchangeTradedFundCode(fund.code)).map(fund => `${fund.id}:${fund.code}`)].sort().join(',') : '';
+  const quotes = useDividendQuotes(quoteTargets, load, busy);
   const money = (minor: number) => amountVisible ? `¥${numeric(minor / 100)}` : '••••';
   const quantity = (shares: number) => amountVisible ? numeric(shares, 4) : '••••';
   const refresh = async (codes: string[]) => {
-    if (busy.current) return;
+    if (busy.current || quotes.refreshing) return;
     busy.current = true;
     setProgress({ done: 0, total: codes.length }); setError(''); setMessage('');
     try {
@@ -96,7 +101,13 @@ export default function DividendPage() {
     <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button>
   </div>;
   const strategySelector = <section className="div-strategy"><span>{t('div_strategy')}</span><div className="div-strategy-options" role="group" aria-label={t('div_strategy')}>{(['stocks', 'funds'] as const).map(strategy => <button key={strategy} className={data.strategy === strategy ? 'selected' : ''} aria-pressed={data.strategy === strategy} disabled={strategySaving || budgetSaving || Boolean(progress)} onClick={() => void changeStrategy(strategy)}>{t(`div_strategy_${strategy}`)}</button>)}</div><p className="div-muted">{t('div_strategy_preserved')}</p></section>;
-  if (data.strategy === 'funds') return <div className="dividend-page">{header}{strategySelector}{error && <p className="div-warning" role="alert">{error}</p>}<DividendFundWorkbench plan={data.fundPlan} amountVisible={amountVisible} onSaved={load} /></div>;
+  const quoteStatus = <section className="div-quote-status" aria-label={t('div_auto_quotes')}>
+    <div role="status"><strong>{t(quotes.refreshing ? 'div_quotes_updating' : 'div_auto_quotes')}</strong><p className="div-muted">{t('div_auto_quotes_note')}</p>
+      {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString() })}</small>}
+      {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
+    </div><button className="btn btn-secondary" disabled={quotes.refreshing || Boolean(progress) || !quoteTargets} onClick={() => void quotes.refresh(true)}>{t('div_refresh_quotes')}</button>
+  </section>;
+  if (data.strategy === 'funds') return <div className="dividend-page">{header}{strategySelector}{quoteStatus}{error && <p className="div-warning" role="alert">{error}</p>}<DividendFundWorkbench plan={data.fundPlan} amountVisible={amountVisible} onSaved={load} /></div>;
   const sharesFor = (stock: DividendStock) => stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
   const held = data.stocks.filter(s => sharesFor(s) > 0);
   const covered = held.filter(s => effectiveDps(s) !== undefined);
@@ -107,7 +118,7 @@ export default function DividendPage() {
   const untracked = [...data.positions.values()].filter(position => !data.stocks.some(stock => stock.code === position.code)).sort((a, b) => a.code.localeCompare(b.code));
   const displayed = data.stocks.filter(s => (group === 'all' ? s.group !== 'hidden' : group === 'held' ? sharesFor(s) > 0 : s.group === group) && `${s.name} ${s.code}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a,b) => ({core:0,watch:1,hidden:2}[a.group] - {core:0,watch:1,hidden:2}[b.group]) || b.weightBps - a.weightBps || a.code.localeCompare(b.code));
   return <div className="dividend-page">
-    {header}{strategySelector}
+    {header}{strategySelector}{quoteStatus}
     <section className="div-hero">
       <div className="div-estimate"><span>{t('div_annual_estimate')}</span><strong>{held.length > 0 && covered.length === 0 ? '—' : money(estimated)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}{staleCount > 0 ? ` · ${t('div_cached_count', { count: staleCount })}` : ''}</small></div>
       <p className="div-muted">{t('div_estimate_note')}</p>
@@ -117,7 +128,7 @@ export default function DividendPage() {
       <button className="btn btn-secondary" disabled={Boolean(progress) || weight <= 0 || weight >= 10000} onClick={() => setAllocationOpen(true)}>{t('div_allocate_unused')}</button>
       {weight === 0 && <p className="div-muted">{t('div_no_positive_weights')}</p>}
     </section>
-    <div className="div-actions div-toolbar"><button className="btn btn-primary" disabled={Boolean(progress)} onClick={() => void refresh(data.stocks.map(s => s.code))}>{progress ? t('div_refresh_progress', progress) : t('div_refresh')}</button>
+    <div className="div-actions div-toolbar"><button className="btn btn-primary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh(data.stocks.map(s => s.code))}>{progress ? t('div_refresh_progress', progress) : t('div_refresh')}</button>
       <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => { setIsNew(true); setEditor({ code: '', name: '', group: 'watch', weightBps: 0, shareMode: 'linked', manualShares: 0, lotSize: 100 }); }}>{t('div_add')}</button>
       <button className="btn btn-secondary" disabled={Boolean(progress) || untracked.length === 0} onClick={() => setLinkedPickerOpen(true)}>{t('div_add_linked', { count: untracked.length })}</button>
       <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => setImportOpen(true)}>{t('div_import')}</button></div>
@@ -142,7 +153,7 @@ export default function DividendPage() {
         <div className="div-budget-line"><span>{t('div_stock_weight')} <strong>{numeric(stock.weightBps / 100)}%</strong></span><span>{t('div_stock_budget')} <strong>{money(budget)}</strong></span></div>
         {stock.note && <div className="div-note"><span>{t('div_note')}</span><p>{stock.note}</p></div>}
         <div className="div-metrics">
-          <div><span>{t('div_quote')}</span><strong>{stock.quote ? `¥${numeric(stock.quote.priceMinor / 100)}` : '—'}</strong><small>{stock.quote?.date ?? t('div_not_fetched')}</small></div>
+          <div><span>{t('div_quote')}</span><strong>{stock.quote ? `¥${numeric(stock.quote.priceMinor / 100)}` : '—'}</strong><small>{stock.quote ? t('div_quote_source', { date: stock.quote.date }) : t('div_not_fetched')}</small></div>
           <div><span>{t('div_dps')}</span><strong>{dps !== undefined ? `¥${numeric(dps / 1e6, 6)}` : '—'}</strong><small>{t(stock.manualDpsMicros !== undefined ? 'div_manual' : 'div_ttm')}</small></div>
           <div><span>{t('div_shares')}</span><strong>{quantity(shares)}</strong><small>{t(stock.shareMode === 'manual' ? 'div_manual' : position ? 'div_linked' : 'div_no_link')}</small></div>
           <div><span>{t('div_annual_estimate')}</span><strong>{dps !== undefined ? money(dividendEstimateMinor(shares, dps)) : '—'}</strong><small>{t('div_yield', { value: dps !== undefined && stock.quote ? `${numeric(dps / stock.quote.priceMinor / 100)}%` : '—' })}</small></div>
@@ -167,7 +178,7 @@ export default function DividendPage() {
             {stock.trendFailedAt && <p className="div-warning">{t('div_trend_failed')}</p>}
             <button className="btn btn-secondary" disabled={trendBusy !== null} onClick={async () => { setTrendBusy(stock.code); try { await refreshDividendTrend(stock.code); await load(); } catch { setError(t('div_load_error')); } finally { setTrendBusy(null); } }}>{t(trendBusy === stock.code ? 'loading' : 'div_refresh_trend')}</button>
           </div>
-          <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => void refresh([stock.code])}>{t('div_refresh_one')}</button>
+          <button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_refresh_one')}</button>
         </details>
       </article>;
     })}</div>

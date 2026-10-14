@@ -2,6 +2,7 @@ import type { DividendTrend } from './dividendTrend';
 import type { Account, Holding, HoldingTxn } from '../db';
 import { computeHoldingPosition } from './holdingPosition.ts';
 import { getHoldingMode } from './productPortfolio.ts';
+import { mainlandQuoteSymbol, parseDividendMarketQuote } from './dividendQuote.ts';
 
 export interface DividendPayment { exDate: string; reportDate: string; dpsMicros: number }
 export interface DividendData {
@@ -48,7 +49,7 @@ export function mainlandCode(symbol: string): string | null {
   const match = symbol.trim().toUpperCase().match(/^(?:(?:SH|SZ|BJ)[.:]?)?((?:60|68|00|30|43|83|87|88|92)\d{4})(?:\.(?:SH|SZ|BJ))?$/);
   return match?.[1] ?? null;
 }
-export function quoteSymbol(code: string) { return `${code.startsWith('6') ? 'sh' : /^(4|8|9)/.test(code) ? 'bj' : 'sz'}${code}`; }
+export const quoteSymbol = mainlandQuoteSymbol;
 export function dateInChina(now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
@@ -103,12 +104,8 @@ export function parseDividendResponse(raw: unknown, code: string, asOf = dateInC
 }
 
 export function parseDividendQuote(text: string, code: string, now = Date.now()): DividendQuote {
-  const match = text.match(new RegExp(`v_${quoteSymbol(code)}="([^"]*)"`));
-  const fields = match?.[1].split('~');
-  const price = finiteNumber(fields?.[3]);
-  const stamp = fields?.[30] ?? '';
-  if (!fields || fields[2] !== code || !price || price <= 0 || !/^\d{14}$/.test(stamp)) throw new Error('QUOTE_SOURCE_INVALID');
-  return { priceMinor: Math.round(price * 100), date: `${stamp.slice(0,4)}-${stamp.slice(4,6)}-${stamp.slice(6,8)} ${stamp.slice(8,10)}:${stamp.slice(10,12)}`, changePercent: finiteNumber(fields[32]) ?? undefined, fetchedAt: now };
+  const quote = parseDividendMarketQuote(text, code, now);
+  return { priceMinor: Math.round(quote.priceMicros / 10000), date: quote.date, changePercent: quote.changePercent, fetchedAt: quote.fetchedAt };
 }
 
 export interface LinkedDividendPosition { code: string; name: string; shares: number; sources: { accountName: string; holdingId: string; shares: number }[] }

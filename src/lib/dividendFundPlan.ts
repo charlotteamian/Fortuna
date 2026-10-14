@@ -1,4 +1,5 @@
 import { dateInChina } from './dividendWorkbench.ts';
+import { isDividendMarketQuote, isExchangeTradedFundCode, type DividendMarketQuote } from './dividendQuote.ts';
 
 export type DividendStrategy = 'stocks' | 'funds';
 export type DividendFundMode = 'hold' | 'rebalance' | 'swing';
@@ -9,6 +10,8 @@ export interface DividendFund {
   indexKind: 'low_volatility' | 'low_volatility_100' | 'other';
   weightBps: number; // share of the dividend-fund sleeve, not the entire stock/bond plan
   note?: string;
+  quote?: DividendMarketQuote;
+  quoteFailedAt?: number;
   reference?: {
     priceMicros?: number;
     highMicros?: number;
@@ -42,7 +45,9 @@ export function isDividendFund(value: unknown): value is DividendFund {
   const fund = value as DividendFund;
   if (!text(fund.id, 100) || !text(fund.name, 120) || (fund.code !== undefined && (typeof fund.code !== 'string' || !/^\d{6}$/.test(fund.code)))
     || !['low_volatility', 'low_volatility_100', 'other'].includes(fund.indexKind)
-    || !integer(fund.weightBps, 0, 10000) || (fund.note !== undefined && (typeof fund.note !== 'string' || fund.note.length > 2000))) return false;
+    || !integer(fund.weightBps, 0, 10000) || (fund.note !== undefined && (typeof fund.note !== 'string' || fund.note.length > 2000))
+    || (fund.quote !== undefined && (!isExchangeTradedFundCode(fund.code) || !isDividendMarketQuote(fund.quote)))
+    || (fund.quoteFailedAt !== undefined && (!isExchangeTradedFundCode(fund.code) || !integer(fund.quoteFailedAt, 0, Number.MAX_SAFE_INTEGER)))) return false;
   const ref = fund.reference;
   return ref === undefined || (!!ref && typeof ref === 'object' && validDate(ref.asOf)
     && (ref.priceMicros === undefined || integer(ref.priceMicros, 1, 1e12))
@@ -79,18 +84,24 @@ export function dividendFundAllocation(plan: DividendFundPlan) {
     unallocatedMinor: rows.find(row => row.id === null)!.amount };
 }
 
-/** Dated manual inputs remain visible but cannot produce a current entry signal. */
+export function dividendFundPriceMicros(fund: DividendFund): number | undefined {
+  return fund.quote?.priceMicros ?? fund.reference?.priceMicros;
+}
+
+/** A fresh quote never makes an old manual reference yield/high appear current. */
 export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, today = dateInChina()) {
   const ref = fund.reference;
-  const drawdownBps = ref?.priceMicros !== undefined && ref.highMicros !== undefined
-    ? Math.max(0, (ref.highMicros - ref.priceMicros) / ref.highMicros * 10000) : undefined;
+  const priceMicros = dividendFundPriceMicros(fund);
+  const drawdownBps = priceMicros !== undefined && ref?.highMicros !== undefined
+    ? Math.max(0, (ref.highMicros - priceMicros) / ref.highMicros * 10000) : undefined;
   const targetPriceMicros = ref?.highMicros !== undefined ? Math.round(ref.highMicros * (10000 - plan.drawdownBps) / 10000) : undefined;
-  const checks = [ref?.priceMicros === undefined || ref.highMicros === undefined ? null
-    : BigInt(ref.highMicros - ref.priceMicros) * 10000n >= BigInt(ref.highMicros) * BigInt(plan.drawdownBps),
+  const checks = [priceMicros === undefined || ref?.highMicros === undefined ? null
+    : BigInt(ref.highMicros - priceMicros) * 10000n >= BigInt(ref.highMicros) * BigInt(plan.drawdownBps),
     ref?.indexYieldBps === undefined ? null : ref.indexYieldBps >= plan.indexYieldBps];
   const ready = plan.entryRule === 'both'
     ? checks.includes(false) ? false : checks.every(check => check === true) ? true : null
     : checks.includes(true) ? true : checks.every(check => check === false) ? false : null;
-  const status = !ref || ref.asOf !== today ? 'update' : ready === null ? 'incomplete' : ready ? 'met' : 'wait';
+  const status = !ref || ref.asOf !== today || fund.quoteFailedAt !== undefined || (fund.quote && fund.quote.date.slice(0, 10) !== today)
+    ? 'update' : ready === null ? 'incomplete' : ready ? 'met' : 'wait';
   return { drawdownBps, targetPriceMicros, status };
 }

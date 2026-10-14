@@ -40,7 +40,7 @@ export default function HoldingRecognitionSettings({ focus = false }: { focus?: 
   }, [t]);
 
   useEffect(() => {
-    if (focus && !loading) sectionRef.current?.scrollIntoView({ block: 'start' });
+    if (focus && !loading) { setExpanded(true); sectionRef.current?.scrollIntoView({ block: 'start' }); }
   }, [focus, loading]);
 
   const selectProvider = (id: string) => {
@@ -74,18 +74,16 @@ export default function HoldingRecognitionSettings({ focus = false }: { focus?: 
 
   return (
     <section className="settings-section holding-recognition-settings" id="holding-recognition-settings" ref={sectionRef}>
-      <div className="holding-recognition-heading">
-        <h2 className="settings-section-title">{t('holding_import_api_config')}</h2>
-        <button type="button" className="btn btn-sm btn-secondary" disabled={loading || busy}
-          aria-expanded={expanded} aria-controls="holding-recognition-form" onClick={() => setExpanded(value => !value)}>
-          {t(expanded ? 'holding_api_close_config' : configured ? 'holding_api_modify_config' : 'holding_api_configure')}
-        </button>
-      </div>
-      <p className="holding-recognition-status">{loading ? t('loading') : savedConfig
-        ? t('holding_api_ready', { provider: t(getHoldingRecognitionProvider(inferHoldingRecognitionProvider(savedConfig)).nameKey), model: savedConfig.model })
-        : t('holding_api_not_configured')}</p>
-      <p className="holding-recognition-note">{t('holding_api_settings_description')}</p>
+      <button type="button" className="settings-menu-summary holding-recognition-toggle" disabled={loading || busy}
+        aria-expanded={expanded} aria-controls="holding-recognition-form" onClick={() => setExpanded(value => !value)}>
+        <span>{t('holding_import_api_config')}</span>
+        <span className="settings-menu-value">{t(loading ? 'loading' : configured ? 'holding_api_modify_config' : 'holding_api_configure')}<span className="settings-menu-chevron" aria-hidden="true">›</span></span>
+      </button>
       <div id="holding-recognition-form" hidden={!expanded}>
+        <p className="holding-recognition-status">{loading ? t('loading') : savedConfig
+          ? t('holding_api_ready', { provider: t(getHoldingRecognitionProvider(inferHoldingRecognitionProvider(savedConfig)).nameKey), model: savedConfig.model })
+          : t('holding_api_not_configured')}</p>
+        <p className="holding-recognition-note">{t('holding_api_settings_description')}</p>
         <div className="form-group">
           <label className="form-label" htmlFor="holding-api-provider">{t('holding_import_api_provider')}</label>
           <select className="form-select" id="holding-api-provider" disabled={busy || loading} value={selectedProviderId}

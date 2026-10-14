@@ -102,3 +102,8 @@
   .df-comparison-table td[data-label]::before { content: attr(data-label); color: var(--text-secondary); }
 }
 @media (max-width: 360px) { .div-form-fields { grid-template-columns: 1fr; } .div-stock { padding: .8rem; } }
+.div-quote-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px; margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); }
+.div-quote-status > div { flex: 1 1 220px; min-width: 0; }
+.div-quote-status strong { font-size: .875rem; }
+.div-quote-status p { margin: 5px 0; }
+.div-quote-status small { font-size: .75rem; color: var(--text-muted); overflow-wrap: anywhere; }

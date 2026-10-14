@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateInChina } from '../lib/dividendWorkbench';
-import { dividendFundAllocation, dividendFundEntry, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
+import { dividendFundAllocation, dividendFundEntry, dividendFundPriceMicros, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
+import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { deleteDividendFund, saveDividendFund, saveDividendFundConfig } from '../services/dividendFundService';
 import DividendFundComparison from './DividendFundComparison';
 
@@ -68,21 +69,22 @@ export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: 
     <input className="div-search" aria-label={t('df_search')} placeholder={t('df_search')} value={search} onChange={event => setSearch(event.target.value)} />
     <div className="div-stock-list df-fund-list">{funds.map(fund => {
       const reference = dividendFundEntry(plan, fund);
+      const priceMicros = dividendFundPriceMicros(fund);
       return <article className="div-stock" key={fund.id}>
         <div className="div-stock-heading"><div><h2>{fund.name}</h2><small>{t(`df_index_${fund.indexKind}`)}{fund.code ? ` · ${fund.code}` : ''}</small></div><button className="btn btn-secondary" disabled={saving} onClick={() => setEditor(fund)}>{t('edit')}</button></div>
         <div className="div-budget-line"><span>{t('df_weight')} <strong>{number(fund.weightBps / 100)}%</strong></span><span>{t('df_target_amount')} <strong>{plan.budgetMinor === undefined ? '—' : money(allocation.amounts.get(fund.id) ?? 0)}</strong></span></div>
         {fund.note && <div className="div-note"><span>{t('div_note')}</span><p>{fund.note}</p></div>}
         <p className={reference.status === 'met' ? 'div-notice' : 'div-muted'}>{t(`df_signal_${reference.status}`)}</p>
-        {fund.reference && <>
-          <div className="div-metrics">
-            <div><span>{t('df_current_price')}</span><strong>{fund.reference.priceMicros === undefined ? '—' : `¥${number(fund.reference.priceMicros / 1e6, 6)}`}</strong></div>
+        <div className="div-metrics">
+            <div><span>{t(fund.quote ? 'df_exchange_price' : 'df_current_price')}</span><strong>{priceMicros === undefined ? '—' : `¥${number(priceMicros / 1e6, 6)}`}</strong><small>{fund.quote ? t('div_quote_source', { date: fund.quote.date }) : t(priceMicros === undefined ? 'div_not_fetched' : 'df_manual_source')}</small></div>
             <div><span>{t('df_current_drawdown')}</span><strong>{reference.drawdownBps === undefined ? '—' : `${number(reference.drawdownBps / 100)}%`}</strong></div>
-            <div><span>{t('df_index_yield')}</span><strong>{fund.reference.indexYieldBps === undefined ? '—' : `${number(fund.reference.indexYieldBps / 100)}%`}</strong></div>
+            <div><span>{t('df_index_yield')}</span><strong>{fund.reference?.indexYieldBps === undefined ? '—' : `${number(fund.reference.indexYieldBps / 100)}%`}</strong></div>
             <div><span>{t('df_entry_price', { percent: number(plan.drawdownBps / 100) })}</span><strong>{reference.targetPriceMicros === undefined ? '—' : `¥${number(reference.targetPriceMicros / 1e6, 6)}`}</strong></div>
-            {plan.mode === 'swing' && <div><span>{t('df_exit_price')}</span><strong>{fund.reference.highMicros === undefined ? '—' : `¥${number(fund.reference.highMicros / 1e6, 6)}`}</strong></div>}
-          </div>
-          <p className="div-muted">{t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') })}</p>
-        </>}
+            {plan.mode === 'swing' && <div><span>{t('df_exit_price')}</span><strong>{fund.reference?.highMicros === undefined ? '—' : `¥${number(fund.reference.highMicros / 1e6, 6)}`}</strong></div>}
+        </div>
+        {fund.reference && <p className="div-muted">{t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') })}</p>}
+        {fund.quoteFailedAt !== undefined && <p className="div-warning">{t('div_quotes_failed')}</p>}
+        {!isExchangeTradedFundCode(fund.code) && <p className="div-muted">{t(fund.code ? 'df_manual_quote_note' : 'df_add_code_note')}</p>}
       </article>;
     })}</div>
     {funds.length === 0 && <p className="div-notice">{t(plan.funds.length ? 'df_no_match' : 'df_empty')}</p>}
@@ -145,6 +147,7 @@ function FundEditor({ initial, plan, amountVisible, onClose, onSaved }: { initia
         <label>{t('df_index')}<select value={indexKind} onChange={event => setIndexKind(event.target.value as DividendFund['indexKind'])}>{(['low_volatility', 'low_volatility_100', 'other'] as const).map(value => <option key={value} value={value}>{t(`df_index_${value}`)}</option>)}</select></label>
         <label>{t('df_weight')}<input required type="number" inputMode="decimal" min="0" max="100" step="0.01" value={weight} onChange={event => setWeight(event.target.value)} /></label>
       </div>
+      <p className="div-muted">{t('df_code_quote_note')}</p>
       <p className="div-muted">{t('df_available_weight', { percent: number((10000 - used) / 100) })}</p>
       <p className="div-notice">{t('df_target_amount')}：{plan.budgetMinor === undefined || preview === undefined ? '—' : amountVisible ? `¥${number(preview / 100)}` : '••••'}</p>
       <label className="div-form-note">{t('div_note')}<textarea maxLength={2000} rows={3} value={note} onChange={event => setNote(event.target.value)} /></label>

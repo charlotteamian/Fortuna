@@ -1,0 +1,36 @@
+{
+  "context": "Provider quotes only; no user ledger or native device involved",
+  "quotes": {
+    "159581": {
+      "priceMicros": 1077000,
+      "date": "2026-10-13 16:14",
+      "changePercent": 0.37,
+      "fetchedAt": 1791938379573
+    },
+    "161716": {
+      "priceMicros": 1653000,
+      "date": "2026-10-13 16:14",
+      "changePercent": -0.06,
+      "fetchedAt": 1791938379573
+    },
+    "512890": {
+      "priceMicros": 1224000,
+      "date": "2026-10-13 16:14",
+      "changePercent": -0.49,
+      "fetchedAt": 1791938379573
+    },
+    "563020": {
+      "priceMicros": 1204000,
+      "date": "2026-10-13 16:15",
+      "changePercent": -0.33,
+      "fetchedAt": 1791938379573
+    },
+    "601398": {
+      "priceMicros": 8490000,
+      "date": "2026-10-13 16:14",
+      "changePercent": 0.59,
+      "fetchedAt": 1791938379573
+    }
+  },
+  "failed": []
+}

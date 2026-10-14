@@ -18,6 +18,7 @@ import {
 import type { PortableSnapshotStatus as AutomaticSnapshotStatus } from '../native/portableSnapshot';
 import UserGuide from '../components/UserGuide';
 import HoldingRecognitionSettings from '../components/HoldingRecognitionSettings';
+import SettingsMenu from '../components/SettingsMenu';
 import { formatLocalDate } from '../lib/localDate';
 import { Capacitor } from '@capacitor/core';
 import { updateAccount } from '../services/assetService';
@@ -502,8 +503,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       </div>
 
       {/* Color Theme */}
-      <div className="settings-section">
-        <div className="settings-section-title">{t('color_theme')}</div>
+      <SettingsMenu title={t('color_theme')} value={t(settings.colorTheme)}>
         <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>{t('color_theme_hint')}</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
           {previewThemes.map(themeItem => (
@@ -521,7 +521,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             </button>
           ))}
         </div>
-      </div>
+      </SettingsMenu>
 
       {/* Amount Visibility */}
       <div className="settings-section">
@@ -542,6 +542,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       </div>
 
       {/* Primary Currency */}
+      <SettingsMenu title={t('settings_currency_rates')} value={settings.primaryCurrency}>
       <div className="settings-section">
         <div className="settings-section-title">{t('primary_currency')}</div>
         <div className="settings-item">
@@ -582,8 +583,10 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('gold_price_source_hint')}</div>
       </div>
 
+      </SettingsMenu>
+
       {/* Categories */}
-      <div className="settings-section">
+      <SettingsMenu title={t('categories_title')} value={t('settings_items_count', { count: settings.categories.length })}>
         <div className="settings-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{t('categories_title')}</span>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -600,11 +603,10 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCategory(c.name)} style={{ padding: '4px 8px', fontSize: '0.6875rem' }}>✕</button>
           </div>
         ))}
-      </div>
+      </SettingsMenu>
 
       {/* Currencies */}
-      <div className="settings-section">
-        <div className="settings-section-title">{t('common_currencies')}</div>
+      <SettingsMenu title={t('common_currencies')} value={settings.currencies.join(' · ')}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
           {settings.currencies.map(c => (
             <span className="tag" key={c}>
@@ -621,12 +623,11 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             </div>
           </div>
         )}
-      </div>
+      </SettingsMenu>
 
 
       {/* Optional portable JSON snapshot */}
-      <div className="settings-section">
-        <div className="settings-section-title">{t('snapshot_sync_title')}</div>
+      <SettingsMenu title={t('snapshot_sync_title')} value={!snapshotStatus.supported ? automaticSnapshotUnavailableLabel : snapshotStatus.configured ? t('snapshot_directory_configured') : t('snapshot_directory_not_set')}>
         <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 10 }}>
           {t('snapshot_sync_desc', { file: AUTOMATIC_SNAPSHOT_FILE })}
         </div>
@@ -684,7 +685,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             </button>
           </div>
         )}
-      </div>
+      </SettingsMenu>
 
 
 

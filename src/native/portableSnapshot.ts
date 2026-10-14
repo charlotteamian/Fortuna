@@ -18,7 +18,7 @@ interface PortableSnapshotPlugin {
   getStatus(): Promise<PortableSnapshotStatus>;
   writeSnapshot(options: { fileName: string; content: string }): Promise<WriteSnapshotResult>;
   clearDirectory(): Promise<void>;
-  addListener(eventName: 'appBackgrounded', listener: () => void): Promise<PluginListenerHandle>;
+  addListener(eventName: 'appBackgrounded' | 'appForegrounded', listener: () => void): Promise<PluginListenerHandle>;
 }
 
 const plugin = registerPlugin<PortableSnapshotPlugin>('PortableSnapshot');
@@ -49,4 +49,9 @@ export async function clearPortableSnapshotDirectory(): Promise<void> {
 export async function addPortableSnapshotBackgroundListener(listener: () => void): Promise<PluginListenerHandle | null> {
   if (!supportsPortableSnapshot()) return null;
   return plugin.addListener('appBackgrounded', listener);
+}
+
+export async function addPortableSnapshotForegroundListener(listener: () => void): Promise<PluginListenerHandle | null> {
+  if (!supportsPortableSnapshot()) return null;
+  return plugin.addListener('appForegrounded', listener);
 }
