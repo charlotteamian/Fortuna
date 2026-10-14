@@ -26,7 +26,6 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -93,7 +92,9 @@ public class AppUpdaterPlugin extends Plugin {
         executor.execute(() -> {
             File apk = null;
             try {
+                notifyProgress(0, 0, "connecting");
                 apk = downloadApk(url, versionName);
+                notifyProgress(apk.length(), apk.length(), "verifying");
                 validateDownloadedApk(apk, versionName);
                 prefs().edit()
                     .putString(KEY_APK_PATH, apk.getAbsolutePath())
@@ -103,7 +104,10 @@ public class AppUpdaterPlugin extends Plugin {
                 mainHandler.post(() -> launchInstaller(call, verifiedApk, versionName));
             } catch (Exception error) {
                 if (apk != null) apk.delete();
-                String code = error instanceof UpdateException ? ((UpdateException) error).code : "UPDATE_DOWNLOAD_FAILED";
+                String code = error instanceof UpdateException ? ((UpdateException) error).code
+                    : error instanceof UpdateDownloadClient.DownloadException || error instanceof java.net.SocketTimeoutException
+                        || error instanceof javax.net.ssl.SSLException ? UpdateDownloadClient.failureCode(error)
+                    : "UPDATE_DOWNLOAD_FAILED";
                 call.reject(error.getMessage() == null ? "Update download failed" : error.getMessage(), code, error);
             }
         });
@@ -171,7 +175,7 @@ public class AppUpdaterPlugin extends Plugin {
 
         File partial = new File(updateDirectory, "Fortuna-" + versionName + "-release.apk.part");
         File target = new File(updateDirectory, "Fortuna-" + versionName + "-release.apk");
-        HttpURLConnection connection = openTrustedConnection(new URL(urlValue));
+        HttpURLConnection connection = UpdateDownloadClient.open(new URL(urlValue));
         long totalBytes = connection.getContentLengthLong();
         if (totalBytes > MAX_APK_BYTES) {
             connection.disconnect();
@@ -194,6 +198,9 @@ public class AppUpdaterPlugin extends Plugin {
                 }
             }
             output.getFD().sync();
+        } catch (Exception error) {
+            partial.delete();
+            throw error;
         } finally {
             connection.disconnect();
         }
@@ -212,41 +219,6 @@ public class AppUpdaterPlugin extends Plugin {
         }
         notifyProgress(downloaded, downloaded);
         return target;
-    }
-
-    private HttpURLConnection openTrustedConnection(URL initialUrl) throws Exception {
-        URL currentUrl = initialUrl;
-        for (int redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
-            if (!isTrustedDownloadHost(currentUrl)) {
-                throw new UpdateException("UNTRUSTED_UPDATE_REDIRECT", "Update redirected to an untrusted host");
-            }
-            HttpURLConnection connection = (HttpURLConnection) currentUrl.openConnection();
-            connection.setInstanceFollowRedirects(false);
-            connection.setConnectTimeout(15_000);
-            connection.setReadTimeout(60_000);
-            connection.setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream");
-            connection.setRequestProperty("User-Agent", "Fortuna-Android-Updater");
-            int status = connection.getResponseCode();
-            if (status == HttpURLConnection.HTTP_OK) return connection;
-            if (Arrays.asList(301, 302, 303, 307, 308).contains(status)) {
-                String location = connection.getHeaderField("Location");
-                connection.disconnect();
-                if (location == null || location.isEmpty()) {
-                    throw new UpdateException("INVALID_UPDATE_REDIRECT", "Update redirect is missing a destination");
-                }
-                currentUrl = new URL(currentUrl, location);
-                continue;
-            }
-            connection.disconnect();
-            throw new UpdateException("UPDATE_HTTP_FAILED", "Update server returned HTTP " + status);
-        }
-        throw new UpdateException("TOO_MANY_UPDATE_REDIRECTS", "Too many update redirects");
-    }
-
-    private boolean isTrustedDownloadHost(URL url) {
-        if (!"https".equalsIgnoreCase(url.getProtocol())) return false;
-        String host = url.getHost().toLowerCase(Locale.ROOT);
-        return "github.com".equals(host) || host.endsWith(".githubusercontent.com");
     }
 
     private void validateDownloadedApk(File apk, String expectedVersionName) throws Exception {
@@ -358,7 +330,12 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     private void notifyProgress(long downloaded, long total) {
+        notifyProgress(downloaded, total, "downloading");
+    }
+
+    private void notifyProgress(long downloaded, long total, String phase) {
         JSObject progress = new JSObject();
+        progress.put("phase", phase);
         progress.put("bytesDownloaded", downloaded);
         progress.put("totalBytes", total);
         progress.put("progress", total > 0 ? Math.min(1.0, (double) downloaded / total) : 0);

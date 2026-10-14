@@ -64,6 +64,8 @@
 2. 在 Android 设备下载 `Fortuna-*-release.apk`。
 3. 打开文件，并在系统提示时允许当前浏览器或文件管理器安装应用。
 
+若 App 内下载失败，错误原因会保留在更新区域，可展开「错误详情」截图。网络失败可重试或使用「用浏览器下载正式 APK」覆盖安装，无需卸载当前 App。连接失败会自动重试一次；签名、来源和安装包校验失败仍会停止安装。
+
 从 1.3.0 起，GitHub APK 使用固定 release 签名，并可在 **设置 → 关于 → 应用更新** 中检查、下载和确认安装后续正式版本。由旧 debug 签名迁移到 1.3.0 时必须先导出完整 Excel 备份、卸载旧版、安装 1.3.0 后恢复；之后同一签名版本可直接覆盖升级。账本保存在 App 的 IndexedDB；行情查询只发送公开的币种、金属、基金或证券代码，不发送账户余额。可选 JSON 快照只在用户选择目录并授权后启用；云盘同步和外部 AI 分析由用户自己的服务完成，并非 Fortuna 内置云服务。
 
 ---
@@ -125,6 +127,8 @@ Every account, institution, identifier, balance, price, and transaction is ficti
 1. Open the [latest GitHub Release](https://github.com/charlotteamian/Fortuna/releases/latest).
 2. Download `Fortuna-*-release.apk` on the Android device.
 3. Open it and allow installation from that browser or file manager if Android asks.
+
+Failed in-app downloads leave a persistent explanation and expandable error details for a screenshot. Network failures offer retry or an official APK browser download for an in-place update. Keep the current app installed. A failed connection is retried once; source, package and signature validation failures still stop installation.
 
 Starting with 1.3.0, GitHub APKs use one permanent release-signing identity. Later official releases can be checked, downloaded, and confirmed under **Settings → About → App Update**. Moving from an older debug-signed build to 1.3.0 requires a complete Excel backup, uninstall, 1.3.0 installation, and restore; subsequent same-signature releases can update in place. Records live in the app's IndexedDB. Quote requests send public currency, metal, fund, or security identifiers—not account balances. The optional JSON snapshot starts only after the user selects and authorises a folder. Cloud sync and external AI analysis are provided by the user's chosen services, not by a Fortuna cloud backend.
 

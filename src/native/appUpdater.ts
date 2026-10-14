@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 export interface AppUpdateDownloadProgress {
+  phase?: 'connecting' | 'downloading' | 'verifying';
   bytesDownloaded: number;
   totalBytes: number;
   progress: number;

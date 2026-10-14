@@ -33,6 +33,46 @@ export interface AppUpdateCheck {
   update: AppUpdateInfo | null;
 }
 
+export interface AppUpdateFailure {
+  messageKey: string;
+  canUseBrowser: boolean;
+  diagnostic?: string;
+}
+
+const UPDATE_FAILURES: Record<string, AppUpdateFailure> = {
+  UPDATE_NETWORK_TIMEOUT: { messageKey: 'update_network_timeout', canUseBrowser: true },
+  UPDATE_NETWORK_UNAVAILABLE: { messageKey: 'update_network_unavailable', canUseBrowser: true },
+  UPDATE_HTTP_FAILED: { messageKey: 'update_server_failed', canUseBrowser: true },
+  UPDATE_DOWNLOAD_FAILED: { messageKey: 'update_download_failed', canUseBrowser: true },
+  INCOMPLETE_UPDATE_DOWNLOAD: { messageKey: 'update_download_incomplete', canUseBrowser: true },
+  UPDATE_TLS_FAILED: { messageKey: 'update_tls_failed', canUseBrowser: false },
+  UPDATE_STORAGE_FAILED: { messageKey: 'update_storage_failed', canUseBrowser: false },
+  UPDATE_SIGNATURE_MISMATCH: { messageKey: 'update_signature_mismatch', canUseBrowser: false },
+  UPDATE_NOT_NEWER: { messageKey: 'update_not_newer', canUseBrowser: false },
+  NO_DOWNLOADED_UPDATE: { messageKey: 'update_download_missing', canUseBrowser: false },
+  INVALID_UPDATE_APK: { messageKey: 'update_package_invalid', canUseBrowser: false },
+  UPDATE_PACKAGE_MISMATCH: { messageKey: 'update_package_invalid', canUseBrowser: false },
+  UPDATE_VERSION_MISMATCH: { messageKey: 'update_package_invalid', canUseBrowser: false },
+  UPDATE_TOO_LARGE: { messageKey: 'update_package_invalid', canUseBrowser: false },
+  INVALID_UPDATE_VERSION: { messageKey: 'update_source_invalid', canUseBrowser: false },
+  UNTRUSTED_UPDATE_URL: { messageKey: 'update_source_invalid', canUseBrowser: false },
+  UNTRUSTED_UPDATE_REDIRECT: { messageKey: 'update_source_invalid', canUseBrowser: false },
+  INVALID_UPDATE_REDIRECT: { messageKey: 'update_source_invalid', canUseBrowser: false },
+  TOO_MANY_UPDATE_REDIRECTS: { messageKey: 'update_source_invalid', canUseBrowser: false },
+};
+
+export function getAppUpdateFailure(error: unknown): AppUpdateFailure {
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code : '';
+  if (!Object.hasOwn(UPDATE_FAILURES, code)) {
+    return { messageKey: 'update_install_failed', canUseBrowser: false, diagnostic: 'UPDATE_UNKNOWN_ERROR' };
+  }
+  const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+    ? error.message : '';
+  const httpStatus = code === 'UPDATE_HTTP_FAILED' ? /^Update server returned HTTP (\d{3})$/.exec(message)?.[1] : null;
+  return { ...UPDATE_FAILURES[code], diagnostic: httpStatus ? `${code} · HTTP ${httpStatus}` : code };
+}
+
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 function parseVersion(version: string): [number, number, number] {

@@ -73,9 +73,9 @@ jobs:
       - name: Lint and build web app
         run: npm run release:web
 
-      - name: Build Android signed release APK
+      - name: Test updater connections and build Android signed release APK
         working-directory: android
-        run: ./gradlew assembleRelease --console=plain
+        run: ./gradlew testDebugUnitTest assembleRelease --console=plain
 
       - name: Verify release signature identity
         shell: bash

@@ -23,7 +23,7 @@ import { formatLocalDate } from '../lib/localDate';
 import { Capacitor } from '@capacitor/core';
 import { updateAccount } from '../services/assetService';
 import { isAccountHidden } from '../lib/accountPreferences';
-import { checkForAppUpdate, type AppUpdateCheck } from '../lib/appUpdate';
+import { checkForAppUpdate, getAppUpdateFailure, type AppUpdateCheck, type AppUpdateFailure } from '../lib/appUpdate';
 import {
   addAppUpdateProgressListener,
   downloadAndInstallUpdate,
@@ -61,6 +61,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const [appUpdateCheck, setAppUpdateCheck] = useState<AppUpdateCheck | null>(null);
   const [downloadedUpdateVersion, setDownloadedUpdateVersion] = useState<string | null>(null);
   const [appUpdateProgress, setAppUpdateProgress] = useState(0);
+  const [appUpdatePhase, setAppUpdatePhase] = useState<'connecting' | 'downloading' | 'verifying'>('connecting');
+  const [appUpdateFailure, setAppUpdateFailure] = useState<AppUpdateFailure | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -360,6 +362,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
     setAppUpdateState('checking');
     setAppUpdateCheck(null);
     setAppUpdateProgress(0);
+    setAppUpdateFailure(null);
     try {
       const result = await checkForAppUpdate(__APP_VERSION__);
       setAppUpdateCheck(result);
@@ -368,6 +371,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
     } catch (error) {
       console.error('App update check failed', error);
       setAppUpdateState('error');
+      setAppUpdateFailure({ messageKey: 'update_check_failed', canUseBrowser: false });
       showToast(t('update_check_failed'), 'error');
     }
   };
@@ -387,25 +391,36 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
     if (!update) return;
     setAppUpdateState('downloading');
     setAppUpdateProgress(0);
-    const listener = await addAppUpdateProgressListener(event => setAppUpdateProgress(event.progress));
+    setAppUpdatePhase('connecting');
+    setAppUpdateFailure(null);
+    let listener: Awaited<ReturnType<typeof addAppUpdateProgressListener>> = null;
     try {
+      listener = await addAppUpdateProgressListener(event => {
+        setAppUpdateProgress(event.progress);
+        setAppUpdatePhase(event.phase ?? 'downloading');
+      });
       applyInstallResult(await downloadAndInstallUpdate(update.downloadUrl, update.version));
     } catch (error) {
       console.error('App update download or install failed', error);
       setAppUpdateState('error');
-      showToast(t('update_install_failed'), 'error');
+      const failure = getAppUpdateFailure(error);
+      setAppUpdateFailure(failure);
+      showToast(t(failure.messageKey), 'error');
     } finally {
       await listener?.remove();
     }
   };
 
   const handleInstallDownloadedUpdate = async () => {
+    setAppUpdateFailure(null);
     try {
       applyInstallResult(await installDownloadedUpdate());
     } catch (error) {
       console.error('Downloaded update install failed', error);
       setAppUpdateState('error');
-      showToast(t('update_install_failed'), 'error');
+      const failure = getAppUpdateFailure(error);
+      setAppUpdateFailure(failure);
+      showToast(t(failure.messageKey), 'error');
     }
   };
 
@@ -715,23 +730,48 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       <div className="settings-section">
         <div className="settings-section-title">{t('about_title')}</div>
         {supportsAppUpdater() && (
-          <div className="settings-item">
-            <span className="settings-item-label">{t('app_update')}</span>
-            <button type="button"
-              className={`btn btn-sm ${appUpdateState === 'available' || appUpdateState === 'downloaded' || appUpdateState === 'installer-opened' ? 'btn-primary' : 'btn-secondary'}`}
-              disabled={appUpdateState === 'checking' || appUpdateState === 'downloading'}
-              onClick={() => {
-                if (appUpdateState === 'available') void handleDownloadAndInstall();
-                else if (appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') void handleInstallDownloadedUpdate();
-                else void handleCheckForAppUpdate();
-              }}>
-              {appUpdateState === 'checking' && t('checking_for_updates')}
-              {appUpdateState === 'downloading' && `${t('downloading_update')} ${Math.round(appUpdateProgress * 100)}%`}
-              {appUpdateState === 'available' && `${t('download_and_install')} v${appUpdateCheck?.update?.version ?? ''}`}
-              {(appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') && t('install_downloaded_update', { version: downloadedUpdateVersion ?? appUpdateCheck?.update?.version ?? '' })}
-              {(appUpdateState === 'idle' || appUpdateState === 'current' || appUpdateState === 'error') && t('check_for_updates')}
-            </button>
-          </div>
+          <>
+            <div className="settings-item">
+              <span className="settings-item-label">{t('app_update')}</span>
+              <button type="button"
+                className={`btn btn-sm ${appUpdateState === 'available' || appUpdateState === 'downloaded' || appUpdateState === 'installer-opened' ? 'btn-primary' : 'btn-secondary'}`}
+                disabled={appUpdateState === 'checking' || appUpdateState === 'downloading'}
+                onClick={() => {
+                  if (appUpdateState === 'available' || (appUpdateState === 'error' && appUpdateCheck?.update && appUpdateFailure?.canUseBrowser)) void handleDownloadAndInstall();
+                  else if (appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') void handleInstallDownloadedUpdate();
+                  else void handleCheckForAppUpdate();
+                }}>
+                {appUpdateState === 'checking' && t('checking_for_updates')}
+                {appUpdateState === 'downloading' && (appUpdatePhase === 'connecting' ? t('update_connecting')
+                  : appUpdatePhase === 'verifying' ? t('update_verifying')
+                  : `${t('downloading_update')} ${Math.round(appUpdateProgress * 100)}%`)}
+                {appUpdateState === 'available' && `${t('download_and_install')} v${appUpdateCheck?.update?.version ?? ''}`}
+                {(appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') && t('install_downloaded_update', { version: downloadedUpdateVersion ?? appUpdateCheck?.update?.version ?? '' })}
+                {appUpdateState === 'error' && appUpdateCheck?.update && appUpdateFailure?.canUseBrowser && t('retry_update_download')}
+                {(appUpdateState === 'idle' || appUpdateState === 'current' || (appUpdateState === 'error' && !(appUpdateCheck?.update && appUpdateFailure?.canUseBrowser))) && t('check_for_updates')}
+              </button>
+            </div>
+            {appUpdateFailure && (
+              <div className="app-update-details">
+                <p className="app-update-error" role="alert">{t(appUpdateFailure.messageKey)}</p>
+                {appUpdateFailure.diagnostic && (
+                  <details>
+                    <summary>{t('update_error_details')}</summary>
+                    <code>{appUpdateFailure.diagnostic}</code>
+                  </details>
+                )}
+                {appUpdateFailure.canUseBrowser && appUpdateCheck?.update && (
+                  <>
+                    <a className="btn btn-secondary btn-sm" href={appUpdateCheck.update.downloadUrl} target="_blank" rel="noreferrer">{t('update_download_in_browser')} ↗</a>
+                    <p>{t('update_browser_hint')}</p>
+                  </>
+                )}
+              </div>
+            )}
+            {(appUpdateState === 'downloaded' || appUpdateState === 'installer-opened') && (
+              <p className="app-update-details" role="status">{t(appUpdateState === 'downloaded' ? 'update_permission_hint' : 'update_installer_opened')}</p>
+            )}
+          </>
         )}
         <button type="button" className="settings-item settings-link settings-button" onClick={() => setShowGuide(true)}>
           <span className="settings-item-label" style={{ color: 'var(--accent)' }}>{t('user_guide_title')}</span>
