@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, type Account, type Settings, type CustomField } from '../db';
+import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, hasLedgerData, type Account, type Settings, type CustomField } from '../db';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,6 +20,7 @@ import UserGuide from '../components/UserGuide';
 import HoldingRecognitionSettings from '../components/HoldingRecognitionSettings';
 import SettingsMenu from '../components/SettingsMenu';
 import { formatLocalDate } from '../lib/localDate';
+import { readExcelBackupFile, describeExcelBackupError, type ExcelBackupFailure } from '../lib/excelBackup';
 import { Capacitor } from '@capacitor/core';
 import { updateAccount } from '../services/assetService';
 import { isAccountHidden } from '../lib/accountPreferences';
@@ -56,7 +57,10 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const [snapshotStatus, setSnapshotStatus] = useState<AutomaticSnapshotStatus>({ supported: false, configured: false });
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [pendingImport, setPendingImport] = useState<File | null>(null);
+  const [importHasData, setImportHasData] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importFailure, setImportFailure] = useState<(ExcelBackupFailure & { fileName: string }) | null>(null);
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateState>('idle');
   const [appUpdateCheck, setAppUpdateCheck] = useState<AppUpdateCheck | null>(null);
   const [downloadedUpdateVersion, setDownloadedUpdateVersion] = useState<string | null>(null);
@@ -274,6 +278,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   };
 
   const handleExport = async () => {
+    setExporting(true);
     try {
       const base64Data = await exportToExcel();
       const fileName = `fortuna_backup_${formatLocalDate()}.xlsx`;
@@ -315,46 +320,53 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       }
     } catch {
       showToast(t('export_failed'), 'error');
+    } finally {
+      setExporting(false);
     }
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setImportFailure(null);
     if (file.size > 25 * 1024 * 1024) {
       showToast(t('import_file_too_large'), 'error');
-    } else {
-      setPendingImport(file);
+      return;
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    setImporting(true);
+    try {
+      setImportHasData(await hasLedgerData());
+      setPendingImport(file);
+    } catch (error) {
+      setImportFailure({ code: 'restore_failed', fileName: file.name, detail: describeExcelBackupError(error) });
+    } finally {
+      setImporting(false);
+    }
   };
 
   const confirmImport = async () => {
     if (!pendingImport) return;
     setImporting(true);
+    setImportFailure(null);
+    let stage: ExcelBackupFailure['code'] = 'file_read_failed';
+    let restored = false;
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result ?? ''));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(pendingImport);
-      });
-      const base64Data = dataUrl.split(',')[1];
-      const success = Boolean(base64Data) && await importFromExcel(base64Data);
-      if (success) {
-        setPendingImport(null);
-        showToast(t('import_success'));
-        await load();
-        onRefresh();
-        scheduleAutomaticSnapshot('backup-restored');
-      } else {
-        showToast(t('import_failed'), 'error');
-      }
+      const bytes = await readExcelBackupFile(pendingImport);
+      stage = 'restore_failed';
+      restored = await importFromExcel(bytes, failure => setImportFailure({ ...failure, fileName: pendingImport.name }));
     } catch (error) {
       console.error('Backup import failed', error);
-      showToast(t('import_failed'), 'error');
+      setImportFailure({ code: stage, fileName: pendingImport.name, detail: describeExcelBackupError(error) });
     } finally {
       setImporting(false);
+    }
+    if (restored) {
+      setPendingImport(null);
+      showToast(t('import_success'));
+      await load();
+      onRefresh();
+      scheduleAutomaticSnapshot('backup-restored');
     }
   };
 
@@ -448,6 +460,19 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const automaticSnapshotUnavailableLabel = Capacitor.getPlatform() === 'ios'
     ? t('snapshot_ios_unavailable')
     : t('snapshot_android_only');
+
+  const importFailureNotice = importFailure && (
+    <div className="backup-import-error" role="alert">
+      <strong>{t('backup_import_error_title')}</strong>
+      <p>{importFailure.fileName}</p>
+      <p>{t(`backup_import_error_${importFailure.code}`)}</p>
+      {importFailure.sheet && <p>{t('backup_import_error_sheet', { sheet: importFailure.sheet })}</p>}
+      {importFailure.detail && <details>
+        <summary>{t('backup_import_error_details')}</summary>
+        <pre>{importFailure.detail}</pre>
+      </details>}
+    </div>
+  );
 
   return (
     <>
@@ -713,7 +738,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             <div className="settings-item-label">{t('export_data')}</div>
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('excel_export_desc')}</div>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={handleExport}>📥 {t('export_data')}</button>
+          <button className="btn btn-secondary btn-sm" disabled={exporting || importing} onClick={handleExport}>📥 {t('export_data')}</button>
         </div>
         <div className="settings-item">
           <div>
@@ -721,9 +746,11 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('excel_import_desc')}</div>
           </div>
           <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0, whiteSpace: 'nowrap', minWidth: '90px' }} 
+            disabled={exporting || importing}
             onClick={() => fileInputRef.current?.click()}>📤 {t('import_data')}</button>
-          <input type="file" accept=".xlsx, .xls" style={{ display: 'none' }} ref={fileInputRef} onChange={handleImport} />
+          <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream" style={{ display: 'none' }} ref={fileInputRef} onChange={event => void handleImport(event)} />
         </div>
+        {!pendingImport && importFailureNotice}
       </div>
 
       {/* About */}
@@ -828,13 +855,14 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
 
       {pendingImport && (
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="import-confirm-title" onClick={() => !importing && setPendingImport(null)}>
-          <div className="confirm-box" onClick={event => event.stopPropagation()}>
-            <h2 className="confirm-title" id="import-confirm-title">{t('import_confirm_title')}</h2>
+          <div className="confirm-box backup-restore-dialog" onClick={event => event.stopPropagation()}>
+            <h2 className="confirm-title" id="import-confirm-title">{t(importHasData ? 'backup_replace_confirm_title' : 'import_confirm_title')}</h2>
             <p className="confirm-msg">{t('import_confirm_message', { file: pendingImport.name })}</p>
-            <p className="confirm-warning">{t('import_confirm_warning')}</p>
+            <p className="confirm-warning">{t(importHasData ? 'backup_replace_confirm_warning' : 'import_confirm_warning')}</p>
+            {importFailureNotice}
             <div className="confirm-actions">
-              <button className="btn btn-secondary" disabled={importing} onClick={() => setPendingImport(null)}>{t('cancel')}</button>
-              <button className="btn btn-danger" disabled={importing} onClick={() => void confirmImport()}>{importing ? t('importing') : t('replace_and_restore')}</button>
+              <button className="btn btn-secondary" disabled={importing} onClick={() => setPendingImport(null)}>{t(importHasData ? 'backup_replace_no' : 'cancel')}</button>
+              <button className="btn btn-danger" disabled={importing} onClick={() => void confirmImport()}>{importing ? t('importing') : t(importHasData ? 'backup_replace_yes' : 'replace_and_restore')}</button>
             </div>
           </div>
         </div>

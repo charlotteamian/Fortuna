@@ -7,6 +7,7 @@ import { getBalanceFlowActionKey, getBalanceFlowConfig } from './lib/balanceFlow
 import { getTargetRefKeys } from './lib/allocationPlan';
 import { getHoldingContractMultiplier, type UsOptionRight } from './lib/usOption';
 import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
+import { describeExcelBackupError, type ExcelBackupFailure, type ExcelBackupFailureCode } from './lib/excelBackup';
 
 export { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 export { COLOR_THEMES, getTheme, type ColorTheme } from './lib/colorThemes';
@@ -348,26 +349,30 @@ export async function updateSettings(updates: Partial<Omit<Settings, 'id'>>): Pr
   });
 }
 
+function createDefaultSettings(): Settings {
+  const primaryCurrency = getDefaultCurrency();
+  const currencies = DEFAULT_CURRENCIES.includes(primaryCurrency)
+    ? [...DEFAULT_CURRENCIES]
+    : [primaryCurrency, ...DEFAULT_CURRENCIES];
+  return {
+    id: 'main', primaryCurrency,
+    categories: [...DEFAULT_CATEGORIES], currencies,
+    colorTheme: 'emerald-rose', amountVisible: false,
+    showArchivedAccounts: true,
+    themeMode: 'auto', fontSize: 'normal',
+    language: 'auto',
+    goldPriceSource: primaryCurrency === 'CNY' ? 'domestic' : 'international',
+    onboardingVersion: 0,
+    snapshotFocusAccountIds: [],
+    automaticSnapshotSchemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION,
+  };
+}
+
 async function initializeSettingsOnce(): Promise<Settings> {
   let settings = await db.settings.get('main');
   const isNewInstall = !settings;
   if (!settings) {
-    const primaryCurrency = getDefaultCurrency();
-    const currencies = DEFAULT_CURRENCIES.includes(primaryCurrency)
-      ? [...DEFAULT_CURRENCIES]
-      : [primaryCurrency, ...DEFAULT_CURRENCIES];
-    settings = {
-      id: 'main', primaryCurrency,
-      categories: [...DEFAULT_CATEGORIES], currencies,
-      colorTheme: 'emerald-rose', amountVisible: false,
-      showArchivedAccounts: true,
-      themeMode: 'auto', fontSize: 'normal',
-      language: 'auto',
-      goldPriceSource: primaryCurrency === 'CNY' ? 'domestic' : 'international',
-      onboardingVersion: 0,
-      snapshotFocusAccountIds: [],
-      automaticSnapshotSchemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION,
-    };
+    settings = createDefaultSettings();
     await db.settings.put(settings);
   }
   // Migrate old settings missing new fields
@@ -465,18 +470,25 @@ async function migrateMetalRecords(): Promise<void> {
 }
 
 // ---- Data Import / Export ----
+export async function hasLedgerData(): Promise<boolean> {
+  const tables = [db.accounts, db.records, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks];
+  return db.transaction('r', tables, async () => (await Promise.all(tables.map(table => table.count()))).some(count => count > 0));
+}
+
+async function readBackupTables() {
+  // Keep all tables at the same point in time; concurrent writes wait until this
+  // read transaction ends, so exports cannot contain orphan records/holdings.
+  return db.transaction('r', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
+    const [accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks] = await Promise.all([
+      db.accounts.toArray(), db.records.toArray(), db.exchangeRates.toArray(), db.settings.toArray(), db.products.toArray(),
+      db.planItems.toArray(), db.planTargets.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(), db.dividendStocks.toArray(),
+    ]);
+    return { accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks };
+  });
+}
+
 export async function exportData(): Promise<string> {
-  const accounts = await db.accounts.toArray();
-  const records = await db.records.toArray();
-  const exchangeRates = await db.exchangeRates.toArray();
-  const settings = await db.settings.toArray();
-  const products = await db.products.toArray();
-  const planItems = await db.planItems.toArray();
-  const planTargets = await db.planTargets.toArray();
-  const holdings = await db.holdings.toArray();
-  const holdingTxns = await db.holdingTxns.toArray();
-  const dividendStocks = await db.dividendStocks.toArray();
-  const data = { version: 13, timestamp: Date.now(), accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks };
+  const data = { version: 13, timestamp: Date.now(), ...await readBackupTables() };
   return JSON.stringify(data);
 }
 
@@ -519,17 +531,7 @@ export async function importData(jsonData: string): Promise<boolean> {
 
 export async function exportToExcel(): Promise<string> {
   const XLSX = await import('xlsx');
-  const accounts = await db.accounts.toArray();
-  const records = await db.records.toArray();
-  const exchangeRates = await db.exchangeRates.toArray();
-  const settingsRows = await db.settings.toArray();
-  const products = await db.products.toArray();
-  const planItems = await db.planItems.toArray();
-  const planTargets = await db.planTargets.toArray();
-  const holdings = await db.holdings.toArray();
-  const holdingTxns = await db.holdingTxns.toArray();
-
-  const dividendStocks = await db.dividendStocks.toArray();
+  const { accounts, records, exchangeRates, settings: settingsRows, products, planItems, planTargets, holdings, holdingTxns, dividendStocks } = await readBackupTables();
   const settingsExport = settingsRows.map(row => {
     const publicRow = { ...row } as Record<string, unknown>;
     delete publicRow[LEGACY_SNAPSHOT_FOCUS_KEY];
@@ -654,10 +656,17 @@ export async function exportToExcel(): Promise<string> {
   return XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 }
 
-export async function importFromExcel(base64Data: string): Promise<boolean> {
+export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, onFailure?: (failure: ExcelBackupFailure) => void): Promise<boolean> {
+  let stage: ExcelBackupFailureCode = 'unreadable_workbook';
+  let sheet: string | undefined;
+  const fail = (code: ExcelBackupFailureCode, sheet?: string): false => {
+    onFailure?.({ code, sheet });
+    return false;
+  };
   try {
     const XLSX = await import('xlsx');
-    const wb = XLSX.read(base64Data, { type: 'base64' });
+    const wb = XLSX.read(data, { type: typeof data === 'string' ? 'base64' : 'array' });
+    stage = 'invalid_data';
     const wsAccounts = wb.Sheets["Accounts"];
     const wsRecords = wb.Sheets["Records"];
     const wsProducts = wb.Sheets["Products"];
@@ -668,21 +677,25 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
     const wsSettings = wb.Sheets["Settings"];
     const wsExchangeRates = wb.Sheets["ExchangeRates"];
     const wsMetadata = wb.Sheets["BackupInfo"];
+    if (!wsAccounts || !wsRecords) return fail('not_backup');
+    sheet = 'DividendStocks';
     const dividendStocks: DividendStock[] = wb.Sheets.DividendStocks
       ? XLSX.utils.sheet_to_json<{ data: string }>(wb.Sheets.DividendStocks).map(row => JSON.parse(row.data)) : [];
-    if (!dividendStocks.every(isDividendStock) || new Set(dividendStocks.map(s => s.code)).size !== dividendStocks.length) return false;
-    if (!wsAccounts || !wsRecords) return false;
+    if (!dividendStocks.every(isDividendStock) || new Set(dividendStocks.map(s => s.code)).size !== dividendStocks.length) return fail('invalid_data', sheet);
+    sheet = 'BackupInfo';
     const metadata = wsMetadata
       ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsMetadata)[0]
       : undefined;
     const recognizedBackup = metadata?.format === 'Fortuna Excel Backup';
     const backupVersion = Number(metadata?.version) || 0;
+    if (recognizedBackup && backupVersion > 4) return fail('unsupported_version');
     const needsLegacyMetalMigration = !recognizedBackup || backupVersion < 2;
     
     const parseBoolean = (value: unknown, fallback: boolean): boolean => {
       if (value === undefined || value === null || value === '') return fallback;
       return value === true || value === 1 || String(value).toLowerCase() === 'true';
     };
+    sheet = 'Accounts';
     const rawAccounts = XLSX.utils.sheet_to_json<Record<string, unknown>>(wsAccounts);
     const accounts: Account[] = rawAccounts.map((row) => {
       const { productData, latestBalance: _latestBalance, ...rest } = row;
@@ -694,7 +707,9 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
         productData: typeof productData === 'string' ? (() => { try { return JSON.parse(productData) as Record<string, string>; } catch { return undefined; } })() : undefined,
       } as Account;
     });
+    sheet = 'Records';
     const records = XLSX.utils.sheet_to_json<AccountRecord>(wsRecords);
+    sheet = 'Products';
     const productsRaw = wsProducts ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsProducts) : [];
     
     // Reconstruct nested data object for products
@@ -714,6 +729,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       };
     });
     
+    sheet = 'Plan';
     const planRaw = wsPlan ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsPlan) : [];
     const parseAllocations = (value: unknown): PlanResourceAllocation[] => {
       if (typeof value !== 'string' || !value) return [];
@@ -743,6 +759,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       sortOrder: Number(p.sortOrder) || 0,
       createdAt: Number(p.createdAt) || Date.now(),
     }));
+    sheet = 'PlanTargets';
     const planTargetRaw = wsPlanTargets ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsPlanTargets) : [];
     const planTargets: PlanTarget[] = planTargetRaw.map(target => {
       const legacyRefKey = typeof target.refKey === 'string' && target.refKey ? target.refKey : undefined;
@@ -769,6 +786,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
         createdAt: Number(target.createdAt) || Date.now(),
       };
     });
+    sheet = 'Holdings';
     const holdings = wsHoldings
       ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsHoldings).map(row => {
           const { productData, ...rest } = row;
@@ -780,14 +798,16 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
           } as Holding;
         })
       : [];
+    sheet = 'HoldingTxns';
     const holdingTxns = wsHoldingTxns ? XLSX.utils.sheet_to_json<HoldingTxn>(wsHoldingTxns) : [];
 
     const parseJson = <T,>(value: unknown, fallback: T): T => {
       if (typeof value !== 'string' || !value) return fallback;
       try { return JSON.parse(value) as T; } catch { return fallback; }
     };
+    sheet = 'Settings';
     const settingsRaw = wsSettings ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsSettings) : [];
-    if (!settingsRaw.every(row => (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return false;
+    if (!settingsRaw.every(row => (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return fail('invalid_data', sheet);
     const restoredSettings: Settings[] = settingsRaw.flatMap(row => {
       const categories = parseJson<CategoryDef[]>(row.categories, []);
       const currencies = parseJson<string[]>(row.currencies, []);
@@ -820,6 +840,8 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       if (Number.isFinite(targetTotal) && targetTotal > 0) restored.planTargetTotal = targetTotal;
       return [restored];
     });
+    if (restoredSettings.length !== settingsRaw.length) return fail('invalid_data', 'Settings');
+    sheet = 'ExchangeRates';
     const exchangeRates = wsExchangeRates
       ? XLSX.utils.sheet_to_json<ExchangeRate>(wsExchangeRates)
       : [];
@@ -828,7 +850,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
     const uniqueIds = (rows: { id: string }[]) => new Set(rows.map(row => row.id)).size === rows.length;
     const accountIds = new Set(accounts.map(account => account.id));
     const holdingIds = new Set(holdings.map(holding => holding.id));
-    if (!recognizedBackup && accounts.length === 0 && records.length === 0) return false;
+    if (!recognizedBackup && accounts.length === 0 && records.length === 0) return fail('not_backup');
     if (!uniqueIds(accounts) || !accounts.every(account => (
       validId(account.id)
       && validId(account.name)
@@ -837,7 +859,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       && validId(account.currency)
       && Number.isFinite(account.createdAt)
       && Number.isFinite(account.sortOrder)
-    ))) return false;
+    ))) return fail('invalid_data', 'Accounts');
     if (!uniqueIds(records) || !records.every(record => (
       validId(record.id)
       && validId(record.accountId)
@@ -845,7 +867,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       && validId(record.date)
       && Number.isFinite(record.amount)
       && Number.isFinite(record.createdAt)
-    ))) return false;
+    ))) return fail('invalid_data', 'Records');
     if (!uniqueIds(holdings) || !holdings.every(holding => (
       validId(holding.id)
       && accountIds.has(holding.accountId)
@@ -853,7 +875,7 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       && Number.isFinite(holding.lastPrice)
       && Number.isFinite(holding.createdAt)
       && Number.isFinite(holding.sortOrder)
-    ))) return false;
+    ))) return fail('invalid_data', 'Holdings');
     if (!uniqueIds(holdingTxns) || !holdingTxns.every(transaction => (
       validId(transaction.id)
       && accountIds.has(transaction.accountId)
@@ -865,18 +887,22 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       && Number.isFinite(transaction.createdAt)
       && (transaction.quantitySnapshot === undefined || (Number.isFinite(transaction.quantitySnapshot) && transaction.quantitySnapshot >= 0))
       && (transaction.costPriceSnapshot === undefined || (transaction.quantitySnapshot !== undefined && Number.isFinite(transaction.costPriceSnapshot) && transaction.costPriceSnapshot >= 0))
-    ))) return false;
-    if (!uniqueIds(products) || !uniqueIds(planItems) || !uniqueIds(planTargets)) return false;
-    if (restoredSettings.length > 0 && !restoredSettings.every(row => validId(row.id))) return false;
-    if (!exchangeRates.every(rate => (
+    ))) return fail('invalid_data', 'HoldingTxns');
+    if (!uniqueIds(products)) return fail('invalid_data', 'Products');
+    if (!uniqueIds(planItems)) return fail('invalid_data', 'Plan');
+    if (!uniqueIds(planTargets)) return fail('invalid_data', 'PlanTargets');
+    if (!uniqueIds(restoredSettings) || !restoredSettings.every(row => validId(row.id))) return fail('invalid_data', 'Settings');
+    if (!uniqueIds(exchangeRates) || !exchangeRates.every(rate => (
       validId(rate.id)
       && validId(rate.base)
       && validId(rate.quote)
       && Number.isFinite(rate.rate)
       && rate.rate > 0
       && Number.isFinite(rate.updatedAt)
-    ))) return false;
+    ))) return fail('invalid_data', 'ExchangeRates');
 
+    stage = 'restore_failed';
+    sheet = undefined;
     await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
       await db.accounts.clear();
       await db.records.clear();
@@ -886,8 +912,8 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       await db.holdings.clear();
       await db.holdingTxns.clear();
       await db.dividendStocks.clear();
-      if (restoredSettings.length > 0) await db.settings.clear();
-      if (wsExchangeRates) await db.exchangeRates.clear();
+      await db.settings.clear();
+      await db.exchangeRates.clear();
       if (accounts.length > 0) await db.accounts.bulkAdd(accounts);
       if (records.length > 0) await db.records.bulkAdd(records);
       if (products.length > 0) await db.products.bulkAdd(products);
@@ -898,14 +924,15 @@ export async function importFromExcel(base64Data: string): Promise<boolean> {
       if (dividendStocks.length) await db.dividendStocks.bulkAdd(dividendStocks);
       if (restoredSettings.length > 0) await db.settings.bulkAdd(restoredSettings);
       else {
-        await db.settings.update('main', { dividendWorkbenchInitialized: dividendStocks.length > 0, dividendBudgetMinor: undefined, dividendStrategy: 'stocks', dividendFundPlan: undefined });
-        if (needsLegacyMetalMigration) await db.settings.update('main', { metalTxnMigrated: false });
+        await db.settings.add({ ...createDefaultSettings(), onboardingVersion: CURRENT_ONBOARDING_VERSION,
+          dividendWorkbenchInitialized: dividendStocks.length > 0, dividendStrategy: 'stocks', metalTxnMigrated: !needsLegacyMetalMigration });
       }
       if (exchangeRates.length > 0) await db.exchangeRates.bulkAdd(exchangeRates);
     });
     return true;
   } catch (e) {
     console.error('Excel Import failed', e);
+    onFailure?.({ code: stage, sheet, detail: describeExcelBackupError(e) });
     return false;
   }
 }

@@ -1,0 +1,39 @@
+{
+  "checks": [
+    "supplied workbook restores on a fresh install",
+    "No leaves all existing data unchanged",
+    "Yes replaces matching IDs and removes records absent from the supplied workbook",
+    "repeating the same import does not add duplicates",
+    "Settings export immediately restores over existing data",
+    "a report has a persistent specific error and does not alter the ledger",
+    "file-read failures are distinguished; FileReader fallback restores successfully"
+  ],
+  "layouts": [
+    {
+      "label": "overwrite prompt small phone",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "label": "overwrite prompt phone",
+      "width": 390,
+      "height": 844,
+      "overflow": false
+    },
+    {
+      "label": "persistent failure small phone",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    },
+    {
+      "label": "expanded file-read failure small phone",
+      "width": 320,
+      "height": 568,
+      "overflow": false
+    }
+  ],
+  "pageErrors": [],
+  "status": "passed"
+}
