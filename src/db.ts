@@ -7,7 +7,7 @@ import { getBalanceFlowActionKey, getBalanceFlowConfig } from './lib/balanceFlow
 import { getTargetRefKeys } from './lib/allocationPlan';
 import { getHoldingContractMultiplier, type UsOptionRight } from './lib/usOption';
 import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
-import { describeExcelBackupError, type ExcelBackupFailure, type ExcelBackupFailureCode } from './lib/excelBackup';
+import { describeExcelBackupError, normalizeExcelBackupNumber, type ExcelBackupFailure, type ExcelBackupFailureCode, type ExcelBackupValidationReason } from './lib/excelBackup';
 
 export { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 export { COLOR_THEMES, getTheme, type ColorTheme } from './lib/colorThemes';
@@ -659,12 +659,13 @@ export async function exportToExcel(): Promise<string> {
 export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, onFailure?: (failure: ExcelBackupFailure) => void): Promise<boolean> {
   let stage: ExcelBackupFailureCode = 'unreadable_workbook';
   let sheet: string | undefined;
-  const fail = (code: ExcelBackupFailureCode, sheet?: string): false => {
-    onFailure?.({ code, sheet });
+  const fail = (code: ExcelBackupFailureCode, sheet?: string, issue?: Pick<ExcelBackupFailure, 'row' | 'field' | 'reason'>): false => {
+    onFailure?.({ code, sheet, ...issue });
     return false;
   };
   try {
-    const XLSX = await import('xlsx');
+    const xlsxModule = await import('xlsx');
+    const XLSX = xlsxModule.default ?? xlsxModule;
     const wb = XLSX.read(data, { type: typeof data === 'string' ? 'base64' : 'array' });
     stage = 'invalid_data';
     const wsAccounts = wb.Sheets["Accounts"];
@@ -799,7 +800,25 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         })
       : [];
     sheet = 'HoldingTxns';
-    const holdingTxns = wsHoldingTxns ? XLSX.utils.sheet_to_json<HoldingTxn>(wsHoldingTxns) : [];
+    const holdingTxnRows = wsHoldingTxns ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsHoldingTxns) : [];
+    const holdingTxns = holdingTxnRows.map(row => {
+      const normalized = { ...row };
+      for (const field of ['shares', 'price', 'createdAt']) normalized[field] = normalizeExcelBackupNumber(row[field]);
+      for (const field of ['balanceSnapshot', 'quantitySnapshot', 'costPriceSnapshot']) {
+        const value = row[field];
+        // Edited workbooks can write empty strings where an exported optional cell was absent.
+        if (value == null || (typeof value === 'string' && value.trim() === '')) delete normalized[field];
+        else normalized[field] = normalizeExcelBackupNumber(value);
+      }
+      if (typeof row.date === 'number' && Number.isInteger(row.date)) {
+        const date = XLSX.SSF.parse_date_code(row.date, { date1904: parseBoolean(wb.Workbook?.WBProps?.date1904, false) });
+        if (date) normalized.date = `${String(date.y).padStart(4, '0')}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+      } else if (typeof row.date === 'string') {
+        const date = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(row.date.trim());
+        if (date) normalized.date = `${date[1]}-${date[2].padStart(2, '0')}-${date[3].padStart(2, '0')}`;
+      }
+      return normalized as unknown as HoldingTxn;
+    });
 
     const parseJson = <T,>(value: unknown, fallback: T): T => {
       if (typeof value !== 'string' || !value) return fallback;
@@ -849,7 +868,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     const validId = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
     const uniqueIds = (rows: { id: string }[]) => new Set(rows.map(row => row.id)).size === rows.length;
     const accountIds = new Set(accounts.map(account => account.id));
-    const holdingIds = new Set(holdings.map(holding => holding.id));
+    const holdingsById = new Map(holdings.map(holding => [holding.id, holding]));
     if (!recognizedBackup && accounts.length === 0 && records.length === 0) return fail('not_backup');
     if (!uniqueIds(accounts) || !accounts.every(account => (
       validId(account.id)
@@ -876,18 +895,31 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       && Number.isFinite(holding.createdAt)
       && Number.isFinite(holding.sortOrder)
     ))) return fail('invalid_data', 'Holdings');
-    if (!uniqueIds(holdingTxns) || !holdingTxns.every(transaction => (
-      validId(transaction.id)
-      && accountIds.has(transaction.accountId)
-      && holdingIds.has(transaction.holdingId)
-      && validId(transaction.date)
-      && (transaction.kind === 'buy' || transaction.kind === 'sell')
-      && Number.isFinite(transaction.shares)
-      && Number.isFinite(transaction.price)
-      && Number.isFinite(transaction.createdAt)
-      && (transaction.quantitySnapshot === undefined || (Number.isFinite(transaction.quantitySnapshot) && transaction.quantitySnapshot >= 0))
-      && (transaction.costPriceSnapshot === undefined || (transaction.quantitySnapshot !== undefined && Number.isFinite(transaction.costPriceSnapshot) && transaction.costPriceSnapshot >= 0))
-    ))) return fail('invalid_data', 'HoldingTxns');
+    const transactionIds = new Set<string>();
+    for (const [index, transaction] of holdingTxns.entries()) {
+      const failTransaction = (field: keyof HoldingTxn, reason: ExcelBackupValidationReason) => fail('invalid_data', 'HoldingTxns', {
+        row: Number(holdingTxnRows[index].__rowNum__) + 1,
+        field,
+        reason,
+      });
+      if (!validId(transaction.id)) return failTransaction('id', 'missing_value');
+      if (transactionIds.has(transaction.id)) return failTransaction('id', 'duplicate_id');
+      transactionIds.add(transaction.id);
+      if (!accountIds.has(transaction.accountId)) return failTransaction('accountId', 'missing_account');
+      const holding = holdingsById.get(transaction.holdingId);
+      if (!holding) return failTransaction('holdingId', 'missing_holding');
+      if (holding.accountId !== transaction.accountId) return failTransaction('accountId', 'holding_account_mismatch');
+      const date = typeof transaction.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(transaction.date)
+        ? new Date(`${transaction.date}T00:00:00Z`) : undefined;
+      if (!date || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== transaction.date) return failTransaction('date', 'invalid_date');
+      if (transaction.kind !== 'buy' && transaction.kind !== 'sell') return failTransaction('kind', 'invalid_kind');
+      for (const field of ['shares', 'price', 'createdAt', 'quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot'] as const) {
+        const value = transaction[field];
+        if (value === undefined && ['quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot'].includes(field)) continue;
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return failTransaction(field, 'invalid_number');
+      }
+      if (transaction.costPriceSnapshot !== undefined && transaction.quantitySnapshot === undefined) return failTransaction('costPriceSnapshot', 'requires_quantity_snapshot');
+    }
     if (!uniqueIds(products)) return fail('invalid_data', 'Products');
     if (!uniqueIds(planItems)) return fail('invalid_data', 'Plan');
     if (!uniqueIds(planTargets)) return fail('invalid_data', 'PlanTargets');

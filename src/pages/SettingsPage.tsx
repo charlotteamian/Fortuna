@@ -467,6 +467,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       <p>{importFailure.fileName}</p>
       <p>{t(`backup_import_error_${importFailure.code}`)}</p>
       {importFailure.sheet && <p>{t('backup_import_error_sheet', { sheet: importFailure.sheet })}</p>}
+      {importFailure.row && <p>{t('backup_import_error_cell', { row: importFailure.row, field: importFailure.field })}</p>}
+      {importFailure.reason && <p>{t(`backup_import_validation_${importFailure.reason}`)}</p>}
       {importFailure.detail && <details>
         <summary>{t('backup_import_error_details')}</summary>
         <pre>{importFailure.detail}</pre>

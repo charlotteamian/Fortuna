@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import Dexie from 'dexie';
 import * as XLSX from 'xlsx';
-import { readExcelBackupFile, type ExcelBackupFailure } from '../src/lib/excelBackup.ts';
+import { normalizeExcelBackupNumber, readExcelBackupFile, type ExcelBackupFailure } from '../src/lib/excelBackup.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -83,6 +83,105 @@ test('binary reads with missing or generic MIME restore all ledger tables and fi
     assert.equal(settings.dividendBudgetMinor, 12345678);
     assert.deepEqual(settings.dividendFundPlan, original.settings[0].dividendFundPlan);
   }
+});
+
+const holding = { id: 'fixture-holding', accountId: account.id, name: 'Fixture security', lastPrice: 12.3456, sortOrder: 0, createdAt: 3 };
+const trade = { id: 'fixture-trade', accountId: account.id, holdingId: holding.id, date: '2026-10-14', kind: 'buy' as const, shares: 100.25, price: 12.3456, createdAt: 4 };
+
+async function editedTransactionBackup(rows: Record<string, unknown>[]) {
+  await db.holdings.add(holding);
+  const workbook = XLSX.read(await exportToExcel(), { type: 'base64' });
+  workbook.Sheets.HoldingTxns = XLSX.utils.json_to_sheet(rows);
+  return workbook;
+}
+
+test('Excel numeric normalization accepts complete numbers and never converts missing or malformed cells to zero', () => {
+  for (const [text, expected] of [['1,234.5678', 1234.5678], [' 1.7e12 ', 1.7e12], ['0', 0], ['.25', 0.25]] as const) {
+    assert.equal(normalizeExcelBackupNumber(text), expected);
+  }
+  for (const value of ['', ' ', '1,00', '100股', '0x10', 'NaN', 'Infinity', true, null, undefined]) {
+    assert.equal(normalizeExcelBackupNumber(value), value);
+  }
+});
+
+test('blank optional snapshot cells in an otherwise unchanged trade are treated as absent', async () => {
+  const workbook = await editedTransactionBackup([{ ...trade, quantitySnapshot: '', costPriceSnapshot: '', balanceSnapshot: '' }]);
+  assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })), true);
+  assert.deepEqual(await db.holdingTxns.toArray(), [trade]);
+});
+
+test('edited backups restore text numbers and blank optional snapshots without changing trade meaning', async () => {
+  const workbook = await editedTransactionBackup([
+    { ...trade, shares: '100.25', price: '12.3456', createdAt: '4', quantitySnapshot: '', costPriceSnapshot: '  ', balanceSnapshot: '' },
+    { ...trade, id: 'quantity-anchor', shares: '0', price: '0', quantitySnapshot: '0', costPriceSnapshot: '0', balanceSnapshot: '' },
+    { ...trade, id: 'balance-anchor', shares: '0', price: '1', quantitySnapshot: '', costPriceSnapshot: '', balanceSnapshot: '1,234.56' },
+  ]);
+  const failures: ExcelBackupFailure[] = [];
+  assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }), failure => failures.push(failure)), true);
+  assert.deepEqual(failures, []);
+  assert.deepEqual(await db.holdingTxns.get(trade.id), trade);
+  const quantityAnchor = await db.holdingTxns.get('quantity-anchor');
+  assert.equal(quantityAnchor?.quantitySnapshot, 0);
+  assert.equal(quantityAnchor?.costPriceSnapshot, 0);
+  assert.equal(quantityAnchor?.balanceSnapshot, undefined);
+  const balanceAnchor = await db.holdingTxns.get('balance-anchor');
+  assert.equal(balanceAnchor?.balanceSnapshot, 1234.56);
+  assert.equal(balanceAnchor?.quantitySnapshot, undefined);
+  assert.equal(balanceAnchor?.costPriceSnapshot, undefined);
+  assert.equal(await db.holdingTxns.count(), 3);
+});
+
+test('Excel date cells preserve the calendar date in both workbook date systems', async () => {
+  for (const date1904 of [false, true]) {
+    const workbook = await editedTransactionBackup([trade]);
+    workbook.Workbook = { WBProps: { date1904 } };
+    const header = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets.HoldingTxns, { header: 1 })[0];
+    const address = XLSX.utils.encode_cell({ r: 1, c: header.indexOf('date') });
+    workbook.Sheets.HoldingTxns[address] = { t: 'n', v: date1904 ? 44847 : 46309, z: 'yyyy-mm-dd' };
+    assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })), true);
+    assert.equal((await db.holdingTxns.get(trade.id))?.date, '2026-10-14');
+    await db.holdings.clear();
+  }
+});
+
+test('invalid transaction cells identify the exact worksheet row and field and preserve the current ledger', async () => {
+  const cases = [
+    { patch: { shares: '' }, field: 'shares', reason: 'invalid_number' },
+    { patch: { price: '12元' }, field: 'price', reason: 'invalid_number' },
+    { patch: { createdAt: '' }, field: 'createdAt', reason: 'invalid_number' },
+    { patch: { date: '2026-02-30' }, field: 'date', reason: 'invalid_date' },
+    { patch: { date: 60 }, field: 'date', reason: 'invalid_date' },
+    { patch: { date: 46309.5 }, field: 'date', reason: 'invalid_date' },
+    { patch: { quantitySnapshot: '-1' }, field: 'quantitySnapshot', reason: 'invalid_number' },
+    { patch: { costPriceSnapshot: '12' }, field: 'costPriceSnapshot', reason: 'requires_quantity_snapshot' },
+    { patch: { balanceSnapshot: 'NaN' }, field: 'balanceSnapshot', reason: 'invalid_number' },
+    { patch: { kind: 'transfer' }, field: 'kind', reason: 'invalid_kind' },
+    { patch: { accountId: 'missing-account' }, field: 'accountId', reason: 'missing_account' },
+    { patch: { holdingId: 'missing-holding' }, field: 'holdingId', reason: 'missing_holding' },
+    { patch: { id: trade.id }, field: 'id', reason: 'duplicate_id' },
+  ];
+  for (const { patch, field, reason } of cases) {
+    const workbook = await editedTransactionBackup([trade, { ...trade, id: 'invalid-trade', ...patch }]);
+    // The physical worksheet line must be reported even when it contains blank rows.
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.HoldingTxns, { header: 1 });
+    workbook.Sheets.HoldingTxns = XLSX.utils.aoa_to_sheet([rows[0], rows[1], [], rows[2]]);
+    const original = await ledgerSnapshot();
+    const failures: ExcelBackupFailure[] = [];
+    assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }), failure => failures.push(failure)), false, reason);
+    assert.deepEqual(failures, [{ code: 'invalid_data', sheet: 'HoldingTxns', row: 4, field, reason }]);
+    assert.deepEqual(await ledgerSnapshot(), original);
+    await db.holdings.clear();
+  }
+});
+
+test('a transaction cannot refer to a holding in a different account', async () => {
+  const workbook = await editedTransactionBackup([{ ...trade, accountId: 'other-account' }]);
+  workbook.Sheets.Accounts = XLSX.utils.json_to_sheet([account, { ...account, id: 'other-account' }]);
+  const original = await ledgerSnapshot();
+  const failures: ExcelBackupFailure[] = [];
+  assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }), failure => failures.push(failure)), false);
+  assert.deepEqual(failures, [{ code: 'invalid_data', sheet: 'HoldingTxns', row: 2, field: 'accountId', reason: 'holding_account_mismatch' }]);
+  assert.deepEqual(await ledgerSnapshot(), original);
 });
 
 test('legacy Excel backups without metadata or settings still restore', async () => {

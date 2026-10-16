@@ -1,0 +1,27 @@
+{
+  "checks": [
+    "Production UI restores text numbers, blank optional anchors, a zero quantity anchor, and an Excel serial date without changing trade data",
+    "Repeated import replaces rather than appends",
+    "A UI export restores all normalized ledger data unchanged",
+    "Invalid cost anchors show the worksheet, row, field and reason, stay visible after closing, and leave every table unchanged",
+    "Missing holding references are rejected with actionable field information and no writes"
+  ],
+  "layouts": [
+    {
+      "width": 320,
+      "height": 568,
+      "horizontalOverflow": false,
+      "verticalOverflow": false,
+      "scrollable": true
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "horizontalOverflow": false,
+      "verticalOverflow": false,
+      "scrollable": false
+    }
+  ],
+  "pageErrors": [],
+  "status": "passed"
+}

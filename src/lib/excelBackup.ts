@@ -1,9 +1,23 @@
 export type ExcelBackupFailureCode = 'file_read_failed' | 'unreadable_workbook' | 'not_backup' | 'unsupported_version' | 'invalid_data' | 'restore_failed';
 
+export type ExcelBackupValidationReason = 'missing_value' | 'invalid_number' | 'invalid_date' | 'invalid_kind' | 'duplicate_id' | 'missing_account' | 'missing_holding' | 'holding_account_mismatch' | 'requires_quantity_snapshot';
+
 export interface ExcelBackupFailure {
   code: ExcelBackupFailureCode;
   sheet?: string;
+  row?: number;
+  field?: string;
+  reason?: ExcelBackupValidationReason;
   detail?: string;
+}
+
+/** Accept complete Excel text numbers without turning blank or malformed cells into zero. */
+export function normalizeExcelBackupNumber(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\d{1,3}(?:,\d{3})+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) return value;
+  const parsed = Number(text.replace(/,/g, ''));
+  return Number.isFinite(parsed) && Math.abs(parsed) <= Number.MAX_SAFE_INTEGER ? parsed : value;
 }
 
 export function describeExcelBackupError(error: unknown): string | undefined {
