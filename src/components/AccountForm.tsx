@@ -115,7 +115,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
           <div style={S.typeRow}>
             <button type="button" style={{ ...S.typeBtn, ...(type === 'asset' ? { background: 'var(--asset-color)', color: 'var(--theme-on-asset)' } : S.typeBtnInactive) }}
               onClick={() => handleTypeChange('asset')}>{t('assets')}</button>
-            <button type="button" style={{ ...S.typeBtn, ...(type === 'liability' ? { background: 'var(--liability-color)', color: '#fff' } : S.typeBtnInactive) }}
+            <button type="button" style={{ ...S.typeBtn, ...(type === 'liability' ? { background: 'var(--liability-color)', color: 'var(--theme-on-liability)' } : S.typeBtnInactive) }}
               onClick={() => handleTypeChange('liability')}>{t('liabilities')}</button>
           </div>
         </div>

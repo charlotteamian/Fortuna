@@ -38,6 +38,40 @@ beforeEach(async () => {
 });
 after(() => db.close());
 
+test('hidden assets and liabilities allow metadata, balance and holding edits while preserving visibility and total inclusion', async () => {
+  const { createAccount, updateAccount, addRecord, updateRecord, getRecords, addBalanceTransaction, getAccountsWithLatest } = await import('../src/services/assetService.ts');
+  const { setAccountPortfolioMode, addHoldingTxn } = await import('../src/services/holdingService.ts');
+  const { formatLocalDate } = await import('../src/lib/localDate.ts');
+  const today = formatLocalDate();
+  const previousDay = new Date(); previousDay.setDate(previousDay.getDate() - 1);
+  const yesterday = formatLocalDate(previousDay);
+  const assetId = await createAccount({ name: 'Hidden deposit', category: '银行存款', type: 'asset', currency: 'CNY', hidden: true, includeInTotals: true });
+  const liabilityId = await createAccount({ name: 'Hidden loan', category: '消费贷', type: 'liability', currency: 'CNY', hidden: true, includeInTotals: false });
+  await updateAccount(assetId, { name: 'Edited deposit', institution: 'Edited institution', currency: 'CNY' });
+  await updateAccount(liabilityId, { name: 'Edited loan', institution: 'Edited lender' });
+  const balanceId = await addRecord(assetId, yesterday, 1000);
+  await updateRecord(balanceId, { amount: 1200 });
+  await addRecord(liabilityId, yesterday, 500);
+  await addBalanceTransaction(liabilityId, { date: today, kind: 'sell', amount: 100 });
+  assert.equal((await getRecords(assetId))[0].amount, 1200);
+  assert.equal((await getRecords(liabilityId))[0].amount, 400);
+  await setAccountPortfolioMode(assetId, true);
+  const holding = await db.holdings.where('accountId').equals(assetId).first();
+  assert.ok(holding);
+  await addHoldingTxn(assetId, holding.id, { date: today, kind: 'buy', shares: 200, price: 1 });
+  assert.equal((await getRecords(assetId))[0].amount, 1400);
+  const hiddenAsset = await db.accounts.get(assetId);
+  const hiddenLiability = await db.accounts.get(liabilityId);
+  assert.equal(hiddenAsset?.hidden, true);
+  assert.equal(hiddenAsset?.includeInTotals, true);
+  assert.equal(hiddenLiability?.hidden, true);
+  assert.equal(hiddenLiability?.includeInTotals, false);
+  const overview = await getAccountsWithLatest();
+  assert.equal(overview.accounts.filter(account => !account.hidden).length, 0);
+  assert.equal(overview.totalAssets, 1400);
+  assert.equal(overview.totalLiabilities, 0);
+});
+
 function quoteRow(code: string, price = '1.234') {
   const fields = Array(50).fill('');
   fields[2] = code; fields[3] = price; fields[30] = '20261013161454';

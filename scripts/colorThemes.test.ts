@@ -15,7 +15,7 @@ const contrast = (text: number[], background: number[]) => {
 
 test('new palettes have distinct stable IDs, translations, and independent light/dark colours', () => {
   assert.equal(new Set(COLOR_THEMES.map(theme => theme.id)).size, COLOR_THEMES.length);
-  assert.equal(COLOR_THEMES.length, 11);
+  assert.equal(COLOR_THEMES.length, 19);
   for (const theme of COLOR_THEMES.slice(5)) {
     assert.notEqual(getTheme(theme.id, 'light').assetColor, theme.assetColor);
     assert.notEqual(getTheme(theme.id, 'light').liabilityColor, theme.liabilityColor);
@@ -28,10 +28,10 @@ test('new palettes have distinct stable IDs, translations, and independent light
   assert.equal(getTheme('rose-emerald').assetColor, '#fb7185');
 });
 
-test('new palette amount colours remain readable on cards and their tinted backgrounds in both modes', () => {
+test('new palette amount colours and filled action buttons remain readable in both modes', () => {
   for (const appearance of ['dark', 'light'] as const) {
-    const background = rgb(appearance === 'dark' ? '#121212' : '#f5f5f7');
-    for (const entry of COLOR_THEMES.slice(5)) {
+    const background = rgb(appearance === 'dark' ? '#101522' : '#f5f5f7');
+    for (const entry of COLOR_THEMES) {
       const theme = getTheme(entry.id, appearance);
       for (const role of ['asset', 'liability'] as const) {
         const foreground = rgb(theme[`${role}Color`]);
@@ -39,6 +39,8 @@ test('new palette amount colours remain readable on cards and their tinted backg
         for (const surface of [background, tinted]) {
           assert.ok(contrast(foreground, surface) >= 4.5, `${theme.id} ${appearance} ${role} contrast=${contrast(foreground, surface)}`);
         }
+        const buttonText = rgb(appearance === 'dark' ? '#000000' : '#ffffff');
+        assert.ok(contrast(buttonText, foreground) >= 4.5, `${theme.id} ${appearance} ${role} button contrast=${contrast(buttonText, foreground)}`);
       }
     }
   }

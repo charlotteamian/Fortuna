@@ -1,12 +1,11 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { getAccountsWithLatest, deleteAccount, updateAccount, archiveAccount, restoreAccount, type AccountWithLatest } from '../services/assetService';
-import { updateSettings, type Settings } from '../db';
+import { updateSettings, type Account, type Settings } from '../db';
 import { useAppContext } from '../app-context';
 import AccountForm from '../components/AccountForm';
+import AccountEditModal from '../components/AccountEditModal';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
-import { isProductPortfolioCategory } from '../lib/productPortfolio';
-import { setAccountPortfolioMode } from '../services/holdingService';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 import { formatLocalDate } from '../lib/localDate';
 import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
@@ -14,16 +13,6 @@ import { DEFAULT_ARCHIVE_FILTERS, queryArchive } from '../lib/archiveQuery';
 import ArchiveControls from '../components/ArchiveControls';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
-interface EditingAccountState {
-  id: string;
-  name: string;
-  category: string;
-  institution: string;
-  currency: string;
-  type: 'asset' | 'liability';
-  portfolio: boolean;
-  includeInTotals: boolean;
-}
 
 const SCROLL_Y_KEY = 'fortuna-record-scroll-y';
 const getSavedScrollY = () => Number(sessionStorage.getItem(SCROLL_Y_KEY) || 0);
@@ -45,7 +34,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  const [editingAcct, setEditingAcct] = useState<EditingAccountState | null>(null);
+  const [editingAcct, setEditingAcct] = useState<Account | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ acctId: string; x: number; y: number } | null>(null);
@@ -133,26 +122,6 @@ export default function RecordPage({ onOpenAccount }: Props) {
     if (!settings) return;
     const updated = await updateSettings({ showArchivedAccounts: !(settings.showArchivedAccounts ?? true) });
     setSettings(updated);
-  };
-
-  const handleEditSave = async () => {
-    if (!editingAcct) return;
-    const currentAcct = [...accounts, ...archivedAccounts].find(acct => acct.id === editingAcct.id);
-    const supportsPortfolio = isProductPortfolioCategory(editingAcct.category, editingAcct.type);
-    const nextPortfolio = supportsPortfolio && editingAcct.portfolio;
-    if (currentAcct?.portfolio && !nextPortfolio) await setAccountPortfolioMode(editingAcct.id, false);
-    await updateAccount(editingAcct.id, {
-      name: editingAcct.name.trim() || editingAcct.name,
-      category: editingAcct.category,
-      institution: editingAcct.institution.trim() || undefined,
-      currency: editingAcct.currency,
-      icon: settings?.categories.find(c => c.name === editingAcct.category)?.icon,
-      includeInTotals: editingAcct.includeInTotals,
-    });
-    if (!currentAcct?.portfolio && nextPortfolio) await setAccountPortfolioMode(editingAcct.id, true);
-    if (currentAcct?.portfolio && nextPortfolio) await setAccountPortfolioMode(editingAcct.id, true);
-    setEditingAcct(null);
-    load();
   };
 
   const handleCreated = (id: string) => { setShowForm(false); load(); onOpenAccount(id); };
@@ -597,16 +566,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
                   </button>
                   {!acct.archivedAt && (
                     <button className="context-menu-item" onClick={() => {
-                      setEditingAcct({
-                        id: acct.id,
-                        name: acct.name,
-                        category: acct.category,
-                        institution: acct.institution || '',
-                        currency: acct.currency,
-                        type: acct.type,
-                        portfolio: Boolean(acct.portfolio),
-                        includeInTotals: isAccountIncludedInTotals(acct),
-                      });
+                      setEditingAcct(acct);
                       setContextMenu(null);
                     }}>
                       ✏️ {t('edit_account')}
@@ -653,80 +613,9 @@ export default function RecordPage({ onOpenAccount }: Props) {
         </div>
       )}
 
-      {editingAcct && settings && (
-        <div className="confirm-overlay" onClick={() => setEditingAcct(null)}>
-          <div className="modal-content" style={{ maxWidth: 440, width: '92%', borderRadius: 16, padding: '20px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{t('edit_account')}</h2>
-              <button className="modal-close" onClick={() => setEditingAcct(null)}>✕</button>
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('name')}</label>
-              <input className="form-input" value={editingAcct.name}
-                onChange={e => setEditingAcct(prev => prev ? { ...prev, name: e.target.value } : null)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('category')}</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {settings.categories.filter(c => c.type === editingAcct.type).map(c => (
-                  <button key={c.name}
-                    style={{ padding: '6px 12px', borderRadius: 20, border: `1px solid ${editingAcct.category === c.name ? 'var(--asset-color)' : 'var(--border)'}`, background: editingAcct.category === c.name ? 'var(--asset-dim)' : 'var(--bg-glass)', color: editingAcct.category === c.name ? 'var(--asset-color)' : 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', fontWeight: editingAcct.category === c.name ? 600 : 400 }}
-                    onClick={() => setEditingAcct(prev => prev ? { ...prev, category: c.name } : null)}>
-                    {t(c.name)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {isProductPortfolioCategory(editingAcct.category, editingAcct.type) && (
-              <div className="form-group">
-                <label className="form-label">{t('manage_mode')}</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <button className={`btn ${editingAcct.portfolio ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setEditingAcct(prev => prev ? { ...prev, portfolio: true } : null)}>{t('mode_portfolio')}</button>
-                  <button className={`btn ${!editingAcct.portfolio ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setEditingAcct(prev => prev ? { ...prev, portfolio: false } : null)}>{t('mode_single')}</button>
-                </div>
-                {editingAcct.portfolio && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
-                    {t('portfolio_hint')}
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="form-group">
-              <label className="form-label">{t('institution')}</label>
-              <input className="form-input" placeholder={t('institution_ph')} value={editingAcct.institution}
-                onChange={e => setEditingAcct(prev => prev ? { ...prev, institution: e.target.value } : null)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('currency_label')}</label>
-              <select className="form-select" value={editingAcct.currency}
-                onChange={e => setEditingAcct(prev => prev ? { ...prev, currency: e.target.value } : null)}>
-                {settings.currencies.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <div className="preference-toggle-card">
-                <div className="preference-toggle-copy">
-                  <div className="preference-toggle-title">{t('include_in_totals')}</div>
-                  <div className="preference-toggle-hint">{t('include_in_totals_hint')}</div>
-                </div>
-                <button type="button"
-                  className={`toggle-switch ${editingAcct.includeInTotals ? 'active' : ''}`}
-                  role="switch" aria-checked={editingAcct.includeInTotals}
-                  aria-label={t('include_in_totals')}
-                  onClick={() => setEditingAcct(prev => prev ? { ...prev, includeInTotals: !prev.includeInTotals } : null)}>
-                  <span />
-                </button>
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary btn-block" onClick={() => setEditingAcct(null)}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" onClick={handleEditSave}>{t('save')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {editingAcct && settings && <AccountEditModal account={editingAcct} settings={settings}
+        onClose={() => setEditingAcct(null)} onSaved={() => { setEditingAcct(null); void load(); }} />}
+
     </>
   );
 }

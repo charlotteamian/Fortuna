@@ -668,7 +668,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             )}
             <div className="holding-management-actions">
               <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }} onClick={() => openTxn(h, 'buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
-              {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: '#fff', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>}
+              {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: 'var(--theme-on-liability)', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>}
               {holdingIsBalance && usesDerivedBalance && (
                 <button className="btn btn-sm btn-secondary btn-block" onClick={() => openBalanceAdjustment(h)}>
                   {t('balance_adjustment')}
@@ -966,8 +966,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               </div>
               {!editingTxn && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button className="btn btn-block" style={{ background: txnKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: txnKind === 'buy' ? '#000' : 'var(--text-secondary)', border: txnKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setTxnKind('buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
-                  <button className="btn btn-block" style={{ background: txnKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: txnKind === 'sell' ? '#fff' : 'var(--text-secondary)', border: txnKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setTxnKind('sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>
+                  <button className="btn btn-block" style={{ background: txnKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: txnKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: txnKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setTxnKind('buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
+                  <button className="btn btn-block" style={{ background: txnKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: txnKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: txnKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setTxnKind('sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>
                 </div>
               )}
               <div className="form-group">

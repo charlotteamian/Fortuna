@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareAppVersions, getAppUpdateFailure, parseGitHubRelease } from '../src/lib/appUpdate.ts';
+import { checkForAppUpdate, compareAppVersions, getAppUpdateFailure, parseGitHubRelease } from '../src/lib/appUpdate.ts';
 
 function release(version: string, overrides: Record<string, unknown> = {}) {
   const assetName = `Fortuna-${version}-release.apk`;
@@ -98,4 +98,29 @@ test('provides safe persistent diagnostics without exposing raw URLs or server m
     'UPDATE_HTTP_FAILED · HTTP 403');
   assert.equal(getAppUpdateFailure({ code: 'UPDATE_HTTP_FAILED', message: 'https://example.com/?token=private' }).diagnostic,
     'UPDATE_HTTP_FAILED');
+});
+
+test('update metadata rejects credentials, query overrides and mismatched release pages', () => {
+  const valid = release('1.9.0');
+  for (const url of [
+    valid.assets[0].browser_download_url + '?redirect=elsewhere',
+    valid.assets[0].browser_download_url + '#fragment',
+    valid.assets[0].browser_download_url.replace('https://', 'https://user:pass@'),
+  ]) {
+    assert.throws(() => parseGitHubRelease({ ...valid, assets: [{ ...valid.assets[0], browser_download_url: url }] }, '1.8.3'), /UNTRUSTED_UPDATE_URL/);
+  }
+  assert.throws(() => parseGitHubRelease({ ...valid, html_url: 'https://github.com/charlotteamian/Fortuna/releases/tag/v1.8.3' }, '1.8.3'), /UNTRUSTED_RELEASE_URL/);
+});
+
+test('web update checks use a bounded request and parse the exact release, surfacing HTTP errors', async t => {
+  let requested: RequestInit | undefined;
+  const mockFetch = t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    requested = init;
+    return new Response(JSON.stringify(release('1.9.0')), { status: 200 });
+  });
+  assert.equal((await checkForAppUpdate('1.8.3')).update?.version, '1.9.0');
+  assert.ok(requested?.signal instanceof AbortSignal);
+  assert.equal(requested?.cache, 'no-store');
+  mockFetch.mock.mockImplementation(async () => new Response('', { status: 503 }));
+  await assert.rejects(checkForAppUpdate('1.8.3'), /UPDATE_CHECK_FAILED_503/);
 });

@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
 import { getHoldingRecognitionProvider, holdingRecognitionProviderBody, inferHoldingRecognitionProvider } from '../lib/holdingRecognitionProviders.ts';
+import { formatLocalDate } from '../lib/localDate.ts';
 
 export interface HoldingRecognitionConfig {
   protocol: 'openai' | 'gemini' | 'anthropic';
@@ -136,7 +137,7 @@ Each holding: {"name":"", "symbol":"", "market":"", "currency":"", "shares":null
 Each trade: {"name":"", "symbol":"", "market":"", "currency":"", "date":"YYYY-MM-DD", "kind":"buy|sell", "shares":null, "price":null, "brokerRef":"", "executionStatus":"filled|unknown"}.
 Names/codes must be visible. Symbols MUST be strings preserving leading zeros (e.g. "000001", "00700"); do not guess a code from a company name. Market is "A股", "港股", "美股", "其他", or "" when not established by the image.
 Holding shares are TOTAL owned/held shares, not available/sellable shares. Holding price is explicitly the latest/current quote, not market value, P&L, transaction price or cost. If no current quote is visible, leave price null; do not derive it from other fields. Cost is the displayed per-share holding cost; identify acquisition/moving-average versus diluted/break-even cost using visible labels. If the distinction is unknown, use costType unknown and warn. Never convert diluted cost into average acquisition cost.
-Trade price is the actual execution price, not an order limit, current quote or total amount. Trade shares are executed quantity, not outstanding order quantity. Date must be a visible full calendar date, possibly using a visible shared date/year header. If the year/date is ambiguous, date is "" and warn; never use today's date or infer a year. kind is "" if buy/sell is ambiguous. Extract multiple executions in separate rows, even for the same symbol. brokerRef is an explicitly visible UNIQUE execution/成交编号 only. NEVER use a shared order/委托编号: one order can have multiple fills; when only an order reference is visible, leave brokerRef "" and warn.
+Trade price is the actual execution price, not an order limit, current quote or total amount. Trade shares are executed quantity, not outstanding order quantity. Date must be a visible full calendar date, possibly using a visible shared date/year header. If no date is shown, date is ""; the app defaults absent dates to the device's current local day for user review. If a date fragment is visible but the full year/date is ambiguous, preserve that fragment verbatim and warn; never infer a year or substitute today's date for a visible date. kind is "" if buy/sell is ambiguous. Extract multiple executions in separate rows, even for the same symbol. brokerRef is an explicitly visible UNIQUE execution/成交编号 only. NEVER use a shared order/委托编号: one order can have multiple fills; when only an order reference is visible, leave brokerRef "" and warn.
 The trades array MUST be chronological, earliest execution first, using visible full dates AND execution times when shown. Broker lists are often newest-first: reverse/reorder them according to visible dates and times. Preserve separate fills for the same stock on the same day. NEVER infer an ambiguous within-day sequence from buy/sell direction or make up a time. If within-day chronology is unclear, preserve the visible order and add warning "HOLDING_RECOGNITION_WARNING_TRADE_ORDER" so the user can manually reorder the preview.
 Currency is the explicitly established quote/execution currency (e.g. CNY, HKD, USD), otherwise "". Never convert prices or assume account totals use the same currency as an individual stock. executionStatus filled requires visible executed/trade history, not merely an order submitted; use unknown when uncertain.
 All unknown, masked, cropped, unclear or absent fields stay null or ""; ZERO only when explicitly shown. No negative numeric fields: leave negative cost blank and warn. Convert explicitly labelled thousands/ten-thousands to individual shares, but do not infer units. Numbers are decimal strings or JSON numbers without currency marks or thousands separators. Warn about missing fields, ambiguous cost semantics, excluded records, cropped tables and possible partial pages. Warnings should be concise Chinese sentences. No investment advice.`;
@@ -314,6 +315,7 @@ function parseResponse(protocol: HoldingRecognitionConfig['protocol'], data: unk
     : [];
   const rows: RecognizedHoldingRow[] = [];
   const executions: RecognizedHoldingTrade[] = [];
+  const defaultTradeDate = formatLocalDate();
   const fields = (record: Record<string, unknown>) => ({
     name: stringField(record.name, 160), symbol: stringField(record.symbol, 64), market: marketField(record.market),
   });
@@ -346,7 +348,9 @@ function parseResponse(protocol: HoldingRecognitionConfig['protocol'], data: unk
       warnings.push('HOLDING_RECOGNITION_WARNING_ORDERS');
       continue;
     }
-    const date = dateField(record.date);
+    const missingDate = record.date == null || typeof record.date === 'string' && !record.date.trim();
+    const date = missingDate ? defaultTradeDate : dateField(record.date);
+    if (missingDate) warnings.push('HOLDING_RECOGNITION_WARNING_TRADE_DATE_DEFAULTED');
     const kind = kindField(record.kind);
     let shares = numberField(record.shares);
     let price = numberField(record.price);

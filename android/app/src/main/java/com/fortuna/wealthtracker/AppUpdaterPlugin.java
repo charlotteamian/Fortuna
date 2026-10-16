@@ -21,9 +21,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.HashSet;
@@ -142,8 +139,12 @@ public class AppUpdaterPlugin extends Plugin {
         Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
         intent.setData(Uri.parse("package:" + getContext().getPackageName()));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(intent);
-        call.resolve();
+        try {
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (RuntimeException error) {
+            call.reject("Cannot open update installation settings", "UPDATE_INSTALL_FAILED", error);
+        }
     }
 
     private void validateInitialUrl(String urlValue, String versionName) throws UpdateException {
@@ -155,6 +156,8 @@ public class AppUpdaterPlugin extends Plugin {
             java.util.regex.Matcher matcher = INITIAL_PATH_PATTERN.matcher(url.getPath());
             boolean valid = "https".equalsIgnoreCase(url.getProtocol())
                 && "github.com".equalsIgnoreCase(url.getHost())
+                && url.getUserInfo() == null && url.getRef() == null && url.getQuery() == null
+                && (url.getPort() == -1 || url.getPort() == 443)
                 && matcher.matches()
                 && versionName.equals(matcher.group(1))
                 && versionName.equals(matcher.group(2));
@@ -175,40 +178,7 @@ public class AppUpdaterPlugin extends Plugin {
 
         File partial = new File(updateDirectory, "Fortuna-" + versionName + "-release.apk.part");
         File target = new File(updateDirectory, "Fortuna-" + versionName + "-release.apk");
-        HttpURLConnection connection = UpdateDownloadClient.open(new URL(urlValue));
-        long totalBytes = connection.getContentLengthLong();
-        if (totalBytes > MAX_APK_BYTES) {
-            connection.disconnect();
-            throw new UpdateException("UPDATE_TOO_LARGE", "Update APK is too large");
-        }
-
-        long downloaded = 0;
-        long lastNotificationAt = 0;
-        try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(partial)) {
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                downloaded += read;
-                if (downloaded > MAX_APK_BYTES) throw new UpdateException("UPDATE_TOO_LARGE", "Update APK is too large");
-                output.write(buffer, 0, read);
-                long now = System.currentTimeMillis();
-                if (now - lastNotificationAt >= 250 || (totalBytes > 0 && downloaded == totalBytes)) {
-                    notifyProgress(downloaded, totalBytes);
-                    lastNotificationAt = now;
-                }
-            }
-            output.getFD().sync();
-        } catch (Exception error) {
-            partial.delete();
-            throw error;
-        } finally {
-            connection.disconnect();
-        }
-
-        if (downloaded <= 0 || (totalBytes > 0 && downloaded != totalBytes)) {
-            partial.delete();
-            throw new UpdateException("INCOMPLETE_UPDATE_DOWNLOAD", "Update download is incomplete");
-        }
+        long downloaded = UpdateDownloadClient.download(new URL(urlValue), partial, MAX_APK_BYTES, this::notifyProgress);
         if (target.exists() && !target.delete()) {
             partial.delete();
             throw new UpdateException("UPDATE_STORAGE_FAILED", "Cannot replace cached update");
@@ -297,6 +267,15 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     private void launchInstaller(PluginCall call, File apk, String versionName) {
+        try {
+            launchInstallerActivity(call, apk, versionName);
+        } catch (RuntimeException error) {
+            // OEM settings/installer activities may be missing or unavailable. Keep the verified APK for retry.
+            call.reject("Cannot open the update installer", "UPDATE_INSTALL_FAILED", error);
+        }
+    }
+
+    private void launchInstallerActivity(PluginCall call, File apk, String versionName) {
         if (!canInstallPackages()) {
             Intent permissionIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
             permissionIntent.setData(Uri.parse("package:" + getContext().getPackageName()));

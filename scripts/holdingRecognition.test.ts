@@ -51,7 +51,8 @@ test('OpenAI compatible requests carry base64 vision input and preserve zero-pre
     const prompt = (message.content[1] as { text: string }).text;
     assert.match(prompt, /TOTAL owned\/held shares, not available\/sellable/);
     assert.match(prompt, /NEVER use a shared order\/委托编号/);
-    assert.match(prompt, /never use today's date or infer a year/);
+    assert.match(prompt, /app defaults absent dates to the device's current local day/);
+    assert.match(prompt, /never infer a year or substitute today's date for a visible date/);
     assert.match(prompt, /Do not fabricate trades from a holding/);
     assert.match(prompt, /trades array MUST be chronological, earliest execution first/);
     assert.match(prompt, /visible full dates AND execution times when shown/);
@@ -179,6 +180,35 @@ test('ambiguous dates, unknown directions, negative trades and unfilled orders s
   assert.equal(result.trades[2].date, '2024-02-29');
   assert.equal(result.trades[3].shares, '');
   assert.equal(result.trades[3].price, '');
+});
+
+test('missing execution dates default to the local day while visible dates remain unchanged', async context => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = 'Asia/Shanghai';
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-15T16:30:00Z') });
+  try {
+    const trade = { name: '平安银行', symbol: '000001', kind: 'buy', shares: 100, price: 12 };
+    const result = await recognizeHoldingScreenshot(config(), image, {
+      transport: mock('openai', { trades: [
+        trade,
+        { ...trade, date: null },
+        { ...trade, date: '' },
+        { ...trade, date: '  ' },
+        { ...trade, date: '2026/10/01' },
+        { ...trade, date: '10-05' },
+        { ...trade, date: '2026-02-30' },
+      ] }),
+    });
+    assert.deepEqual(result.trades.map(row => row.date), [
+      '2026-10-16', '2026-10-16', '2026-10-16', '2026-10-16', '2026-10-01', '', '',
+    ]);
+    assert.equal(result.warnings.filter(warning => warning === 'HOLDING_RECOGNITION_WARNING_TRADE_DATE_DEFAULTED').length, 1);
+    assert.ok(result.warnings.includes('HOLDING_RECOGNITION_WARNING_TRADE_FIELDS'));
+  } finally {
+    context.mock.timers.reset();
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
 });
 
 test('explicit foreign-currency prices are blanked instead of being interpreted in the account currency', async () => {

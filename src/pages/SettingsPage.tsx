@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
 import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, hasLedgerData, type Account, type Settings, type CustomField } from '../db';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
@@ -34,11 +34,11 @@ import {
   type AppUpdateInstallResult,
 } from '../native/appUpdater';
 
-interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; focusHoldingRecognition?: boolean; }
+interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; onOpenAccount?: (id: string) => void; focusHoldingRecognition?: boolean; }
 
 type AppUpdateState = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installer-opened' | 'error';
 
-export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding, focusHoldingRecognition = false }: Props) {
+export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding, onOpenAccount, focusHoldingRecognition = false }: Props) {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -278,12 +278,13 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   };
 
   const handleExport = async () => {
+    if (exporting || importing) return;
     setExporting(true);
     try {
       const base64Data = await exportToExcel();
       const fileName = `fortuna_backup_${formatLocalDate()}.xlsx`;
       
-      try {
+      if (Capacitor.isNativePlatform()) {
         const [{ Filesystem, Directory }, { Share }] = await Promise.all([
           import('@capacitor/filesystem'),
           import('@capacitor/share'),
@@ -301,8 +302,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           dialogTitle: t('backup_restore'),
         });
         showToast(t('export_success'));
-      } catch (e) {
-        console.log('Share failed, fallback to web download', e);
+      } else {
         // Base64 string to Blob
         const byteCharacters = atob(base64Data);
         const byteNumbers = new Array(byteCharacters.length);
@@ -315,10 +315,16 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = fileName;
-        a.click(); URL.revokeObjectURL(url);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Download managers may read the blob after the click handler returns.
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
         showToast(t('export_success'));
       }
-    } catch {
+    } catch (error) {
+      // Dismissing the native chooser is a normal cancellation, not a failed export.
+      if (error instanceof Error && /^(Share cancelle?d|AbortError)$/i.test(error.message)) return;
       showToast(t('export_failed'), 'error');
     } finally {
       setExporting(false);
@@ -346,7 +352,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   };
 
   const confirmImport = async () => {
-    if (!pendingImport) return;
+    if (!pendingImport || importing) return;
     setImporting(true);
     setImportFailure(null);
     let stage: ExcelBackupFailure['code'] = 'file_read_failed';
@@ -366,6 +372,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       showToast(t('import_success'));
       await load();
       onRefresh();
+      onAccountsChanged();
       scheduleAutomaticSnapshot('backup-restored');
     }
   };
@@ -551,7 +558,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           {previewThemes.map(themeItem => (
             <button key={themeItem.id} type="button" className="theme-option" aria-pressed={settings.colorTheme === themeItem.id} onClick={() => save({ colorTheme: themeItem.id })}
               style={{ border: settings.colorTheme === themeItem.id ? `2px solid var(--accent)` : '1px solid var(--border)',
-                background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', padding: '12px', cursor: 'pointer', textAlign: 'left', minWidth: 0, overflowWrap: 'anywhere' }}>
+                background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', padding: '12px', cursor: 'pointer', textAlign: 'left', minWidth: 0, overflowWrap: 'anywhere',
+                '--preview-asset': themeItem.assetColor, '--preview-liability': themeItem.liabilityColor } as CSSProperties}>
               <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.assetColor, display: 'inline-block' }} />
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.liabilityColor, display: 'inline-block' }} />
@@ -845,9 +853,15 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
                     {[account.institution, t(account.category), account.currency].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => void handleUnhideAccount(account.id)}>
-                  {t('unhide_account')}
-                </button>
+                <div className="hidden-account-actions">
+                  {onOpenAccount && <button type="button" className="btn btn-sm btn-primary" onClick={() => {
+                    setShowHiddenAccounts(false);
+                    onOpenAccount(account.id);
+                  }}>{t('edit_and_record_hidden_account')}</button>}
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => void handleUnhideAccount(account.id)}>
+                    {t('unhide_account')}
+                  </button>
+                </div>
               </div>
             ))}
             <div className="modal-safe-area" />

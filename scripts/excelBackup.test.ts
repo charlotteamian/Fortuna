@@ -85,6 +85,49 @@ test('binary reads with missing or generic MIME restore all ledger tables and fi
   }
 });
 
+test('version 5 backups preserve literal separators in user-defined plan categories', async () => {
+  const { updateSettings } = await import('../src/db.ts');
+  const settings = await initializeSettings();
+  await updateSettings({ categories: [...settings.categories, { name: '应急|备用', type: 'asset', icon: '📌' }] });
+  await db.accounts.update(account.id, { category: '应急|备用' });
+  const categories = ['应急|备用', '股票/ETF@us', `acct:${account.id}`];
+  await db.planItems.add({ id: 'separator-plan', name: '应急配置', categories, targetPercent: 100, sortOrder: 0, createdAt: 1 });
+  const backup = await exportToExcel();
+  const workbook = XLSX.read(backup, { type: 'base64' });
+  assert.equal(XLSX.utils.sheet_to_json<{ version: number }>(workbook.Sheets.BackupInfo)[0].version, 5);
+  assert.deepEqual(JSON.parse(XLSX.utils.sheet_to_json<{ categories: string }>(workbook.Sheets.Plan)[0].categories), categories);
+  assert.equal(await importFromExcel(backup), true);
+  assert.deepEqual((await db.planItems.get('separator-plan'))?.categories, categories);
+  assert.equal((await db.accounts.get(account.id))?.category, '应急|备用');
+  assert.ok((await initializeSettings()).categories.some(category => category.name === '应急|备用'));
+});
+
+test('version 4 backups retain legacy category lists and literal names resembling JSON', async () => {
+  const workbook = XLSX.read(await exportToExcel(), { type: 'base64' });
+  workbook.Sheets.BackupInfo = XLSX.utils.json_to_sheet([{ format: 'Fortuna Excel Backup', version: 4 }]);
+  workbook.Sheets.Plan = XLSX.utils.json_to_sheet([
+    { id: 'legacy-plan', name: 'Legacy plan', categories: `现金|股票/ETF@us|acct:${account.id}`, targetPercent: 50, sortOrder: 0, createdAt: 1 },
+    { id: 'literal-plan', name: 'Literal category', categories: '["现金"]', targetPercent: 50, sortOrder: 1, createdAt: 2 },
+  ]);
+  assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })), true);
+  assert.deepEqual((await db.planItems.get('legacy-plan'))?.categories, ['现金', '股票/ETF@us', `acct:${account.id}`]);
+  assert.deepEqual((await db.planItems.get('literal-plan'))?.categories, ['["现金"]']);
+});
+
+test('malformed structured plan categories reject the restore without clearing the ledger', async context => {
+  context.mock.method(console, 'error', () => {});
+  const original = await ledgerSnapshot();
+  for (const categories of ['现金|备用', '"现金"', '[1]', '']) {
+    const workbook = XLSX.read(await exportToExcel(), { type: 'base64' });
+    workbook.Sheets.Plan = XLSX.utils.json_to_sheet([{ id: 'invalid-plan', name: 'Invalid plan', categories, targetPercent: 100, sortOrder: 0, createdAt: 1 }]);
+    const failures: ExcelBackupFailure[] = [];
+    assert.equal(await importFromExcel(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }), failure => failures.push(failure)), false);
+    assert.equal(failures[0].code, 'invalid_data');
+    assert.equal(failures[0].sheet, 'Plan');
+    assert.deepEqual(await ledgerSnapshot(), original);
+  }
+});
+
 const holding = { id: 'fixture-holding', accountId: account.id, name: 'Fixture security', lastPrice: 12.3456, sortOrder: 0, createdAt: 3 };
 const trade = { id: 'fixture-trade', accountId: account.id, holdingId: holding.id, date: '2026-10-14', kind: 'buy' as const, shares: 100.25, price: 12.3456, createdAt: 4 };
 

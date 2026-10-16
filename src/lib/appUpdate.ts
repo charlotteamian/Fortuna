@@ -1,3 +1,5 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
+
 export const FORTUNA_RELEASES_API = 'https://api.github.com/repos/charlotteamian/Fortuna/releases/latest';
 
 interface GitHubReleaseAsset {
@@ -95,6 +97,7 @@ function isTrustedReleaseDownload(downloadUrl: string, version: string, assetNam
     const url = new URL(downloadUrl);
     return url.protocol === 'https:'
       && url.hostname === 'github.com'
+      && !url.username && !url.password && !url.port && !url.search && !url.hash
       && url.pathname === `/charlotteamian/Fortuna/releases/download/v${version}/${assetName}`;
   } catch {
     return false;
@@ -122,7 +125,7 @@ export function parseGitHubRelease(payload: GitHubReleasePayload, currentVersion
   }
 
   const releaseUrl = typeof payload.html_url === 'string' ? payload.html_url : '';
-  if (!releaseUrl.startsWith('https://github.com/charlotteamian/Fortuna/releases/')) {
+  if (releaseUrl !== `https://github.com/charlotteamian/Fortuna/releases/tag/v${latestVersion}`) {
     throw new Error('UNTRUSTED_RELEASE_URL');
   }
 
@@ -142,11 +145,18 @@ export function parseGitHubRelease(payload: GitHubReleasePayload, currentVersion
 }
 
 export async function checkForAppUpdate(currentVersion: string): Promise<AppUpdateCheck> {
+  const headers = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+  if (Capacitor.isNativePlatform()) {
+    const response = await CapacitorHttp.get({
+      url: FORTUNA_RELEASES_API, headers, responseType: 'json',
+      connectTimeout: 15_000, readTimeout: 20_000,
+    });
+    if (response.status !== 200) throw new Error(`UPDATE_CHECK_FAILED_${response.status}`);
+    const payload = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    return parseGitHubRelease(payload as GitHubReleasePayload, currentVersion);
+  }
   const response = await fetch(FORTUNA_RELEASES_API, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
+    headers, signal: AbortSignal.timeout(20_000), cache: 'no-store',
   });
   if (!response.ok) throw new Error(`UPDATE_CHECK_FAILED_${response.status}`);
   return parseGitHubRelease(await response.json() as GitHubReleasePayload, currentVersion);

@@ -8,6 +8,7 @@ import { useAppContext } from '../app-context';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
 import PortfolioPanel from '../components/PortfolioPanel';
+import AccountEditModal from '../components/AccountEditModal';
 import { getDefaultHoldingModeForCategory } from '../lib/productPortfolio';
 import {
   deriveBalanceTimeline,
@@ -32,6 +33,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AccountRecord | null>(null);
   const [editingName, setEditingName] = useState(false);
+  const [showEditAccount, setShowEditAccount] = useState(false);
   const [nameText, setNameText] = useState('');
   const [stockShares, setStockShares] = useState('');
   const [stockPrice, setStockPrice] = useState('');
@@ -322,9 +324,12 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     <div className="app">
       <div className="app-content" style={{ paddingBottom: 24, paddingLeft: '1.25rem', paddingRight: '1.25rem' }}
            onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-        <button className="back-btn" onClick={onBack} style={{ padding: '12px 16px 12px 0', fontSize: '1.125rem', margin: '-4px 0 8px' }}>
-          ← {t('back')}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+          <button className="back-btn" onClick={onBack} style={{ padding: '12px 16px 12px 0', fontSize: '1.125rem', margin: 0 }}>
+            ← {t('back')}
+          </button>
+          {!isArchived && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowEditAccount(true)}>{t('edit_account')}</button>}
+        </div>
 
         <div className="account-header">
           <div className="account-header-info">
@@ -343,6 +348,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 {account.type === 'asset' ? t('assets') : t('liabilities')}
               </span>
               <span>{t(account.category)}</span>
+              {account.hidden && <span className="category-type" style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}>{t('hidden_account_badge')}</span>}
               {isPortfolio && (
                 <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '2px 8px', fontSize: '0.68rem', fontWeight: 600 }}>
                   {t('portfolio_badge')}
@@ -372,6 +378,8 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
             {amountVisible ? '👁️' : '🔒'}
           </button>
         </div>
+
+        {account.hidden && <p className="account-hidden-note">{t('hidden_account_edit_hint')}</p>}
 
         {isArchived && (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -529,7 +537,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
             <button className="btn btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }}
               onClick={() => openMetalTxn('buy')}>＋ {t('buy_in')}</button>
-            <button className="btn btn-block" style={{ background: theme.liabilityColor, color: '#fff', fontWeight: 700 }}
+            <button className="btn btn-block" style={{ background: theme.liabilityColor, color: 'var(--theme-on-liability)', fontWeight: 700 }}
               onClick={() => openMetalTxn('sell')}>－ {t('sell_out')}</button>
           </div>
         ) : isPortfolio ? null : usesDerivedRecordFlow ? (
@@ -714,9 +722,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
             {isFlowRecordInput && balanceFlow && (
               <div className="form-group">
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-block" style={{ background: recordKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: recordKind === 'buy' ? '#000' : 'var(--text-secondary)', border: recordKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
+                  <button className="btn btn-block" style={{ background: recordKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: recordKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: recordKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
                     onClick={() => setRecordKind('buy')}>＋ {t(balanceFlow.increaseActionKey)}</button>
-                  <button className="btn btn-block" style={{ background: recordKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: recordKind === 'sell' ? '#fff' : 'var(--text-secondary)', border: recordKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
+                  <button className="btn btn-block" style={{ background: recordKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: recordKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: recordKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
                     onClick={() => setRecordKind('sell')}>－ {t(balanceFlow.decreaseActionKey)}</button>
                 </div>
               </div>
@@ -805,6 +813,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
         </div>
       )}
 
+      {showEditAccount && settings && <AccountEditModal account={account} settings={settings}
+        onClose={() => setShowEditAccount(false)} onSaved={() => { setShowEditAccount(false); void load(); }} />}
+
       {/* Precious-metal buy/sell modal */}
       {showMetalTxn && (() => {
         const grams = parseFloat(txnGrams);
@@ -824,8 +835,8 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               </div>
               {!editingMetalRec && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button className="btn btn-block" style={{ background: metalKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: metalKind === 'buy' ? '#000' : 'var(--text-secondary)', border: metalKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setMetalKind('buy')}>＋ {t('buy_in')}</button>
-                  <button className="btn btn-block" style={{ background: metalKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: metalKind === 'sell' ? '#fff' : 'var(--text-secondary)', border: metalKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setMetalKind('sell')}>－ {t('sell_out')}</button>
+                  <button className="btn btn-block" style={{ background: metalKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: metalKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: metalKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setMetalKind('buy')}>＋ {t('buy_in')}</button>
+                  <button className="btn btn-block" style={{ background: metalKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: metalKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: metalKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setMetalKind('sell')}>－ {t('sell_out')}</button>
                 </div>
               )}
               <div className="form-group">

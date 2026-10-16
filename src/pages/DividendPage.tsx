@@ -5,6 +5,7 @@ import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, dividendEstimateMinor,
 import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, refreshDividendTrend, saveDividendBudget, saveDividendStock } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
+import DividendAdvisor from '../components/DividendAdvisor';
 import { saveDividendStrategy } from '../services/dividendFundService';
 import type { DividendStrategy } from '../lib/dividendFundPlan';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
@@ -107,7 +108,7 @@ export default function DividendPage() {
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
     </div><button className="btn btn-secondary" disabled={quotes.refreshing || Boolean(progress) || !quoteTargets} onClick={() => void quotes.refresh(true)}>{t('div_refresh_quotes')}</button>
   </section>;
-  if (data.strategy === 'funds') return <div className="dividend-page">{header}{strategySelector}{quoteStatus}{error && <p className="div-warning" role="alert">{error}</p>}<DividendFundWorkbench plan={data.fundPlan} amountVisible={amountVisible} onSaved={load} /></div>;
+  if (data.strategy === 'funds') return <div className="dividend-page">{header}{strategySelector}{quoteStatus}<DividendAdvisor onUpdated={load} amountVisible={amountVisible} />{error && <p className="div-warning" role="alert">{error}</p>}<DividendFundWorkbench plan={data.fundPlan} amountVisible={amountVisible} onSaved={load} /></div>;
   const sharesFor = (stock: DividendStock) => stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
   const held = data.stocks.filter(s => sharesFor(s) > 0);
   const covered = held.filter(s => effectiveDps(s) !== undefined);
@@ -118,7 +119,7 @@ export default function DividendPage() {
   const untracked = [...data.positions.values()].filter(position => !data.stocks.some(stock => stock.code === position.code)).sort((a, b) => a.code.localeCompare(b.code));
   const displayed = data.stocks.filter(s => (group === 'all' ? s.group !== 'hidden' : group === 'held' ? sharesFor(s) > 0 : s.group === group) && `${s.name} ${s.code}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a,b) => ({core:0,watch:1,hidden:2}[a.group] - {core:0,watch:1,hidden:2}[b.group]) || b.weightBps - a.weightBps || a.code.localeCompare(b.code));
   return <div className="dividend-page">
-    {header}{strategySelector}{quoteStatus}
+    {header}{strategySelector}{quoteStatus}<DividendAdvisor onUpdated={load} amountVisible={amountVisible} />
     <section className="div-hero">
       <div className="div-estimate"><span>{t('div_annual_estimate')}</span><strong>{held.length > 0 && covered.length === 0 ? '—' : money(estimated)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}{staleCount > 0 ? ` · ${t('div_cached_count', { count: staleCount })}` : ''}</small></div>
       <p className="div-muted">{t('div_estimate_note')}</p>

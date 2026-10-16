@@ -545,7 +545,7 @@ export async function exportToExcel(): Promise<string> {
   });
   const metadataExport = [{
     format: 'Fortuna Excel Backup',
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
   }];
 
@@ -569,10 +569,10 @@ export async function exportToExcel(): Promise<string> {
     ...p.data
   }));
   
-  // PlanItem.categories is an array — flatten to a delimited string for the sheet
+  // Category names are user-defined and may contain the legacy "|" separator.
   const planExport = planItems.map(p => ({
     ...p,
-    categories: p.categories.join('|'),
+    categories: JSON.stringify(p.categories),
     allocations: JSON.stringify(p.allocations ?? []),
   }));
   const planTargetsExport = planTargets.map(target => ({
@@ -689,7 +689,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       : undefined;
     const recognizedBackup = metadata?.format === 'Fortuna Excel Backup';
     const backupVersion = Number(metadata?.version) || 0;
-    if (recognizedBackup && backupVersion > 4) return fail('unsupported_version');
+    if (recognizedBackup && backupVersion > 5) return fail('unsupported_version');
     const needsLegacyMetalMigration = !recognizedBackup || backupVersion < 2;
     
     const parseBoolean = (value: unknown, fallback: boolean): boolean => {
@@ -732,6 +732,16 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     
     sheet = 'Plan';
     const planRaw = wsPlan ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsPlan) : [];
+    const parsePlanCategories = (value: unknown): string[] => {
+      if (!recognizedBackup || backupVersion < 5) {
+        return typeof value === 'string' && value ? value.split('|') : [];
+      }
+      const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : undefined;
+      if (!Array.isArray(parsed) || !parsed.every(category => typeof category === 'string')) {
+        throw new Error('Invalid plan categories');
+      }
+      return parsed;
+    };
     const parseAllocations = (value: unknown): PlanResourceAllocation[] => {
       if (typeof value !== 'string' || !value) return [];
       try {
@@ -755,7 +765,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       name: String(p.name ?? ''),
       targetPercent: Number(p.targetPercent) || 0,
       plannedPurchases: typeof p.plannedPurchases === 'string' ? p.plannedPurchases : undefined,
-      categories: typeof p.categories === 'string' && p.categories ? String(p.categories).split('|') : [],
+      categories: parsePlanCategories(p.categories),
       allocations: parseAllocations(p.allocations),
       sortOrder: Number(p.sortOrder) || 0,
       createdAt: Number(p.createdAt) || Date.now(),
