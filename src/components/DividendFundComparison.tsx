@@ -9,7 +9,7 @@ export default function DividendFundComparison({ plan, disabled, onSelect }: {
 }) {
   const { t } = useTranslation();
   const percent = (bps: number) => `${(bps / 100).toFixed(2)}%`;
-  return <details className="div-method df-comparison" open>
+  return <details className="div-method df-comparison">
     <summary>{t('df_compare_title')}</summary>
     <p>{t('df_compare_note')}</p>
     <div className="df-comparison-table">

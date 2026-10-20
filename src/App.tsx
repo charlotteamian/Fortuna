@@ -9,6 +9,7 @@ import { PORTABLE_SNAPSHOT_REQUEST_EVENT } from './services/portableSnapshotEven
 import { flushPortableSnapshot, schedulePortableSnapshot } from './services/portableSnapshotService';
 import { addPortableSnapshotBackgroundListener } from './native/portableSnapshot';
 import { refreshRatesInBackground } from './services/rateService';
+import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_SETTINGS_REQUEST_EVENT } from './lib/dividendAdvisorNavigation';
 
 const AccountDetail = lazy(() => import('./pages/AccountDetail'));
 const ChartPage = lazy(() => import('./pages/ChartPage'));
@@ -22,9 +23,10 @@ type Tab = 'record' | 'plan' | 'chart' | 'products' | 'dividend' | 'settings';
 function App() {
   const { t, i18n } = useTranslation();
   const [returnTab, setReturnTab] = useState<Tab>('record');
-  const [tab, setTab] = useState<Tab>('record');
+  const [tab, setTab] = useState<Tab>(() => window.location.hash === DIVIDEND_ADVISOR_READER_HASH ? 'dividend' : 'record');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [holdingApiSettingsOpen, setHoldingApiSettingsOpen] = useState(false);
+  const [dividendApiSettingsOpen, setDividendApiSettingsOpen] = useState(false);
   const [holdingApiConfigRevision, setHoldingApiConfigRevision] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -72,6 +74,12 @@ function App() {
   }, [applySettings]);
 
   useEffect(() => { void loadSettings(); }, [loadSettings]);
+
+  useEffect(() => {
+    const openDividendSettings = () => setDividendApiSettingsOpen(true);
+    window.addEventListener(DIVIDEND_AI_SETTINGS_REQUEST_EVENT, openDividendSettings);
+    return () => window.removeEventListener(DIVIDEND_AI_SETTINGS_REQUEST_EVENT, openDividendSettings);
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -170,7 +178,7 @@ function App() {
 
   return (
     <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
-      <div className="app">
+      <div className="app" style={dividendApiSettingsOpen ? { display: 'none' } : undefined}>
         <header className="app-topbar"><span>Fortuna</span><button className="btn btn-secondary" onClick={() => {
           if (tab === 'settings') setTab(returnTab);
           else { setReturnTab(tab); setTab('settings'); }
@@ -264,6 +272,14 @@ function App() {
           />
         )}
       </div>
+      {dividendApiSettingsOpen && <div className="app">
+        <header className="app-topbar"><span>{t('div_ai_settings_title')}</span><button className="btn btn-secondary" onClick={() => setDividendApiSettingsOpen(false)}>← {t('back')}</button></header>
+        <main className="app-content">
+          <Suspense fallback={pageFallback}><SettingsPage focusDividendAdvisor
+            onRefresh={() => { void loadSettings(); refresh(); }} onAccountsChanged={refresh}
+            onOpenOnboarding={() => { setDividendApiSettingsOpen(false); setOnboardingOpen(true); }} /></Suspense>
+        </main>
+      </div>}
     </AppContext.Provider>
   );
 }

@@ -88,20 +88,35 @@ export function dividendFundPriceMicros(fund: DividendFund): number | undefined 
   return fund.quote?.priceMicros ?? fund.reference?.priceMicros;
 }
 
-/** A fresh quote never makes an old manual reference yield/high appear current. */
+export type DividendFundEntryIssue = 'price_missing' | 'price_prior_date' | 'quote_refresh_failed' | 'high_missing' | 'index_yield_missing' | 'index_yield_prior_date';
+
+/** A historical high is a fixed comparison point; price and index yield are dated observations. */
 export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, today = dateInChina()) {
   const ref = fund.reference;
   const priceMicros = dividendFundPriceMicros(fund);
   const drawdownBps = priceMicros !== undefined && ref?.highMicros !== undefined
     ? Math.max(0, (ref.highMicros - priceMicros) / ref.highMicros * 10000) : undefined;
   const targetPriceMicros = ref?.highMicros !== undefined ? Math.round(ref.highMicros * (10000 - plan.drawdownBps) / 10000) : undefined;
-  const checks = [priceMicros === undefined || ref?.highMicros === undefined ? null
+  const observedChecks = [priceMicros === undefined || ref?.highMicros === undefined ? null
     : BigInt(ref.highMicros - priceMicros) * 10000n >= BigInt(ref.highMicros) * BigInt(plan.drawdownBps),
     ref?.indexYieldBps === undefined ? null : ref.indexYieldBps >= plan.indexYieldBps];
+  const priceDate = fund.quote?.date.slice(0, 10) ?? ref?.asOf;
+  const priceCurrent = priceMicros !== undefined && priceDate === today && fund.quoteFailedAt === undefined;
+  const yieldCurrent = ref?.indexYieldBps !== undefined && ref.asOf === today;
+  const checks = [priceCurrent ? observedChecks[0] : null, yieldCurrent ? observedChecks[1] : null];
   const ready = plan.entryRule === 'both'
     ? checks.includes(false) ? false : checks.every(check => check === true) ? true : null
     : checks.includes(true) ? true : checks.every(check => check === false) ? false : null;
-  const status = !ref || ref.asOf !== today || fund.quoteFailedAt !== undefined || (fund.quote && fund.quote.date.slice(0, 10) !== today)
-    ? 'update' : ready === null ? 'incomplete' : ready ? 'met' : 'wait';
-  return { drawdownBps, targetPriceMicros, status };
+  const issues: DividendFundEntryIssue[] = [];
+  if (priceMicros === undefined) issues.push('price_missing');
+  else if (priceDate !== today) issues.push('price_prior_date');
+  if (fund.quoteFailedAt !== undefined) issues.push('quote_refresh_failed');
+  if (ref?.highMicros === undefined) issues.push('high_missing');
+  if (ref?.indexYieldBps === undefined) issues.push('index_yield_missing');
+  else if (!yieldCurrent) issues.push('index_yield_prior_date');
+  // A conclusive current condition can settle both/either without the other input.
+  // No old observation is counted as true or false in that decision.
+  const status = ready !== null ? ready ? 'met' : 'wait'
+    : issues.some(issue => ['price_prior_date', 'quote_refresh_failed', 'index_yield_prior_date'].includes(issue)) ? 'update' : 'incomplete';
+  return { drawdownBps, targetPriceMicros, status, issues };
 }

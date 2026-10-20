@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import Dexie from 'dexie';
 import * as XLSX from 'xlsx';
-import { buildDividendAdvisorContext, dividendAdvisorSystemPrompt } from '../src/lib/dividendAdvisor.ts';
+import { buildDividendAdvisorContext, dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt } from '../src/lib/dividendAdvisor.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
 import { askDividendAdvisor, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
@@ -69,9 +69,26 @@ test('context excludes private account identities and preserves alternative budg
   assert.equal(data.fundPlan.bondBudgetMinor, 6000_00);
   assert.equal(data.fundPlan.funds[0].budgetMinor, 14000_00);
   assert.equal(data.fundPlan.funds[0].recordedShares, 500);
-  assert.equal(data.fundPlan.funds[0].referencePriorDate, true);
   assert.equal(data.fundPlan.funds[0].ruleCheck.status, 'update');
+  assert.deepEqual(data.fundPlan.funds[0].ruleCheck.issues, ['index_yield_prior_date']);
   assert.deepEqual(data.dividendRefreshDeferredCodes, ['601398']);
+});
+
+test('model snapshot uses readable units and dates rather than implementation fields', () => {
+  const payload = dividendAdvisorReadableSnapshot(context());
+  const text = JSON.stringify(payload);
+  assert.doesNotMatch(text, /manualReference|highMicros|referencePriorDate|ruleCheck|weightBps|budgetMinor|quoteState|PRIVATE/);
+  assert.equal(payload['Active plan to discuss first']['Strategy'], 'Dividend funds');
+  assert.match(text, /"Planned budget in CNY":20000/);
+  assert.match(text, /"Price in CNY per share or unit":0.9/);
+  assert.match(text, /"Fixed reference high in CNY, not invalid merely because its date is earlier":1/);
+  assert.match(text, /"Underlying index dividend yield percent, not fund cash distribution yield":5/);
+  assert.match(text, /"Recorded date":"2026-10-15"/);
+  assert.match(text, /"Alternative saved plan, discuss only when the user asks about it"/);
+  const prompt = dividendAdvisorSystemPrompt('zh');
+  assert.match(prompt, /Write for the person managing their savings, not for a developer/);
+  assert.match(prompt, /earlier recorded date alone does NOT make that high invalid/);
+  assert.match(prompt, /Do not discuss gaps, old dates or empty holdings in the alternative saved plan/);
 });
 
 test('manual DPS remains an undated assumption and manual shares override linked positions', () => {
@@ -94,6 +111,8 @@ for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${proto
       assert.match(body, /Previous question/);
       assert.match(body, /What should I check/);
       assert.doesNotMatch(body, /private-secret|PRIVATE ACCOUNT|PRIVATE HOLDING|PRIVATE FUND/);
+      assert.doesNotMatch(body, /manualReference|highMicros|referencePriorDate|ruleCheck|budgetMinor|weightBps/);
+      assert.match(body, /Price in CNY per share or unit/);
       assert.equal(request.timeoutMs, 90_000);
       if (protocol === 'openai') { assert.equal(request.url, 'https://model.example/v1/chat/completions'); assert.equal(request.headers.Authorization, 'Bearer private-secret-123'); assert.equal(request.body.stream, false); }
       else if (protocol === 'gemini') { assert.equal(request.url, 'https://model.example/v1beta/models/test-model:generateContent'); assert.equal(request.headers['x-goog-api-key'], 'private-secret-123'); assert.ok(request.body.systemInstruction); }

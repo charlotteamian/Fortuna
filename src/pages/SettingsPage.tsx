@@ -18,6 +18,7 @@ import {
 import type { PortableSnapshotStatus as AutomaticSnapshotStatus } from '../native/portableSnapshot';
 import UserGuide from '../components/UserGuide';
 import HoldingRecognitionSettings from '../components/HoldingRecognitionSettings';
+import DividendAdvisorSettings from '../components/DividendAdvisorSettings';
 import SettingsMenu from '../components/SettingsMenu';
 import { formatLocalDate } from '../lib/localDate';
 import { readExcelBackupFile, describeExcelBackupError, type ExcelBackupFailure } from '../lib/excelBackup';
@@ -34,11 +35,11 @@ import {
   type AppUpdateInstallResult,
 } from '../native/appUpdater';
 
-interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; onOpenAccount?: (id: string) => void; focusHoldingRecognition?: boolean; }
+interface Props { onRefresh: () => void; onAccountsChanged: () => void; onOpenOnboarding: () => void; onOpenAccount?: (id: string) => void; focusHoldingRecognition?: boolean; focusDividendAdvisor?: boolean; }
 
 type AppUpdateState = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'downloaded' | 'installer-opened' | 'error';
 
-export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding, onOpenAccount, focusHoldingRecognition = false }: Props) {
+export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboarding, onOpenAccount, focusHoldingRecognition = false, focusDividendAdvisor = false }: Props) {
   const { t, i18n } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -489,6 +490,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       <div className="page-header"><div><h1 className="page-title">{t('settings')}</h1><p className="page-subtitle">{t('about_title')} {t('app_name')}</p></div></div>
 
       <HoldingRecognitionSettings focus={focusHoldingRecognition} />
+      <DividendAdvisorSettings focus={focusDividendAdvisor} />
 
       {/* Theme Mode & Font Size & Language */}
       <div className="settings-section">

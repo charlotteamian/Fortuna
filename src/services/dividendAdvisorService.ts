@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
 import { holdingRecognitionProviderBody } from '../lib/holdingRecognitionProviders.ts';
-import { dividendAdvisorSystemPrompt, type DividendAdvisorContext, type DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
+import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type DividendAdvisorContext, type DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
@@ -105,7 +105,7 @@ export async function askDividendAdvisor(config: DividendAdvisorConfig, context:
   history: DividendAdvisorMessage[] = [], options: { transport?: DividendAdvisorTransport; timeoutMs?: number; signal?: AbortSignal; language?: string } = {}): Promise<string> {
   const normalized = validateDividendAdvisorConfig(config);
   if (typeof question !== 'string' || !question.trim() || question.length > 2000) throw new DividendAdvisorError('QUESTION');
-  const snapshot = JSON.stringify(context);
+  const snapshot = JSON.stringify(dividendAdvisorReadableSnapshot(context));
   if (snapshot.length > 500_000) throw new DividendAdvisorError('CONTEXT');
   const system = dividendAdvisorSystemPrompt(options.language ?? 'zh');
   const previous = history.slice(-8).filter(message => ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')

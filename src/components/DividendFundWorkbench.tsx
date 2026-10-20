@@ -43,27 +43,29 @@ export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: 
   const funds = plan.funds.filter(fund => `${fund.name} ${fund.code ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => b.weightBps - a.weightBps || a.name.localeCompare(b.name));
   return <>
     <section className="div-hero">
-      <div className="div-estimate"><span>{t('df_planned_budget')}</span><strong>{plan.budgetMinor === undefined ? '—' : money(plan.budgetMinor)}</strong><small>{t(`df_mode_${plan.mode}`)}</small></div>
+      <div className="div-overview">
+        <div className="div-estimate"><span>{t('df_planned_budget')}</span><strong>{plan.budgetMinor === undefined ? '—' : money(plan.budgetMinor)}</strong><small>{t('div_allocation_short', { percent: number(allocation.totalWeightBps / 100) })}</small></div>
+        <div className="div-estimate df-mode-summary"><span>{t('df_mode')}</span><strong>{t(`df_mode_${plan.mode}`)}</strong></div>
+      </div>
       {plan.mode === 'rebalance' && <div className="div-budget-line"><span>{t('df_equity_budget')} <strong>{money(allocation.fundBudgetMinor)}</strong></span><span>{t('df_bond_budget')} <strong>{money(allocation.bondBudgetMinor)}</strong></span></div>}
-      <p className="div-muted">{t('df_allocation', { percent: number(allocation.totalWeightBps / 100), remaining: money(allocation.unallocatedMinor) })}</p>
-      <p className="div-muted">{t('df_weight_note')}</p>
-      <details className="div-method df-plan-settings" open={plan.budgetMinor === undefined}><summary>{t('df_edit_plan')}</summary><form onSubmit={event => void persist(event)} className="div-budget df-config">
+      <details className="div-details div-plan-details df-plan-settings"><summary>{t(plan.budgetMinor === undefined ? 'df_setup_plan' : 'df_edit_plan')}</summary><form onSubmit={event => void persist(event)} className="div-budget df-config">
         <fieldset disabled={saving}>
           <div className="div-form-fields">
             <label>{t('df_planned_budget')}<input inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0" max="1000000000000" step="0.01" placeholder={t('div_budget_placeholder')} value={budget} onChange={event => setBudget(event.target.value)} /></label>
             <label>{t('df_mode')}<select value={mode} onChange={event => setMode(event.target.value as DividendFundPlan['mode'])}>{(['hold', 'rebalance', 'swing'] as const).map(value => <option key={value} value={value}>{t(`df_mode_${value}`)}</option>)}</select></label>
           </div>
+          <p className="div-muted">{t('df_allocation', { percent: number(allocation.totalWeightBps / 100), remaining: money(allocation.unallocatedMinor) })}</p>
+          <p className="div-muted">{t('df_weight_note')}</p>
           <p className="div-muted">{t(`df_mode_${mode}_note`)}</p>
           <details className="div-method"><summary>{t('df_entry_settings')}</summary><div className="div-form-fields">
             <label>{t('df_drawdown_threshold')}<input required type="number" inputMode="decimal" min="0.01" max="99.99" step="0.01" value={drawdown} onChange={event => setDrawdown(event.target.value)} /></label>
             <label>{t('df_yield_threshold')}<input required type="number" inputMode="decimal" min="0.01" max="100" step="0.01" value={indexYield} onChange={event => setIndexYield(event.target.value)} /></label>
             <label>{t('df_entry_rule')}<select value={entryRule} onChange={event => setEntryRule(event.target.value as DividendFundPlan['entryRule'])}><option value="both">{t('df_rule_both')}</option><option value="either">{t('df_rule_either')}</option></select></label>
-          </div><p className="div-muted">{t('df_yield_note')}</p></details>
+          </div><p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100), yield: number(plan.indexYieldBps / 100), rule: t(`df_rule_${plan.entryRule}`) })}</p><p className="div-muted">{t('df_yield_note')}</p><p className="div-muted">{t('df_reference_note')}</p></details>
           <button type="submit" className="btn btn-primary">{t(saving ? 'loading' : 'df_save_plan')}</button>
         </fieldset>
       </form></details>
     </section>
-    <section className="df-entry-guide"><strong>{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100), yield: number(plan.indexYieldBps / 100), rule: t(`df_rule_${plan.entryRule}`) })}</strong><p className="div-muted">{t('df_reference_note')}</p></section>
     <div className="div-actions div-toolbar"><button className="btn btn-primary" disabled={saving} onClick={() => { setMessage(''); setEditor({ id: crypto.randomUUID(), name: '', indexKind: 'low_volatility', weightBps: 0 }); }}>{t('df_add')}</button></div>
     {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
     <input className="div-search" aria-label={t('df_search')} placeholder={t('df_search')} value={search} onChange={event => setSearch(event.target.value)} />
@@ -73,22 +75,29 @@ export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: 
       return <article className="div-stock" key={fund.id}>
         <div className="div-stock-heading"><div><h2>{fund.name}</h2><small>{t(`df_index_${fund.indexKind}`)}{fund.code ? ` · ${fund.code}` : ''}</small></div><button className="btn btn-secondary" disabled={saving} onClick={() => setEditor(fund)}>{t('edit')}</button></div>
         <div className="div-budget-line"><span>{t('df_weight')} <strong>{number(fund.weightBps / 100)}%</strong></span><span>{t('df_target_amount')} <strong>{plan.budgetMinor === undefined ? '—' : money(allocation.amounts.get(fund.id) ?? 0)}</strong></span></div>
-        {fund.note && <div className="div-note"><span>{t('div_note')}</span><p>{fund.note}</p></div>}
-        <p className={reference.status === 'met' ? 'div-notice' : 'div-muted'}>{t(`df_signal_${reference.status}`)}</p>
-        <div className="div-metrics">
-            <div><span>{t(fund.quote ? 'df_exchange_price' : 'df_current_price')}</span><strong>{priceMicros === undefined ? '—' : `¥${number(priceMicros / 1e6, 6)}`}</strong><small>{fund.quote ? t('div_quote_source', { date: fund.quote.date }) : t(priceMicros === undefined ? 'div_not_fetched' : 'df_manual_source')}</small></div>
+        <div className="div-metrics div-key-metrics">
+            <div><span>{t(fund.quote ? 'df_exchange_price' : 'df_current_price')}</span><strong>{priceMicros === undefined ? '—' : `¥${number(priceMicros / 1e6, 6)}`}</strong></div>
             <div><span>{t('df_current_drawdown')}</span><strong>{reference.drawdownBps === undefined ? '—' : `${number(reference.drawdownBps / 100)}%`}</strong></div>
+        </div>
+        <p className={`df-signal ${reference.status === 'met' ? 'div-notice' : 'div-muted'}`}>{reference.status === 'update' || reference.status === 'incomplete' ? reference.issues.map(issue => t(`df_issue_${issue}`)).join(' · ') : t(`df_signal_${reference.status}`)}</p>
+        <details className="div-details"><summary>{t('df_reference_details')}</summary>
+          {fund.note && <div className="div-note"><span>{t('div_note')}</span><p>{fund.note}</p></div>}
+          <div className="div-metrics">
             <div><span>{t('df_index_yield')}</span><strong>{fund.reference?.indexYieldBps === undefined ? '—' : `${number(fund.reference.indexYieldBps / 100)}%`}</strong></div>
             <div><span>{t('df_entry_price', { percent: number(plan.drawdownBps / 100) })}</span><strong>{reference.targetPriceMicros === undefined ? '—' : `¥${number(reference.targetPriceMicros / 1e6, 6)}`}</strong></div>
             {plan.mode === 'swing' && <div><span>{t('df_exit_price')}</span><strong>{fund.reference?.highMicros === undefined ? '—' : `¥${number(fund.reference.highMicros / 1e6, 6)}`}</strong></div>}
-        </div>
-        {fund.reference && <p className="div-muted">{t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') })}</p>}
-        {fund.quoteFailedAt !== undefined && <p className="div-warning">{t('div_quotes_failed')}</p>}
-        {!isExchangeTradedFundCode(fund.code) && <p className="div-muted">{t(fund.code ? 'df_manual_quote_note' : 'df_add_code_note')}</p>}
+          </div>
+          <p className="div-muted">{fund.quote ? t('div_quote_source', { date: fund.quote.date }) : t(priceMicros === undefined ? 'div_not_fetched' : 'df_manual_source')}</p>
+          <p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100), yield: number(plan.indexYieldBps / 100), rule: t(`df_rule_${plan.entryRule}`) })}</p>
+          {reference.issues.length > 0 && <p className="div-muted">{reference.issues.map(issue => t(`df_issue_${issue}`)).join(' · ')}</p>}
+          {fund.reference && <p className="div-muted">{t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') })}</p>}
+          {fund.quoteFailedAt !== undefined && <p className="div-warning">{t('div_quotes_failed')}</p>}
+          {!isExchangeTradedFundCode(fund.code) && <p className="div-muted">{t(fund.code ? 'df_manual_quote_note' : 'df_add_code_note')}</p>}
+        </details>
       </article>;
     })}</div>
     {funds.length === 0 && <p className="div-notice">{t(plan.funds.length ? 'df_no_match' : 'df_empty')}</p>}
-    <details className="div-method"><summary>{t('df_method')}</summary><p>{t('df_method_modes')}</p><p>{t('df_method_types')}</p><p>{t('df_method_selection')}</p><p>{t('df_method_returns')}</p><p>{t('df_method_cost')}</p></details>
+    <details className="div-method"><summary>{t('df_method')}</summary><p>{t('div_strategy_preserved')}</p><p>{t('div_auto_quotes_note')}</p><p>{t('df_method_modes')}</p><p>{t('df_method_types')}</p><p>{t('df_method_selection')}</p><p>{t('df_method_returns')}</p><p>{t('df_method_cost')}</p></details>
     <DividendFundComparison plan={plan} disabled={saving} onSelect={fund => {
       setMessage('');
       setEditor(plan.funds.find(row => row.code === fund.code) ?? { id: crypto.randomUUID(), name: t(fund.nameKey), code: fund.code, indexKind: fund.indexKind, weightBps: 0 });

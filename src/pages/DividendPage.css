@@ -4,16 +4,22 @@
 .div-strategy-options { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .div-strategy-options button { padding: .85rem .5rem; border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); background: var(--bg-card); font: inherit; font-weight: 600; }
 .div-strategy-options button.selected { border-color: var(--asset-color); background: var(--asset-dim); color: var(--asset-color); }
+.dividend-page .page-header { flex-wrap: nowrap; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+.dividend-page .page-header > div { min-width: 0; }
+.dividend-page .page-header .page-title { font-size: clamp(1.25rem, 5vw, 1.6rem); }
+.dividend-page .page-header .page-subtitle { display: none; }
+.dividend-page .page-header > .btn { flex-shrink: 0; padding: .5rem .75rem; font-size: .78rem; }
 .dividend-page fieldset, .div-dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .df-config label { margin-bottom: 0; }
 .df-plan-settings { margin-bottom: 0; }
 .df-plan-settings .div-budget { margin-top: .5rem; padding-top: .5rem; }
-.df-entry-guide { padding: .8rem 1rem; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 10px; font-size: .85rem; line-height: 1.6; }
 .df-fund-list { margin-top: 1rem; }
-.div-hero { border: 1px solid var(--border); background: linear-gradient(130deg, var(--asset-dim), var(--bg-card)); border-radius: var(--radius); padding: 1.2rem; margin-bottom: 1rem; }
+.div-hero { border: 1px solid var(--border); background: linear-gradient(130deg, var(--asset-dim), var(--bg-card)); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; }
+.div-overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
 .div-estimate { display: flex; flex-direction: column; gap: .35rem; }
-.div-estimate > span { font-size: .88rem; color: var(--text-secondary); }
-.div-estimate > strong { font-size: 2rem; font-variant-numeric: tabular-nums; color: var(--asset-color); overflow-wrap: anywhere; }
+.div-estimate > span { font-size: .75rem; color: var(--text-secondary); }
+.div-estimate > strong { font-size: clamp(1.15rem, 4.8vw, 1.7rem); font-variant-numeric: tabular-nums; color: var(--asset-color); overflow-wrap: anywhere; }
+.df-mode-summary > strong { font-size: 1.05rem; line-height: 1.65; }
 .div-estimate > small, .div-muted { color: var(--text-secondary); font-size: .78rem; line-height: 1.65; }
 .div-budget { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .div-budget label { display: block; margin-bottom: .5rem; font-size: .9rem; }
@@ -22,6 +28,15 @@
 .dividend-page input, .dividend-page select, .div-dialog input, .div-dialog select, .div-dialog textarea { border: 1px solid var(--border); border-radius: 9px; color: var(--text-primary); background: var(--bg-secondary); padding: .7rem; font: inherit; min-width: 0; width: 100%; box-sizing: border-box; }
 .dividend-page button, .div-dialog button { min-height: 44px; }
 .div-toolbar { margin-bottom: .75rem; }
+.div-toolbar > .btn { flex: 1 1 160px; }
+.div-manage { flex: 1 1 130px; min-width: 0; }
+.div-manage > summary { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; padding: .6rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font-size: .8125rem; font-weight: 600; box-sizing: border-box; list-style: none; }
+.div-manage > summary::-webkit-details-marker { display: none; }
+.div-manage > summary::after { content: '+'; font-size: 1.1rem; }
+.div-manage[open] { flex-basis: 100%; }
+.div-manage[open] > summary::after { content: '−'; }
+.div-manage-actions { display: flex; flex-wrap: wrap; gap: .5rem; padding: .65rem 0 .25rem; }
+.div-manage-actions > .btn { flex: 1 1 160px; }
 .div-method { margin: 1rem 0; padding: .8rem; background: var(--bg-secondary); border-radius: 10px; font-size: .8rem; line-height: 1.65; }
 .div-method summary, .div-details > summary { cursor: pointer; color: var(--asset-color); font-weight: 600; min-height: 30px; padding: .25rem 0; }
 .div-method p { margin: .6rem 0; }
@@ -30,7 +45,7 @@
 .div-filters button.selected { color: var(--asset-color); border-color: var(--asset-color); background: var(--asset-dim); }
 .div-stock-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1rem; align-items: start; }
 .div-stock { padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
-.div-stock-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
+.div-stock-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .65rem; }
 .div-stock-heading > button { flex-shrink: 0; white-space: nowrap; }
 .div-stock-heading h2 { font-size: 1.07rem; margin: 0 0 .3rem; }
 .div-stock-heading > div, .div-stock-heading > h2 { min-width: 0; overflow-wrap: anywhere; }
@@ -40,10 +55,17 @@
 .div-metrics > div { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
 .div-metrics span, .div-metrics small { color: var(--text-secondary); font-size: .75rem; }
 .div-metrics strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.div-budget-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; padding: .75rem 0; margin-bottom: .8rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .85rem; }
+.div-key-metrics { margin-bottom: .7rem; }
+.div-position-summary { color: var(--text-secondary); font-size: .76rem; line-height: 1.6; margin: .5rem 0; overflow-wrap: anywhere; }
+.df-signal { margin: .5rem 0 .7rem; }
+.div-budget-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; padding: .6rem 0; margin-bottom: .7rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .78rem; }
 .div-budget-line > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; color: var(--text-secondary); }
 .div-budget-line strong { color: var(--asset-color); font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .div-details { border-top: 1px solid var(--border); padding-top: .5rem; }
+.div-plan-details { margin-top: .8rem; padding-top: .45rem; }
+.div-plan-details .div-budget { border-top: 0; padding-top: 0; margin-top: .5rem; }
+.div-details > summary { font-size: .8rem; }
+.div-details[open] > summary { margin-bottom: .6rem; }
 .div-grid h3, .div-payments h3, .div-dialog h3 { font-size: .85rem; margin: 1rem 0 .5rem; }
 .div-table-scroll { overflow-x: auto; }
 .dividend-page table, .div-dialog table { width: 100%; border-collapse: collapse; font-size: .75rem; text-align: right; font-variant-numeric: tabular-nums; }
@@ -102,8 +124,9 @@
   .df-comparison-table td[data-label]::before { content: attr(data-label); color: var(--text-secondary); }
 }
 @media (max-width: 360px) { .div-form-fields { grid-template-columns: 1fr; } .div-stock { padding: .8rem; } }
-.div-quote-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px; margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); }
-.div-quote-status > div { flex: 1 1 220px; min-width: 0; }
-.div-quote-status strong { font-size: .875rem; }
+.div-quote-status { display: flex; align-items: center; gap: .7rem; padding: .7rem .85rem; margin: .75rem 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); }
+.div-quote-status > div { flex: 1; min-width: 0; }
+.div-quote-status > .btn { flex-shrink: 0; font-size: .75rem; padding: .5rem .65rem; }
+.div-quote-status strong { font-size: .8rem; }
 .div-quote-status p { margin: 5px 0; }
-.div-quote-status small { font-size: .75rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.div-quote-status small { display: block; font-size: .7rem; color: var(--text-secondary); overflow-wrap: anywhere; line-height: 1.5; margin-top: .2rem; }

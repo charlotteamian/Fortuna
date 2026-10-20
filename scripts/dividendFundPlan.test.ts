@@ -27,7 +27,7 @@ test('70:30 divides the strategy budget and weights divide only the dividend sle
   assert.equal(large.amounts.get('a')! + large.bondBudgetMinor + large.unallocatedMinor, 1e14);
 });
 
-test('entry flags require current manual data and distinguish both/either from missing observations', () => {
+test('entry flags require current observations and distinguish both/either from missing inputs', () => {
   const plan = defaultDividendFundPlan();
   const today = dateInChina();
   const current = fund('a', 10000, { reference: { priceMicros: 900000, highMicros: 1000000, indexYieldBps: 500, asOf: today } });
@@ -39,8 +39,49 @@ test('entry flags require current manual data and distinguish both/either from m
   assert.equal(dividendFundEntry(plan, yieldOnly).status, 'incomplete');
   assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, yieldOnly).status, 'met');
   assert.equal(dividendFundEntry(plan, { ...current, reference: { ...current.reference!, asOf: '2020-01-01' } }).status, 'update');
-  assert.equal(dividendFundEntry(plan, fund('missing', 0)).status, 'update');
+  assert.equal(dividendFundEntry(plan, fund('missing', 0)).status, 'incomplete');
   assert.equal(dividendFundEntry(plan, { ...current, reference: { ...current.reference!, priceMicros: 1100000 } }).drawdownBps, 0);
+});
+
+test('historical highs remain comparison points while current prices and index yields retain their own dates', () => {
+  const today = '2026-10-20';
+  const plan = defaultDividendFundPlan();
+  const dated = fund('a', 10000, {
+    code: '512890', reference: { highMicros: 1000000, priceMicros: 850000, indexYieldBps: 500, asOf: '2026-10-08' },
+    quote: { priceMicros: 900000, date: `${today} 15:00`, fetchedAt: 10 },
+  });
+  const result = dividendFundEntry(plan, dated, today);
+  assert.equal(result.drawdownBps, 1000);
+  assert.equal(result.targetPriceMicros, 900000);
+  assert.equal(result.status, 'update');
+  assert.deepEqual(result.issues, ['index_yield_prior_date']);
+  // The current drawdown alone is sufficient for the OR rule; the historical high is not stale.
+  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, dated, today).status, 'met');
+  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, { ...dated, reference: { highMicros: 1000000, asOf: '2020-01-01' } }, today).status, 'met');
+  // A false current drawdown settles AND without pretending that the old yield was checked.
+  assert.equal(dividendFundEntry(plan, { ...dated, quote: { ...dated.quote!, priceMicros: 950000 } }, today).status, 'wait');
+  // The same old yield cannot settle OR when the current drawdown is false.
+  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, { ...dated, quote: { ...dated.quote!, priceMicros: 950000 } }, today).status, 'update');
+  const manualOnly = dividendFundEntry(plan, { ...dated, quote: undefined }, today);
+  assert.equal(manualOnly.status, 'update');
+  assert.deepEqual(manualOnly.issues, ['price_prior_date', 'index_yield_prior_date']);
+  assert.equal(dated.reference?.asOf, '2026-10-08');
+});
+
+test('failed or previous-date quotes cannot independently satisfy a drawdown condition', () => {
+  const today = '2026-10-20';
+  const plan = { ...defaultDividendFundPlan(), entryRule: 'either' as const };
+  const current = fund('a', 10000, {
+    code: '512890', reference: { highMicros: 1000000, asOf: '2026-10-08' },
+    quote: { priceMicros: 900000, date: `${today} 15:00`, fetchedAt: 10 },
+  });
+  assert.equal(dividendFundEntry(plan, current, today).status, 'met');
+  const failed = dividendFundEntry(plan, { ...current, quoteFailedAt: 11 }, today);
+  assert.equal(failed.status, 'update');
+  assert.ok(failed.issues.includes('quote_refresh_failed'));
+  const prior = dividendFundEntry(plan, { ...current, quote: { ...current.quote!, date: '2026-10-19 15:00' } }, today);
+  assert.equal(prior.status, 'update');
+  assert.ok(prior.issues.includes('price_prior_date'));
 });
 
 test('fund validation accepts name-only plans and rejects duplicate, overallocated or malformed data', () => {
