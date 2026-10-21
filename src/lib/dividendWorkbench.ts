@@ -18,6 +18,7 @@ export interface DividendStock {
   shareMode: 'linked' | 'manual'; manualShares: number;
   manualDpsMicros?: number; lotSize: number; note?: string;
   buyLevels?: GridLevel[]; sellLevels?: GridLevel[];
+  buyPaused?: boolean;
   quote?: DividendQuote; dividend?: DividendData;
   quoteFailedAt?: number; dividendFailedAt?: number;
   trend?: DividendTrend; trendFailedAt?: number;
@@ -170,7 +171,7 @@ export function buildGrid(stock: DividendStock, budgetMinor: number, shares: num
     const targetShares = completePrices && side === 'buy' ? Math.floor(cumulativeBuyShares / stock.lotSize) * stock.lotSize : undefined;
     const displayYieldBps = level.priceMinor ? dps === undefined ? undefined : dps / level.priceMinor : level.yieldBps;
     const sellShares = side === 'sell' ? (cumulative >= 10000 ? shares : Math.floor(shares * cumulative / 10000 / stock.lotSize) * stock.lotSize) : undefined;
-    const touched = Boolean(priceMinor && stock.quote && (side === 'buy' ? stock.quote.priceMinor <= priceMinor : shares > 0 && stock.quote.priceMinor >= priceMinor));
+    const touched = Boolean(priceMinor && stock.quote && (side === 'buy' ? !stock.buyPaused && stock.quote.priceMinor <= priceMinor : shares > 0 && stock.quote.priceMinor >= priceMinor));
     return { ...level, displayYieldBps, cumulative, priceMinor, targetShares, sellShares, touched };
   });
 }
@@ -181,6 +182,7 @@ export function isDividendStock(raw: unknown): raw is DividendStock {
   const integer = (v: unknown, max = Number.MAX_SAFE_INTEGER) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= max;
   const validLevels = (levels: GridLevel[] | undefined) => levels === undefined || (Array.isArray(levels) && levels.length > 0 && levels.length <= 20 && levels.every(l => integer(l.yieldBps, 10000) && l.yieldBps > 0 && integer(l.portionBps, 10000) && (l.priceMinor === undefined || integer(l.priceMinor) && l.priceMinor > 0)) && levels.reduce((n,l) => n + l.portionBps, 0) <= 10000);
   return typeof s.code === 'string' && mainlandCode(s.code) === s.code && typeof s.name === 'string' && s.name.trim().length > 0 && ['core', 'watch', 'hidden'].includes(s.group) && integer(s.weightBps, 10000) && ['linked', 'manual'].includes(s.shareMode) && Number.isFinite(s.manualShares) && s.manualShares >= 0 && integer(s.lotSize, 10000) && s.lotSize > 0 && (s.manualDpsMicros === undefined || integer(s.manualDpsMicros)) && validLevels(s.buyLevels) && validLevels(s.sellLevels)
+    && (s.buyPaused === undefined || typeof s.buyPaused === 'boolean')
     && (s.quote === undefined || integer(s.quote.priceMinor) && s.quote.priceMinor > 0 && typeof s.quote.date === 'string' && integer(s.quote.fetchedAt))
     && (s.dividend === undefined || integer(s.dividend.dpsMicros) && typeof s.dividend.asOf === 'string' && typeof s.dividend.windowStart === 'string' && integer(s.dividend.fetchedAt) && Array.isArray(s.dividend.payments) && s.dividend.payments.every(p => typeof p.exDate === 'string' && typeof p.reportDate === 'string' && integer(p.dpsMicros)));
 }

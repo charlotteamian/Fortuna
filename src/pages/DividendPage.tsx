@@ -163,6 +163,7 @@ export default function DividendPage() {
           <div><span>{t('div_first_buy_price')}</span><strong>{firstPrice ? `¥${numeric(firstPrice / 100)}` : '—'}</strong></div>
         </div>
         {shares > 0 && <p className="div-position-summary">{t('div_position_summary', { shares: quantity(shares), dividend: dps === undefined ? '—' : money(dividendEstimateMinor(shares, dps)) })}</p>}
+        {stock.buyPaused && <p className="div-warning">{t('div_buy_paused_note')}</p>}
         {(stock.quoteFailedAt || stock.dividendFailedAt) && <p className="div-warning">{[stock.quoteFailedAt ? t('div_quote_failed') : '', stock.dividendFailedAt ? t('div_dividend_failed') : ''].filter(Boolean).join(' · ')} {t('div_cache_note')}</p>}
         <details className="div-details"><summary>{t('div_details')}</summary>
           {stock.note && <div className="div-note"><span>{t('div_note')}</span><p>{stock.note}</p></div>}
@@ -291,7 +292,9 @@ function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClo
       <label>{t('div_lot_size')}<input required type="number" min="1" max="10000" step="1" value={stock.lotSize} onChange={e => patch({ lotSize: Number(e.target.value) })} /></label>
     </div><p className="div-muted">{t('div_manual_note')}</p>
     <label className="div-form-note">{t('div_note')}<textarea maxLength={2000} rows={3} value={stock.note ?? ''} onChange={e => patch({ note: e.target.value })} /></label>
-    <details className="div-method"><summary>{t('div_edit_grid')}</summary><p>{t('div_edit_grid_note')}</p>{(['buy', 'sell'] as const).map(side => {
+    <details className="div-method"><summary>{t('div_edit_grid')}</summary><p>{t('div_edit_grid_note')}</p>
+      <label className="div-linked-all"><input type="checkbox" checked={stock.buyPaused ?? false} onChange={e => patch({ buyPaused: e.target.checked })} />{t('div_buy_paused')}</label>
+      {(['buy', 'sell'] as const).map(side => {
       const key = side === 'buy' ? 'buyLevels' : 'sellLevels';
       const levels = stock[key] ?? (side === 'buy' ? BUY_LEVELS : SELL_LEVELS);
       const change = (i: number, field: keyof GridLevel, value: string) => patch({ [key]: levels.map((level, index) => index === i ? { ...level, [field]: value === '' && field === 'priceMinor' ? undefined : Math.round(Number(value) * 100) } : level) });

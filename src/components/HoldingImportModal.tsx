@@ -131,7 +131,12 @@ export default function HoldingImportModal({ account, holdings, onClose, onImpor
         reader.readAsDataURL(file);
       });
       const result = await recognizeHoldingScreenshot(currentConfig, { base64, mimeType: file.type }, { accountCurrency: account.currency });
-      if (!result.rows.length && !result.trades.length) { setError(t('holding_import_no_candidates')); return; }
+      if (!result.rows.length && !result.trades.length) {
+        setNotice(result.warnings.map(warning => t(warning, { defaultValue: warning })).join('\n'));
+        setError(t(result.warnings.includes('HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION')
+          ? 'holding_import_only_bond_subscriptions' : 'holding_import_no_candidates'));
+        return;
+      }
       const conflicts = addRows(result.rows.map(row => ({ ...row, market: inferredMarket(row.symbol, row.market) })), true);
       const incomingTrades = result.trades.map(trade => ({ ...trade, market: inferredMarket(trade.symbol, trade.market), id: nextId.current++ }));
       const overlappingTrades = incomingTrades.some(trade => trades.some(existing =>

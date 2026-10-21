@@ -3,6 +3,7 @@ import Dexie, { type Table } from 'dexie';
 import { holdingRecognitionProviderBody } from '../lib/holdingRecognitionProviders.ts';
 import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type DividendAdvisorContext, type DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
+import { parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -142,4 +143,28 @@ export async function askDividendAdvisor(config: DividendAdvisorConfig, context:
     if (timer) clearTimeout(timer);
     if (onAbort) options.signal?.removeEventListener('abort', onAbort);
   }
+}
+
+export async function askDividendAdvisorWithActions(...args: Parameters<typeof askDividendAdvisor>) {
+  const raw = await askDividendAdvisor(...args);
+  const context = args[1];
+  const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
+  const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
+  // Make the user's pacing rule deterministic even if a provider omits a draft.
+  // A draft always needs a fresh preview and a separate confirmation before writing.
+  if (context.activeStrategy === 'stocks') {
+    const dateCutoff = new Date(Date.parse(context.generatedAt) - 10 * 86400_000).toISOString().slice(0, 10);
+    const accelerating = context.research?.stocks.filter(stock => stock.technical?.state === 'accelerating_down'
+      && stock.technical.currentUsable && stock.technical.asOf >= dateCutoff && context.stockPlan.stocks.some(saved => saved.code === stock.code && !saved.buyPaused)) ?? [];
+    for (const stock of accelerating.slice(0, 10)) {
+      result.actions = result.actions.filter(action => action.code !== stock.code);
+      result.actions.push({ id: `pause-${stock.code}`, code: stock.code, buyPaused: true,
+        reason: chinese ? `截至${stock.technical!.asOf}，近期下跌正在加速。先暂停加仓；跌势放缓、短期均线趋稳后复核原网格。`
+          : `As of ${stock.technical!.asOf}, the decline is accelerating. Pause additional buying and review the grid once momentum eases and short-term averages stabilise.` });
+    }
+    if (accelerating.length) result.answer = `${chinese
+      ? `加仓节奏检查：${accelerating.map(stock => stock.name).join('、')}的已获取日线显示下跌加速，先暂停加仓并复核网格；触价本身不足以支持加仓。`
+      : `Pacing check: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline. Pause additional buying and review the grid; a reached price alone is insufficient.`}\n\n${result.answer}`;
+  }
+  return result;
 }

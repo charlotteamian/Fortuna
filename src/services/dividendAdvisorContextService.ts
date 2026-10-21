@@ -6,10 +6,13 @@ import { getHoldingMode } from '../lib/productPortfolio';
 import { loadDividendWorkbench, refreshDividendStock } from './dividendService';
 import { refreshDividendMarketQuotes } from './dividendQuoteService';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
+import { loadDividendSelectionPrinciples } from './dividendAdvisorActionsService';
+import { fetchDividendResearch } from './dividendResearchService';
 
 /** Refresh on each explicit question. Off-exchange NAV/high/index-yield remain dated manual inputs. */
 export async function prepareDividendAdvisorContext(onProgress: (done: number, total: number) => void) {
-  const initial = await loadDividendWorkbench();
+  const [initial, principles] = await Promise.all([loadDividendWorkbench(), loadDividendSelectionPrinciples()]);
+  const researchTask = fetchDividendResearch([...initial.stocks].sort((a, b) => Number(initial.positions.has(b.code)) - Number(initial.positions.has(a.code)) || b.weightBps - a.weightBps), principles);
   const today = dateInChina();
   const staleDividends = initial.stocks.filter(stock => stock.manualDpsMicros === undefined
     && (!stock.dividend || stock.dividend.asOf !== today || stock.dividendFailedAt !== undefined));
@@ -31,7 +34,7 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
     }));
     if (attempted.size) requestPortableSnapshot('dividend-advisor-market-data');
   };
-  await Promise.all([refreshDividendMarketQuotes(), updateDividends()]);
+  const [, , research] = await Promise.all([refreshDividendMarketQuotes(), updateDividends(), researchTask]);
   const data = await loadDividendWorkbench();
   const codes = new Set(data.fundPlan.funds.flatMap(fund => fund.code ? [fund.code] : []));
   const fundPositions = new Map<string, number>();
@@ -48,6 +51,6 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
       fundPositions.set(code, (fundPositions.get(code) ?? 0) + position.shares);
     }
   }
-  return buildDividendAdvisorContext({ ...data, fundPositions,
+  return buildDividendAdvisorContext({ ...data, fundPositions, research,
     dividendRefreshDeferredCodes: prioritized.filter(stock => !attempted.has(stock.code)).map(stock => stock.code) });
 }

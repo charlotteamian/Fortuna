@@ -58,6 +58,10 @@ test('OpenAI compatible requests carry base64 vision input and preserve zero-pre
     assert.match(prompt, /visible full dates AND execution times when shown/);
     assert.match(prompt, /NEVER infer an ambiguous within-day sequence/);
     assert.match(prompt, /HOLDING_RECOGNITION_WARNING_TRADE_ORDER/);
+    assert.match(prompt, /Exclude new-bond\/convertible-bond subscriptions/);
+    assert.match(prompt, /quantity is zero/);
+    assert.match(prompt, /HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION/);
+    assert.match(prompt, /Never exclude an ordinary listed bond\/convertible-bond position/);
   }) });
   assert.deepEqual(result.rows, [{ name: '平安银行', symbol: '000001', market: 'A股', shares: '100', price: '12.3', costPrice: '10.5' }]);
   assert.deepEqual(result.trades, []);
@@ -149,6 +153,76 @@ test('unknown or diluted costs are left blank and derivative holdings are exclud
   assert.ok(result.warnings.includes('HOLDING_RECOGNITION_WARNING_COST_DILUTED'));
   assert.ok(result.warnings.includes('HOLDING_RECOGNITION_WARNING_COST_UNKNOWN'));
   assert.ok(result.warnings.includes('HOLDING_RECOGNITION_WARNING_DERIVATIVES'));
+});
+
+test('new bond subscription labels and metadata are excluded from holdings and filled trades, including zero placeholders', async () => {
+  const subscription = { symbol: '000999', market: 'A股', shares: 0, price: 100, costPrice: 100, costType: 'average' };
+  const result = await recognizeHoldingScreenshot(config(), image, { transport: mock('openai', {
+    holdings: [
+      output.holdings[0],
+      { ...subscription, name: '申购债' },
+      { ...subscription, name: '炬申发债', shares: 10000 },
+      { ...subscription, name: '转债（新债申购）' },
+      { ...subscription, name: '债券申购' },
+      { ...subscription, name: 'Some Bond', instrumentType: 'bond', status: 'subscription' },
+      { ...subscription, name: 'Corporate Bond', status: 'subscription' },
+      { ...subscription, name: 'unlabelled', recordType: 'bond_subscription' },
+    ],
+    trades: [
+      { ...subscription, name: '某某发债', date: '2026-10-01', kind: 'buy', executionStatus: 'filled', shares: 10 },
+      { ...subscription, name: '某某转债', date: '2026-10-01', kind: '可转债申购', executionStatus: 'filled', shares: 10 },
+      { ...subscription, name: 'unlabelled', date: '2026-10-01', kind: 'buy', instrumentType: 'convertible_bond_subscription', shares: 10 },
+    ],
+  }) });
+  assert.deepEqual(result.rows, [{ name: '平安银行', symbol: '000001', market: 'A股', shares: '100', price: '12.3', costPrice: '10.5' }]);
+  assert.deepEqual(result.trades, []);
+  assert.deepEqual(result.warnings, ['HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION']);
+});
+
+test('domestic bond subscription codes are excluded even when the model omits subscription labels', async () => {
+  const result = await recognizeHoldingScreenshot(config(), image, { transport: mock('openai', {
+    holdings: ['070708', '071202', '372997', '733839', '783398', 'SZ.071202', '783398.SH'].map(symbol => ({
+      name: 'unlabelled', symbol, shares: 0, price: 100, costPrice: 100, costType: 'average',
+    })),
+    trades: [{ name: 'unlabelled', symbol: '071202', kind: 'buy', shares: 1000, price: 100, executionStatus: 'filled' }],
+  }) });
+  assert.deepEqual(result.rows, []);
+  assert.deepEqual(result.trades, []);
+  assert.deepEqual(result.warnings, ['HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION']);
+});
+
+test('listed bonds and convertible bonds remain eligible, including zero quantity and actual secondary-market fills', async () => {
+  const result = await recognizeHoldingScreenshot(config(), image, { transport: mock('openai', {
+    holdings: [
+      { name: '申能转债', symbol: '110103', market: 'A股', instrumentType: 'convertible_bond', shares: 10, price: 115, costPrice: 100, costType: 'average' },
+      { name: '某某转债', symbol: '127999', instrumentType: 'bond', shares: 0, price: 105, costPrice: 0, costType: 'average' },
+      { name: '07国债13', symbol: '010713', shares: 100, price: 100, costPrice: 99, costType: 'average' },
+      { name: 'Corporate Bond', symbol: '071202', market: '其他', currency: 'USD', shares: 10, price: 100, costPrice: 100, costType: 'average' },
+    ],
+    trades: [{ name: '申能转债', symbol: '110103', instrumentType: 'convertible_bond', date: '2026-10-01', kind: 'buy', shares: 10, price: 115, executionStatus: 'filled' }],
+  }) });
+  assert.deepEqual(result.rows.map(row => row.symbol), ['110103', '127999', '010713', '071202']);
+  assert.equal(result.rows[1].shares, '0');
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.trades[0].symbol, '110103');
+  assert.deepEqual(result.warnings, []);
+});
+
+test('an all-subscription screenshot returns the exclusion warning without touching ledger data', async () => {
+  const ledger = new Dexie('FortunaSubscriptionRecognitionIsolationTest');
+  ledger.version(1).stores({ holdings: 'id' });
+  const existing = { id: 'already-owned', symbol: '110103', shares: 10 };
+  try {
+    await ledger.table('holdings').put(existing);
+    const result = await recognizeHoldingScreenshot(config(), image, { transport: mock('openai', {
+      holdings: [], trades: [], warnings: ['HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION'],
+    }) });
+    assert.deepEqual(result, { rows: [], trades: [], warnings: ['HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION'] });
+    assert.deepEqual(await ledger.table('holdings').toArray(), [existing]);
+  } finally {
+    ledger.close();
+    await Dexie.delete('FortunaSubscriptionRecognitionIsolationTest');
+  }
 });
 
 test('trade-only screenshots preserve separate buy/sell executions without inventing holdings', async () => {

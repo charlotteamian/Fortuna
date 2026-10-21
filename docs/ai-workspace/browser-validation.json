@@ -1,0 +1,17 @@
+{
+  "syntheticDataOnly": true,
+  "realProviderTested": false,
+  "widths": [
+    390,
+    320
+  ],
+  "principlesSave": true,
+  "historyReload": true,
+  "historyResume": true,
+  "pauseWriteback": true,
+  "heldStockRemovalProtected": true,
+  "candidateAdded": true,
+  "masking": true,
+  "noHorizontalOverflow": true,
+  "pageErrors": []
+}

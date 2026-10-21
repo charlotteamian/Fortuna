@@ -8,7 +8,8 @@ import * as XLSX from 'xlsx';
 import { buildDividendAdvisorContext, dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt } from '../src/lib/dividendAdvisor.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
-import { askDividendAdvisor, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
+import { askDividendAdvisor, askDividendAdvisorWithActions, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
+import { defaultDividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -101,6 +102,28 @@ test('manual DPS remains an undated assumption and manual shares override linked
   assert.match(dividendAdvisorSystemPrompt('zh-CN'), /simplified Chinese/);
   assert.match(dividendAdvisorSystemPrompt('en'), /British English/);
   assert.match(dividendAdvisorSystemPrompt('zh'), /cumulative targets, NOT incremental orders/);
+});
+
+test('accelerating declines produce a confirmed-preview pause draft even when a provider suggests resuming', async () => {
+  const data = buildDividendAdvisorContext({ stocks: [stock], strategy: 'stocks', budgetMinor: 10000_00,
+    budgetConfigured: true, positions: new Map(), fundPlan: defaultDividendFundPlan(), research: {
+      generatedAt: now, principles: defaultDividendSelectionPrinciples(), indices: [], stocks: [{ code: stock.code, name: stock.name,
+        checks: [], status: 'unknown', sources: [], issues: [], technical: { asOf: '2026-10-16', fetchedAt: now,
+          priceBasis: 'qfq', currentUsable: true, lastCloseMinor: 500, ma5Minor: 520, ma10Minor: 530, ma30Minor: 560,
+          ma30SlopePercent: -1, rsi6: 20, change5Percent: -5, change10Percent: -7, change30Percent: -12, previous5Percent: -2,
+          drawdown60Percent: -15, state: 'accelerating_down', pacing: 'pause_add' } }] } }, now);
+  const text = '先复核计划。\n```fortuna-actions\n[{"id":"resume","code":"601398","reason":"draft","buyPaused":false}]\n```';
+  const result = await askDividendAdvisorWithActions(config(), data, '今天该做什么？', [], {
+    language: 'zh', transport: async () => ({ status: 200, data: response('openai', text) }),
+  });
+  assert.match(result.answer, /暂停加仓/);
+  assert.doesNotMatch(result.answer, /fortuna-actions|buyPaused/);
+  assert.deepEqual(result.actions.map(action => [action.code, action.buyPaused]), [['601398', true]]);
+  data.research!.stocks[0].technical!.asOf = '2026-09-01';
+  const stale = await askDividendAdvisorWithActions(config(), data, '复核', [], {
+    transport: async () => ({ status: 200, data: response('openai', '资料待核实。') }),
+  });
+  assert.equal(stale.actions.length, 0);
 });
 
 for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} sends text, current snapshot and bounded conversation with the proper authentication`, async () => {

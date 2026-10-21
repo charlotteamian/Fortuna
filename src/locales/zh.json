@@ -1474,5 +1474,9 @@
   "df_issue_quote_refresh_failed": "最新报价未取到，请重试更新",
   "df_issue_high_missing": "请补充参考前高",
   "df_issue_index_yield_missing": "请补充指数股息率",
-  "df_issue_index_yield_prior_date": "请核对指数股息率"
+  "df_issue_index_yield_prior_date": "请核对指数股息率",
+  "HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION": "截图中的新债/可转债申购记录已跳过，不会导入为持仓或成交。",
+  "holding_import_only_bond_subscriptions": "已跳过截图中的申购债记录，没有可导入的持仓或成交，本次未写入数据。",
+  "div_buy_paused": "暂停加仓，保留网格等待复核",
+  "div_buy_paused_note": "加仓已暂停，买入网格暂不标记触发。可在编辑网格中恢复。"
 }
