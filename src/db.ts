@@ -1,5 +1,6 @@
 import { isDividendStock, type DividendStock } from './lib/dividendWorkbench';
 import { isDividendSelectionPrinciples, type DividendSelectionPrinciples } from './lib/dividendResearch';
+import { isDividendPricingMethod, type DividendPricingMethod } from './lib/dividendPricing';
 import { isDividendFundPlan, type DividendFundPlan, type DividendStrategy } from './lib/dividendFundPlan';
 import Dexie, { type Table } from 'dexie';
 import i18n from './i18n';
@@ -163,6 +164,7 @@ export interface Settings {
   dividendStrategy?: DividendStrategy;
   dividendFundPlan?: DividendFundPlan;
   dividendSelectionPrinciples?: DividendSelectionPrinciples;
+  dividendPricingMethod?: DividendPricingMethod;
   planTargetTotal?: number;           // optional target total assets for the allocation plan (primary currency)
   onboardingVersion?: number;         // 0 = show first-install guide; current version = completed/skipped
   snapshotFocusAccountIds?: string[]; // optional focus labels in the portable automatic snapshot
@@ -498,7 +500,7 @@ export async function importData(jsonData: string): Promise<boolean> {
   try {
     const data = JSON.parse(jsonData);
     if (!data.accounts || !data.records || !data.settings) return false;
-    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
+    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
     if (data.dividendStocks !== undefined && (!Array.isArray(data.dividendStocks) || !data.dividendStocks.every(isDividendStock))) return false;
 
     await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
@@ -544,6 +546,7 @@ export async function exportToExcel(): Promise<string> {
       snapshotFocusAccountIds: JSON.stringify(row.snapshotFocusAccountIds ?? []),
       dividendFundPlan: row.dividendFundPlan === undefined ? '' : JSON.stringify(row.dividendFundPlan),
       dividendSelectionPrinciples: row.dividendSelectionPrinciples === undefined ? '' : JSON.stringify(row.dividendSelectionPrinciples),
+      dividendPricingMethod: row.dividendPricingMethod === undefined ? '' : JSON.stringify(row.dividendPricingMethod),
     };
   });
   const metadataExport = [{
@@ -839,7 +842,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     };
     sheet = 'Settings';
     const settingsRaw = wsSettings ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsSettings) : [];
-    if (!settingsRaw.every(row => (row.dividendSelectionPrinciples === undefined || row.dividendSelectionPrinciples === '' || (typeof row.dividendSelectionPrinciples === 'string' && isDividendSelectionPrinciples(JSON.parse(row.dividendSelectionPrinciples)))) && (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return fail('invalid_data', sheet);
+    if (!settingsRaw.every(row => (row.dividendPricingMethod === undefined || row.dividendPricingMethod === '' || (typeof row.dividendPricingMethod === 'string' && isDividendPricingMethod(JSON.parse(row.dividendPricingMethod)))) && (row.dividendSelectionPrinciples === undefined || row.dividendSelectionPrinciples === '' || (typeof row.dividendSelectionPrinciples === 'string' && isDividendSelectionPrinciples(JSON.parse(row.dividendSelectionPrinciples)))) && (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return fail('invalid_data', sheet);
     const restoredSettings: Settings[] = settingsRaw.flatMap(row => {
       const categories = parseJson<CategoryDef[]>(row.categories, []);
       const currencies = parseJson<string[]>(row.currencies, []);
@@ -868,6 +871,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         dividendStrategy: row.dividendStrategy === 'funds' ? 'funds' : 'stocks',
         dividendFundPlan: parseJson<DividendFundPlan | undefined>(row.dividendFundPlan, undefined),
         dividendSelectionPrinciples: parseJson<DividendSelectionPrinciples | undefined>(row.dividendSelectionPrinciples, undefined),
+        dividendPricingMethod: parseJson<DividendPricingMethod | undefined>(row.dividendPricingMethod, undefined),
       };
       const targetTotal = Number(row.planTargetTotal);
       if (Number.isFinite(targetTotal) && targetTotal > 0) restored.planTargetTotal = targetTotal;

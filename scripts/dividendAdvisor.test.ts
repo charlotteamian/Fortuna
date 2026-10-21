@@ -10,6 +10,7 @@ import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
 import { askDividendAdvisor, askDividendAdvisorWithActions, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
 import { defaultDividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
+import type { DividendPricingResult } from '../src/lib/dividendPricing.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -92,13 +93,14 @@ test('model snapshot uses readable units and dates rather than implementation fi
   assert.match(prompt, /Do not discuss gaps, old dates or empty holdings in the alternative saved plan/);
 });
 
-test('manual DPS remains an undated assumption and manual shares override linked positions', () => {
+test('manual annual DPS stays separate from latest-report DPS and manual shares override linked positions', () => {
   const data = buildDividendAdvisorContext({ stocks: [{ ...stock, shareMode: 'manual', manualShares: 50, manualDpsMicros: 0 }],
     strategy: 'stocks', budgetMinor: 0, budgetConfigured: false, fundPlan: defaultDividendFundPlan(), positions: new Map() }, now);
   assert.equal(data.stockPlan.budgetMinor, null);
   assert.equal(data.stockPlan.stocks[0].shares, 50);
-  assert.equal(data.stockPlan.stocks[0].dpsMicros, 0);
-  assert.equal(data.stockPlan.stocks[0].dpsSource, 'manual-undated');
+  assert.equal(data.stockPlan.stocks[0].dpsMicros, null);
+  assert.equal(data.stockPlan.stocks[0].annualGridDpsMicros, 0);
+  assert.equal(data.stockPlan.stocks[0].annualGridDpsSource, 'manual-undated');
   assert.match(dividendAdvisorSystemPrompt('zh-CN'), /simplified Chinese/);
   assert.match(dividendAdvisorSystemPrompt('en'), /British English/);
   assert.match(dividendAdvisorSystemPrompt('zh'), /cumulative targets, NOT incremental orders/);
@@ -124,6 +126,30 @@ test('accelerating declines produce a confirmed-preview pause draft even when a 
     transport: async () => ({ status: 200, data: response('openai', '资料待核实。') }),
   });
   assert.equal(stale.actions.length, 0);
+});
+
+test('the assistant cannot turn missing or contradicted valuation inputs into executable model prices', async () => {
+  const data = buildDividendAdvisorContext({ stocks: [stock], strategy: 'stocks', budgetMinor: 10000_00,
+    budgetConfigured: true, positions: new Map(), fundPlan: defaultDividendFundPlan(), research: {
+      generatedAt: now, principles: defaultDividendSelectionPrinciples(), indices: [],
+      stocks: [{ code: stock.code, name: stock.name, checks: [], status: 'unknown', sources: [], issues: [],
+        pricing: { status: 'blocked', canApply: false, grid: [], anchors: {}, annuals: [], blockers: [], warnings: [], normalizationBasis: 'missing', riskClass: 'other', taxBps: 0, gordonYieldBps: 800, sourceUrls: [] } as DividendPricingResult }] } }, now);
+  const levels = [{ yieldBps: 500, portionBps: 3333, priceMinor: 400 }, { yieldBps: 600, portionBps: 3333, priceMinor: 350 }, { yieldBps: 700, portionBps: 3334, priceMinor: 300 }];
+  const run = (buyLevels = levels) => askDividendAdvisorWithActions(config(), data, '复核定价', [], { transport: async () => ({ status: 200,
+    data: response('openai', `资料检查。\n\`\`\`fortuna-actions\n${JSON.stringify([{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true, buyLevels }])}\n\`\`\``) }) });
+  assert.deepEqual((await run()).actions, [{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true }]);
+  data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, status: 'ready', canApply: true, grid: levels } as unknown as DividendPricingResult;
+  assert.deepEqual((await run()).actions[0].buyLevels, levels);
+  assert.equal((await run([{ ...levels[0], priceMinor: 401 }, ...levels.slice(1)])).actions[0].buyLevels, undefined);
+});
+
+test('the method prompt distinguishes single-period dividends, holding-year events and sustainable valuation D1', () => {
+  const prompt = dividendAdvisorSystemPrompt('zh');
+  assert.match(prompt, /latest announced reporting period only/);
+  assert.match(prompt, /upcoming announcements replace their corresponding historical seasonal estimate/);
+  assert.match(prompt, /Do not multiply D1 by growth again/);
+  assert.match(prompt, /Do not append generic investment-risk statements/);
+  assert.match(prompt, /More than 100 basis points between anchors requires a user decision/);
 });
 
 for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} sends text, current snapshot and bounded conversation with the proper authentication`, async () => {

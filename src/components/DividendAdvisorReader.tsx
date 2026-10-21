@@ -31,15 +31,17 @@ interface Props {
   onRetrySave?: () => void;
   renderActions?: (message: DividendAdvisorMessage, index: number) => ReactNode;
   workspacePanel?: (tab: 'chat' | 'research' | 'principles', showChat: () => void) => ReactNode;
+  initialPanel?: 'chat' | 'plan';
+  planManagement?: ReactNode;
 }
 
 const QUICK_QUESTIONS = ['actions', 'allocation', 'explain'] as const;
 
 export default function DividendAdvisorReader({ messages, amountVisible, question, busy, loading, configured, phase, error, retryQuestion,
   checkedAt, refreshLimited, onQuestion, onAsk, onCancel, onClear, onBack, onOpenSettings, conversations = [], activeConversationId,
-  onResumeConversation, onDeleteConversation, onRetrySave, renderActions, workspacePanel }: Props) {
+  onResumeConversation, onDeleteConversation, onRetrySave, renderActions, workspacePanel, initialPanel = 'chat', planManagement }: Props) {
   const { t, i18n } = useTranslation();
-  const [tab, setTab] = useState<'chat' | 'research' | 'principles'>('chat');
+  const [tab, setTab] = useState<'chat' | 'research' | 'principles' | 'plan'>(initialPanel);
   const [deletingId, setDeletingId] = useState('');
   const pageRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
@@ -91,7 +93,7 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
       <button type="button" className="div-advisor-text-button" disabled={busy || loading} onClick={() => { onClear(); setTab('chat'); }}>{t('div_ai_new_chat')}</button>
     </header>
     <nav className="div-advisor-workspace-tabs" aria-label={t('div_ai_workspace_label')}>
-      {(['chat', 'research', 'principles'] as const).map(value => <button type="button" key={value} aria-current={tab === value ? 'page' : undefined}
+      {(['chat', 'research', ...(planManagement ? ['plan'] as const : []), 'principles'] as const).map(value => <button type="button" key={value} aria-current={tab === value ? 'page' : undefined}
         className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{t(`div_ai_tab_${value}`)}</button>)}
     </nav>
     <main className="div-advisor-reader-scroll" aria-label={t('div_ai_conversation')}>
@@ -128,7 +130,8 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
         {checkedAt && <p className="div-advisor-answer-date">{t('div_ai_answer_date', { time: new Date(checkedAt).toLocaleString(i18n.language) })}</p>}
         {refreshLimited && <p className="div-advisor-reading-note">{t('div_ai_refresh_limited')}</p>}
         </>}
-        {workspacePanel?.(tab, () => setTab('chat'))}
+        {workspacePanel?.(tab === 'plan' ? 'chat' : tab, () => setTab('chat'))}
+        {tab === 'plan' && planManagement}
         {phase && <div className="div-advisor-reading-progress" role="status"><span className="div-advisor-thinking-dot" aria-hidden="true" /><p>{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>
           <button type="button" className="div-advisor-text-button" onClick={onCancel}>{t('div_ai_cancel')}</button></div>}
         {error && <div className="div-warning div-advisor-reading-error" role="alert"><p>{error}</p><div className="div-actions">

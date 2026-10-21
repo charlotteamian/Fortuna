@@ -29,7 +29,7 @@ export interface PortableSnapshotInput {
   transactions: HoldingTxn[];
   exchangeRates: ExchangeRate[];
   planStatus: PlanStatus;
-  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan'>;
+  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
   dividendStocks?: DividendStock[];
   generatedAt?: Date;
   trigger?: string;
@@ -387,7 +387,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
 
   return {
     schemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION,
-    dividendWorkbench: { currency: 'CNY', strategy: input.settings.dividendStrategy ?? 'stocks', budgetMinor: input.settings.dividendBudgetMinor ?? null, stocks: input.dividendStocks ?? [], fundPlan: input.settings.dividendFundPlan ?? null },
+    dividendWorkbench: { currency: 'CNY', strategy: input.settings.dividendStrategy ?? 'stocks', budgetMinor: input.settings.dividendBudgetMinor ?? null, stocks: input.dividendStocks ?? [], fundPlan: input.settings.dividendFundPlan ?? null, pricingMethod: input.settings.dividendPricingMethod ?? null, selectionPrinciples: input.settings.dividendSelectionPrinciples ?? null },
     source: 'Fortuna',
     scope: 'all active accounts, liabilities, allocation plan, holdings, and ledgers',
     generatedAt: generatedAt.toISOString(),

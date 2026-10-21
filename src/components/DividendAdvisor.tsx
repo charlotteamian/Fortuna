@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DividendAdvisorContext, DividendAdvisorMessage } from '../lib/dividendAdvisor';
 import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_CONFIG_CHANGED_EVENT, DIVIDEND_AI_SETTINGS_REQUEST_EVENT, dividendAdvisorReaderUrl } from '../lib/dividendAdvisorNavigation';
@@ -15,7 +15,7 @@ import './DividendAdvisor.css';
 
 interface ReaderHistoryState { fortunaDividendReader?: boolean; dividendReaderPreviousHash?: string }
 
-export default function DividendAdvisor({ onUpdated, amountVisible }: { onUpdated: () => Promise<unknown>; amountVisible: boolean }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +31,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible }: { onUpdate
   const [snapshot, setSnapshot] = useState<DividendAdvisorContext | null>(null);
   const [error, setError] = useState('');
   const [readerOpen, setReaderOpen] = useState(() => window.location.hash === DIVIDEND_ADVISOR_READER_HASH);
+  const [initialPanel, setInitialPanel] = useState<'chat' | 'plan'>('chat');
   const mounted = useRef(false);
   const lock = useRef(false);
   const controller = useRef<AbortController | null>(null);
@@ -73,7 +74,8 @@ export default function DividendAdvisor({ onUpdated, amountVisible }: { onUpdate
     return () => { window.removeEventListener('popstate', syncRoute); window.removeEventListener('hashchange', syncRoute); };
   }, []);
 
-  const openReader = () => {
+  const openReader = (panel: 'chat' | 'plan' = 'chat') => {
+    setInitialPanel(panel);
     if (window.location.hash !== DIVIDEND_ADVISOR_READER_HASH) {
       const scroller = entryRef.current?.closest('.app-content');
       if (scroller) originScroll.current = { element: scroller, top: scroller.scrollTop };
@@ -164,7 +166,8 @@ export default function DividendAdvisor({ onUpdated, amountVisible }: { onUpdate
   return <>
     <section className="div-advisor" aria-labelledby="div-ai-title" ref={entryRef}>
       <div className="div-advisor-heading"><span className="div-advisor-badge" aria-hidden="true">AI</span><div><h2 id="div-ai-title">{t('div_ai_title')}</h2></div></div>
-      <div className="div-advisor-entry-actions"><button className="btn btn-primary" disabled={loading} onClick={openReader}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
+      <div className="div-advisor-entry-actions"><button className="btn btn-primary" disabled={loading} onClick={() => openReader()}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
+        {planManagement && <button type="button" className="div-advisor-text-button" onClick={() => openReader('plan')}>{t('div_ai_tab_plan')}</button>}
         {!saved && !loading && <button type="button" className="div-advisor-text-button" onClick={openSettings}>{t('div_ai_go_settings')}</button>}
       </div>
       {busy && !readerOpen && <p className="div-advisor-status" role="status">{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>}
@@ -177,6 +180,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible }: { onUpdate
       onResumeConversation={id => void changeConversation(() => resumeDividendAdvisorConversation(id))}
       onDeleteConversation={id => void changeConversation(() => deleteDividendAdvisorConversation(id))}
       onRetrySave={pendingSave ? () => void changeConversation(loadDividendAdvisorHistory) : undefined}
+      initialPanel={initialPanel} planManagement={planManagement}
       renderActions={message => message.actions?.length ? <DividendAdvisorPlanActions proposals={message.actions} disabled={busy || historyBusy} onUpdated={onUpdated} /> : null}
       workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
         onDiscuss={(stock, research) => { showChat(); void ask(t('div_ai_discuss_stock_question', { name: stock.name, code: stock.code }), { ...research, stocks: [stock] }); }} />}

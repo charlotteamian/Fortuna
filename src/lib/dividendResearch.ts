@@ -1,5 +1,6 @@
 import { parseTencentDividendTrend } from './dividendTrend.ts';
 import { dateInChina, mainlandCode, trailingYearStart } from './dividendWorkbench.ts';
+import { dividendPricingReadable, type DividendPricingResult, type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from './dividendPricing.ts';
 
 /** Editable screening starting points, not a promise of safety or future income. Percentages use basis points. */
 export interface DividendSelectionPrinciples {
@@ -9,12 +10,13 @@ export interface DividendSelectionPrinciples {
   minProfitGrowthBps: number;
   maxDebtAssetBps: number;
   minCashProfitBps: number;
+  minFcfCoverageBps?: number;
   maxPayoutBps: number;
   minDividendYears: number;
   notes?: string;
 }
 export type DividendResearchStatus = 'pass' | 'risk' | 'unknown';
-export type DividendResearchRule = 'yield' | 'roe' | 'revenueGrowth' | 'profitGrowth' | 'debtAsset' | 'cashProfit' | 'payout' | 'dividendYears' | 'financialSector' | 'reportFreshness';
+export type DividendResearchRule = 'yield' | 'roe' | 'revenueGrowth' | 'profitGrowth' | 'debtAsset' | 'cashProfit' | 'payout' | 'dividendYears' | 'financialSector' | 'reportFreshness' | 'fcfCoverage' | 'fiveYearPayout';
 export interface DividendResearchCheck {
   rule: DividendResearchRule;
   status: DividendResearchStatus;
@@ -25,7 +27,7 @@ export interface DividendResearchCheck {
 }
 export interface DividendResearchSource {
   kind: 'technical' | 'financial' | 'dividend';
-  provider: 'Tencent' | 'Eastmoney';
+  provider: 'Tencent' | 'Eastmoney' | 'CSI';
   url: string;
   fetchedAt: number;
   asOf?: string;
@@ -91,6 +93,7 @@ export interface DividendStockResearch {
   status: DividendResearchStatus;
   sources: DividendResearchSource[];
   issues: DividendResearchIssue[];
+  pricing?: DividendPricingResult;
 }
 export interface DividendIndexResearch {
   code: 'sh000001' | 'sh000300' | 'sz399006';
@@ -104,11 +107,14 @@ export interface DividendResearchSnapshot {
   principles: DividendSelectionPrinciples;
   stocks: DividendStockResearch[];
   indices: DividendIndexResearch[];
+  pricingMethod?: DividendPricingMethod;
+  macro?: DividendTreasuryResearch;
+  opportunity?: DividendOpportunityResearch;
 }
 
 export function defaultDividendSelectionPrinciples(): DividendSelectionPrinciples {
   return { minYieldBps: 400, minRoeBps: 800, minRevenueGrowthBps: -1000, minProfitGrowthBps: -1000,
-    maxDebtAssetBps: 7000, minCashProfitBps: 8000, maxPayoutBps: 10000, minDividendYears: 3, notes: '' };
+    maxDebtAssetBps: 7000, minCashProfitBps: 8000, minFcfCoverageBps: 15000, maxPayoutBps: 10000, minDividendYears: 5, notes: '' };
 }
 export function isDividendSelectionPrinciples(raw: unknown): raw is DividendSelectionPrinciples {
   if (!raw || typeof raw !== 'object') return false;
@@ -118,6 +124,7 @@ export function isDividendSelectionPrinciples(raw: unknown): raw is DividendSele
     && integer(p.minRevenueGrowthBps, -10000, 10000) && integer(p.minProfitGrowthBps, -10000, 10000)
     && integer(p.maxDebtAssetBps, 0, 10000) && integer(p.minCashProfitBps, 0, 50000)
     && integer(p.maxPayoutBps, 0, 50000) && integer(p.minDividendYears, 1, 10)
+    && (p.minFcfCoverageBps === undefined || integer(p.minFcfCoverageBps, 0, 100000))
     && (p.notes === undefined || typeof p.notes === 'string' && p.notes.length <= 4000);
 }
 
@@ -243,6 +250,13 @@ export function evaluateDividendResearch(stock: DividendStockResearch, principle
   check('payout', payout, principles.maxPayoutBps, false, annual?.reportDate, staleAnnual);
   if (annual?.loss && !staleAnnual) checks[checks.length - 1] = { rule: 'payout', status: 'risk', reason: 'loss', period: annual.reportDate };
   check('dividendYears', stock.distributions?.consecutiveYears, principles.minDividendYears, true, stock.distributions ? String(stock.distributions.latestCompletedYear) : undefined);
+  if (stock.pricing) {
+    const annuals = stock.pricing.annuals;
+    if (stock.financial?.financialSector) checks.push({ rule: 'fcfCoverage', status: 'unknown', reason: 'sector_specific' });
+    else check('fcfCoverage', annuals[0]?.fcfCoverageBps, principles.minFcfCoverageBps ?? 15000, true, annuals[0]?.reportDate, staleAnnual);
+    check('fiveYearPayout', annuals.length >= 5 && annuals.every(y => y.payoutBps !== undefined) ? Math.max(...annuals.map(y => y.payoutBps!)) : undefined,
+      principles.maxPayoutBps, false, annuals[0]?.reportDate, staleAnnual);
+  }
   checks.push({ rule: 'reportFreshness', status: age === undefined || age > 230 ? 'unknown' : 'pass', period: latest?.reportDate,
     ...(age === undefined ? { reason: 'missing' as const } : age > 230 ? { reason: 'stale' as const } : {}) });
   const status = checks.some(c => c.status === 'risk') ? 'risk' : checks.some(c => c.status === 'unknown') ? 'unknown' : 'pass';
@@ -295,6 +309,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
     dividendYears: 'Consecutive completed fiscal years with implemented cash distributions',
     financialSector: 'Financial-sector capital adequacy, asset quality, solvency and other specialist checks',
     reportFreshness: 'Latest available published report age check',
+    fcfCoverage: 'Free cash flow divided by matching fiscal-year cash dividends, non-financial companies', fiveYearPayout: 'Highest five-year reported payout ratio',
   };
   const reasons = { missing: 'Required evidence missing', sector_specific: 'Industrial-company rule not applied; financial-sector specialist review required',
     stale: 'Evidence is too old for this check: daily prices over ten days, latest report over 230 days, or annual report over fifteen months', loss: 'Non-positive annual attributable profit', not_covered: 'Not covered by these structured provider fields' };
@@ -306,7 +321,8 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
   const p = snapshot.principles;
   return {
     'Research downloaded at': new Date(snapshot.generatedAt).toISOString(),
-    'Evidence scope': 'Structured Tencent daily prices and Eastmoney financial/distribution fields only. No original financial-report text, audit opinion, announcements, segment notes or live news was downloaded. Do not claim a full annual/quarterly-report interpretation. Financial periods are cumulative year-to-date; compare year-on-year growth, not unmatched quarter amounts. Technical signals concern pacing only and do not establish or invalidate a long-term investment thesis.',
+    'Pricing method': snapshot.pricingMethod ? { 'Required total return percent': percent(snapshot.pricingMethod.requiredReturnBps), 'Growth percent': percent(snapshot.pricingMethod.growthBps), 'Safety margin percent': percent(snapshot.pricingMethod.safetyMarginBps), 'Historical percentile percent': percent(snapshot.pricingMethod.historicalPercentileBps), 'Selected holding period': snapshot.pricingMethod.holdingPeriod } : null,
+    'Evidence scope': 'Structured Tencent daily/monthly prices, Eastmoney financial/cash-flow/distribution/Treasury fields and the explicitly attached official CSI dividend-index yield. No original financial-report text, audit opinion, segment notes or live news was downloaded. Do not claim a full annual/quarterly-report interpretation. Financial periods are cumulative year-to-date; compare year-on-year growth, not unmatched quarter amounts. Technical signals concern pacing only and do not establish or invalidate a long-term investment thesis.',
     'Editable screening principles': {
       'Minimum trailing cash dividend yield percent': percent(p.minYieldBps), 'Minimum annual weighted ROE percent': percent(p.minRoeBps),
       'Minimum revenue growth year on year percent': percent(p.minRevenueGrowthBps), 'Minimum attributable profit growth year on year percent': percent(p.minProfitGrowthBps),
@@ -321,6 +337,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
       'Code': stock.code, 'Name': stock.name, 'Sector': stock.financial?.sector ?? null,
       'Numeric screening result': { pass: 'Available configured numeric rules met; this is not a safety guarantee', risk: 'One or more configured numeric rules breached', unknown: 'Required evidence incomplete; do not treat as passing or delete solely for missing data' }[stock.status],
       'Daily technical position': technical(stock.technical),
+      'Document-based dividend pricing': stock.pricing ? dividendPricingReadable(stock.pricing) : null,
       'Latest cumulative report': period(stock.financial?.latest),
       'Latest completed annual report': period(stock.financial?.annual),
       'Recent eight reported periods': stock.financial?.periods.slice(0, 8).map(period) ?? [],

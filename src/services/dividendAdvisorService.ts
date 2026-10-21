@@ -150,6 +150,21 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   const context = args[1];
   const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
   const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
+  // Numerical drafts must come from the verified method, never a model's guess.
+  // Pausing is independent of valuation and remains available when inputs are missing.
+  result.actions = result.actions.flatMap(action => {
+    if (!action.buyLevels && !action.sellLevels) return [action];
+    const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
+    const buyMatches = pricing?.canApply && pricing.status === 'ready' && action.buyLevels && action.buyLevels.length === pricing.grid.length
+      && action.buyLevels.every((level, index) => level.priceMinor === pricing.grid[index].priceMinor
+        && level.yieldBps === pricing.grid[index].yieldBps);
+    const { buyLevels, sellLevels, ...pause } = action;
+    // The reference method defines buy levels only. A separately supplied sell
+    // ladder needs a user's manual plan review rather than model fabrication.
+    void buyLevels; void sellLevels;
+    if (buyMatches) return [{ ...pause, buyLevels: action.buyLevels }];
+    return pause.buyPaused === undefined ? [] : [pause];
+  });
   // Make the user's pacing rule deterministic even if a provider omits a draft.
   // A draft always needs a fresh preview and a separate confirmation before writing.
   if (context.activeStrategy === 'stocks') {

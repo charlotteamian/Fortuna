@@ -6,6 +6,8 @@ import type { DividendImportRow } from '../lib/dividendImport';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { defaultDividendFundPlan } from '../lib/dividendFundPlan';
+import { enrichDividendPaymentDates, isDividendDataV2 } from '../lib/dividendForecast';
+import { previewDividendRiskRemoval } from './dividendAdvisorActionsService';
 
 export async function loadDividendWorkbench() {
   await initializeSettings();
@@ -39,7 +41,8 @@ export async function saveDividendStock(stock: DividendStock) {
   requestPortableSnapshot('dividend-stock');
 }
 export async function deleteDividendStock(code: string, redistribute = true) {
-  await db.transaction('rw', db.dividendStocks, async () => {
+  await db.transaction('rw', db.dividendStocks, db.holdings, db.holdingTxns, async () => {
+    if ((await previewDividendRiskRemoval([code])).protected.length) throw new Error('DIVIDEND_STOCK_HELD');
     const stocks = await db.dividendStocks.toArray();
     const remaining = redistribute ? redistributeDividendWeights(stocks, code) : stocks.filter(stock => stock.code !== code);
     await db.dividendStocks.delete(code);
@@ -132,24 +135,34 @@ async function readSource(url: string, proxy: string): Promise<string> {
   return res.text();
 }
 export function dividendSourceUrl(code: string): string {
-  const query = new URLSearchParams({ type: 'RPT_SHAREBONUS_DET', sty: 'ALL', filter: `(SECURITY_CODE="${code}")`, p: '1', ps: '500', sr: '-1', st: 'EX_DIVIDEND_DATE', source: 'HSF10', client: 'PC' });
+  const query = new URLSearchParams({ type: 'RPT_SHAREBONUS_DET', sty: 'ALL', filter: `(SECURITY_CODE="${code}")`, p: '1', ps: '500', sr: '-1', st: 'REPORT_DATE', source: 'HSF10', client: 'PC' });
   return `https://datacenter.eastmoney.com/securities/api/data/get?${query}`;
 }
 
 /** Independent failures keep their dated cache; manual DPS and user edits are never overwritten. */
 export async function refreshDividendStock(code: string): Promise<boolean> {
   const url = dividendSourceUrl(code);
-  const [quote, dividend] = await Promise.allSettled([
+  const schedulePath = `/PC_HSF10/BonusFinancing/PageAjax?code=${quoteSymbol(code).toUpperCase()}`;
+  const [quote, dividend, schedule] = await Promise.allSettled([
     readSource(`https://qt.gtimg.cn/q=${quoteSymbol(code)}`, `/qt-api/q=${quoteSymbol(code)}`).then(text => parseDividendQuote(text, code)),
     readSource(url, url.replace('https://datacenter.eastmoney.com', '/dividend-api')).then(text => parseDividendResponse(JSON.parse(text), code)),
+    readSource(`https://emweb.eastmoney.com${schedulePath}`, `/dividend-schedule-api${schedulePath}`).then(text => JSON.parse(text) as unknown),
   ]);
   const update: Partial<DividendStock> = {};
   if (quote.status === 'fulfilled') { update.quote = quote.value; update.quoteFailedAt = undefined; }
   else update.quoteFailedAt = Date.now();
-  if (dividend.status === 'fulfilled') { update.dividend = dividend.value; update.dividendFailedAt = undefined; }
+  if (dividend.status === 'fulfilled') {
+    update.dividend = dividend.value;
+    if (schedule.status === 'fulfilled') {
+      try { update.dividend = enrichDividendPaymentDates(dividend.value, schedule.value, code); }
+      catch { update.dividend.scheduleFailedAt = Date.now(); }
+    } else update.dividend.scheduleFailedAt = Date.now();
+    update.dividendFailedAt = undefined;
+    if (!isDividendDataV2(update.dividend) || !Number.isSafeInteger(update.dividend.dpsMicros)) { delete update.dividend; update.dividendFailedAt = Date.now(); }
+  }
   else update.dividendFailedAt = Date.now();
   await db.dividendStocks.update(code, update);
-  return quote.status === 'fulfilled' && dividend.status === 'fulfilled';
+  return quote.status === 'fulfilled' && dividend.status === 'fulfilled' && update.dividendFailedAt === undefined;
 }
 export async function refreshDividendStocks(codes: string[], onProgress: (done: number, total: number) => void) {
   let cursor = 0, done = 0, failed = 0;

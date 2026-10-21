@@ -138,4 +138,28 @@
 .div-ai-grid-comparison details { margin-top: 10px; }
 .div-ai-grid-comparison details > summary { font-size: 11px; font-weight: 500; }
 .div-ai-grid-levels { margin: 0; padding-left: 14px; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.div-ai-pricing-card > summary { color: var(--asset-color); }
+.div-ai-pricing-step { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.div-ai-pricing-step h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+.div-ai-pricing-step p { color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.div-ai-pricing-step > strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.div-ai-pricing-anchors { display: grid; gap: 8px; margin: 10px 0; }
+.div-ai-pricing-anchors > div { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; }
+.div-ai-pricing-anchors dt { color: var(--text-secondary); }
+.div-ai-pricing-anchors dd { margin: 0; font-variant-numeric: tabular-nums; }
+.div-ai-pricing-validation, .div-ai-pricing-gap-list { margin-top: 12px; }
+.div-ai-pricing-gap-list ul { display: grid; gap: 7px; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.div-ai-pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
+.div-ai-pricing-grid > div { display: flex; flex-direction: column; gap: 7px; padding: 10px; border: 1px solid var(--border); border-radius: 9px; }
+.div-ai-pricing-grid span { color: var(--text-secondary); font-size: 11px; }
+.div-ai-pricing-grid strong { font-size: 15px; overflow-wrap: anywhere; }
+.div-ai-pricing-grid small { color: var(--text-secondary); font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; }
+.div-ai-pricing-editor > .div-ai-principles-form { margin: 14px 0; }
+.div-ai-pricing-editor .div-method { margin: 14px 0; }
+.div-ai-pricing-editor select, .div-ai-principles-form select { width: 100%; padding: 10px; min-width: 0; font-size: 12px; }
+.div-ai-pricing-code { display: grid; gap: 6px; max-width: 180px; margin: 12px 0; color: var(--text-secondary); font-size: 12px; }
+.div-ai-override-codes { display: flex; flex-wrap: wrap; gap: 8px; }
+.div-advisor-reader .div-plan-manager { font-size: 13px; }
+.div-advisor-reader .div-plan-manager .btn { min-height: 38px; padding: 8px 10px; font-size: 12px; }
+@media (max-width: 400px) { .div-advisor-workspace-tabs { gap: 2px; padding-inline: 10px; } .div-advisor-workspace-tabs button { padding: 7px 4px; font-size: 12px; } .div-ai-pricing-grid { grid-template-columns: 1fr; } .div-ai-pricing-grid > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; } .div-ai-pricing-grid small { grid-column: 1 / -1; } }
 @media (max-width: 400px) { .div-ai-grid-comparison { grid-template-columns: 1fr; } .div-ai-grid-comparison > section + section { border-top: 1px solid var(--border); } .div-ai-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .div-ai-principles-form { gap: 14px 10px; } }

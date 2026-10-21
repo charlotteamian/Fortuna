@@ -8,6 +8,7 @@ import type { Account, Holding, HoldingTxn } from '../src/db.ts';
 import type { DividendStock, GridLevel } from '../src/lib/dividendWorkbench.ts';
 import type { DividendPlanProposal } from '../src/lib/dividendAdvisorActions.ts';
 import type { DividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
+import { defaultDividendPricingMethod, type DividendPricingMethod } from '../src/lib/dividendPricing.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -27,7 +28,7 @@ const { db, initializeSettings, updateSettings, exportData, importData, exportTo
 const { isDividendPlanProposal, parseDividendAdvisorActions } = await import('../src/lib/dividendAdvisorActions.ts');
 const { defaultDividendSelectionPrinciples } = await import('../src/lib/dividendResearch.ts');
 const { previewDividendPlanChange, applyDividendPlanChange, previewDividendRiskRemoval, removeDividendRiskStocks,
-  loadDividendSelectionPrinciples, saveDividendSelectionPrinciples } = await import('../src/services/dividendAdvisorActionsService.ts');
+  loadDividendSelectionPrinciples, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } = await import('../src/services/dividendAdvisorActionsService.ts');
 
 function stock(code = '601398', updates: Partial<DividendStock> = {}): DividendStock {
   return { code, name: `Stock ${code}`, group: 'watch', weightBps: 2500, shareMode: 'linked', manualShares: 0, lotSize: 100,
@@ -139,7 +140,7 @@ test('partial-grid confirmation validates the final saved grid, including opposi
   const draft = proposal({ buyLevels: undefined, sellLevels: [{ yieldBps: 450, portionBps: 1000, priceMinor: 650 }] });
   assert.equal(isDividendPlanProposal(draft), true);
   const before = await state();
-  await assert.rejects(previewDividendPlanChange(draft), /INVALID_DIVIDEND_PROPOSAL/);
+  await assert.rejects(previewDividendPlanChange(draft), /DIVIDEND_GRID_SIDES_CROSS/);
   assert.deepEqual(await state(), before);
 });
 
@@ -147,7 +148,7 @@ test('mixed price and yield sides are checked against the recorded DPS before be
   const draft = proposal({ buyLevels: [{ yieldBps: 500, portionBps: 3000 }], sellLevels: [{ yieldBps: 600, portionBps: 1000, priceMinor: 550 }] });
   assert.equal(isDividendPlanProposal(draft), true);
   const before = await state();
-  await assert.rejects(previewDividendPlanChange(draft), /INVALID_DIVIDEND_PROPOSAL/);
+  await assert.rejects(previewDividendPlanChange(draft), /DIVIDEND_GRID_SIDES_CROSS/);
   assert.deepEqual(await state(), before);
 });
 
@@ -303,6 +304,55 @@ test('invalid screening thresholds reject in settings writes and JSON or Excel r
     const settingsRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets.Settings);
     settingsRows[0].dividendSelectionPrinciples = JSON.stringify(principles);
     book.Sheets.Settings = XLSX.utils.json_to_sheet(settingsRows);
+    assert.equal(await importFromExcel(XLSX.write(book, { type: 'base64', bookType: 'xlsx' })), false);
+    assert.deepEqual(await state(), before);
+  }
+});
+
+test('pricing method and documented stock normalisation survive JSON and Excel replacement', async () => {
+  assert.deepEqual(await loadDividendPricingMethod(), defaultDividendPricingMethod());
+  const method: DividendPricingMethod = { ...defaultDividendPricingMethod(), requiredReturnBps: 900, growthBps: 100,
+    safetyMarginBps: 2000, opportunityCostBps: 550, opportunityCostAsOf: '2026-10-21', opportunityCostSource: 'Dated comparable observation',
+    stockOverrides: { '601398': { riskClass: 'bank', normalizedEpsMicros: 950000, normalizationAsOf: '2026-10-21', normalizationSource: 'User reviewed three annual reports' } } };
+  await saveDividendPricingMethod(method);
+  const json = await exportData();
+  const excel = await exportToExcel();
+  assert.deepEqual(JSON.parse(json).settings[0].dividendPricingMethod, method);
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await saveDividendPricingMethod(defaultDividendPricingMethod());
+    assert.equal(await restore(), true);
+    assert.deepEqual(await loadDividendPricingMethod(), method);
+    assert.equal(await db.dividendStocks.count(), 3);
+  }
+});
+
+test('manual plan-management removal uses the same holding protection and leaves allocations untouched', async () => {
+  const { deleteDividendStock } = await import('../src/services/dividendService.ts');
+  await db.dividendStocks.update('601398', {manualShares: 100});
+  const before = await state();
+  await assert.rejects(deleteDividendStock('601398'), /DIVIDEND_STOCK_HELD/);
+  assert.deepEqual(await state(), before);
+  await db.accounts.add(account('archived-broker', {archivedAt:1}));
+  const held=holding('600036','archived-broker');await db.holdings.add(held);await db.holdingTxns.add(trade(held));
+  await assert.rejects(deleteDividendStock('600036',false), /DIVIDEND_STOCK_HELD/);
+  assert.equal((await db.dividendStocks.get('600036'))?.weightBps,1500);
+});
+
+test('malformed pricing method never replaces saved settings through either backup path', async () => {
+  const defaults = defaultDividendPricingMethod();
+  const json = await exportData(), excel = await exportToExcel(), before = await state();
+  const invalid: unknown[] = [null, {}, [], { ...defaults, requiredReturnBps: '800' }, { ...defaults, growthBps: 301 },
+    { ...defaults, historicalPercentileBps: 6900 }, { ...defaults, safetyMarginBps: 500 },
+    { ...defaults, riskPremiumBps: { bank: 225 } }, { ...defaults, stockOverrides: { '601398': { normalizedEpsMicros: -1 } } }];
+  for (const method of invalid) {
+    await assert.rejects(saveDividendPricingMethod(method as DividendPricingMethod), /INVALID_DIVIDEND_PRICING_METHOD/);
+    const payload = JSON.parse(json);
+    payload.settings[0].dividendPricingMethod = method;
+    assert.equal(await importData(JSON.stringify(payload)), false);
+    const book = XLSX.read(excel, { type: 'base64' });
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets.Settings);
+    rows[0].dividendPricingMethod = JSON.stringify(method);
+    book.Sheets.Settings = XLSX.utils.json_to_sheet(rows);
     assert.equal(await importFromExcel(XLSX.write(book, { type: 'base64', bookType: 'xlsx' })), false);
     assert.deepEqual(await state(), before);
   }

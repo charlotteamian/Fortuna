@@ -3,9 +3,18 @@ import type { Account, Holding, HoldingTxn } from '../db';
 import { computeHoldingPosition } from './holdingPosition.ts';
 import { getHoldingMode } from './productPortfolio.ts';
 import { mainlandQuoteSymbol, parseDividendMarketQuote } from './dividendQuote.ts';
+import { gridAnnualDps, isDividendDataV2, latestReportDividend, parseDividendAnnouncements, type DividendAnnouncement } from './dividendForecast.ts';
+export { latestReportDividend, forecastHoldingYearDividends, gridAnnualDps } from './dividendForecast.ts';
+export type { DividendAnnouncement, LatestReportDividend, HoldingYearDividendEvent, HoldingYearDividendForecast } from './dividendForecast.ts';
 
 export interface DividendPayment { exDate: string; reportDate: string; dpsMicros: number }
 export interface DividendData {
+  /** Absent on legacy TTM caches; those remain importable but cannot serve the new display. */
+  schemaVersion?: 2;
+  announcements?: DividendAnnouncement[];
+  scheduleSourceUrl?: string;
+  scheduleFetchedAt?: number;
+  scheduleFailedAt?: number;
   asOf: string; windowStart: string; dpsMicros: number; payments: DividendPayment[];
   pending?: { reportDate: string; dpsMicros: number; status: string };
   financial?: { reportDate: string; bvpsMicros?: number; profitGrowthPercent?: number };
@@ -69,22 +78,19 @@ export function parseDividendResponse(raw: unknown, code: string, asOf = dateInC
   const envelope = raw as { success?: boolean; result?: { data?: Record<string, unknown>[]; pages?: number } };
   if (envelope?.success !== true || !Array.isArray(envelope.result?.data)) throw new Error('DIVIDEND_SOURCE_INVALID');
   const rows = envelope.result.data;
-  // A truncated response cannot establish a complete trailing-year total.
+  // A truncated response cannot establish a complete event history.
   if ((envelope.result.pages ?? 1) > 1) throw new Error('DIVIDEND_SOURCE_INCOMPLETE');
   if (rows.some(row => String(row.SECURITY_CODE) !== code)) throw new Error('DIVIDEND_SYMBOL_MISMATCH');
   const windowStart = trailingYearStart(asOf);
+  const announcements = parseDividendAnnouncements(rows, code, asOf);
   const payments: DividendPayment[] = [];
   const seen = new Set<string>();
   let pending: DividendData['pending'];
-  for (const row of rows) {
-    const amount = finiteNumber(row.PRETAX_BONUS_RMB);
-    if (amount === null || amount < 0) continue;
-    const status = String(row.ASSIGN_PROGRESS ?? '');
-    const exDate = String(row.EX_DIVIDEND_DATE ?? '').slice(0, 10);
-    const reportDate = String(row.REPORT_DATE ?? '').slice(0, 10);
-    const dpsMicros = Math.round(amount * 100000); // RMB per 10 shares → RMB/share × 1e6
-    if (!['实施', '实施分配'].includes(status) || !/^\d{4}-\d{2}-\d{2}$/.test(exDate) || exDate > asOf) {
-      if (!/取消|不分配|终止/.test(status) && amount > 0 && (!pending || reportDate > pending.reportDate)) {
+  for (const announcement of announcements) {
+    const { status, exDate, reportDate, dpsMicros, stage } = announcement;
+    if (dpsMicros === undefined) continue;
+    if (stage !== 'implemented' || !exDate || exDate > asOf) {
+      if (!['cancelled', 'none'].includes(stage) && dpsMicros > 0 && (!pending || reportDate > pending.reportDate)) {
         pending = { reportDate, dpsMicros, status };
       }
       continue;
@@ -95,13 +101,13 @@ export function parseDividendResponse(raw: unknown, code: string, asOf = dateInC
     seen.add(key);
     payments.push({ exDate, reportDate, dpsMicros });
   }
-  if (pending && rows.some(row => ['实施', '实施分配'].includes(String(row.ASSIGN_PROGRESS)) && String(row.REPORT_DATE).slice(0, 10) === pending!.reportDate && String(row.EX_DIVIDEND_DATE).slice(0, 10) <= asOf)) pending = undefined;
-  const latestReport = [...rows].filter(row => String(row.REPORT_DATE ?? '').slice(0,10) <= asOf && (finiteNumber(row.BVPS) !== null || finiteNumber(row.PNP_YOY_RATIO) !== null)).sort((a,b) => String(b.REPORT_DATE).localeCompare(String(a.REPORT_DATE)))[0];
+  const disclosedPeriods = new Set(announcements.map(item => item.reportDate));
+  const latestReport = [...rows].filter(row => disclosedPeriods.has(String(row.REPORT_DATE ?? '').slice(0,10)) && (finiteNumber(row.BVPS) !== null || finiteNumber(row.PNP_YOY_RATIO) !== null)).sort((a,b) => String(b.REPORT_DATE).localeCompare(String(a.REPORT_DATE)))[0];
   const bvps = latestReport ? finiteNumber(latestReport.BVPS) : null;
   const profitGrowth = latestReport ? finiteNumber(latestReport.PNP_YOY_RATIO) : null;
   const financial = latestReport ? { reportDate: String(latestReport.REPORT_DATE).slice(0,10), bvpsMicros: bvps !== null && bvps > 0 ? Math.round(bvps*1e6) : undefined, profitGrowthPercent: profitGrowth ?? undefined } : undefined;
   payments.sort((a, b) => b.exDate.localeCompare(a.exDate));
-  return { asOf, windowStart, dpsMicros: payments.reduce((sum, row) => sum + row.dpsMicros, 0), payments, pending, financial, fetchedAt: now };
+  return { schemaVersion: 2, announcements, asOf, windowStart, dpsMicros: payments.reduce((sum, row) => sum + row.dpsMicros, 0), payments, pending, financial, fetchedAt: now };
 }
 
 export function parseDividendQuote(text: string, code: string, now = Date.now()): DividendQuote {
@@ -127,7 +133,7 @@ export function linkedDividendPositions(accounts: Account[], holdings: Holding[]
   }
   return out;
 }
-export function effectiveDps(stock: DividendStock): number | undefined { return stock.manualDpsMicros ?? stock.dividend?.dpsMicros; }
+export function effectiveDps(stock: DividendStock): number | undefined { return latestReportDividend(stock)?.dpsMicros; }
 export function dividendEstimateMinor(shares: number, dpsMicros: number): number { return Math.round(shares * dpsMicros / 10000); }
 export function stockBudgetMinor(budgetMinor: number, weightBps: number): number { return Math.round(budgetMinor * weightBps / 10000); }
 
@@ -157,11 +163,11 @@ export function scaleDividendWeights(stocks: DividendStock[], targetWeight = 100
   return allocations.map(({ stock, weightBps }) => ({ ...stock, weightBps }));
 }
 
-export function buildGrid(stock: DividendStock, budgetMinor: number, shares: number, side: 'buy' | 'sell') {
+export function buildGrid(stock: DividendStock, budgetMinor: number, shares: number, side: 'buy' | 'sell', asOf = dateInChina()) {
   let cumulative = 0;
   let cumulativeBuyShares = 0;
   let completePrices = true;
-  const dps = effectiveDps(stock);
+  const dps = gridAnnualDps(stock, asOf);
   const levels = side === 'buy' ? stock.buyLevels ?? BUY_LEVELS : stock.sellLevels ?? SELL_LEVELS;
   return levels.map(level => {
     cumulative += level.portionBps;
@@ -184,5 +190,5 @@ export function isDividendStock(raw: unknown): raw is DividendStock {
   return typeof s.code === 'string' && mainlandCode(s.code) === s.code && typeof s.name === 'string' && s.name.trim().length > 0 && ['core', 'watch', 'hidden'].includes(s.group) && integer(s.weightBps, 10000) && ['linked', 'manual'].includes(s.shareMode) && Number.isFinite(s.manualShares) && s.manualShares >= 0 && integer(s.lotSize, 10000) && s.lotSize > 0 && (s.manualDpsMicros === undefined || integer(s.manualDpsMicros)) && validLevels(s.buyLevels) && validLevels(s.sellLevels)
     && (s.buyPaused === undefined || typeof s.buyPaused === 'boolean')
     && (s.quote === undefined || integer(s.quote.priceMinor) && s.quote.priceMinor > 0 && typeof s.quote.date === 'string' && integer(s.quote.fetchedAt))
-    && (s.dividend === undefined || integer(s.dividend.dpsMicros) && typeof s.dividend.asOf === 'string' && typeof s.dividend.windowStart === 'string' && integer(s.dividend.fetchedAt) && Array.isArray(s.dividend.payments) && s.dividend.payments.every(p => typeof p.exDate === 'string' && typeof p.reportDate === 'string' && integer(p.dpsMicros)));
+    && (s.dividend === undefined || integer(s.dividend.dpsMicros) && typeof s.dividend.asOf === 'string' && typeof s.dividend.windowStart === 'string' && integer(s.dividend.fetchedAt) && Array.isArray(s.dividend.payments) && s.dividend.payments.every(p => typeof p.exDate === 'string' && typeof p.reportDate === 'string' && integer(p.dpsMicros)) && isDividendDataV2(s.dividend));
 }

@@ -4,6 +4,15 @@ All notable user-facing changes are documented here.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-21
+
+- 按用户红利定价方法拆开可持续分红 D₁、收益率三锚、Gordon／PB–ROE 校验、安全边际及三档网格；参数与归一收益依据可在助手中保存。
+- 自动补取国债、历史分红与未复权价格、财务和现金流资料，按来源与日期呈现计算链和具体缺口。
+- 红利页改为最新报告单期分红，并单独预测从今天起持有一年的分红；公告替换同一期历史预测，已除权事件不重复领取，未披露金额不回退旧 TTM。
+- 主页面精简为行情、单期分红和一年预测；预算、股票和基金策略、网格等管理收进红利助手的计划管理页签。
+- 保留历史聊天、个股与指数节奏分析、风险检查及有持仓保护；网格预览确认后反写，模型不能凭空写入未通过方法校验的价格。
+- 正式版本规则：功能大更新递增主版本，修复递增末位；Android、iOS 内部构建号继续递增。
+
 ## [1.6.1] - 2026-10-08
 
 - Use public-facing strategy explanations in Chinese and English, retaining editable entry references and the existing holding approaches.

@@ -6,16 +6,15 @@ import { getHoldingMode } from '../lib/productPortfolio';
 import { loadDividendWorkbench, refreshDividendStock } from './dividendService';
 import { refreshDividendMarketQuotes } from './dividendQuoteService';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
-import { loadDividendSelectionPrinciples } from './dividendAdvisorActionsService';
+import { loadDividendSelectionPrinciples, loadDividendPricingMethod } from './dividendAdvisorActionsService';
 import { fetchDividendResearch } from './dividendResearchService';
 
 /** Refresh on each explicit question. Off-exchange NAV/high/index-yield remain dated manual inputs. */
 export async function prepareDividendAdvisorContext(onProgress: (done: number, total: number) => void) {
-  const [initial, principles] = await Promise.all([loadDividendWorkbench(), loadDividendSelectionPrinciples()]);
-  const researchTask = fetchDividendResearch([...initial.stocks].sort((a, b) => Number(initial.positions.has(b.code)) - Number(initial.positions.has(a.code)) || b.weightBps - a.weightBps), principles);
+  const [initial, principles, pricingMethod] = await Promise.all([loadDividendWorkbench(), loadDividendSelectionPrinciples(), loadDividendPricingMethod()]);
+  const researchTask = fetchDividendResearch([...initial.stocks].sort((a, b) => Number(initial.positions.has(b.code)) - Number(initial.positions.has(a.code)) || b.weightBps - a.weightBps), principles, { pricingMethod });
   const today = dateInChina();
-  const staleDividends = initial.stocks.filter(stock => stock.manualDpsMicros === undefined
-    && (!stock.dividend || stock.dividend.asOf !== today || stock.dividendFailedAt !== undefined));
+  const staleDividends = initial.stocks.filter(stock => !stock.dividend || stock.dividend.schemaVersion !== 2 || stock.dividend.asOf !== today || stock.dividendFailedAt !== undefined);
   // Start quotes immediately. Stop starting dividend requests after 15 seconds;
   // the last existing 10s-connect/10s-read request completes within its own bound.
   // This avoids an unbounded serial queue for large workbenches.

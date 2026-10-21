@@ -133,6 +133,7 @@ test('matching report-year dividends and EPS establish payout, missing reports n
   const financial = parseDividendFinancialResearch(envelope([financialRow(), financialRow({ REPORT_DATE: '2025-12-31', NOTICE_DATE: '2026-03-30', ROEJQ: 12, EPSJB: 2 })]), '600036', '2026-10-21');
   const distributions = parseDividendDistributionResearch(envelope([
     dividendRow('2025-12-31', '2026-06-01'), dividendRow('2024-12-31', '2025-06-01'), dividendRow('2023-12-31', '2024-06-01'),
+    dividendRow('2022-12-31', '2023-06-01'), dividendRow('2021-12-31', '2022-06-01'),
   ]), '600036', '2026-10-21');
   const result = evaluateDividendResearch(research({ financial, distributions, yieldBps: 500 }), principles, now);
   assert.equal(result.status, 'pass');
@@ -178,9 +179,9 @@ test('research service keeps individual source failures unknown and bounds candi
   globalThis.fetch = async () => { requests++; throw new TypeError('offline fixture'); };
   try {
     const result = await fetchDividendResearch([{ code: '600036', name: 'First' }, { code: '000001', name: 'Deferred' }], principles, { maxStocks: 1 });
-    assert.equal(requests, 6); // Three independent company sources and three index sources.
+    assert.equal(requests, 15); // Five company feeds, three indices, six treasury pages and one official index workbook.
     assert.equal(result.stocks[0].status, 'unknown');
-    assert.equal(result.stocks[0].issues.length, 3);
+    assert.equal(result.stocks[0].issues.length, 5);
     assert.ok(result.stocks[0].issues.every(issue => issue.reason === 'request_failed'));
     assert.ok(result.stocks[1].issues.every(issue => issue.reason === 'deferred'));
     assert.equal(result.indices.length, 3);

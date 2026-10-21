@@ -4,6 +4,19 @@ import { isDividendPlanProposal, type DividendPlanProposal } from '../lib/divide
 import { computeHoldingPosition } from '../lib/holdingPosition.ts';
 import { defaultDividendSelectionPrinciples, isDividendSelectionPrinciples, type DividendSelectionPrinciples } from '../lib/dividendResearch.ts';
 import { requestPortableSnapshot } from './portableSnapshotEvents.ts';
+import { defaultDividendPricingMethod, isDividendPricingMethod, type DividendPricingMethod } from '../lib/dividendPricing.ts';
+
+export async function loadDividendPricingMethod(): Promise<DividendPricingMethod> {
+  await initializeSettings();
+  const settings = await db.settings.get('main');
+  return settings?.dividendPricingMethod ?? defaultDividendPricingMethod();
+}
+
+export async function saveDividendPricingMethod(method: DividendPricingMethod) {
+  if (!isDividendPricingMethod(method)) throw new Error('INVALID_DIVIDEND_PRICING_METHOD');
+  await updateSettings({ dividendPricingMethod: structuredClone(method) });
+  requestPortableSnapshot('dividend-pricing-method');
+}
 
 export async function loadDividendSelectionPrinciples(): Promise<DividendSelectionPrinciples> {
   await initializeSettings();
@@ -47,7 +60,7 @@ function validateCombinedGrid(stock: DividendStock, proposal: DividendPlanPropos
     }
   }
   const buyPrices = buys.flatMap(row => row.priceMinor ? [row.priceMinor] : []), sellPrices = sells.flatMap(row => row.priceMinor ? [row.priceMinor] : []);
-  if (buyPrices.length && sellPrices.length && Math.max(...buyPrices) >= Math.min(...sellPrices)) throw new Error('INVALID_DIVIDEND_PROPOSAL');
+  if (buyPrices.length && sellPrices.length && Math.max(...buyPrices) >= Math.min(...sellPrices)) throw new Error('DIVIDEND_GRID_SIDES_CROSS');
 }
 export async function applyDividendPlanChange(proposal: DividendPlanProposal, expectedFingerprint: string) {
   if (!isDividendPlanProposal(proposal)) throw new Error('INVALID_DIVIDEND_PROPOSAL');

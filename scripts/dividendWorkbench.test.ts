@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
+import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
 import { repairPlanReferences } from '../src/lib/planReferences.ts';
 import type { Account, Holding, HoldingTxn, PlanItem, PlanTarget } from '../src/db.ts';
-const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
+const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, NOTICE_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
 const response = (data: unknown[], pages = 1) => ({ success: true, result: { data, pages } });
 
-test('TTM uses a complete calendar year, excludes proposals/future/cancelled and deduplicates per period', () => {
+test('historical audit total excludes proposals/future/cancelled and deduplicates per period', () => {
   const data = parseDividendResponse(response([
     row('2026-05-13', 1.689), row('2025-12-15', 1.414), row('2025-10-01', 0.5),
     row('2026-05-13', 1.689), row('2025-09-25', 9), row('2025-07-14', 1.646),
@@ -14,7 +14,7 @@ test('TTM uses a complete calendar year, excludes proposals/future/cancelled and
   ]), '601398', '2026-09-25', 100);
   assert.equal(data.dpsMicros, 360300);
   assert.equal(data.payments.length, 3);
-  assert.equal(data.pending?.dpsMicros, 800000);
+  assert.equal(data.pending?.dpsMicros, 500000);
   assert.equal(dividendEstimateMinor(1000, data.dpsMicros), 36030);
 });
 test('missing/broken/truncated source data is not a fabricated zero; genuine empty window is zero', () => {
@@ -41,7 +41,8 @@ test('budgets scale, grid shares round down, no sell signal without holdings, ma
   stock.manualDpsMicros = 500000;
   stock.dividend = { asOf: '2026-09-25', windowStart: '2025-09-25', dpsMicros: 200000, payments: [], fetchedAt: 1 };
   stock.quote = { priceMinor: 900, date: '2026-09-25 15:00', fetchedAt: 1 };
-  assert.equal(effectiveDps(stock), 500000);
+  assert.equal(effectiveDps(stock), undefined);
+  assert.equal(gridAnnualDps(stock), 500000);
   assert.equal(stockBudgetMinor(10000000, stock.weightBps), 500000);
   const buy = buildGrid(stock, 500000, 0, 'buy');
   assert.equal(buy[0].priceMinor, 1000); assert.equal(buy[0].targetShares, 200);

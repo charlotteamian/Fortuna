@@ -507,7 +507,7 @@ test('market refresh preserves manual edits, keeps dated cache on failure and cl
     assert.ok(failed?.quoteFailedAt);
     assert.equal(failed?.dividend, undefined);
     const fields = Array(50).fill(''); fields[2] = stock.code; fields[3] = '8.13'; fields[30] = '20260924161400';
-    globalThis.fetch = async input => new Response(String(input).startsWith('/qt-api') ? `v_sh601398="${fields.join('~')}"` : JSON.stringify({success: true, result: {pages: 1, data: [{ SECURITY_CODE: stock.code, PRETAX_BONUS_RMB: 1.689, EX_DIVIDEND_DATE: new Date().toISOString().slice(0,10), REPORT_DATE: '2025-12-31 00:00:00', ASSIGN_PROGRESS: '实施分配' }]}}));
+    globalThis.fetch = async input => new Response(String(input).startsWith('/qt-api') ? `v_sh601398="${fields.join('~')}"` : String(input).startsWith('/dividend-schedule-api') ? JSON.stringify({ fhyx: [] }) : JSON.stringify({success: true, result: {pages: 1, data: [{ SECURITY_CODE: stock.code, PRETAX_BONUS_RMB: 1.689, NOTICE_DATE: '2026-05-07', EX_DIVIDEND_DATE: new Date().toISOString().slice(0,10), REPORT_DATE: '2025-12-31 00:00:00', ASSIGN_PROGRESS: '实施分配' }]}}));
     assert.equal(await refreshDividendStock(stock.code), true);
     const recovered = await db.dividendStocks.get(stock.code);
     assert.equal(recovered?.manualDpsMicros, 500000);
@@ -516,5 +516,6 @@ test('market refresh preserves manual edits, keeps dated cache on failure and cl
     assert.equal(recovered?.quoteFailedAt, undefined);
     assert.equal(recovered?.dividendFailedAt, undefined);
     assert.equal(recovered?.dividend?.payments[0].dpsMicros, 168900);
+    assert.ok(recovered?.dividend?.scheduleFetchedAt);
   } finally { globalThis.fetch = originalFetch; }
 });
