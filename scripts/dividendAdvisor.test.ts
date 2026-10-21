@@ -141,6 +141,14 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
   data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, status: 'ready', canApply: true, grid: levels } as unknown as DividendPricingResult;
   assert.deepEqual((await run()).actions[0].buyLevels, levels);
   assert.equal((await run([{ ...levels[0], priceMinor: 401 }, ...levels.slice(1)])).actions[0].buyLevels, undefined);
+  assert.equal((await run(levels.map((level, index) => ({ ...level, portionBps: index === 0 ? 9000 : 500 })))).actions[0].buyLevels, undefined);
+});
+
+for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} converts a JSON-fenced pause draft to an action while retaining pricing verification`, async () => {
+  const draft = { id: 'pause_bank_buy', code: stock.code, reason: '等待现金流覆盖改善后复核。', buyPaused: true };
+  const result = await askDividendAdvisorWithActions(config(protocol), context(), '复核计划', [], { transport: async () => ({ status: 200,
+    data: response(protocol, `建议暂停现有计划加仓。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });
+  assert.deepEqual(result, { answer: '建议暂停现有计划加仓。', actions: [draft] });
 });
 
 test('the method prompt distinguishes single-period dividends, holding-year events and sustainable valuation D1', () => {

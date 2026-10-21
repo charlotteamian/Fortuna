@@ -48,12 +48,17 @@ export function parseDividendAdvisorActions(raw: string, allowedCodes: string[])
   const actions: DividendPlanProposal[] = [];
   const allowed = new Set(allowedCodes);
   const seen = new Set<string>();
-  const answer = raw.replace(/```fortuna-actions\s*\n([\s\S]*?)```/g, (_block, json: string) => {
+  const consume = (json: string, explicit = false): boolean => {
     try {
       const parsed: unknown = JSON.parse(json);
-      if (!Array.isArray(parsed) || parsed.length > 10) return '';
+      // Alternate provider formatting is accepted only for a recognisable plan
+      // payload. Ordinary JSON examples and quoted code remain readable.
+      if (!Array.isArray(parsed) || (!explicit && (!parsed.length || !parsed.every(value => value && typeof value === 'object'
+        && !Array.isArray(value) && 'id' in value && 'code' in value && 'reason' in value
+        && ('buyPaused' in value || 'buyLevels' in value || 'sellLevels' in value))))) return explicit;
+      if (parsed.length > 10) return true;
       for (const value of parsed) {
-        if (!isDividendPlanProposal(value) || !allowed.has(value.code) || seen.has(value.code)) continue;
+        if (actions.length >= 10 || !isDividendPlanProposal(value) || !allowed.has(value.code) || seen.has(value.code)) continue;
         seen.add(value.code);
         // Rebuild explicitly: arbitrary model fields must never be persisted.
         const levels = (rows: GridLevel[]) => rows.map(row => ({ yieldBps: row.yieldBps, portionBps: row.portionBps,
@@ -62,8 +67,45 @@ export function parseDividendAdvisorActions(raw: string, allowedCodes: string[])
           ...(value.buyPaused === undefined ? {} : { buyPaused: value.buyPaused }),
           ...(value.buyLevels ? { buyLevels: levels(value.buyLevels) } : {}), ...(value.sellLevels ? { sellLevels: levels(value.sellLevels) } : {}) });
       }
+      return true;
     } catch { /* Invalid drafts are never actionable. The readable answer survives. */ }
-    return '';
-  }).trim();
+    return explicit;
+  };
+  const plainText = (text: string) => {
+    let answer = '', cursor = 0, start = -1, depth = 0, quoted = false, escaped = false;
+    // Balance arrays while respecting JSON strings; a greedy expression would
+    // swallow prose between drafts or stop inside a nested grid/string.
+    for (let end = 0; end < text.length; end++) {
+      const char = text[end];
+      if (start < 0) {
+        if (char === '[') { start = end; depth = 1; }
+        continue;
+      }
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === '[') depth++;
+      else if (char === ']' && --depth === 0) {
+        if (consume(text.slice(start, end + 1))) {
+          answer += text.slice(cursor, start); cursor = end + 1;
+        }
+        start = -1;
+      }
+    }
+    return answer + text.slice(cursor);
+  };
+  let answer = '', cursor = 0;
+  // Process every fence so bare-JSON recovery never interprets examples inside
+  // an unrelated code block. Accept CRLF, capitalised labels and tilde fences.
+  const fences = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\r\n]*)\r?\n([\s\S]*?)^ {0,3}\1[ \t]*\r?$/gm;
+  for (const match of raw.matchAll(fences)) {
+    answer += plainText(raw.slice(cursor, match.index));
+    const label = match[2].trim().toLowerCase();
+    if (!['fortuna-actions', 'json', ''].includes(label) || !consume(match[3], label === 'fortuna-actions')) answer += match[0];
+    cursor = match.index + match[0].length;
+  }
+  answer = (answer + plainText(raw.slice(cursor))).trim();
   return { answer, actions };
 }

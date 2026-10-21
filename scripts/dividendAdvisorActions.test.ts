@@ -74,6 +74,37 @@ test('action parsing only admits saved stocks once and rebuilds the grid contrac
   assert.deepEqual(parseDividendAdvisorActions('Readable answer\n```fortuna-actions\n{invalid}\n```', ['601398']), { answer: 'Readable answer', actions: [] });
 });
 
+test('screenshot-style JSON drafts become previewable actions across provider formats without changing the saved plan', async () => {
+  const draft = { id: 'pause_midea_buy', code: '000333', reason: '暂停加仓，等待下一份财报确认现金流覆盖改善。', buyPaused: true };
+  const json = JSON.stringify([draft]);
+  const formats = [`\`\`\`json\n${json}\n\`\`\``, `\`\`\`\n${json}\n\`\`\``, json,
+    `\`\`\`FORTUNA-ACTIONS\r\n${json}\r\n\`\`\``, `~~~JSON\n${json}\n~~~`, `\`\`\`\`json\n${json}\n\`\`\`\``];
+  const before = await state();
+  for (const block of formats) {
+    const result = parseDividendAdvisorActions(`建议暂停86元起步的网格加仓。\n\n${block}\n\n等待财报确认后复核。`, ['000333']);
+    assert.deepEqual(result.actions, [draft]);
+    assert.match(result.answer, /建议暂停86元起步的网格加仓/);
+    assert.match(result.answer, /等待财报确认后复核/);
+    assert.doesNotMatch(result.answer, /pause_midea_buy|buyPaused|```|~~~/);
+  }
+  assert.deepEqual(await state(), before, 'parsing a draft must never apply it');
+});
+
+test('fallback parsing retains unrelated JSON and code, handles brackets and escaped quotes, and applies validation limits', () => {
+  const draft = proposal({ reason: 'Review [the grid] and "cash flow" before changes.' });
+  assert.deepEqual(parseDividendAdvisorActions(JSON.stringify([draft]), ['601398']).actions, [draft]);
+  const examples = ['Text [1, 2, 3].', '```json\n[{"code":"601398","price":5}]\n```',
+    `\`\`\`javascript\nconst examples = ${JSON.stringify([draft])};\n\`\`\``, '```json\n{invalid}\n```', '[{"id":"incomplete"'];
+  for (const text of examples) assert.deepEqual(parseDividendAdvisorActions(text, ['601398']), { answer: text, actions: [] });
+  const unsafe = { ...draft, buyPaused: 'yes', arbitrary: 'private' };
+  const rejected = parseDividendAdvisorActions(`Keep prose.\n\`\`\`json\n${JSON.stringify([unsafe, { ...draft, code: '000001' }])}\n\`\`\``, ['601398']);
+  assert.deepEqual(rejected, { answer: 'Keep prose.', actions: [] });
+  assert.deepEqual(parseDividendAdvisorActions(JSON.stringify(Array(11).fill(draft)), ['601398']).actions, []);
+  const multiple = parseDividendAdvisorActions(`${JSON.stringify([draft])}\nKeep the review condition.\n${JSON.stringify([{ ...draft, id: 'duplicate' }])}`, ['601398']);
+  assert.equal(multiple.actions.length, 1);
+  assert.equal(multiple.answer, 'Keep the review condition.');
+});
+
 test('valid descending buy and ascending sell grids accept explicit prices and separate yield ladders', () => {
   assert.equal(isDividendPlanProposal(proposal({ sellLevels: [{ priceMinor: 550, yieldBps: 500, portionBps: 5000 }, { priceMinor: 600, yieldBps: 450, portionBps: 5000 }] })), true);
   assert.equal(isDividendPlanProposal(proposal({ buyLevels: [{ yieldBps: 650, portionBps: 3000 }, { yieldBps: 750, portionBps: 4000 }],

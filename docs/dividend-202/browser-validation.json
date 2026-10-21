@@ -1,0 +1,20 @@
+{
+  "widths": [
+    {
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "width": 320,
+      "scrollWidth": 320
+    }
+  ],
+  "legacyChatRecovered": true,
+  "machineJsonHidden": true,
+  "previewReadOnly": true,
+  "cancelReadOnly": true,
+  "confirmationOnlyChangesBuyPaused": true,
+  "reloadRetainsPlanAndChat": true,
+  "apiTransport": "not exercised; service responses covered by fixture tests",
+  "pageErrors": []
+}

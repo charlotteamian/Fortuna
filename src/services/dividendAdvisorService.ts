@@ -157,7 +157,7 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
     const buyMatches = pricing?.canApply && pricing.status === 'ready' && action.buyLevels && action.buyLevels.length === pricing.grid.length
       && action.buyLevels.every((level, index) => level.priceMinor === pricing.grid[index].priceMinor
-        && level.yieldBps === pricing.grid[index].yieldBps);
+        && level.yieldBps === pricing.grid[index].yieldBps && level.portionBps === [3333, 3333, 3334][index]);
     const { buyLevels, sellLevels, ...pause } = action;
     // The reference method defines buy levels only. A separately supplied sell
     // ladder needs a user's manual plan review rather than model fabrication.

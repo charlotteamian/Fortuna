@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { db } from '../db';
 import type { DividendAdvisorContext, DividendAdvisorMessage } from '../lib/dividendAdvisor';
 import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_CONFIG_CHANGED_EVENT, DIVIDEND_AI_SETTINGS_REQUEST_EVENT, dividendAdvisorReaderUrl } from '../lib/dividendAdvisorNavigation';
 import { askDividendAdvisorWithActions, DividendAdvisorError, loadDividendAdvisorConfig, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
@@ -8,12 +9,16 @@ import DividendAdvisorReader from './DividendAdvisorReader';
 import DividendAdvisorWorkspace from './DividendAdvisorWorkspace';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
 import { createDividendAdvisorConversation, deleteDividendAdvisorConversation, loadDividendAdvisorHistory,
-  resumeDividendAdvisorConversation, saveDividendAdvisorConversation, type DividendAdvisorHistoryState } from '../services/dividendAdvisorHistoryService';
+  recoverDividendAdvisorHistory, resumeDividendAdvisorConversation, saveDividendAdvisorConversation, type DividendAdvisorHistoryState } from '../services/dividendAdvisorHistoryService';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch';
 import { prepareDividendDiscussionResearch } from '../services/dividendAdvisorDiscussionService';
 import './DividendAdvisor.css';
 
 interface ReaderHistoryState { fortunaDividendReader?: boolean; dividendReaderPreviousHash?: string }
+
+async function restoreHistory(value: DividendAdvisorHistoryState) {
+  return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
+}
 
 export default function DividendAdvisor({ onUpdated, amountVisible, planManagement }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode }) {
   const { t, i18n } = useTranslation();
@@ -57,7 +62,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
 
   useEffect(() => {
     let active = true;
-    void loadDividendAdvisorHistory().then(value => {
+    void loadDividendAdvisorHistory().then(restoreHistory).then(value => {
       if (active) { setHistory(value); setMessages(value.active?.messages ?? []); setCheckedAt(value.active?.checkedAt); }
     }).catch(() => { if (active) setError(t('div_ai_error_storage')); }).finally(() => { if (active) setHistoryBusy(false); });
     return () => { active = false; };
@@ -111,7 +116,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
         await saveDividendAdvisorConversation(pendingSave.conversationId, pendingSave.messages, pendingSave.checkedAt);
         if (mounted.current) setPendingSave(null);
       }
-      const value = await operation();
+      const value = await restoreHistory(await operation());
       if (!mounted.current) return;
       setHistory(value); setMessages(value.active?.messages ?? []); setCheckedAt(value.active?.checkedAt);
       setSnapshot(null); setQuestion(''); setLastQuestion('');
@@ -181,7 +186,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       onDeleteConversation={id => void changeConversation(() => deleteDividendAdvisorConversation(id))}
       onRetrySave={pendingSave ? () => void changeConversation(loadDividendAdvisorHistory) : undefined}
       initialPanel={initialPanel} planManagement={planManagement}
-      renderActions={message => message.actions?.length ? <DividendAdvisorPlanActions proposals={message.actions} disabled={busy || historyBusy} onUpdated={onUpdated} /> : null}
+      renderActions={message => message.actions?.length ? <DividendAdvisorPlanActions proposals={message.actions} initiallyExpanded disabled={busy || historyBusy} onUpdated={onUpdated} /> : null}
       workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
         onDiscuss={(stock, research) => { showChat(); void ask(t('div_ai_discuss_stock_question', { name: stock.name, code: stock.code }), { ...research, stocks: [stock] }); }} />}
       onClear={() => void changeConversation(createDividendAdvisorConversation)} />}

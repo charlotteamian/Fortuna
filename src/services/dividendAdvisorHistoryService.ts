@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type { DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
-import { isDividendPlanProposal } from '../lib/dividendAdvisorActions.ts';
+import { isDividendPlanProposal, parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
 import type { GridLevel } from '../lib/dividendWorkbench.ts';
 
 export interface DividendAdvisorConversation {
@@ -15,6 +15,26 @@ export type DividendAdvisorConversationSummary = Omit<DividendAdvisorConversatio
 export interface DividendAdvisorHistoryState {
   conversations: DividendAdvisorConversationSummary[];
   active: DividendAdvisorConversation | null;
+}
+
+/** Recover provider-formatting failures when opening an older local chat. */
+export function recoverDividendAdvisorHistory(value: DividendAdvisorHistoryState, allowedCodes: string[]): DividendAdvisorHistoryState {
+  if (!value.active) return value;
+  const allowed = new Set(allowedCodes);
+  return { ...value, active: { ...value.active, messages: value.active.messages.map(message => {
+    if (message.role !== 'assistant') return message;
+    const parsed = parseDividendAdvisorActions(message.content, allowedCodes);
+    const actions = (message.actions ?? []).filter(action => isDividendPlanProposal(action) && allowed.has(action.code));
+    const seen = new Set(actions.map(action => action.code));
+    for (const draft of parsed.actions) {
+      // The original pricing evidence is absent from saved chats. Recover only
+      // pause/resume drafts; numerical plans require a fresh research request.
+      if (draft.buyPaused === undefined || seen.has(draft.code)) continue;
+      actions.push({ id: draft.id, code: draft.code, reason: draft.reason, buyPaused: draft.buyPaused });
+      seen.add(draft.code);
+    }
+    return { role: message.role, content: parsed.answer, ...(actions.length ? { actions: actions.slice(0, 10) } : {}) };
+  }) } };
 }
 
 // Conversations stay on this device. Never store the API configuration, full
