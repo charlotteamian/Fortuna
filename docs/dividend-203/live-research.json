@@ -1,0 +1,462 @@
+{
+  "verifiedAt": "2026-10-21T15:28:38.422Z",
+  "method": {
+    "requiredReturnBps": 800,
+    "growthBps": 0,
+    "holdingPeriod": "over_year",
+    "safetyMarginBps": 1500,
+    "riskPremiumBps": {
+      "bondlike": 175,
+      "bank": 225,
+      "cyclical": 350,
+      "other": 300
+    },
+    "historicalPercentileBps": 7500,
+    "stockOverrides": {}
+  },
+  "coverage": "Public data fetch and calculator regression comparison only. No user holdings, personal AI credentials, trade execution, or physical device validation.",
+  "baselineTag": "v2.0.2",
+  "stocks": [
+    {
+      "code": "000333",
+      "name": "美的集团",
+      "selectionStatus": "risk",
+      "sourceIssues": [],
+      "before": {
+        "canApply": false,
+        "blockers": [
+          "fcf_below_150"
+        ],
+        "gridCount": 0
+      },
+      "after": {
+        "canApply": true,
+        "blockers": [],
+        "warnings": [
+          "fcf_below_150"
+        ],
+        "normalizedEpsMicros": 5100000,
+        "sustainablePayoutBps": 6085,
+        "earningsDividendMicros": 3103350,
+        "fcfDividendCapMicros": 3687426,
+        "fcfCapApplied": false,
+        "fcfEvidence": [
+          {
+            "year": 2025,
+            "fcfPerShareMicros": 5531139,
+            "dividendCapMicros": 3687426,
+            "basis": "reported_cash_flow_per_share"
+          },
+          {
+            "year": 2024,
+            "fcfPerShareMicros": 6903032,
+            "dividendCapMicros": 4602021,
+            "basis": "reported_cash_flow_per_share"
+          },
+          {
+            "year": 2023,
+            "fcfPerShareMicros": 6761047,
+            "dividendCapMicros": 4507364,
+            "basis": "reported_cash_flow_per_share"
+          }
+        ],
+        "d1Micros": 3103350,
+        "anchors": {
+          "riskFreePlusPremiumBps": 464,
+          "historicalPercentileBps": 421,
+          "opportunityCostBps": 413,
+          "medianBps": 421,
+          "rangeBps": 51,
+          "selectedBps": 421,
+          "selection": "median"
+        },
+        "gordonYieldBps": 800,
+        "gordonPriceMinor": 3879,
+        "anchorPriceMinor": 7371,
+        "pbBridgePriceMinor": 8471,
+        "theoreticalPriceMinor": 3879,
+        "grid": [
+          {
+            "discountBps": 9500,
+            "priceMinor": 3685,
+            "yieldBps": 842,
+            "changeFromCurrentBps": -5606,
+            "cumulativePortionBps": 3333,
+            "meetsSafetyMargin": false
+          },
+          {
+            "discountBps": 8500,
+            "priceMinor": 3297,
+            "yieldBps": 941,
+            "changeFromCurrentBps": -6068,
+            "cumulativePortionBps": 6666,
+            "meetsSafetyMargin": true
+          },
+          {
+            "discountBps": 7500,
+            "priceMinor": 2909,
+            "yieldBps": 1067,
+            "changeFromCurrentBps": -6531,
+            "cumulativePortionBps": 10000,
+            "meetsSafetyMargin": true
+          }
+        ]
+      },
+      "financialSector": false,
+      "annuals": [
+        {
+          "year": 2025,
+          "reportDate": "2025-12-31",
+          "noticeDate": "2026-03-31",
+          "epsMicros": 5800000,
+          "adjustedEpsMicros": 5440000,
+          "roeBps": 1970,
+          "operatingCashMinor": 5334593000000,
+          "capitalExpenditureMinor": 1114188900000,
+          "totalShares": 7630260872,
+          "dividendMicros": 4300000,
+          "dividendCashMinor": 3277360196760,
+          "payoutBps": 7414,
+          "fcfCoverageBps": 12877
+        },
+        {
+          "year": 2024,
+          "reportDate": "2024-12-31",
+          "noticeDate": "2025-03-29",
+          "epsMicros": 5440000,
+          "adjustedEpsMicros": 5040000,
+          "roeBps": 2129,
+          "operatingCashMinor": 6051157200000,
+          "capitalExpenditureMinor": 783963600000,
+          "totalShares": 7630260872,
+          "dividendMicros": 3500000,
+          "dividendCashMinor": 2687035688400,
+          "payoutBps": 6434,
+          "fcfCoverageBps": 19602
+        },
+        {
+          "year": 2023,
+          "reportDate": "2023-12-31",
+          "noticeDate": "2024-03-28",
+          "epsMicros": 4930000,
+          "adjustedEpsMicros": 4820000,
+          "roeBps": 2223,
+          "operatingCashMinor": 5790261100000,
+          "capitalExpenditureMinor": 631405100000,
+          "totalShares": 7630260872,
+          "dividendMicros": 3000000,
+          "dividendCashMinor": 2092595438700,
+          "payoutBps": 6085,
+          "fcfCoverageBps": 24653
+        }
+      ],
+      "sourceUrls": [
+        "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+        "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+        "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,month,,,120,",
+        "https://data.eastmoney.com/cjsj/zmgzsyl.html",
+        "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls"
+      ],
+      "priceAsOf": "2026-10-21",
+      "currentPriceMinor": 8386,
+      "technicalAsOf": "2026-10-21",
+      "technicalState": "range"
+    },
+    {
+      "code": "601288",
+      "name": "农业银行",
+      "selectionStatus": "pass",
+      "sourceIssues": [],
+      "before": {
+        "canApply": false,
+        "blockers": [
+          "anchors_conflict"
+        ],
+        "gridCount": 0
+      },
+      "after": {
+        "canApply": true,
+        "blockers": [],
+        "warnings": [
+          "anchors_conflict"
+        ],
+        "normalizedEpsMicros": 750000,
+        "sustainablePayoutBps": 3207,
+        "earningsDividendMicros": 240525,
+        "fcfCapApplied": false,
+        "fcfEvidence": [],
+        "d1Micros": 240525,
+        "anchors": {
+          "riskFreePlusPremiumBps": 389,
+          "historicalPercentileBps": 617,
+          "opportunityCostBps": 413,
+          "medianBps": 413,
+          "rangeBps": 228,
+          "selectedBps": 617,
+          "selection": "highest_available"
+        },
+        "gordonYieldBps": 800,
+        "gordonPriceMinor": 300,
+        "anchorPriceMinor": 389,
+        "pbBridgePriceMinor": 446,
+        "theoreticalPriceMinor": 300,
+        "grid": [
+          {
+            "discountBps": 9500,
+            "priceMinor": 285,
+            "yieldBps": 844,
+            "changeFromCurrentBps": -6091,
+            "cumulativePortionBps": 3333,
+            "meetsSafetyMargin": false
+          },
+          {
+            "discountBps": 8500,
+            "priceMinor": 255,
+            "yieldBps": 943,
+            "changeFromCurrentBps": -6502,
+            "cumulativePortionBps": 6666,
+            "meetsSafetyMargin": true
+          },
+          {
+            "discountBps": 7500,
+            "priceMinor": 225,
+            "yieldBps": 1069,
+            "changeFromCurrentBps": -6914,
+            "cumulativePortionBps": 10000,
+            "meetsSafetyMargin": true
+          }
+        ]
+      },
+      "financialSector": true,
+      "sectorReview": {
+        "sector": "bank",
+        "status": "pass",
+        "asOf": "2026-06-30",
+        "metrics": [
+          {
+            "key": "capitalAdequacy",
+            "valueBps": 1750,
+            "thresholdBps": 1200,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": 5,
+            "status": "pass"
+          },
+          {
+            "key": "coreTier1",
+            "valueBps": 1080,
+            "thresholdBps": 900,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -31,
+            "status": "pass"
+          },
+          {
+            "key": "nonPerformingLoan",
+            "valueBps": 125,
+            "thresholdBps": 300,
+            "direction": "maximum",
+            "reportDate": "2026-06-30",
+            "changeBps": -3,
+            "status": "pass"
+          },
+          {
+            "key": "provisionCoverage",
+            "valueBps": 29010,
+            "thresholdBps": 15000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -490,
+            "status": "pass"
+          }
+        ],
+        "missing": [],
+        "basis": "dividend_screen",
+        "sourceUrl": "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=SH601288",
+        "policySourceUrls": [
+          "https://www.nfra.gov.cn/cn/view/pages/rulesDetail.html?docId=1134197&itemId=4214"
+        ]
+      },
+      "annuals": [
+        {
+          "year": 2025,
+          "reportDate": "2025-12-31",
+          "noticeDate": "2026-03-31",
+          "epsMicros": 780000,
+          "adjustedEpsMicros": 780000,
+          "roeBps": 1016,
+          "operatingCashMinor": 211290700000000,
+          "capitalExpenditureMinor": 2734800000000,
+          "totalShares": 349983033873,
+          "dividendMicros": 249500,
+          "dividendCashMinor": 8732076695131,
+          "payoutBps": 3199,
+          "fcfCoverageBps": 238839
+        },
+        {
+          "year": 2024,
+          "reportDate": "2024-12-31",
+          "noticeDate": "2025-03-29",
+          "epsMicros": 750000,
+          "adjustedEpsMicros": 750000,
+          "roeBps": 1046,
+          "operatingCashMinor": 135304200000000,
+          "capitalExpenditureMinor": 2422300000000,
+          "totalShares": 349983033873,
+          "dividendMicros": 241900,
+          "dividendCashMinor": 8466089589388,
+          "payoutBps": 3225,
+          "fcfCoverageBps": 156958
+        },
+        {
+          "year": 2023,
+          "reportDate": "2023-12-31",
+          "noticeDate": "2024-03-29",
+          "epsMicros": 720000,
+          "adjustedEpsMicros": 720000,
+          "roeBps": 1091,
+          "operatingCashMinor": 182528200000000,
+          "capitalExpenditureMinor": 2882700000000,
+          "totalShares": 349983033873,
+          "dividendMicros": 230900,
+          "dividendCashMinor": 8081108252128,
+          "payoutBps": 3207,
+          "fcfCoverageBps": 222303
+        }
+      ],
+      "sourceUrls": [
+        "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+        "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+        "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,month,,,120,",
+        "https://data.eastmoney.com/cjsj/zmgzsyl.html",
+        "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls"
+      ],
+      "priceAsOf": "2026-10-21",
+      "currentPriceMinor": 729,
+      "technicalAsOf": "2026-10-21",
+      "technicalState": "rising"
+    }
+  ],
+  "sourceRequests": [
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,day,,,250,qfq",
+      "status": 501
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,day,,,250,qfq",
+      "status": 501
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,month,,,120,",
+      "status": 501
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,250,qfq",
+      "status": 501
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,month,,,120,",
+      "status": 501
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz399006,day,,,250,qfq",
+      "status": 501
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000300,day,,,250,qfq",
+      "status": 501
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=1&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=2&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=6&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=4&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=5&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh601288,month,,,120,",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sz000333,month,,,120,",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh601288,day,,,250,qfq",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sz000333,day,,,250,qfq",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh000300,day,,,250,qfq",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sz399006,day,,,250,qfq",
+      "status": 200
+    },
+    {
+      "url": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=sh000001,day,,,250,qfq",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=3&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200
+    }
+  ],
+  "assertions": {
+    "bothPreviouslyBlocked": true,
+    "bothNowProduceThreeGridLevels": true,
+    "gridPricesDescending": true
+  },
+  "notes": [
+    "Tencent main host returned HTTP 501; existing public proxy retry returned HTTP 200. No source issues remained in the completed stock snapshots.",
+    "Auxiliary anchor price is distinct from final base price. The unchanged policy chooses the lowest of Gordon, anchor, and PB prices. In these snapshots the 8% Gordon yield gives the lower base.",
+    "Reported totalShares is the source payload field and is identical across Midea annual rows; no claim is made that it is the historical year-end share count."
+  ]
+}

@@ -150,6 +150,11 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   const context = args[1];
   const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
   const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
+  const pricesCross = (code: string, prices: number[]) => {
+    const sells = context.stockPlan.stocks.find(stock => stock.code === code)?.sellGrid
+      .flatMap(level => level.priceMinor === undefined ? [] : [level.priceMinor]) ?? [];
+    return sells.length > 0 && Math.max(...prices) >= Math.min(...sells);
+  };
   // Numerical drafts must come from the verified method, never a model's guess.
   // Pausing is independent of valuation and remains available when inputs are missing.
   result.actions = result.actions.flatMap(action => {
@@ -162,9 +167,48 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     // The reference method defines buy levels only. A separately supplied sell
     // ladder needs a user's manual plan review rather than model fabrication.
     void buyLevels; void sellLevels;
-    if (buyMatches) return [{ ...pause, buyLevels: action.buyLevels }];
+    if (buyMatches && !pricesCross(action.code, action.buyLevels!.map(level => level.priceMinor!))) return [{ ...pause, buyPaused: true, buyLevels: action.buyLevels }];
     return pause.buyPaused === undefined ? [] : [pause];
   });
+  // Explicit regeneration must not depend on whether the model emits a machine
+  // draft. Use only the same deterministic ladder shown in the research card.
+  const question = args[2];
+  const negated = /(?:不要|别|无需|不用|不必|暂不|先不|不想|不需要)[^，。；！？\n]{0,8}(?:生成|重做|重建|重设|更新|调整|修正|修改|定价)/.test(question)
+    || /(?:do not|don't|no need to|without)\s+(?:regenerat|generat|rebuild|revis|adjust|replac)/i.test(question);
+  if (negated) result.actions = result.actions.flatMap(({ buyLevels, sellLevels, ...action }) => {
+    void buyLevels; void sellLevels;
+    return action.buyPaused === undefined ? [] : [action];
+  });
+  const regenerate = !negated && (/(?:生成|重做|重建|重设|更新|调整|修正|修改|重新评估|重新定价)/.test(question) && /(?:网格|计划|买价|买入价|锚点)/.test(question)
+    || /(?:regenerat|generat|rebuild|revis|adjust|replac|new)[\s\S]{0,60}(?:grid|plan|buy price)/i.test(question));
+  if (context.activeStrategy === 'stocks' && regenerate) {
+    const aliases: Record<string, string[]> = { '601288': ['农行'], '601398': ['工行'], '601939': ['建行'], '601988': ['中行'], '601328': ['交行'], '600036': ['招行'], '601658': ['邮储'] };
+    const named = context.stockPlan.stocks.filter(stock => [stock.code, stock.name,
+      stock.name.replace(/集团|股份|有限公司/g, '').trim(), ...aliases[stock.code] ?? []]
+      .some(name => name.length >= 2 && question.toLowerCase().includes(name.toLowerCase())));
+    const general = /所有|全部|各只|整个组合|all (?:stock|grid|plan)/i.test(question)
+      || /^(?:请|帮我|麻烦|能否|可以|我要|我想|再|重新|生成|新建|调整|更新|重做|一下|一个|新的|当前|我的|现有|的|网格|计划|买价|买入价|锚点|价格|方案|[。！？\s])+$/.test(question);
+    const scope = named.length ? named : general ? context.stockPlan.stocks : [];
+    const summaries: string[] = [];
+    for (const saved of scope.slice(0, 10)) {
+      const pricing = context.research?.stocks.find(stock => stock.code === saved.code)?.pricing;
+      if (!pricing?.canApply || pricing.status !== 'ready' || pricing.grid.length !== 3) continue;
+      if (pricesCross(saved.code, pricing.grid.map(level => level.priceMinor))) {
+        summaries.push(chinese ? `${saved.name}：新买价与原卖价交叉，请先协调卖出计划。` : `${saved.name}: the new buy prices cross the saved sell plan; review the sell plan first.`);
+        continue;
+      }
+      const money = (value: number) => (value / 100).toFixed(2);
+      const reason = chinese
+        ? `按当前数据和保守评估价${money(pricing.theoreticalPriceMinor!)}元重建三档；先保存并暂停加仓，财务与走势复核后再决定恢复。`
+        : `Rebuild three levels from the current conservative base of CNY ${money(pricing.theoreticalPriceMinor!)}. Save with buying paused; review financial evidence and trend before resuming.`;
+      result.actions = result.actions.filter(action => action.code !== saved.code);
+      result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason, buyPaused: true,
+        buyLevels: pricing.grid.map((level, index) => ({ priceMinor: level.priceMinor, yieldBps: level.yieldBps, portionBps: [3333, 3333, 3334][index] })) });
+      summaries.push(chinese ? `${saved.name}：保守评估价${money(pricing.theoreticalPriceMinor!)}元，新三档${pricing.grid.map(level => money(level.priceMinor)).join('／')}元。可预览并确认写入，保存时暂停加仓。`
+        : `${saved.name}: conservative base CNY ${money(pricing.theoreticalPriceMinor!)}, new levels ${pricing.grid.map(level => money(level.priceMinor)).join(' / ')}. Preview and confirm to save with buying paused.`);
+    }
+    if (summaries.length) result.answer = `${summaries.join('\n\n')}\n\n${result.answer}`;
+  }
   // Make the user's pacing rule deterministic even if a provider omits a draft.
   // A draft always needs a fresh preview and a separate confirmation before writing.
   if (context.activeStrategy === 'stocks') {
@@ -172,14 +216,17 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     const accelerating = context.research?.stocks.filter(stock => stock.technical?.state === 'accelerating_down'
       && stock.technical.currentUsable && stock.technical.asOf >= dateCutoff && context.stockPlan.stocks.some(saved => saved.code === stock.code && !saved.buyPaused)) ?? [];
     for (const stock of accelerating.slice(0, 10)) {
+      const existing = result.actions.find(action => action.code === stock.code);
+      const reason = chinese ? `截至${stock.technical!.asOf}，近期下跌正在加速。先暂停加仓；跌势放缓、短期均线趋稳后复核。`
+        : `As of ${stock.technical!.asOf}, the decline is accelerating. Pause additional buying and review once momentum eases and short-term averages stabilise.`;
       result.actions = result.actions.filter(action => action.code !== stock.code);
-      result.actions.push({ id: `pause-${stock.code}`, code: stock.code, buyPaused: true,
-        reason: chinese ? `截至${stock.technical!.asOf}，近期下跌正在加速。先暂停加仓；跌势放缓、短期均线趋稳后复核原网格。`
-          : `As of ${stock.technical!.asOf}, the decline is accelerating. Pause additional buying and review the grid once momentum eases and short-term averages stabilise.` });
+      result.actions.push({ ...(existing ?? { id: `pause-${stock.code}`, code: stock.code }), buyPaused: true,
+        reason: (existing?.buyLevels ? `${reason} ${existing.reason}` : reason).slice(0, 2000) });
     }
     if (accelerating.length) result.answer = `${chinese
       ? `加仓节奏检查：${accelerating.map(stock => stock.name).join('、')}的已获取日线显示下跌加速，先暂停加仓并复核网格；触价本身不足以支持加仓。`
       : `Pacing check: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline. Pause additional buying and review the grid; a reached price alone is insufficient.`}\n\n${result.answer}`;
   }
+  result.actions = result.actions.slice(0, 10);
   return result;
 }

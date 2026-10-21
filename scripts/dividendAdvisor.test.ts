@@ -144,6 +144,54 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
   assert.equal((await run(levels.map((level, index) => ({ ...level, portionBps: index === 0 ? 9000 : 500 })))).actions[0].buyLevels, undefined);
 });
 
+test('regeneration supplies a verified paused ladder without a model draft and preserves it during accelerating declines', async () => {
+  const { calculateDividendPricing, defaultDividendPricingMethod } = await import('../src/lib/dividendPricing.ts');
+  const pricing = calculateDividendPricing({ code: stock.code, name: stock.name, financialSector: false,
+    method: defaultDividendPricingMethod(), asOf: '2026-10-16', priceMinor: 1000, priceDate: '2026-10-16',
+    annuals: Array.from({ length: 5 }, (_, index) => ({ year: 2025 - index, reportDate: `${2025 - index}-12-31`, noticeDate: `${2026 - index}-03-20`,
+      epsMicros: 1000000, adjustedEpsMicros: 1000000, dividendMicros: 500000, payoutBps: 5000, fcfCoverageBps: 20000 })) });
+  assert.equal(pricing.canApply, true);
+  const data = buildDividendAdvisorContext({ stocks: [stock, { ...stock, code: '000333', name: '美的集团' }], strategy: 'stocks', budgetMinor: 10000_00,
+    budgetConfigured: true, positions: new Map(), fundPlan: defaultDividendFundPlan(), research: {
+      generatedAt: now, principles: defaultDividendSelectionPrinciples(), indices: [],
+      stocks: [stock, { ...stock, code: '000333', name: '美的集团' }].map(saved => ({ code: saved.code, name: saved.name,
+        checks: [], status: 'unknown', sources: [], issues: [], pricing, technical: { asOf: '2026-10-16', fetchedAt: now,
+          priceBasis: 'qfq', currentUsable: true, lastCloseMinor: 500, state: 'accelerating_down', pacing: 'pause_add' } })) } }, now);
+  const before = structuredClone(data.stockPlan);
+  const run = (question: string) => askDividendAdvisorWithActions(config(), data, question, [], {
+    transport: async () => ({ status: 200, data: response('openai', '已复核估值和走势。') }) });
+  const result = await run('重新生成美的的网格计划');
+  const midea = result.actions.find(action => action.code === '000333')!;
+  assert.deepEqual(midea.buyLevels?.map(level => level.priceMinor), pricing.grid.map(level => level.priceMinor));
+  assert.equal(midea.buyPaused, true);
+  assert.equal(result.actions.find(action => action.code === stock.code)?.buyLevels, undefined);
+  assert.match(result.answer, /保守评估价/);
+  assert.deepEqual(data.stockPlan, before, 'draft generation cannot write or mutate the saved plan');
+  data.research!.stocks.forEach(row => { row.technical!.state = 'rising'; row.technical!.pacing = 'observe'; });
+  assert.equal((await run('什么是股息率？')).actions.length, 0);
+  const all = await run('重新生成网格计划');
+  assert.equal(all.actions.length, 2);
+  assert.ok(all.actions.every(action => action.buyLevels?.length === 3 && action.buyPaused));
+  data.stockPlan.stocks[0].code = '601288'; data.stockPlan.stocks[0].name = '农业银行';
+  data.research!.stocks[0].code = '601288'; data.research!.stocks[0].name = '农业银行';
+  assert.deepEqual((await run('重新生成农行网格计划')).actions.map(action => action.code), ['601288']);
+  assert.equal((await run('重新生成美的和农行的网格计划')).actions.length, 2);
+  assert.equal((await run('不要重新生成计划，先解释美的的估值')).actions.length, 0);
+  assert.equal((await run('重新生成中国石油网格计划')).actions.length, 0);
+  data.stockPlan.stocks[1].sellGrid = [{ yieldBps: 100, portionBps: 10000, priceMinor: 100 } as typeof data.stockPlan.stocks[1]['sellGrid'][number]];
+  const crossing = await run('重新生成美的集团的网格计划');
+  assert.equal(crossing.actions.length, 0);
+  assert.match(crossing.answer, /卖出计划/);
+  data.stockPlan.stocks[1].sellGrid = [];
+  data.research!.stocks[1].technical!.state = 'accelerating_down';
+  const modelDraft = { id: 'long-reason', code: '000333', buyPaused: false, reason: '复核'.repeat(995), buyLevels: all.actions[0].buyLevels };
+  const merged = await askDividendAdvisorWithActions(config(), data, '复核', [], { transport: async () => ({ status: 200,
+    data: response('openai', `\`\`\`fortuna-actions\n${JSON.stringify([modelDraft])}\n\`\`\``) }) });
+  const { isDividendPlanProposal } = await import('../src/lib/dividendAdvisorActions.ts');
+  assert.equal(merged.actions[0].buyLevels?.length, 3);
+  assert.equal(isDividendPlanProposal(merged.actions[0]), true);
+});
+
 for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} converts a JSON-fenced pause draft to an action while retaining pricing verification`, async () => {
   const draft = { id: 'pause_bank_buy', code: stock.code, reason: '等待现金流覆盖改善后复核。', buyPaused: true };
   const result = await askDividendAdvisorWithActions(config(protocol), context(), '复核计划', [], { transport: async () => ({ status: 200,
@@ -157,7 +205,9 @@ test('the method prompt distinguishes single-period dividends, holding-year even
   assert.match(prompt, /upcoming announcements replace their corresponding historical seasonal estimate/);
   assert.match(prompt, /Do not multiply D1 by growth again/);
   assert.match(prompt, /Do not append generic investment-risk statements/);
-  assert.match(prompt, /More than 100 basis points between anchors requires a user decision/);
+  assert.match(prompt, /Anchor disagreement is not a veto/);
+  assert.match(prompt, /highest available valid yield/);
+  assert.match(prompt, /Never offer a separate manual anchor price/);
 });
 
 for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} sends text, current snapshot and bounded conversation with the proper authentication`, async () => {

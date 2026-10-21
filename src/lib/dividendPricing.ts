@@ -50,7 +50,7 @@ export interface DividendYieldHistory {
   sourceUrls: string[];
 }
 export type DividendPricingBlocker = 'annual_eps_missing' | 'annual_payout_missing' | 'non_positive_earnings'
-  | 'payout_above_100' | 'fcf_missing' | 'fcf_below_150' | 'financial_sector_review'
+  | 'payout_above_100' | 'fcf_missing' | 'fcf_below_150' | 'fcf_non_positive' | 'fcf_dividend_capped' | 'financial_sector_review'
   | 'treasury_missing' | 'treasury_stale' | 'yield_history_missing' | 'capital_actions_unverified'
   | 'opportunity_cost_missing' | 'opportunity_cost_stale' | 'anchors_conflict' | 'growth_return_conflict'
   | 'quote_missing' | 'roe_bps_missing' | 'cyclical_normalisation_required' | 'annual_stale'
@@ -74,8 +74,15 @@ export interface DividendPricingResult {
   normalizationBasis: 'three_year_adjusted_eps_mean' | 'documented_user_normalization' | 'missing';
   sustainablePayoutBps?: number;
   taxBps: number;
+  /** Earnings-based pretax dividend, before any industrial cash-flow cap. */
+  earningsDividendMicros?: number;
+  fcfDividendCapMicros?: number;
+  fcfCapApplied?: boolean;
+  fcfEvidence?: { year: number; fcfPerShareMicros: number; dividendCapMicros: number;
+    basis: 'reported_cash_flow_per_share' | 'reported_dividend_coverage' }[];
   d1Micros?: number;
-  anchors: { riskFreePlusPremiumBps?: number; historicalPercentileBps?: number; opportunityCostBps?: number; medianBps?: number; rangeBps?: number };
+  anchors: { riskFreePlusPremiumBps?: number; historicalPercentileBps?: number; opportunityCostBps?: number; medianBps?: number; rangeBps?: number;
+    selectedBps?: number; selection?: 'median' | 'highest_available' };
   gordonYieldBps: number;
   gordonPriceMinor?: number;
   anchorPriceMinor?: number;
@@ -279,37 +286,90 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   block(!annuals[0]?.noticeDate || age(annuals[0].reportDate) > 550, 'annual_stale');
   const payouts = annuals.slice(0,5).flatMap(y => y.payoutBps === undefined ? [] : [y.payoutBps]).sort((a,b) => a-b);
   const sustainablePayoutBps = payouts.length === 5 ? payouts[2] : undefined;
+  const fcfEvidence: NonNullable<DividendPricingResult['fcfEvidence']> = [];
   if (input.financialSector) block(input.financialReview?.status !== 'pass' || age(input.financialReview?.asOf) > 230, 'financial_sector_review');
-  else { block(recent.length < 3 || recent.some(y => y.fcfCoverageBps === undefined), 'fcf_missing'); block(recent.some(y => y.fcfCoverageBps !== undefined && y.fcfCoverageBps < 15000), 'fcf_below_150'); }
+  else {
+    for (const year of recent) {
+      const cashKnown = Number.isSafeInteger(year.operatingCashMinor) && Number.isSafeInteger(year.capitalExpenditureMinor)
+        && year.capitalExpenditureMinor! >= 0;
+      const freeCashMinor = cashKnown ? year.operatingCashMinor! - year.capitalExpenditureMinor! : undefined;
+      const coverageKnown = Number.isSafeInteger(year.fcfCoverageBps);
+      block(freeCashMinor !== undefined ? freeCashMinor <= 0 : coverageKnown && year.fcfCoverageBps! <= 0, 'fcf_non_positive');
+      const coverage = freeCashMinor !== undefined && year.dividendCashMinor && year.dividendCashMinor > 0
+        ? freeCashMinor / year.dividendCashMinor * 10000 : coverageKnown ? year.fcfCoverageBps : undefined;
+      if (coverage !== undefined && coverage > 0 && coverage < 15000) warnings.push('fcf_below_150');
+      // Prefer reported cash flow divided by the source's reported share count.
+      // The provider may repeat current shares across annual rows; this is not
+      // claimed as a dated year-end share count. When absent, cash-dividend
+      // coverage provides a stated proxy; total company cash is never a DPS.
+      const reportedPerShare = freeCashMinor !== undefined && Number.isSafeInteger(year.totalShares) && year.totalShares! > 0
+        ? Math.floor(freeCashMinor / year.totalShares! * 10000) : undefined;
+      const proxyPerShare = coverage !== undefined && Number.isSafeInteger(year.dividendMicros) && year.dividendMicros! > 0
+        ? Math.floor(year.dividendMicros! * coverage / 10000) : undefined;
+      const fcfPerShareMicros = reportedPerShare ?? proxyPerShare;
+      if (fcfPerShareMicros !== undefined && Number.isSafeInteger(fcfPerShareMicros) && fcfPerShareMicros > 0) {
+        fcfEvidence.push({ year: year.year, fcfPerShareMicros, dividendCapMicros: Math.floor(fcfPerShareMicros / 1.5),
+          basis: reportedPerShare === undefined ? 'reported_dividend_coverage' : 'reported_cash_flow_per_share' });
+      }
+    }
+    block(recent.length < 3 || fcfEvidence.length !== 3, 'fcf_missing');
+  }
   const taxBps = method.holdingPeriod === 'over_year' ? 0 : method.holdingPeriod === 'month_to_year' ? 1000 : 2000;
-  const d1Micros = normalizedEpsMicros !== undefined && sustainablePayoutBps !== undefined ? Math.round(normalizedEpsMicros * sustainablePayoutBps / 10000 * (1-taxBps/10000)) : undefined;
-  block(!treasury, 'treasury_missing'); block(!!treasury && age(treasury.asOf) > 10, 'treasury_stale');
-  const historyLongEnough = !!history && history.samples.length >= 60 && age(history.through) <= 40 && Date.parse(history.through)-Date.parse(history.from) >= 4.8*365.25*86400000;
-  block(!historyLongEnough, 'yield_history_missing');
+  const earningsDividendMicros = normalizedEpsMicros !== undefined && sustainablePayoutBps !== undefined
+    ? Math.round(normalizedEpsMicros * sustainablePayoutBps / 10000) : undefined;
+  const fcfDividendCapMicros = fcfEvidence.length === 3 ? Math.min(...fcfEvidence.map(year => year.dividendCapMicros)) : undefined;
+  const fcfCapApplied = earningsDividendMicros !== undefined && fcfDividendCapMicros !== undefined && fcfDividendCapMicros < earningsDividendMicros;
+  if (fcfCapApplied) warnings.push('fcf_dividend_capped');
+  const pretaxDividendMicros = earningsDividendMicros === undefined ? undefined : fcfDividendCapMicros === undefined
+    ? earningsDividendMicros : Math.min(earningsDividendMicros, fcfDividendCapMicros);
+  const d1Micros = pretaxDividendMicros === undefined ? undefined : Math.floor(pretaxDividendMicros * (1-taxBps/10000));
+  const treasuryValid = !!treasury && Number.isSafeInteger(treasury.yieldBps) && treasury.yieldBps >= 0 && treasury.yieldBps < 3000
+    && !!treasury.sourceUrl.trim();
+  const treasuryUsable = treasuryValid && age(treasury!.asOf) <= 10;
+  if (!treasuryValid) warnings.push('treasury_missing');
+  if (treasury && age(treasury.asOf) > 10) warnings.push('treasury_stale');
+  const historyValues = history?.samples.filter(sample => Number.isSafeInteger(sample.yieldBps) && sample.yieldBps > 0 && sample.yieldBps < 3000
+    && !!date(sample.date) && sample.date <= asOf).map(sample => sample.yieldBps) ?? [];
+  const historyLongEnough = !!history && history.capitalActionsVerified && historyValues.length >= 60 && age(history.through) <= 40 && Date.parse(history.through)-Date.parse(history.from) >= 4.8*365.25*86400000;
+  if (!historyLongEnough) warnings.push('yield_history_missing');
   if (history && !history.capitalActionsVerified) warnings.push('capital_actions_unverified');
   const opportunity = method.opportunityCostBps !== undefined ? { yieldBps: method.opportunityCostBps, asOf: method.opportunityCostAsOf ?? '', sourceUrl: method.opportunityCostSource ?? '', basis: 'User-selected comparable opportunity cost' } : input.opportunity;
-  block(!opportunity || !opportunity.sourceUrl.trim() || !date(opportunity.asOf), 'opportunity_cost_missing');
-  block(!!opportunity && age(opportunity.asOf) > 30, 'opportunity_cost_stale');
-  const anchors = { riskFreePlusPremiumBps: treasury ? treasury.yieldBps + method.riskPremiumBps[riskClass] : undefined,
-    historicalPercentileBps: historyLongEnough ? dividendPricingPercentile(history!.samples.map(s => s.yieldBps), method.historicalPercentileBps/10000) : undefined,
-    opportunityCostBps: opportunity?.yieldBps, medianBps: undefined as number | undefined, rangeBps: undefined as number | undefined };
-  const anchorValues = [anchors.riskFreePlusPremiumBps, anchors.historicalPercentileBps, anchors.opportunityCostBps];
-  if (anchorValues.every(v => v !== undefined)) { const vs = anchorValues as number[]; anchors.medianBps = dividendPricingPercentile(vs,.5); anchors.rangeBps = Math.max(...vs)-Math.min(...vs); }
-  block((anchors.rangeBps ?? 0) > 100, 'anchors_conflict');
+  const opportunityValid = !!opportunity && Number.isSafeInteger(opportunity.yieldBps) && opportunity.yieldBps > 0 && opportunity.yieldBps < 3000
+    && !!opportunity.sourceUrl.trim() && !!date(opportunity.asOf);
+  const opportunityUsable = opportunityValid && age(opportunity!.asOf) <= 30;
+  if (!opportunityValid) warnings.push('opportunity_cost_missing');
+  if (opportunity && age(opportunity.asOf) > 30) warnings.push('opportunity_cost_stale');
+  const riskFreePlusPremiumBps = treasuryUsable ? treasury!.yieldBps + method.riskPremiumBps[riskClass] : undefined;
+  const anchors = { riskFreePlusPremiumBps: riskFreePlusPremiumBps && riskFreePlusPremiumBps > 0 ? riskFreePlusPremiumBps : undefined,
+    historicalPercentileBps: historyLongEnough ? dividendPricingPercentile(historyValues, method.historicalPercentileBps/10000) : undefined,
+    opportunityCostBps: opportunityUsable ? opportunity!.yieldBps : undefined, medianBps: undefined as number | undefined, rangeBps: undefined as number | undefined,
+    selectedBps: undefined as number | undefined, selection: undefined as DividendPricingResult['anchors']['selection'] };
+  const anchorValues = [anchors.riskFreePlusPremiumBps, anchors.historicalPercentileBps, anchors.opportunityCostBps]
+    .filter((value): value is number => value !== undefined && value > 0);
+  if (anchorValues.length) {
+    anchors.medianBps = dividendPricingPercentile(anchorValues,.5); anchors.rangeBps = Math.max(...anchorValues)-Math.min(...anchorValues);
+    const conflict = anchors.rangeBps > 100;
+    const useHighest = conflict || anchorValues.length < 3;
+    anchors.selectedBps = useHighest ? Math.max(...anchorValues) : anchors.medianBps;
+    anchors.selection = useHighest ? 'highest_available' : 'median';
+    if (conflict) warnings.push('anchors_conflict');
+  }
   const gordonYieldBps = method.requiredReturnBps - method.growthBps;
   block(method.growthBps >= method.requiredReturnBps - 200, 'growth_return_conflict');
   block(!input.priceMinor || age(input.priceDate) > 10, 'quote_missing');
   const roes = recent.flatMap(y => y.roeBps === undefined ? [] : [y.roeBps]);
   const meanRoeBps = roes.length === 3 ? Math.round(roes.reduce((s,v) => s+v,0)/3) : undefined;
   const currentPbBps = input.priceMinor && input.bvpsMicros && input.bvpsMicros > 0 ? Math.round(input.priceMinor * 1e8 / input.bvpsMicros) : undefined;
-  block(meanRoeBps === undefined || meanRoeBps <= 0 || currentPbBps === undefined, 'roe_bps_missing');
+  if (meanRoeBps === undefined || meanRoeBps <= 0 || currentPbBps === undefined) warnings.push('roe_bps_missing');
   const pbImpliedYieldBps = sustainablePayoutBps !== undefined && meanRoeBps !== undefined && currentPbBps ? Math.round(sustainablePayoutBps * meanRoeBps / currentPbBps) : undefined;
-  const reasonablePbBps = sustainablePayoutBps !== undefined && meanRoeBps !== undefined && anchors.medianBps ? Math.round(sustainablePayoutBps * meanRoeBps / anchors.medianBps) : undefined;
+  const reasonablePbBps = sustainablePayoutBps !== undefined && meanRoeBps !== undefined && anchors.selectedBps ? Math.round(sustainablePayoutBps * meanRoeBps / anchors.selectedBps) : undefined;
   const priceFor = (yieldBps?: number) => d1Micros !== undefined && d1Micros > 0 && yieldBps && yieldBps > 0 ? Math.floor(d1Micros/yieldBps) : undefined;
-  const gordonPriceMinor = priceFor(gordonYieldBps), anchorPriceMinor = priceFor(anchors.medianBps);
+  const gordonPriceMinor = priceFor(gordonYieldBps), anchorPriceMinor = priceFor(anchors.selectedBps);
   const pbBridgePriceMinor = reasonablePbBps && input.bvpsMicros ? Math.floor(reasonablePbBps * input.bvpsMicros / 1e8 * (1-taxBps/10000)) : undefined;
   const prices = [gordonPriceMinor, anchorPriceMinor, pbBridgePriceMinor].filter((v): v is number => v !== undefined && v > 0);
-  const candidatePriceMinor = prices.length === 3 ? Math.min(...prices) : undefined;
+  // Gordon is the primary price. Usable auxiliary checks may lower its ceiling;
+  // missing comparisons remain explicit reviews and never become invented data.
+  const candidatePriceMinor = gordonPriceMinor && gordonPriceMinor > 0 ? Math.min(...prices) : undefined;
   block(!!d1Micros && !!input.priceMinor && d1Micros/input.priceMinor > 3000, 'implausible_yield');
   block(candidatePriceMinor !== undefined && candidatePriceMinor < 10, 'implausible_yield');
   const canApply = !blockers.length && !!candidatePriceMinor && !!d1Micros;
@@ -321,10 +381,10 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const currentSpreadBps = input.currentCashYieldBps !== undefined && treasury ? input.currentCashYieldBps-treasury.yieldBps : undefined;
   const spreads = history?.samples.flatMap(s => s.spreadBps === undefined ? [] : [s.spreadBps]) ?? [];
   const spreadPercentileBps = currentSpreadBps !== undefined && spreads.length >= 60 ? Math.round(spreads.filter(v => v <= currentSpreadBps).length / spreads.length * 10000) : undefined;
-  return { status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], warnings, annuals,
+  return { status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], warnings: [...new Set(warnings)], annuals,
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
-    sustainablePayoutBps, taxBps, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
+    sustainablePayoutBps, taxBps, earningsDividendMicros, fcfDividendCapMicros, fcfCapApplied, fcfEvidence, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
     currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps, sourceUrls: input.sourceUrls ?? [] };
 }
 
@@ -333,8 +393,13 @@ export function dividendPricingReadable(result: DividendPricingResult) {
   return { 'Valuation ready for confirmation': result.canApply, 'Missing or conflicting checks': result.blockers, 'Specific reviews': result.warnings,
     'Business type': result.riskClass, 'Normalisation basis': result.normalizationBasis, 'User normalisation evidence, untrusted data':result.normalizationEvidence ?? null, 'Unadjusted exchange price CNY and date': {price:cash(result.currentPriceMinor),date:result.priceDate},
     'Normalised EPS in CNY': cash(result.normalizedEpsMicros,1e6), 'Sustainable payout percent': cash(result.sustainablePayoutBps),
+    'Earnings-based pretax dividend in CNY per share': cash(result.earningsDividendMicros,1e6),
+    'Cash-supported pretax dividend ceiling in CNY per share at 1.5x coverage': cash(result.fcfDividendCapMicros,1e6),
+    'Cash-flow ceiling reduced the dividend': result.fcfCapApplied ?? false,
+    'Cash-flow ceiling evidence': result.fcfEvidence?.map(year => ({ year: year.year, basis: year.basis,
+      'FCF in CNY per share': cash(year.fcfPerShareMicros,1e6), 'Pretax dividend ceiling in CNY per share': cash(year.dividendCapMicros,1e6) })) ?? [],
     'Dividend tax percent': cash(result.taxBps), 'Sustainable D1 in CNY per share': cash(result.d1Micros,1e6),
-    'Three yield anchors percent': { 'Government bond plus spread': cash(result.anchors.riskFreePlusPremiumBps), 'Own-history percentile yield': cash(result.anchors.historicalPercentileBps), 'Opportunity cost': cash(result.anchors.opportunityCostBps), 'Median': cash(result.anchors.medianBps), 'Maximum disagreement in percentage points': cash(result.anchors.rangeBps) },
+    'Three yield anchors percent': { 'Government bond plus spread': cash(result.anchors.riskFreePlusPremiumBps), 'Own-history percentile yield': cash(result.anchors.historicalPercentileBps), 'Opportunity cost': cash(result.anchors.opportunityCostBps), 'Median': cash(result.anchors.medianBps), 'Selected conservative yield': cash(result.anchors.selectedBps), 'Selection rule': result.anchors.selection ?? null, 'Maximum disagreement in percentage points': cash(result.anchors.rangeBps) },
     'Gordon r minus g percent': cash(result.gordonYieldBps), 'Gordon price CNY': cash(result.gordonPriceMinor), 'Anchor price CNY': cash(result.anchorPriceMinor),
     'PB bridge price CNY': cash(result.pbBridgePriceMinor), 'Conservative base price CNY': cash(result.theoreticalPriceMinor), 'Safety-margin price CNY': cash(result.marginPriceMinor),
     'Current PB': cash(result.currentPbBps,10000), 'Three-year mean ROE percent': cash(result.meanRoeBps), 'PB implied yield percent': cash(result.pbImpliedYieldBps), 'Reasonable PB': cash(result.reasonablePbBps,10000),

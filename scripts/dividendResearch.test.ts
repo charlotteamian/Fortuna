@@ -243,7 +243,9 @@ test('a failed Tencent primary recovers daily and monthly evidence through its v
     const stock = result.stocks[0];
     assert.ok(stock.technical?.currentUsable);
     assert.ok(stock.pricing?.history && stock.pricing.history.samples.length >= 60);
-    assert.notEqual(stock.pricing?.anchors.historicalPercentileBps, undefined);
+    assert.equal(stock.pricing.history.capitalActionsVerified, false, 'mixed-symbol fixture cannot verify capital adjustments');
+    assert.equal(stock.pricing.anchors.historicalPercentileBps, undefined);
+    assert.ok(stock.pricing.warnings.includes('capital_actions_unverified'));
     assert.ok(stock.sources.filter(source => source.kind === 'technical').every(source => source.url.startsWith('https://proxy.finance.qq.com/')));
     assert.ok(result.indices.every(index => index.technical?.currentUsable));
     assert.ok(!stock.issues.some(issue => issue.kind === 'technical'));

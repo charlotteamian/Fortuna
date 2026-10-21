@@ -32,21 +32,120 @@ test('spread percentile compares implemented trailing dividends on both sides ra
   const v={...input(),currentCashYieldBps:600};const p=calculateDividendPricing(v);
   assert.equal(p.currentSpreadBps,400);assert.equal(p.spreadPercentileBps,10000);
 });
-test('missing anchors and anchor disagreement block executable prices without hiding the specific gap', () => {
+test('anchor disagreement chooses the highest required cash yield and keeps the conflict visible as a review', () => {
   const v=input();v.opportunity.yieldBps=700;let p=calculateDividendPricing(v);
-  assert.ok(p.blockers.includes('anchors_conflict')); assert.equal(p.canApply,false);assert.equal(p.theoreticalPriceMinor,undefined);assert.deepEqual(p.grid,[]);
-  v.opportunity.sourceUrl='';p=calculateDividendPricing(v);assert.ok(p.blockers.includes('opportunity_cost_missing'));
-  v.history.samples=[];p=calculateDividendPricing(v);assert.ok(p.blockers.includes('yield_history_missing'));
+  assert.ok(p.warnings.includes('anchors_conflict'));assert.ok(!p.blockers.includes('anchors_conflict'));
+  assert.equal(p.anchors.medianBps,500);assert.equal(p.anchors.selectedBps,700);assert.equal(p.anchors.selection,'highest_available');
+  assert.equal(p.anchorPriceMinor,714);assert.equal(p.canApply,true);assert.equal(p.grid.length,3);
+  v.opportunity.yieldBps=1000;p=calculateDividendPricing(v);
+  assert.equal(p.theoreticalPriceMinor,500);assert.deepEqual(p.grid.map(g=>g.priceMinor),[475,425,375]);
 });
-test('payout, financial coverage, loss and growth guard stop pricing; financial-sector pricing requires a completed numeric review', () => {
+test('unverified capital adjustments exclude the history anchor without cancelling the conservative grid', () => {
+  const v=input();v.history.capitalActionsVerified=false;const p=calculateDividendPricing(v);
+  assert.equal(p.anchors.historicalPercentileBps,undefined);
+  assert.ok(p.warnings.includes('capital_actions_unverified'));
+  assert.equal(p.canApply,true);assert.equal(p.grid.length,3);
+});
+test('partial auxiliary anchors use the highest usable value while keeping missing comparisons visible', () => {
+  const v=input();v.opportunity.sourceUrl='';v.history.samples.forEach(sample=>{sample.yieldBps=600;});
+  const p=calculateDividendPricing(v);
+  assert.ok(p.warnings.includes('opportunity_cost_missing'));assert.deepEqual(p.blockers,[]);assert.equal(p.canApply,true);
+  assert.equal(p.anchors.opportunityCostBps,undefined);assert.equal(p.anchors.medianBps,550);
+  assert.equal(p.anchors.selectedBps,600);assert.equal(p.anchors.selection,'highest_available');
+  assert.ok(!p.warnings.includes('anchors_conflict'));
+});
+test('stale auxiliary anchors are excluded from prices and retain their source dates and review warnings', () => {
+  const v=input();v.treasury.asOf='2026-09-01';v.opportunity.asOf='2026-09-01';v.opportunity.yieldBps=1500;
+  let p=calculateDividendPricing(v);
+  assert.equal(p.canApply,true);assert.equal(p.anchors.riskFreePlusPremiumBps,undefined);assert.equal(p.anchors.opportunityCostBps,undefined);
+  assert.equal(p.anchors.selectedBps,500);assert.equal(p.theoreticalPriceMinor,625);
+  assert.ok(p.warnings.includes('treasury_stale'));assert.ok(p.warnings.includes('opportunity_cost_stale'));
+  assert.equal(p.opportunity?.asOf,'2026-09-01');assert.equal(p.treasury?.asOf,'2026-09-01');
+  v.history.through='2026-01-31';p=calculateDividendPricing(v);
+  assert.equal(p.anchors.selectedBps,undefined);assert.equal(p.anchors.selection,undefined);assert.equal(p.canApply,true);
+  assert.ok(p.warnings.includes('yield_history_missing'));assert.equal(p.anchorPriceMinor,undefined);assert.equal(p.pbBridgePriceMinor,undefined);
+  assert.equal(p.theoreticalPriceMinor,p.gordonPriceMinor);assert.deepEqual(p.grid.map(g=>g.priceMinor),[593,531,468]);
+});
+test('Gordon remains usable when all auxiliary anchors and PB-ROE evidence are absent without fabricating them', () => {
+  const v=input();v.annuals.forEach(year=>{delete year.roeBps;});
+  const p=calculateDividendPricing({...v,treasury:undefined,history:undefined,opportunity:undefined,bvpsMicros:undefined});
+  assert.equal(p.canApply,true);assert.deepEqual(p.blockers,[]);assert.equal(p.theoreticalPriceMinor,625);
+  assert.equal(p.anchors.selectedBps,undefined);assert.equal(p.anchors.medianBps,undefined);assert.equal(p.anchorPriceMinor,undefined);
+  assert.equal(p.reasonablePbBps,undefined);assert.equal(p.pbBridgePriceMinor,undefined);
+  assert.deepEqual(new Set(p.warnings),new Set(['treasury_missing','yield_history_missing','opportunity_cost_missing','roe_bps_missing']));
+  assert.equal(dividendPricingReadable(p)['Three yield anchors percent']['Selected conservative yield'],null);
+});
+test('nonpositive and future-dated auxiliary yields never enter a comparison price', () => {
+  const v=input();v.opportunity.yieldBps=-100;v.treasury.asOf='2027-01-01';v.history.samples.forEach(sample=>{sample.yieldBps=0;});
+  const p=calculateDividendPricing(v);
+  assert.equal(p.canApply,true);assert.equal(p.anchors.selectedBps,undefined);assert.equal(p.theoreticalPriceMinor,625);
+  assert.ok(p.warnings.includes('opportunity_cost_missing'));assert.ok(p.warnings.includes('treasury_stale'));assert.ok(p.warnings.includes('yield_history_missing'));
+});
+test('payout, sector review and growth guards remain hard checks while positive weak FCF is capped', () => {
   const v=input();v.annuals[0].payoutBps=10001;v.annuals[0].fcfCoverageBps=14999;let p=calculateDividendPricing(v);
-  assert.ok(p.blockers.includes('payout_above_100'));assert.ok(p.blockers.includes('fcf_below_150'));assert.equal(p.canApply,false);
+  assert.ok(p.blockers.includes('payout_above_100'));assert.ok(p.warnings.includes('fcf_below_150'));assert.equal(p.canApply,false);
   const bank=input();bank.financialSector=true;bank.method.riskPremiumBps.bank=300;bank.annuals.forEach(y=>delete y.fcfCoverageBps);
   p=calculateDividendPricing(bank);assert.equal(p.canApply,false);assert.ok(p.blockers.includes('financial_sector_review'));
   const reviewedBank={...bank,financialReview:{sector:'bank' as const,status:'pass' as const,asOf:'2026-06-30',metrics:[],missing:[],sourceUrl:'https://example.com/review',policySourceUrls:[],basis:'dividend_screen' as const}};
   p=calculateDividendPricing(reviewedBank);assert.equal(p.canApply,true);assert.ok(!p.warnings.includes('financial_sector_review'));
   assert.ok(calculateDividendPricing({...reviewedBank,financialReview:{...reviewedBank.financialReview,status:'risk'}}).blockers.includes('financial_sector_review'));
   const g=input();g.method.growthBps=300;g.method.requiredReturnBps=500;assert.ok(calculateDividendPricing(g).blockers.includes('growth_return_conflict'));
+});
+test('synthetic Midea cash-flow case caps D1 at the weakest recent FCF/share divided by 1.5 and generates reviewable grids', () => {
+  // These controlled inputs reproduce the reported failure mode; they are not
+  // a current valuation or a substitute for Midea's published financial data.
+  const v={...input(),code:'000333',name:'美的集团',priceMinor:8600,bvpsMicros:30000000};
+  v.annuals.forEach((year,index)=>Object.assign(year,{epsMicros:5000000,adjustedEpsMicros:5000000,payoutBps:6000,
+    dividendMicros:3000000,roeBps:1500,totalShares:100,operatingCashMinor:([47000,62000,59000][index] ?? 65000),
+    capitalExpenditureMinor:20000,dividendCashMinor:30000,fcfCoverageBps:([9000,14000,13000][index] ?? 15000)}));
+  const p=calculateDividendPricing(v);
+  assert.equal(p.earningsDividendMicros,3000000);assert.equal(p.fcfDividendCapMicros,1800000);assert.equal(p.d1Micros,1800000);
+  assert.equal(p.fcfCapApplied,true);assert.equal(p.canApply,true);assert.deepEqual(p.blockers,[]);
+  assert.ok(p.warnings.includes('fcf_below_150'));assert.ok(p.warnings.includes('fcf_dividend_capped'));
+  assert.equal(p.warnings.filter(w=>w==='fcf_below_150').length,1);
+  assert.deepEqual(p.fcfEvidence?.map(y=>[y.year,y.fcfPerShareMicros,y.dividendCapMicros,y.basis]),[
+    [2025,2700000,1800000,'reported_cash_flow_per_share'],[2024,4200000,2800000,'reported_cash_flow_per_share'],[2023,3900000,2600000,'reported_cash_flow_per_share']]);
+  assert.equal(p.theoreticalPriceMinor,2250);assert.deepEqual(p.grid.map(g=>g.priceMinor),[2137,1912,1687]);
+  v.method.holdingPeriod='month_to_year';assert.equal(calculateDividendPricing(v).d1Micros,1620000);
+  const readable=dividendPricingReadable(p);
+  assert.equal(readable['Cash-supported pretax dividend ceiling in CNY per share at 1.5x coverage'],1.8);
+  assert.equal(readable['Cash-flow ceiling reduced the dividend'],true);
+});
+test('documented dividend coverage is a per-share fallback and cannot exceed the reported cash-flow ceiling', () => {
+  const v=input();v.annuals[0].fcfCoverageBps=12000;
+  let p=calculateDividendPricing(v);
+  assert.equal(p.fcfDividendCapMicros,400000);assert.equal(p.d1Micros,400000);assert.equal(p.canApply,true);
+  assert.equal(p.fcfEvidence?.[0].basis,'reported_dividend_coverage');
+  Object.assign(v.annuals[0],{operatingCashMinor:5500,capitalExpenditureMinor:1000,totalShares:100,dividendCashMinor:5000,fcfCoverageBps:20000});
+  p=calculateDividendPricing(v);
+  assert.equal(p.fcfDividendCapMicros,300000);assert.equal(p.d1Micros,300000);assert.equal(p.fcfEvidence?.[0].basis,'reported_cash_flow_per_share');
+});
+test('missing and nonpositive cash support still prevent executable industrial grids', () => {
+  for(const coverage of [undefined,0,-1000]){
+    const v=input();v.annuals[0].fcfCoverageBps=coverage;
+    const p=calculateDividendPricing(v);
+    assert.equal(p.canApply,false);assert.deepEqual(p.grid,[]);
+    assert.ok(p.blockers.includes(coverage===undefined?'fcf_missing':'fcf_non_positive'));
+  }
+  const raw=input();Object.assign(raw.annuals[0],{operatingCashMinor:1000,capitalExpenditureMinor:2000,totalShares:100,fcfCoverageBps:20000});
+  assert.ok(calculateDividendPricing(raw).blockers.includes('fcf_non_positive'));
+  const earnings=input();earnings.annuals.slice(0,3).forEach(year=>{year.adjustedEpsMicros=-100;});
+  assert.ok(calculateDividendPricing(earnings).blockers.includes('non_positive_earnings'));
+  delete earnings.annuals[0].adjustedEpsMicros;
+  assert.ok(calculateDividendPricing(earnings).blockers.includes('annual_eps_missing'));
+});
+test('synthetic Agricultural Bank case resolves auxiliary-anchor conflict without applying industrial FCF rules', () => {
+  const v={...input(),code:'601288',name:'农业银行',financialSector:true,priceMinor:600,bvpsMicros:8000000,
+    financialReview:{sector:'bank' as const,status:'pass' as const,asOf:'2026-06-30',metrics:[],missing:[],sourceUrl:'https://example.com/bank-review',policySourceUrls:[],basis:'dividend_screen' as const}};
+  v.annuals.forEach(year=>Object.assign(year,{epsMicros:650000,adjustedEpsMicros:650000,payoutBps:3000,dividendMicros:195000,roeBps:1200,fcfCoverageBps:-5000}));
+  v.history.samples.forEach(sample=>{sample.yieldBps=900;});v.opportunity.yieldBps=409;v.treasury.yieldBps=164;
+  const p=calculateDividendPricing(v);
+  assert.equal(p.riskClass,'bank');assert.equal(p.canApply,true);assert.deepEqual(p.blockers,[]);
+  assert.equal(p.anchors.medianBps,409);assert.equal(p.anchors.selectedBps,900);assert.equal(p.anchorPriceMinor,216);
+  assert.equal(p.theoreticalPriceMinor,216);assert.deepEqual(p.grid.map(g=>g.priceMinor),[205,183,162]);
+  assert.equal(p.fcfDividendCapMicros,undefined);assert.equal(p.fcfCapApplied,false);assert.deepEqual(p.fcfEvidence,[]);
+  assert.deepEqual(p.warnings,['anchors_conflict']);
+  assert.ok(calculateDividendPricing({...v,financialReview:{...v.financialReview,status:'risk'}}).blockers.includes('financial_sector_review'));
 });
 test('a cyclical company needs dated normalised earnings, and a future date is not valid evidence', () => {
   const v=input();v.method.stockOverrides[v.code]={riskClass:'cyclical'};v.method.riskPremiumBps.cyclical=300;

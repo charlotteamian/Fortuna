@@ -30,7 +30,7 @@ export function dividendResearchAdvice(stock: DividendStockResearch, indices: Di
   const currentPriceMinor = stock.pricing?.currentPriceMinor;
   const marginPriceMinor = stock.pricing?.marginPriceMinor;
   const additionalRulesUnverified = Boolean(additionalRules?.trim());
-  const sustainabilityFailure = pricingBlockers.some(blocker => ['non_positive_earnings', 'payout_above_100', 'fcf_below_150', 'implausible_yield'].includes(blocker));
+  const sustainabilityFailure = pricingBlockers.some(blocker => ['non_positive_earnings', 'payout_above_100', 'fcf_non_positive', 'fcf_below_150', 'implausible_yield'].includes(blocker));
   const decision: DividendResearchDecision = failedRules.length || sustainabilityFailure ? 'risk'
     : stock.technical?.currentUsable && stock.technical.pacing === 'pause_add' || marketPacing === 'pause_add' ? 'pause'
     : stock.technical?.currentUsable && stock.technical.pacing === 'review_grid' || marketPacing === 'review_grid' ? 'wait_stable'

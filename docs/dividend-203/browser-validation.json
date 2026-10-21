@@ -1,0 +1,64 @@
+{
+  "source": "2026-10-21 downloaded public Midea and ABC research snapshot",
+  "provider": "synthetic no-draft response; deterministic current service generated both actual ladders",
+  "widths": [
+    {
+      "viewport": 390,
+      "width": 390,
+      "scrollWidth": 390
+    },
+    {
+      "viewport": 320,
+      "width": 320,
+      "scrollWidth": 320
+    }
+  ],
+  "generatedPlans": [
+    {
+      "code": "000333",
+      "buyLevels": [
+        {
+          "priceMinor": 3685,
+          "yieldBps": 842,
+          "portionBps": 3333
+        },
+        {
+          "priceMinor": 3297,
+          "yieldBps": 941,
+          "portionBps": 3333
+        },
+        {
+          "priceMinor": 2909,
+          "yieldBps": 1067,
+          "portionBps": 3334
+        }
+      ],
+      "buyPaused": true
+    },
+    {
+      "code": "601288",
+      "buyLevels": [
+        {
+          "priceMinor": 285,
+          "yieldBps": 844,
+          "portionBps": 3333
+        },
+        {
+          "priceMinor": 255,
+          "yieldBps": 943,
+          "portionBps": 3333
+        },
+        {
+          "priceMinor": 225,
+          "yieldBps": 1069,
+          "portionBps": 3334
+        }
+      ],
+      "buyPaused": true
+    }
+  ],
+  "previewAndCancelReadOnly": true,
+  "confirmationReplacesOnlyLadderAndPause": true,
+  "bothPlansPersistAfterReload": true,
+  "pageErrors": []
+}
