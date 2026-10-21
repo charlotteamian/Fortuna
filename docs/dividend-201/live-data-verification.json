@@ -1,0 +1,633 @@
+{
+  "generatedAt": 1792575926124,
+  "principles": {
+    "minYieldBps": 400,
+    "minRoeBps": 800,
+    "minRevenueGrowthBps": -1000,
+    "minProfitGrowthBps": -1000,
+    "maxDebtAssetBps": 7000,
+    "minCashProfitBps": 8000,
+    "minFcfCoverageBps": 15000,
+    "maxPayoutBps": 10000,
+    "minDividendYears": 5,
+    "notes": ""
+  },
+  "pricingMethod": {
+    "requiredReturnBps": 800,
+    "growthBps": 0,
+    "holdingPeriod": "over_year",
+    "safetyMarginBps": 1500,
+    "riskPremiumBps": {
+      "bondlike": 175,
+      "bank": 225,
+      "cyclical": 350,
+      "other": 300
+    },
+    "historicalPercentileBps": 7500,
+    "stockOverrides": {}
+  },
+  "macro": {
+    "yieldBps": 164,
+    "asOf": "2026-10-20",
+    "sourceUrl": "https://data.eastmoney.com/cjsj/zmgzsyl.html"
+  },
+  "opportunity": {
+    "yieldBps": 409,
+    "asOf": "2026-10-20",
+    "sourceUrl": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls",
+    "basis": "CSI Dividend 000922 official D/P1 (total-share cash dividend yield), a diversified dividend-equity alternative; company-specific risks differ, user may replace the comparison"
+  },
+  "indices": [
+    {
+      "code": "sh000001",
+      "date": "2026-10-21",
+      "state": "falling",
+      "issues": []
+    },
+    {
+      "code": "sh000300",
+      "date": "2026-10-21",
+      "state": "falling",
+      "issues": []
+    },
+    {
+      "code": "sz399006",
+      "date": "2026-10-21",
+      "state": "falling",
+      "issues": []
+    }
+  ],
+  "stocks": [
+    {
+      "code": "000333",
+      "name": "美的集团",
+      "technical": {
+        "asOf": "2026-10-21",
+        "fetchedAt": 1792575925630,
+        "priceBasis": "qfq",
+        "lastCloseMinor": 8386,
+        "currentUsable": true,
+        "ma5Minor": 8500,
+        "ma10Minor": 8392,
+        "ma30Minor": 8439,
+        "ma30SlopePercent": -0.3542330853701703,
+        "rsi6": 47.64031617275617,
+        "change5Percent": 0.19115890083631903,
+        "change10Percent": 4.69413233458178,
+        "change30Percent": -4.14904560521202,
+        "previous5Percent": 4.494382022471921,
+        "drawdown60Percent": -5.72231590781338,
+        "state": "range",
+        "pacing": "observe"
+      },
+      "issues": [],
+      "pricingStatus": "blocked",
+      "pricingBlockers": [
+        "fcf_below_150"
+      ],
+      "history": {
+        "samples": 118,
+        "from": "2016-11-30",
+        "through": "2026-09-30"
+      },
+      "anchors": {
+        "riskFreePlusPremiumBps": 464,
+        "historicalPercentileBps": 421,
+        "opportunityCostBps": 409,
+        "medianBps": 421,
+        "rangeBps": 55
+      },
+      "sectorReview": null,
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,day,,,250,qfq",
+          "fetchedAt": 1792575925631,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925649,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "dividend",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+          "fetchedAt": 1792575925626,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925630,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,month,,,120,",
+          "fetchedAt": 1792575925634,
+          "asOf": "2026-10-21"
+        }
+      ]
+    },
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "technical": {
+        "asOf": "2026-10-21",
+        "fetchedAt": 1792575925635,
+        "priceBasis": "qfq",
+        "lastCloseMinor": 1141,
+        "currentUsable": true,
+        "ma5Minor": 1148,
+        "ma10Minor": 1156,
+        "ma30Minor": 1151,
+        "ma30SlopePercent": 0.017089511384815737,
+        "rsi6": 42.035650793197426,
+        "change5Percent": -0.7826086956521761,
+        "change10Percent": -1.382886776145209,
+        "change30Percent": -2.2363122268871494,
+        "previous5Percent": -0.6050129645635338,
+        "drawdown60Percent": -3.1409168081493966,
+        "state": "falling",
+        "pacing": "review_grid"
+      },
+      "issues": [],
+      "pricingStatus": "ready",
+      "pricingBlockers": [],
+      "history": {
+        "samples": 116,
+        "from": "2016-11-30",
+        "through": "2026-09-30"
+      },
+      "anchors": {
+        "riskFreePlusPremiumBps": 389,
+        "historicalPercentileBps": 342,
+        "opportunityCostBps": 409,
+        "medianBps": 389,
+        "rangeBps": 67
+      },
+      "sectorReview": {
+        "sector": "bank",
+        "status": "pass",
+        "asOf": "2026-06-30",
+        "metrics": [
+          {
+            "key": "capitalAdequacy",
+            "valueBps": 1314,
+            "thresholdBps": 1200,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -12,
+            "status": "pass"
+          },
+          {
+            "key": "coreTier1",
+            "valueBps": 932,
+            "thresholdBps": 900,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": 1,
+            "status": "pass"
+          },
+          {
+            "key": "nonPerformingLoan",
+            "valueBps": 105,
+            "thresholdBps": 300,
+            "direction": "maximum",
+            "reportDate": "2026-06-30",
+            "changeBps": 0,
+            "status": "pass"
+          },
+          {
+            "key": "provisionCoverage",
+            "valueBps": 21958,
+            "thresholdBps": 15000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -1890,
+            "status": "pass"
+          }
+        ],
+        "missing": [],
+        "basis": "dividend_screen",
+        "sourceUrl": "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=SZ000001",
+        "policySourceUrls": [
+          "https://www.nfra.gov.cn/cn/view/pages/rulesDetail.html?docId=1134197&itemId=4214"
+        ]
+      },
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000001,day,,,250,qfq",
+          "fetchedAt": 1792575925635,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925678,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "dividend",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+          "fetchedAt": 1792575925705,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925635,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000001,month,,,120,",
+          "fetchedAt": 1792575925636,
+          "asOf": "2026-10-21"
+        }
+      ]
+    },
+    {
+      "code": "601398",
+      "name": "工商银行",
+      "technical": {
+        "asOf": "2026-10-21",
+        "fetchedAt": 1792575925636,
+        "priceBasis": "qfq",
+        "lastCloseMinor": 845,
+        "currentUsable": true,
+        "ma5Minor": 840,
+        "ma10Minor": 832,
+        "ma30Minor": 808,
+        "ma30SlopePercent": 1.219308501753802,
+        "rsi6": 76.56797802682864,
+        "change5Percent": 1.819496324858405,
+        "change10Percent": 3.9488251937507712,
+        "change30Percent": 5.6382047755969555,
+        "previous5Percent": 2.091278139992636,
+        "drawdown60Percent": 0,
+        "state": "rising",
+        "pacing": "observe"
+      },
+      "issues": [],
+      "pricingStatus": "blocked",
+      "pricingBlockers": [
+        "anchors_conflict"
+      ],
+      "history": {
+        "samples": 118,
+        "from": "2016-11-30",
+        "through": "2026-09-30"
+      },
+      "anchors": {
+        "riskFreePlusPremiumBps": 389,
+        "historicalPercentileBps": 579,
+        "opportunityCostBps": 409,
+        "medianBps": 409,
+        "rangeBps": 190
+      },
+      "sectorReview": {
+        "sector": "bank",
+        "status": "pass",
+        "asOf": "2026-06-30",
+        "metrics": [
+          {
+            "key": "capitalAdequacy",
+            "valueBps": 1857,
+            "thresholdBps": 1200,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -97,
+            "status": "pass"
+          },
+          {
+            "key": "coreTier1",
+            "valueBps": 1321,
+            "thresholdBps": 900,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -68,
+            "status": "pass"
+          },
+          {
+            "key": "nonPerformingLoan",
+            "valueBps": 129,
+            "thresholdBps": 300,
+            "direction": "maximum",
+            "reportDate": "2026-06-30",
+            "changeBps": -4,
+            "status": "pass"
+          },
+          {
+            "key": "provisionCoverage",
+            "valueBps": 21758,
+            "thresholdBps": 15000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -13,
+            "status": "pass"
+          }
+        ],
+        "missing": [],
+        "basis": "dividend_screen",
+        "sourceUrl": "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=SH601398",
+        "policySourceUrls": [
+          "https://www.nfra.gov.cn/cn/view/pages/rulesDetail.html?docId=1134197&itemId=4214"
+        ]
+      },
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601398,day,,,250,qfq",
+          "fetchedAt": 1792575925636,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22601398%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925658,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "dividend",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601398%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+          "fetchedAt": 1792575925626,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22601398%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925631,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601398,month,,,120,",
+          "fetchedAt": 1792575925636,
+          "asOf": "2026-10-21"
+        }
+      ]
+    },
+    {
+      "code": "601318",
+      "name": "中国平安",
+      "technical": {
+        "asOf": "2026-10-21",
+        "fetchedAt": 1792575925655,
+        "priceBasis": "qfq",
+        "lastCloseMinor": 5120,
+        "currentUsable": true,
+        "ma5Minor": 5155,
+        "ma10Minor": 5194,
+        "ma30Minor": 5359,
+        "ma30SlopePercent": -1.121204479897664,
+        "rsi6": 30.299668028708652,
+        "change5Percent": -0.05855943782938633,
+        "change10Percent": -3.921936573465934,
+        "change30Percent": -8.977777777777774,
+        "previous5Percent": -3.8656408331769643,
+        "drawdown60Percent": -10.583304226335999,
+        "state": "falling",
+        "pacing": "review_grid"
+      },
+      "issues": [],
+      "pricingStatus": "ready",
+      "pricingBlockers": [],
+      "history": {
+        "samples": 119,
+        "from": "2016-11-30",
+        "through": "2026-09-30"
+      },
+      "anchors": {
+        "riskFreePlusPremiumBps": 464,
+        "historicalPercentileBps": 481,
+        "opportunityCostBps": 409,
+        "medianBps": 464,
+        "rangeBps": 72
+      },
+      "sectorReview": {
+        "sector": "insurance",
+        "status": "pass",
+        "asOf": "2026-06-30",
+        "metrics": [
+          {
+            "key": "comprehensiveSolvency",
+            "valueBps": 19814,
+            "thresholdBps": 10000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "status": "pass"
+          },
+          {
+            "key": "coreSolvency",
+            "valueBps": 16560,
+            "thresholdBps": 5000,
+            "direction": "minimum",
+            "status": "pass",
+            "reportDate": "2026-06-30"
+          }
+        ],
+        "missing": [],
+        "reportSupplement": {
+          "reportDate": "2026-06-30",
+          "publishedAt": "2026-08-21",
+          "verifiedAt": "2026-10-21",
+          "sourceUrl": "https://group.pingan.com/resource/pingan/IR-Docs/2026/Summary-of-Solvency-Report-of-PAG-for-1H-2026.pdf",
+          "sha256": "aae32edfa330a1e206e7f9f91afd55c44cb1360880b55ba3258a7588b7423958",
+          "pdfPages": [
+            22,
+            24,
+            34
+          ],
+          "insuranceRiskRating": "not_applicable_to_group"
+        },
+        "basis": "published_regulatory_minimum",
+        "sourceUrl": "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=SH601318",
+        "policySourceUrls": [
+          "https://www.nfra.gov.cn/cn/view/pages/ItemDetail.html?docId=962016&generaltype=0&itemId=925"
+        ]
+      },
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601318,day,,,250,qfq",
+          "fetchedAt": 1792575925655,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22601318%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925723,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "dividend",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601318%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+          "fetchedAt": 1792575926110,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22601318%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925632,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601318,month,,,120,",
+          "fetchedAt": 1792575925656,
+          "asOf": "2026-10-21"
+        }
+      ]
+    },
+    {
+      "code": "600030",
+      "name": "中信证券",
+      "technical": {
+        "asOf": "2026-10-21",
+        "fetchedAt": 1792575925810,
+        "priceBasis": "qfq",
+        "lastCloseMinor": 2501,
+        "currentUsable": true,
+        "ma5Minor": 2582,
+        "ma10Minor": 2583,
+        "ma30Minor": 2650,
+        "ma30SlopePercent": -1.2802523251915332,
+        "rsi6": 22.046249352455945,
+        "change5Percent": -3.361669242658416,
+        "change10Percent": -3.2869296210363386,
+        "change30Percent": -10.742326909350453,
+        "previous5Percent": 0.07733952049497894,
+        "drawdown60Percent": -12.613556953179595,
+        "state": "accelerating_down",
+        "pacing": "pause_add"
+      },
+      "issues": [],
+      "pricingStatus": "blocked",
+      "pricingBlockers": [
+        "anchors_conflict"
+      ],
+      "history": {
+        "samples": 119,
+        "from": "2016-11-30",
+        "through": "2026-09-30"
+      },
+      "anchors": {
+        "riskFreePlusPremiumBps": 464,
+        "historicalPercentileBps": 258,
+        "opportunityCostBps": 409,
+        "medianBps": 409,
+        "rangeBps": 206
+      },
+      "sectorReview": {
+        "sector": "securities",
+        "status": "pass",
+        "asOf": "2026-06-30",
+        "metrics": [
+          {
+            "key": "riskCoverage",
+            "valueBps": 22531,
+            "thresholdBps": 10000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -1126,
+            "status": "pass"
+          },
+          {
+            "key": "capitalLeverage",
+            "valueBps": 1270,
+            "thresholdBps": 800,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -285,
+            "status": "pass"
+          },
+          {
+            "key": "liquidityCoverage",
+            "valueBps": 14406,
+            "thresholdBps": 10000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -1862,
+            "status": "pass"
+          },
+          {
+            "key": "netStableFunding",
+            "valueBps": 13687,
+            "thresholdBps": 10000,
+            "direction": "minimum",
+            "reportDate": "2026-06-30",
+            "changeBps": -414,
+            "status": "pass"
+          }
+        ],
+        "missing": [],
+        "basis": "published_regulatory_minimum",
+        "sourceUrl": "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=SH600030",
+        "policySourceUrls": [
+          "https://www.csrc.gov.cn/csrc/c106256/c1653957/content.shtml"
+        ]
+      },
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600030,day,,,250,qfq",
+          "fetchedAt": 1792575925810,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22600030%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925815,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "dividend",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22600030%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+          "fetchedAt": 1792575925790,
+          "asOf": "2026-10-21"
+        },
+        {
+          "kind": "financial",
+          "provider": "Eastmoney",
+          "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22600030%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+          "fetchedAt": 1792575925800,
+          "asOf": "2026-06-30"
+        },
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600030,month,,,120,",
+          "fetchedAt": 1792575925817,
+          "asOf": "2026-10-21"
+        }
+      ]
+    }
+  ]
+}

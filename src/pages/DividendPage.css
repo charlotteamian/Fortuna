@@ -158,3 +158,21 @@
 .div-plan-manager table { width: 100%; border-collapse: collapse; text-align: right; font-size: .7rem; }
 .div-plan-manager th, .div-plan-manager td { padding: .55rem .25rem; border-bottom: 1px solid var(--border); }
 .div-plan-manager th { color: var(--text-secondary); }
+.div-home-plan { border-top: 1px solid var(--border); margin-top: .8rem; padding-top: .55rem; }
+.div-home-plan-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.div-home-plan-heading h3 { font-size: .85rem; margin: 0; }
+.div-home-plan-heading > button { font-size: .75rem; flex-shrink: 0; }
+.div-home-plan-budget { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .3rem .6rem; margin: .25rem 0 .7rem; font-size: .73rem; line-height: 1.6; color: var(--text-secondary); }
+.div-home-plan-budget strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.div-home-plan-side { margin: .7rem 0; }
+.div-home-plan-side h4 { font-size: .75rem; margin: 0 0 .3rem; }
+.div-home-plan-state { font-size: .72rem; line-height: 1.6; color: var(--text-secondary); margin: .2rem 0 .45rem; }
+.div-home-plan-triggered { color: var(--asset-color); font-weight: 600; }
+.div-home-plan-levels { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem; margin: 0; padding: 0; }
+.div-home-plan-levels > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .4rem; padding: .45rem .5rem; border: 1px solid var(--border); border-radius: 7px; min-width: 0; font-variant-numeric: tabular-nums; }
+.div-home-plan-levels strong { font-size: .76rem; overflow-wrap: anywhere; }
+.div-home-plan-levels span { font-size: .65rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.div-home-plan-levels small { font-size: .6rem; color: var(--asset-color); }
+.div-home-plan-levels > .div-home-plan-touched { background: var(--asset-dim); border-color: var(--asset-color); }
+.div-home-plan-note { color: var(--text-secondary); font-size: .65rem; line-height: 1.65; margin: .65rem 0; }
+@media (max-width: 360px) { .div-home-plan-levels > li { flex-direction: column; } }

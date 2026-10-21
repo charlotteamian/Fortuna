@@ -143,14 +143,44 @@ test('matching report-year dividends and EPS establish payout, missing reports n
   assert.equal(evaluateDividendResearch(research({ financial: old, distributions, yieldBps: 500 }), principles, now).status, 'unknown');
 });
 
-test('banks are exempt from industrial leverage/cashflow thresholds and explicitly need sector-specific checks', () => {
+test('banks replace industrial leverage/cashflow thresholds with actual specialist checks', () => {
   const financial = parseDividendFinancialResearch(envelope([financialRow({ ORG_TYPE: '银行', ZCFZL: 92, NETCASH_OPERATE_PK: -20 })]), '600036', '2026-10-21');
   const result = evaluateDividendResearch(research({ financial }), principles, now);
-  for (const rule of ['debtAsset', 'cashProfit', 'financialSector']) {
-    const check = result.checks.find(item => item.rule === rule);
-    assert.equal(check?.status, 'unknown');
-    assert.equal(check?.reason, 'sector_specific');
-  }
+  assert.ok(!result.checks.some(item => ['debtAsset', 'cashProfit', 'fcfCoverage'].includes(item.rule)));
+  assert.equal(result.checks.find(item => item.rule === 'financialSector')?.status, 'unknown');
+  assert.deepEqual(financial.sectorReview?.missing, ['capitalAdequacy', 'coreTier1', 'nonPerformingLoan', 'provisionCoverage']);
+});
+
+test('captured industry fields and explicitly verified insurer-group report extract produce dated specialist conclusions', () => {
+  const fixtures = JSON.parse(readFileSync(new URL('./fixtures/dividend-financial-sector-2026-10-21.json', import.meta.url), 'utf8')).sources;
+  const bank = parseDividendFinancialResearch(fixtures['601398'].data, '601398', '2026-10-21').sectorReview!;
+  assert.equal(bank.status, 'pass');
+  assert.equal(bank.basis, 'dividend_screen');
+  assert.equal(bank.metrics.find(m => m.key === 'coreTier1')?.valueBps, 1321);
+  assert.equal(bank.metrics.find(m => m.key === 'provisionCoverage')?.valueBps, 21758);
+  const insurer = parseDividendFinancialResearch(fixtures['601318'].data, '601318', '2026-10-21').sectorReview!;
+  assert.equal(insurer.status, 'pass');
+  assert.equal(insurer.metrics[0].valueBps, 19814);
+  assert.equal(insurer.metrics[0].reportDate, '2026-06-30');
+  assert.equal(insurer.metrics[1].valueBps, 16560);
+  assert.deepEqual(insurer.missing, []);
+  assert.equal(insurer.reportSupplement?.insuranceRiskRating, 'not_applicable_to_group');
+  assert.equal(insurer.reportSupplement?.verifiedAt, '2026-10-21');
+  const newerInsurer = structuredClone(fixtures['601318'].data);
+  newerInsurer.result.data[0].REPORT_DATE = '2026-09-30';
+  assert.equal(parseDividendFinancialResearch(newerInsurer, '601318', '2026-10-21').sectorReview?.reportSupplement, undefined);
+  assert.equal(parseDividendFinancialResearch(fixtures['601318'].data, '601318', '2027-06-30').sectorReview?.reportSupplement, undefined);
+  const anotherInsurer = structuredClone(fixtures['601318'].data);
+  anotherInsurer.result.data.forEach((r:Record<string,unknown>)=>{r.SECURITY_CODE='601628';});
+  assert.deepEqual(parseDividendFinancialResearch(anotherInsurer, '601628', '2026-10-21').sectorReview?.missing, ['coreSolvency','insuranceRiskRating']);
+  const broker = parseDividendFinancialResearch(fixtures['600030'].data, '600030', '2026-10-21').sectorReview!;
+  assert.equal(broker.status, 'pass');
+  assert.equal(broker.metrics.find(m => m.key === 'capitalLeverage')?.valueBps, 1270);
+  assert.equal(broker.metrics.find(m => m.key === 'liquidityCoverage')?.valueBps, 14406);
+  const badBank = structuredClone(fixtures['601398'].data);
+  badBank.result.data[0].HXYJBCZL = 6;
+  assert.equal(parseDividendFinancialResearch(badBank, '601398', '2026-10-21').sectorReview?.status, 'risk');
+  assert.equal(parseDividendFinancialResearch(fixtures['601398'].data, '601398', '2027-10-21').sectorReview?.status, 'unknown');
 });
 
 test('confirmed fundamental breaches remain separate from technical market timing', () => {
@@ -179,12 +209,58 @@ test('research service keeps individual source failures unknown and bounds candi
   globalThis.fetch = async () => { requests++; throw new TypeError('offline fixture'); };
   try {
     const result = await fetchDividendResearch([{ code: '600036', name: 'First' }, { code: '000001', name: 'Deferred' }], principles, { maxStocks: 1 });
-    assert.equal(requests, 15); // Five company feeds, three indices, six treasury pages and one official index workbook.
+    assert.equal(requests, 20); // Five feeds, three indices, six Treasury pages, workbook, plus five bounded Tencent fallbacks.
     assert.equal(result.stocks[0].status, 'unknown');
     assert.equal(result.stocks[0].issues.length, 5);
     assert.ok(result.stocks[0].issues.every(issue => issue.reason === 'request_failed'));
+    assert.ok(result.stocks[0].issues.every(issue => issue.url && issue.detail?.includes('offline fixture')));
+    assert.equal(result.stocks[0].issues.find(issue => issue.kind === 'technical')?.attempts, 2);
     assert.ok(result.stocks[1].issues.every(issue => issue.reason === 'deferred'));
     assert.equal(result.indices.length, 3);
     assert.ok(result.indices.every(index => !index.technical));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a failed Tencent primary recovers daily and monthly evidence through its verified public proxy', async () => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  const f = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-public-2026-10-21.json', import.meta.url), 'utf8'));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.startsWith('/dividend-trend-api')) return new Response('unavailable', { status:503 });
+    if (url.startsWith('/dividend-tencent-api')) {
+      const symbol = new URL(url, 'https://example.test').searchParams.get('param')!.split(',')[0];
+      if (url.includes(',month,')) return Response.json({ code:0, data:{ [symbol]:f.sources.month.data.sh600900 } });
+      return Response.json({ code:0, data:{ [symbol]:liveFixtures.indexDaily.data.data.sh000300 } });
+    }
+    if (url.includes('RPT_F10_FINANCE_MAINFINADATA')) return Response.json(liveFixtures.bankFinancial.data);
+    if (url.includes('RPT_SHAREBONUS_DET')) return Response.json(liveFixtures.bankDistributions.data);
+    if (url.includes('RPTA_WEB_TREASURYYIELD')) return Response.json(f.sources.treasury);
+    throw new TypeError('fixture feed intentionally unavailable');
+  };
+  try {
+    const result = await fetchDividendResearch([{ code:'600036', name:'招商银行' }], principles);
+    const stock = result.stocks[0];
+    assert.ok(stock.technical?.currentUsable);
+    assert.ok(stock.pricing?.history && stock.pricing.history.samples.length >= 60);
+    assert.notEqual(stock.pricing?.anchors.historicalPercentileBps, undefined);
+    assert.ok(stock.sources.filter(source => source.kind === 'technical').every(source => source.url.startsWith('https://proxy.finance.qq.com/')));
+    assert.ok(result.indices.every(index => index.technical?.currentUsable));
+    assert.ok(!stock.issues.some(issue => issue.kind === 'technical'));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('both Tencent hosts failing retain the HTTP status, original request URL and bounded attempt count', async () => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('upstream unavailable', { status:503 });
+  try {
+    const result = await fetchDividendResearch([{ code:'000001', name:'平安银行' }], principles);
+    const technical = result.stocks[0].issues.filter(issue => issue.kind === 'technical');
+    assert.equal(technical.length, 2);
+    assert.ok(technical.every(issue => issue.reason === 'request_failed' && issue.attempts === 2));
+    assert.ok(technical.every(issue => issue.url?.startsWith('https://web.ifzq.gtimg.cn/')));
+    assert.ok(technical.every(issue => issue.detail === 'RESEARCH_HTTP_503 → RESEARCH_HTTP_503'));
+    assert.ok(result.indices.every(index => index.issues[0]?.detail === 'RESEARCH_HTTP_503 → RESEARCH_HTTP_503'));
   } finally { globalThis.fetch = originalFetch; }
 });

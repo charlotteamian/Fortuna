@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUY_LEVELS, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
+import { BUY_LEVELS, buildDividendHomePlan, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
 import { repairPlanReferences } from '../src/lib/planReferences.ts';
 import type { Account, Holding, HoldingTxn, PlanItem, PlanTarget } from '../src/db.ts';
 const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, NOTICE_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
@@ -54,6 +54,48 @@ test('budgets scale, grid shares round down, no sell signal without holdings, ma
   assert.equal(buildGrid(stock, 500000, 0, 'buy')[0].priceMinor, 1234);
   assert.equal(buildGrid(stock, 500000, 0, 'buy')[0].displayYieldBps, 500000 / 1234);
   stock.buyLevels = [{ yieldBps: 500, portionBps: 11000 }]; assert.equal(isDividendStock(stock), false);
+});
+
+test('home ordering places holdings before core and watch, with stable group, allocation and code ties', () => {
+  const rows = defaultDividendStocks().slice(0, 6).map((stock, index) => ({ ...stock, group: index < 2 ? 'watch' as const : 'core' as const, weightBps: 1000 }));
+  rows[0].shareMode = 'manual'; rows[0].manualShares = 100;
+  const linked = new Map([[rows[1].code, 200]]);
+  const sharesFor = (stock: typeof rows[number]) => stock.shareMode === 'manual' ? stock.manualShares : linked.get(stock.code) ?? 0;
+  const sorted = sortDividendStocks(rows, sharesFor);
+  assert.deepEqual(sorted.slice(0, 2).map(stock => stock.code), [rows[1].code, rows[0].code]);
+  assert.deepEqual(sorted.slice(2).map(stock => stock.code), rows.slice(2).map(stock => stock.code).sort());
+  assert.equal(rows[0].code, '601398', 'the saved array is not mutated');
+  const weighted = sortDividendStocks([{ ...rows[0], group: 'core', manualShares: 0, weightBps: 100 }, { ...rows[1], group: 'core', shareMode: 'manual', manualShares: 0, weightBps: 500 }], () => 0);
+  assert.equal(weighted[0].weightBps, 500);
+});
+
+test('home plan retains every saved level and calculates additions after existing holdings, using integer lots', () => {
+  const stock = { ...defaultDividendStocks()[0], weightBps: 10000,
+    buyLevels: [{ priceMinor: 1000, yieldBps: 500, portionBps: 5000 }, { priceMinor: 800, yieldBps: 600, portionBps: 5000 }],
+    sellLevels: [{ priceMinor: 1200, yieldBps: 400, portionBps: 5000 }, { priceMinor: 1400, yieldBps: 350, portionBps: 5000 }],
+    quote: { priceMinor: 900, date: '2026-10-21', fetchedAt: 1 } };
+  const plan = buildDividendHomePlan(stock, 1000000, 200, '2026-10-21');
+  assert.equal(plan.budgetMinor, 1000000);
+  assert.deepEqual(plan.buy.map(level => [level.priceMinor, level.targetShares]), [[1000, 500], [800, 1100]]);
+  assert.deepEqual(plan.sell.map(level => [level.priceMinor, level.sellShares]), [[1200, 100], [1400, 200]]);
+  assert.equal(plan.additionalBuyShares, 300, '500 cumulative shares are not a new 500-share order');
+  assert.equal(plan.buyState, 'triggered');
+  assert.equal(plan.sellState, 'waiting');
+  assert.equal(buildDividendHomePlan(stock, 1000000, 500, '2026-10-21').buyState, 'covered');
+  assert.equal(buildDividendHomePlan(stock, 1000000, 450, '2026-10-21').buyState, 'below_lot');
+  const selling = buildDividendHomePlan({ ...stock, quote: { ...stock.quote, priceMinor: 1500 } }, 1000000, 200, '2026-10-21');
+  assert.equal(selling.sellState, 'triggered'); assert.equal(selling.sellShares, 200);
+});
+
+test('home plan distinguishes missing budget, zero allocation, absent prices, paused additions and no holdings', () => {
+  const stock = { ...defaultDividendStocks()[0], manualDpsMicros: 500000,
+    quote: { priceMinor: 900, date: '2026-10-21', fetchedAt: 1 } };
+  assert.equal(buildDividendHomePlan(stock, undefined, 0, '2026-10-21').buyState, 'budget_missing');
+  assert.equal(buildDividendHomePlan({ ...stock, weightBps: 0 }, 1000000, 0, '2026-10-21').buyState, 'budget_empty');
+  assert.equal(buildDividendHomePlan({ ...stock, manualDpsMicros: undefined }, 1000000, 0, '2026-10-21').buyState, 'price_missing');
+  assert.equal(buildDividendHomePlan({ ...stock, quote: undefined }, 1000000, 0, '2026-10-21').buyState, 'quote_missing');
+  assert.equal(buildDividendHomePlan({ ...stock, buyPaused: true }, 1000000, 0, '2026-10-21').buyState, 'paused');
+  assert.equal(buildDividendHomePlan(stock, 1000000, 0, '2026-10-21').sellState, 'no_holding');
 });
 
 test('deleting an allocation redistributes proportionally, including hidden stocks but preserving zero weights', () => {

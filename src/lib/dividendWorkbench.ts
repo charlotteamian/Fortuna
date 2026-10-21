@@ -61,7 +61,9 @@ export function mainlandCode(symbol: string): string | null {
 }
 export const quoteSymbol = mainlandQuoteSymbol;
 export function dateInChina(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Shanghai', calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)!.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
 }
 export function trailingYearStart(asOf: string): string {
   const [year, month, day] = asOf.split('-').map(Number);
@@ -137,6 +139,13 @@ export function effectiveDps(stock: DividendStock): number | undefined { return 
 export function dividendEstimateMinor(shares: number, dpsMicros: number): number { return Math.round(shares * dpsMicros / 10000); }
 export function stockBudgetMinor(budgetMinor: number, weightBps: number): number { return Math.round(budgetMinor * weightBps / 10000); }
 
+/** Holdings take priority, then the user's groups and allocation; never mutate the saved order. */
+export function sortDividendStocks(stocks: DividendStock[], sharesFor: (stock: DividendStock) => number): DividendStock[] {
+  const groupOrder = { core: 0, watch: 1, hidden: 2 };
+  return [...stocks].sort((a, b) => Number(sharesFor(b) > 0) - Number(sharesFor(a) > 0)
+    || groupOrder[a.group] - groupOrder[b.group] || b.weightBps - a.weightBps || a.code.localeCompare(b.code));
+}
+
 /** Reassign a removed allocation proportionally, preserving unallocated budget and zero weights. */
 export function redistributeDividendWeights(stocks: DividendStock[], removedCode: string): DividendStock[] {
   const removed = stocks.find(stock => stock.code === removedCode);
@@ -180,6 +189,28 @@ export function buildGrid(stock: DividendStock, budgetMinor: number, shares: num
     const touched = Boolean(priceMinor && stock.quote && (side === 'buy' ? !stock.buyPaused && stock.quote.priceMinor <= priceMinor : shares > 0 && stock.quote.priceMinor >= priceMinor));
     return { ...level, displayYieldBps, cumulative, priceMinor, targetShares, sellShares, touched };
   });
+}
+
+/** Describe the saved plan against current holdings, without presenting cumulative targets as new orders. */
+export function buildDividendHomePlan(stock: DividendStock, totalBudgetMinor: number | undefined, shares: number, asOf = dateInChina()) {
+  const budgetMinor = totalBudgetMinor === undefined ? undefined : stockBudgetMinor(totalBudgetMinor, stock.weightBps);
+  const quoteDate = stock.quote?.date.slice(0, 10);
+  const quoteAge = quoteDate ? (Date.parse(asOf) - Date.parse(quoteDate)) / 86400000 : NaN;
+  const quoteUsable = !!stock.quote && stock.quoteFailedAt === undefined && quoteAge >= 0 && quoteAge <= 10;
+  const buy = buildGrid(stock, budgetMinor ?? 0, shares, 'buy', asOf).map(row => ({ ...row, touched: quoteUsable && row.touched }));
+  const sell = buildGrid(stock, budgetMinor ?? 0, shares, 'sell', asOf).map(row => ({ ...row, touched: quoteUsable && row.touched }));
+  const touchedBuy = buy.filter(row => row.touched);
+  const buyTargetShares = Math.max(0, ...touchedBuy.map(row => row.targetShares ?? 0));
+  const additionalBuyShares = Math.max(0, Math.floor((buyTargetShares - shares) / stock.lotSize) * stock.lotSize);
+  const sellShares = Math.max(0, ...sell.filter(row => row.touched).map(row => row.sellShares ?? 0));
+  const buyState = stock.buyPaused ? 'paused' : budgetMinor === undefined ? 'budget_missing' : budgetMinor <= 0 ? 'budget_empty'
+    : buy.every(row => row.priceMinor === undefined) ? 'price_missing' : !quoteUsable ? 'quote_missing'
+    : touchedBuy.length && touchedBuy.every(row => row.targetShares === undefined) ? 'price_missing'
+    : additionalBuyShares > 0 ? 'triggered' : touchedBuy.length ? buyTargetShares > shares || buyTargetShares <= 0 ? 'below_lot' : 'covered' : 'waiting';
+  const sellState = shares <= 0 ? 'no_holding' : sell.every(row => row.priceMinor === undefined) ? 'price_missing'
+    : !quoteUsable ? 'quote_missing' : sellShares > 0 ? 'triggered' : 'waiting';
+  return { budgetMinor, buy, sell, buyState, sellState, additionalBuyShares, sellShares,
+    incompletePrices: [...buy, ...sell].some(row => row.priceMinor === undefined) };
 }
 
 export function isDividendStock(raw: unknown): raw is DividendStock {

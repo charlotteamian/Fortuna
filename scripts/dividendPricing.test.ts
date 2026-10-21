@@ -38,11 +38,14 @@ test('missing anchors and anchor disagreement block executable prices without hi
   v.opportunity.sourceUrl='';p=calculateDividendPricing(v);assert.ok(p.blockers.includes('opportunity_cost_missing'));
   v.history.samples=[];p=calculateDividendPricing(v);assert.ok(p.blockers.includes('yield_history_missing'));
 });
-test('payout, financial coverage, loss and growth guard stop pricing; banks have a sector-specific review', () => {
+test('payout, financial coverage, loss and growth guard stop pricing; financial-sector pricing requires a completed numeric review', () => {
   const v=input();v.annuals[0].payoutBps=10001;v.annuals[0].fcfCoverageBps=14999;let p=calculateDividendPricing(v);
   assert.ok(p.blockers.includes('payout_above_100'));assert.ok(p.blockers.includes('fcf_below_150'));assert.equal(p.canApply,false);
   const bank=input();bank.financialSector=true;bank.method.riskPremiumBps.bank=300;bank.annuals.forEach(y=>delete y.fcfCoverageBps);
-  p=calculateDividendPricing(bank);assert.equal(p.canApply,true);assert.ok(p.warnings.includes('financial_sector_review'));
+  p=calculateDividendPricing(bank);assert.equal(p.canApply,false);assert.ok(p.blockers.includes('financial_sector_review'));
+  const reviewedBank={...bank,financialReview:{sector:'bank' as const,status:'pass' as const,asOf:'2026-06-30',metrics:[],missing:[],sourceUrl:'https://example.com/review',policySourceUrls:[],basis:'dividend_screen' as const}};
+  p=calculateDividendPricing(reviewedBank);assert.equal(p.canApply,true);assert.ok(!p.warnings.includes('financial_sector_review'));
+  assert.ok(calculateDividendPricing({...reviewedBank,financialReview:{...reviewedBank.financialReview,status:'risk'}}).blockers.includes('financial_sector_review'));
   const g=input();g.method.growthBps=300;g.method.requiredReturnBps=500;assert.ok(calculateDividendPricing(g).blockers.includes('growth_return_conflict'));
 });
 test('a cyclical company needs dated normalised earnings, and a future date is not valid evidence', () => {

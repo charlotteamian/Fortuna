@@ -17,6 +17,7 @@ export default defineConfig({
       // Quote APIs have no CORS headers; in the Capacitor app we use native HTTP,
       // in the dev browser we go through these proxies instead.
       '/dividend-trend-api': { target: 'https://web.ifzq.gtimg.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-trend-api/, '') },
+      '/dividend-tencent-api': { target: 'https://proxy.finance.qq.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-tencent-api/, '') },
       '/dividend-api': { target: 'https://datacenter.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-api/, '') },
       '/dividend-schedule-api': { target: 'https://emweb.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-schedule-api/, '') },
       '/dividend-index-api': { target: 'https://oss-ch.csindex.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-index-api/, '') },

@@ -7,7 +7,8 @@ import { fetchDividendResearch, defaultDividendResearchCandidates } from '../ser
 import { addDividendResearchCandidate, loadDividendSelectionPrinciples, previewDividendRiskRemoval,
   removeDividendRiskStocks, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } from '../services/dividendAdvisorActionsService';
 import type { DividendPricingMethod } from '../lib/dividendPricing';
-import { DividendPricingCard, DividendPricingEditor } from './DividendAdvisorPricing';
+import { DividendFinancialReviewCard, DividendPricingCard, DividendPricingEditor } from './DividendAdvisorPricing';
+import { dividendResearchAdvice } from '../lib/dividendResearchAdvice';
 
 type Panel = 'chat' | 'research' | 'principles';
 type RemovalPreview = Awaited<ReturnType<typeof previewDividendRiskRemoval>>;
@@ -21,7 +22,7 @@ function TechnicalPosition({ technical }: { technical?: DividendTechnicalResearc
   const state = technical.currentUsable ? { rising: 'up', range: 'sideways', falling: 'down', accelerating_down: 'accelerating_down' }[technical.state] : 'unknown';
   return <div className="div-ai-technical"><p className={`div-ai-status ${technical.pacing === 'pause_add' ? 'risk' : ''}`}>
     {t(`div_ai_trend_${state}`)} · {technical.asOf}</p>
-    {technical.currentUsable && technical.pacing === 'pause_add' && <p className="div-ai-muted">{t('div_ai_pacing_pause')}</p>}
+    {technical.currentUsable && <p className="div-ai-technical-conclusion">{t(`div_ai_technical_conclusion_${technical.state}`)}</p>}
     {!technical.currentUsable && <p className="div-ai-muted">{t('div_ai_technical_stale')}</p>}
     <dl className="div-ai-metrics"><div><dt>{t(technical.priceBasis === 'index' ? 'div_ai_metric_index_points' : 'div_ai_metric_price')}</dt><dd>{pricePrefix}{(technical.lastCloseMinor / 100).toFixed(2)}</dd></div>
       <div><dt>{t('div_ai_metric_ma30')}</dt><dd>{pricePrefix}{(technical.ma30Minor / 100).toFixed(2)}</dd></div>
@@ -33,11 +34,33 @@ function TechnicalPosition({ technical }: { technical?: DividendTechnicalResearc
   </div>;
 }
 
-function StockResearch({ stock, canAdd, busy, onAdd, onDiscuss, onUpdated }: { stock: DividendStockResearch; canAdd: boolean; busy: boolean; onAdd: () => void; onDiscuss: () => void; onUpdated: () => Promise<unknown> }) {
+function StockConclusion({ stock, snapshot }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot }) {
   const { t } = useTranslation();
-  return <details className={`div-ai-research-card ${stock.status}`}><summary><span><strong>{stock.name}</strong><small>{stock.code}</small></span>
-    <span className={`div-ai-status ${stock.status}`}>{t(`div_ai_research_${stock.status}`)}</span></summary>
-    <div className="div-ai-research-card-body"><details open><summary>{t('div_ai_research_rules')}</summary>
+  const advice = dividendResearchAdvice(stock, snapshot.indices, snapshot.principles.notes);
+  const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
+  const labels = (rules: typeof advice.failedRules) => rules.map(rule => t(`div_ai_rule_label_${rule}`)).join('、');
+  return <div className={`div-ai-conclusion ${advice.decision}`}><p className="div-ai-conclusion-label">{t('div_ai_conclusion_label')}</p>
+    <h3>{t(`div_ai_decision_${advice.decision}`)}</h3>
+    <p>{t(`div_ai_decision_${advice.decision}_detail`, { price: yuan(advice.currentPriceMinor), margin: yuan(advice.marginPriceMinor) })}</p>
+    {advice.failedRules.length > 0 && <p>{t('div_ai_conclusion_failed', { rules: labels(advice.failedRules) })}</p>}
+    {advice.missingRules.length > 0 && <p>{t('div_ai_conclusion_missing', { rules: labels(advice.missingRules) })}</p>}
+    {advice.pricingBlockers.length > 0 && <p>{t('div_ai_conclusion_pricing', { reasons: advice.pricingBlockers.slice(0, 2).map(blocker => t(`div_v2_pricing_gap_${blocker}`)).join(' ') })}</p>}
+    {advice.technicalMissing && <p>{t('div_ai_conclusion_technical_missing')}</p>}
+    {advice.marketPacing !== 'observe' && <p>{t(`div_ai_conclusion_market_${advice.marketPacing}`)}</p>}
+    {advice.marketMissing && <p>{t('div_ai_conclusion_market_missing')}</p>}
+    {advice.additionalRulesUnverified && <p>{t('div_ai_conclusion_additional_rules')}</p>}
+    <p className="div-ai-conclusion-next"><strong>{t('div_ai_conclusion_next')}</strong>{t(`div_ai_decision_${advice.decision}_next`)}</p>
+  </div>;
+}
+
+function StockResearch({ stock, snapshot, canAdd, busy, onAdd, onDiscuss, onUpdated }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot; canAdd: boolean; busy: boolean; onAdd: () => void; onDiscuss: () => void; onUpdated: () => Promise<unknown> }) {
+  const { t } = useTranslation();
+  return <article className={`div-ai-research-card ${stock.status}`}><header><span><strong>{stock.name}</strong><small>{stock.code}</small></span>
+    <span className={`div-ai-status ${stock.status}`}>{t(`div_ai_research_${stock.status}`)}</span></header>
+    <StockConclusion stock={stock} snapshot={snapshot} />
+    {stock.financial?.sectorReview && <DividendFinancialReviewCard code={stock.code} review={stock.financial.sectorReview} />}
+    <details className="div-ai-research-details"><summary>{t('div_ai_research_details')}</summary>
+    <div className="div-ai-research-card-body"><details><summary>{t('div_ai_research_rules')}</summary>
       <ul className="div-ai-checks">{stock.checks.map(check => <li key={check.rule}><div><strong>{t(`div_ai_rule_label_${check.rule}`)}</strong>
         <span className={`div-ai-status ${check.status}`}>{t(`div_ai_research_${check.status}`)}</span></div>
         {check.value !== undefined && check.threshold !== undefined && <p>{t('div_ai_research_value', { value: check.rule === 'dividendYears' ? check.value : `${check.value / 100}%`, threshold: check.rule === 'dividendYears' ? check.threshold : `${check.threshold / 100}%` })}</p>}
@@ -45,7 +68,7 @@ function StockResearch({ stock, canAdd, busy, onAdd, onDiscuss, onUpdated }: { s
         {check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
       </li>)}</ul></details>
       {stock.pricing && <DividendPricingCard code={stock.code} pricing={stock.pricing} disabled={busy || canAdd} onUpdated={onUpdated} />}
-      <details><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
+      <details open><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
       {stock.financial && <details><summary>{t('div_ai_research_financial')}</summary><p className="div-ai-muted">{stock.financial.sector}</p>
         <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}>
           <strong>{period.reportDate}</strong><p>{t('div_ai_financial_period', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`, roe: period.roeBps === undefined ? '—' : `${period.roeBps / 100}%` })}</p>
@@ -53,10 +76,19 @@ function StockResearch({ stock, canAdd, busy, onAdd, onDiscuss, onUpdated }: { s
         </li>)}</ul></details>}
       <details><summary>{t('div_ai_research_sources')}</summary><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
         <a href={source.url} target="_blank" rel="noopener noreferrer">{source.provider} · {t(`div_ai_source_${source.kind}`)}</a><small>{source.asOf ?? new Date(source.fetchedAt).toLocaleDateString()}</small>
-      </li>)}</ul>{stock.issues.map((issue, index) => <p className="div-ai-muted" key={index}>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</p>)}</details>
+      </li>)}</ul>{stock.issues.length > 0 && <ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>
+        {issue.attempts !== undefined && <span>{t('div_ai_issue_attempts', { count: issue.attempts })}</span>}
+        {issue.detail && <code>{issue.detail}</code>}
+        <p>{t(`div_ai_issue_help_${issue.kind}`)}</p>
+        {issue.url?.startsWith('https://') && <a href={issue.url} target="_blank" rel="noopener noreferrer">{t('div_ai_issue_open_failed_source')}</a>}
+      </li>)}</ul>}</details>
+      {(stock.status === 'unknown' || stock.issues.length > 0) && <div className="div-ai-evidence-help"><strong>{t('div_ai_evidence_help_title')}</strong><p>{t('div_ai_evidence_help_detail')}</p><div className="div-ai-help-links">
+        <a href={`https://data.eastmoney.com/stockdata/${stock.code}.html`} target="_blank" rel="noopener noreferrer">{t('div_ai_open_financial_source')}</a>
+        <a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>
+      </div></div>}
       <div className="div-actions"><button type="button" className="btn btn-primary" disabled={busy} onClick={onDiscuss}>{t('div_ai_discuss_stock')}</button>
         {canAdd && <button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button>}</div>
-    </div></details>;
+    </div></details></article>;
 }
 
 export default function DividendAdvisorWorkspace({ activePanel, amountVisible, onUpdated, onDiscuss, disabled = false }: { activePanel: Panel; amountVisible: boolean; onUpdated: () => Promise<unknown>; disabled?: boolean;
@@ -115,16 +147,16 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
 
   return <div className="div-ai-workspace-panels" hidden={activePanel === 'chat'}>
     {activePanel === 'principles' && <section><h2 className="div-ai-panel-title">{t('div_ai_tab_principles')}</h2><p className="div-ai-muted">{t('div_ai_principles_intro')}</p>
-      <details className="div-method"><summary>{t('div_v2_selection_rules')}</summary><form className="div-ai-principles-form" onSubmit={event => { event.preventDefault(); savePrinciples(); }}>
+      <details className="div-method" open><summary>{t('div_v2_selection_rules')}</summary><p>{t('div_ai_principles_defaults')}</p><form className="div-ai-principles-form" onSubmit={event => { event.preventDefault(); savePrinciples(); }}>
         {PRINCIPLE_KEYS.map(key => <label key={key}><span>{t(`div_ai_rule_${key}`)}</span><input type="number" className="form-input" step={key === 'minDividendYears' ? '1' : '.01'}
           disabled={!ready || busy} value={draft?.[key] ?? (key === 'minDividendYears' ? principles[key] : (principles[key] ?? 15000) / 100)}
           onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} /></label>)}
         <label className="div-ai-principles-notes"><span>{t('div_ai_principles_notes')}</span><textarea className="form-input" rows={4} maxLength={4000} disabled={!ready || busy}
-          value={notesDraft ?? principles.notes ?? ''} onChange={event => setNotesDraft(event.target.value)} placeholder={t('div_ai_principles_notes_placeholder')} /></label>
+          value={notesDraft ?? principles.notes ?? ''} onChange={event => setNotesDraft(event.target.value)} placeholder={t('div_ai_principles_notes_placeholder')} /><small>{t('div_ai_principles_notes_help')}</small></label>
         <button type="submit" className="btn btn-primary" disabled={!ready || busy || (!draft && notesDraft === null)}>{t('div_ai_principles_save')}</button>
       </form></details>
-      {pricingMethod && <details className="div-method"><summary>{t('div_v2_pricing_settings')} · {t('div_v2_pricing_summary', { r: pricingMethod.requiredReturnBps / 100, g: pricingMethod.growthBps / 100 })}</summary>
-        <DividendPricingEditor key={JSON.stringify(pricingMethod)} method={pricingMethod} disabled={busy} onSave={value => run(async () => {
+      {pricingMethod && <details className="div-method" open><summary>{t('div_v2_pricing_settings')} · {t('div_v2_pricing_summary', { r: pricingMethod.requiredReturnBps / 100, g: pricingMethod.growthBps / 100 })}</summary>
+        <DividendPricingEditor key={JSON.stringify(pricingMethod)} method={pricingMethod} opportunity={snapshot?.opportunity} disabled={busy} onSave={value => run(async () => {
           await saveDividendPricingMethod(value); if (mounted.current) { setPricingMethod(value); setSnapshot(null); setRemoval(null); setNotice(t('div_v2_pricing_saved')); }
         })} />
       </details>}</section>}
@@ -137,9 +169,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
       {working && <p className="div-advisor-status" role="status">{t('div_ai_research_loading')}</p>}
       {snapshot && !amountVisible && <p className="div-advisor-hidden">{t('div_ai_reading_hidden')}</p>}
       {snapshot && amountVisible && <div className="div-ai-research-results"><p className="div-ai-muted">{t('div_ai_research_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
-        <details className="div-ai-index-context"><summary>{t('div_ai_research_indices')}</summary>{snapshot.indices.map(index => <details key={index.code}>
-          <summary>{index.name}</summary><TechnicalPosition technical={index.technical} /></details>)}</details>
-        {snapshot.stocks.map(stock => <StockResearch key={stock.code} stock={stock} onUpdated={onUpdated} canAdd={scope === 'candidates' && !configuredCodes.includes(stock.code)} busy={busy} onDiscuss={() => onDiscuss(stock, snapshot)} onAdd={() => void run(async () => {
+        {snapshot.stocks.map(stock => <StockResearch key={stock.code} stock={stock} snapshot={snapshot} onUpdated={onUpdated} canAdd={scope === 'candidates' && !configuredCodes.includes(stock.code)} busy={busy} onDiscuss={() => onDiscuss(stock, snapshot)} onAdd={() => void run(async () => {
           await addDividendResearchCandidate(stock.code, stock.name); await onUpdated();
           if (mounted.current) { setConfiguredCodes(current => [...current, stock.code]); setNotice(t('div_ai_added_watch')); }
         })} />)}

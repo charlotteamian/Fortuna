@@ -1,3 +1,4 @@
+import type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 export type DividendPricingRiskClass = 'bondlike' | 'bank' | 'cyclical' | 'other';
 export interface DividendPricingStockOverride {
   riskClass?: DividendPricingRiskClass;
@@ -96,6 +97,7 @@ export interface DividendPricingResult {
   priceDate?: string;
   normalizationEvidence?: { source: string; asOf: string };
   currentCashYieldBps?: number;
+  financialReview?: DividendFinancialSectorReview;
 }
 export interface DividendPricingInput {
   code: string;
@@ -113,6 +115,7 @@ export interface DividendPricingInput {
   history?: DividendYieldHistory;
   opportunity?: DividendOpportunityResearch;
   sourceUrls?: string[];
+  financialReview?: DividendFinancialSectorReview;
 }
 
 export function defaultDividendPricingMethod(): DividendPricingMethod {
@@ -260,7 +263,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const { method, annuals, treasury, history, asOf } = input;
   if (!isDividendPricingMethod(method)) throw new Error('INVALID_DIVIDEND_PRICING_METHOD');
   const override = method.stockOverrides[input.code];
-  const riskClass = override?.riskClass ?? (input.financialSector ? 'bank' : /煤|钢|矿|有色|石油|化工|航运/.test(`${input.name} ${input.sector ?? ''}`) ? 'cyclical' : /电力|水电|水务|高速|铁路|长江电力/.test(`${input.name} ${input.sector ?? ''}`) ? 'bondlike' : 'other');
+  const riskClass = override?.riskClass ?? (input.financialSector && /银行/.test(`${input.name} ${input.sector ?? ''}`) ? 'bank' : /煤|钢|矿|有色|石油|化工|航运/.test(`${input.name} ${input.sector ?? ''}`) ? 'cyclical' : /电力|水电|水务|高速|铁路|长江电力/.test(`${input.name} ${input.sector ?? ''}`) ? 'bondlike' : 'other');
   const blockers: DividendPricingBlocker[] = [], warnings: DividendPricingBlocker[] = [];
   const block = (condition: boolean, key: DividendPricingBlocker) => { if (condition) blockers.push(key); };
   const age = (d?: string) => !date(d) || d! > asOf ? Infinity : (Date.parse(asOf) - Date.parse(d!)) / 86400000;
@@ -276,7 +279,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   block(!annuals[0]?.noticeDate || age(annuals[0].reportDate) > 550, 'annual_stale');
   const payouts = annuals.slice(0,5).flatMap(y => y.payoutBps === undefined ? [] : [y.payoutBps]).sort((a,b) => a-b);
   const sustainablePayoutBps = payouts.length === 5 ? payouts[2] : undefined;
-  if (input.financialSector) warnings.push('financial_sector_review');
+  if (input.financialSector) block(input.financialReview?.status !== 'pass' || age(input.financialReview?.asOf) > 230, 'financial_sector_review');
   else { block(recent.length < 3 || recent.some(y => y.fcfCoverageBps === undefined), 'fcf_missing'); block(recent.some(y => y.fcfCoverageBps !== undefined && y.fcfCoverageBps < 15000), 'fcf_below_150'); }
   const taxBps = method.holdingPeriod === 'over_year' ? 0 : method.holdingPeriod === 'month_to_year' ? 1000 : 2000;
   const d1Micros = normalizedEpsMicros !== undefined && sustainablePayoutBps !== undefined ? Math.round(normalizedEpsMicros * sustainablePayoutBps / 10000 * (1-taxBps/10000)) : undefined;
@@ -321,7 +324,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   return { status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], warnings, annuals,
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
-    sustainablePayoutBps, taxBps, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor,
+    sustainablePayoutBps, taxBps, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
     currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps, sourceUrls: input.sourceUrls ?? [] };
 }
 

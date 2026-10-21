@@ -97,12 +97,33 @@
 .div-ai-index-context { margin: 0; }
 .div-ai-index-context > details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .div-ai-research-card { min-width: 0; border: 1px solid var(--border); border-radius: 13px; background: var(--bg-card); }
-.div-ai-research-card > summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 62px; padding: 13px 15px; list-style: none; }
-.div-ai-research-card > summary::after { content: '⌄'; color: var(--text-muted); }
-.div-ai-research-card[open] > summary::after { content: '⌃'; }
-.div-ai-research-card > summary > span:first-child { flex: 1; min-width: 0; }
-.div-ai-research-card > summary strong { font-size: 14px; overflow-wrap: anywhere; }
-.div-ai-research-card > summary small { margin-left: 8px; color: var(--text-muted); font-size: 11px; }
+.div-ai-research-card > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 62px; padding: 13px 15px; }
+.div-ai-research-card > header > span:first-child { flex: 1; min-width: 0; }
+.div-ai-research-card > header strong { font-size: 14px; overflow-wrap: anywhere; }
+.div-ai-research-card > header small { margin-left: 8px; color: var(--text-muted); font-size: 11px; }
+.div-ai-research-details > summary { margin: 0 15px; padding: 10px 0 14px; }
+.div-ai-conclusion { margin: 0 15px 12px; padding: 13px; border-radius: 10px; background: color-mix(in srgb, var(--asset-color) 7%, var(--bg-card)); line-height: 1.75; }
+.div-ai-conclusion h3 { margin: 4px 0 7px; font-size: 15px; }
+.div-ai-conclusion p { margin: 6px 0; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.div-ai-conclusion .div-ai-conclusion-label { margin: 0; color: var(--text-muted); font-size: 10px; }
+.div-ai-conclusion .div-ai-conclusion-next { margin-top: 10px; }
+.div-ai-conclusion-next strong { display: block; color: var(--text-primary); }
+.div-ai-conclusion.risk, .div-ai-conclusion.pause { background: color-mix(in srgb, var(--danger, #f79e65) 7%, var(--bg-card)); }
+.div-ai-conclusion.risk h3, .div-ai-conclusion.pause h3 { color: var(--danger, #f79e65); }
+.div-ai-conclusion.eligible h3 { color: var(--asset-color); }
+.div-ai-technical-conclusion { color: var(--text-primary); font-size: 12px; line-height: 1.8; }
+.div-ai-financial-review { margin: 0 15px 12px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; }
+.div-ai-financial-review > summary { color: var(--asset-color); }
+.div-ai-financial-review.risk > summary { color: var(--danger, #f79e65); }
+.div-ai-evidence-help, .div-ai-auto-summary { padding: 12px; border-radius: 9px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.div-ai-evidence-help p, .div-ai-auto-summary p { margin: 6px 0; }
+.div-ai-help-links { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 11px; line-height: 1.8; }
+.div-ai-help-links a, .div-ai-auto-summary a, .div-ai-pricing-editor a, .div-ai-pricing-gap-list a { color: var(--asset-color); text-decoration: underline; text-underline-offset: 3px; }
+.div-ai-fetch-issues { display: grid; gap: 12px; padding: 0; list-style: none; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.div-ai-fetch-issues li { display: grid; gap: 5px; }
+.div-ai-fetch-issues code { padding: 7px; border-radius: 6px; background: var(--bg-secondary); font-size: 10px; overflow-wrap: anywhere; }
+.div-ai-fetch-issues p { margin: 0; }
+.div-ai-fetch-issues a { color: var(--asset-color); }
 .div-ai-status { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
 .div-ai-status.risk { color: var(--danger, #f79e65); }
 .div-ai-status.pass { color: var(--asset-color); }
@@ -123,6 +144,7 @@
 .div-ai-principles-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; margin-top: 24px; }
 .div-ai-principles-form label { display: flex; flex-direction: column; gap: 7px; min-width: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .div-ai-principles-form label > span { flex: 1; }
+.div-ai-principles-form label small { color: var(--text-muted); font-size: 11px; line-height: 1.7; }
 .div-ai-principles-form input { width: 100%; min-width: 0; margin: 0; }
 .div-ai-principles-form > button { grid-column: 1 / -1; margin-top: 6px; }
 .div-ai-principles-notes { grid-column: 1 / -1; }
@@ -149,6 +171,7 @@
 .div-ai-pricing-anchors dd { margin: 0; font-variant-numeric: tabular-nums; }
 .div-ai-pricing-validation, .div-ai-pricing-gap-list { margin-top: 12px; }
 .div-ai-pricing-gap-list ul { display: grid; gap: 7px; padding-left: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.div-ai-pricing-gap-list li p { margin: 3px 0; }
 .div-ai-pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
 .div-ai-pricing-grid > div { display: flex; flex-direction: column; gap: 7px; padding: 10px; border: 1px solid var(--border); border-radius: 9px; }
 .div-ai-pricing-grid span { color: var(--text-secondary); font-size: 11px; }
@@ -157,7 +180,7 @@
 .div-ai-pricing-editor > .div-ai-principles-form { margin: 14px 0; }
 .div-ai-pricing-editor .div-method { margin: 14px 0; }
 .div-ai-pricing-editor select, .div-ai-principles-form select { width: 100%; padding: 10px; min-width: 0; font-size: 12px; }
-.div-ai-pricing-code { display: grid; gap: 6px; max-width: 180px; margin: 12px 0; color: var(--text-secondary); font-size: 12px; }
+.div-ai-pricing-code { display: grid; gap: 6px; max-width: 260px; margin: 12px 0; color: var(--text-secondary); font-size: 12px; }
 .div-ai-override-codes { display: flex; flex-wrap: wrap; gap: 8px; }
 .div-advisor-reader .div-plan-manager { font-size: 13px; }
 .div-advisor-reader .div-plan-manager .btn { min-height: 38px; padding: 8px 10px; font-size: 12px; }
