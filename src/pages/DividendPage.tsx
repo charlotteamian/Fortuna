@@ -208,6 +208,8 @@ export default function DividendPage() {
             {forecast.incompleteReportDates.length > 0 && <p className="div-warning">{t('div_v2_incomplete_periods', { reports: forecast.incompleteReportDates.join('、') })}</p>}
             <ul className="div-forecast-events">{forecast.events.map(event => <li key={`${event.reportDate}:${event.expectedExDate}`}><strong>{event.reportDate} · ¥{numeric(event.dpsMicros / 1e6, 6)}/{t('div_one_share')}</strong>
               <span>{t(event.basis === 'announced' ? 'div_v2_event_announced' : 'div_v2_event_historical')} · {t(`div_v2_stage_${event.stage}`)}</span>
+              {event.basisReportDate && <span>{t('div_v2_event_prior_period', { report: event.basisReportDate })}</span>}
+              {event.amountUnannounced && <span>{t('div_v2_event_amount_unannounced')}</span>}
               <span>{t(event.dateEstimated ? 'div_v2_estimated_ex_date' : 'div_v2_confirmed_ex_date', { date: event.expectedExDate })}</span>
               {event.expectedPaymentDate && <span>{t('div_v2_payment_date', { date: event.expectedPaymentDate })}</span>}
             </li>)}</ul>

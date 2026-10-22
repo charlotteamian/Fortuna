@@ -26,7 +26,7 @@ export function dividendResearchAdvice(stock: DividendStockResearch, indices: Di
   // Broad-market indices govern pacing; the growth index alone cannot establish the market condition.
   const broad = indices.filter(index => index.code !== 'sz399006');
   const usableMarket = broad.filter(index => index.technical?.currentUsable);
-  const marketMissing = !usableMarket.length;
+  const marketMissing = !broad.length || usableMarket.length !== broad.length;
   const marketPacing = usableMarket.some(index => index.technical?.pacing === 'pause_add') ? 'pause_add'
     : usableMarket.some(index => index.technical?.pacing === 'review_grid') ? 'review_grid' : 'observe';
   const currentPriceMinor = stock.pricing?.currentPriceMinor;

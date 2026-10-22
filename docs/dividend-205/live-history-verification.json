@@ -1,0 +1,57 @@
+{
+  "checkedAt": "2026-10-22T06:15:32.598Z",
+  "code": "600036",
+  "name": "招商银行",
+  "historyCoverage": {
+    "usable": true,
+    "sampleCount": 118,
+    "requiredSamples": 60,
+    "spanYears": 9.831622176591376,
+    "requiredSpanYears": 4.8,
+    "from": "2016-11-30",
+    "through": "2026-09-30",
+    "ageDays": 22,
+    "maxAgeDays": 40,
+    "reasons": []
+  },
+  "anchorB": 489,
+  "currentPriceMinor": 4184,
+  "sources": [
+    {
+      "kind": "technical",
+      "provider": "Tencent",
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600036,day,,,250,qfq",
+      "fetchedAt": 1792649732427,
+      "asOf": "2026-10-22"
+    },
+    {
+      "kind": "financial",
+      "provider": "Eastmoney",
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22600036%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "fetchedAt": 1792649732417,
+      "asOf": "2026-06-30"
+    },
+    {
+      "kind": "dividend",
+      "provider": "Eastmoney",
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22600036%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "fetchedAt": 1792649732394,
+      "asOf": "2026-10-22"
+    },
+    {
+      "kind": "financial",
+      "provider": "Eastmoney",
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22600036%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "fetchedAt": 1792649732535,
+      "asOf": "2026-06-30"
+    },
+    {
+      "kind": "technical",
+      "provider": "Tencent",
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh600036,month,,,120,",
+      "fetchedAt": 1792649732592,
+      "asOf": "2026-10-22"
+    }
+  ],
+  "issues": []
+}

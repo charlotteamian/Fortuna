@@ -5,6 +5,7 @@ import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type Divi
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
 import { parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
 import { dividendPricingIssueText, humanizeDividendPricingIssues } from '../lib/dividendPricing.ts';
+import { dividendPricingPlan } from '../lib/dividendPricingPlan.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -151,30 +152,34 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   const context = args[1];
   const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
   const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
-  const pricesCross = (code: string, prices: number[]) => {
-    const sells = context.stockPlan.stocks.find(stock => stock.code === code)?.sellGrid
-      .flatMap(level => level.priceMinor === undefined ? [] : [level.priceMinor]) ?? [];
-    return sells.length > 0 && Math.max(...prices) >= Math.min(...sells);
-  };
+  if (result.actions.some(action => action.buyPaused === false)) result.answer = chinese
+    ? '加仓继续暂停。请在“选股检查”展开“经营、价格与技术复核”，点击“重新复核加仓条件”。应用会重取财报、分红、价格及个股和主要指数日线，逐项列出结果；全部通过后，再预览并确认恢复。'
+    : 'Buying remains paused. In Stock Checks, open the operating, price and technical review and run the fresh buying-condition check. It refreshes financial, dividend, price, stock and broad-index evidence and lists each result. If every condition passes, preview and confirm resumption.';
   // Numerical drafts must come from the verified method, never a model's guess.
   // Pausing is independent of valuation and remains available when inputs are missing.
-  result.actions = result.actions.flatMap(action => {
+  result.actions = result.actions.flatMap(draft => {
+    // Resumption belongs to the fresh review flow, whose evidence and saved
+    // assumptions are checked again at confirmation. A model cannot skip it.
+    const action = draft.buyPaused === false ? { ...draft, buyPaused: true,
+      reason: chinese ? '加仓继续暂停。请在选股检查点击“重新复核加仓条件”，经营、价格与安全边际、个股和主要指数节奏全部通过后，再预览并确认恢复。'
+        : 'Buying remains paused. Run the fresh buying-condition review in Stock Checks, then preview and confirm resumption only after operating, price, safety-margin and stock/broad-market technical checks pass.' } : draft;
     const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
     if (!action.buyLevels && !action.sellLevels) return [pricing?.pauseReasons?.length && action.buyPaused === false
       ? { ...action, buyPaused: true, reason: pricing.pauseReasons.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join('；') }
       : action];
-    const buyMatches = pricing?.canApply && pricing.status === 'ready' && action.buyLevels && action.buyLevels.length === pricing.grid.length
-      && action.buyLevels.every((level, index) => level.priceMinor === pricing.grid[index].priceMinor
-        && level.yieldBps === pricing.grid[index].yieldBps && level.portionBps === [3333, 3333, 3334][index]);
+    const plan = pricing ? dividendPricingPlan(pricing) : null;
+    const matches = (side: 'buyLevels' | 'sellLevels') => !action[side] || !!plan && action[side].length === plan[side].length
+      && action[side].every((level, index) => level.priceMinor === plan[side][index].priceMinor
+        && level.yieldBps === plan[side][index].yieldBps && level.portionBps === plan[side][index].portionBps);
     const { buyLevels, sellLevels, ...pause } = action;
     if (pricing?.pauseReasons?.length && pause.buyPaused === false) {
       pause.buyPaused = true;
       pause.reason = pricing.pauseReasons.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join('；');
     }
-    // The reference method defines buy levels only. A separately supplied sell
-    // ladder needs a user's manual plan review rather than model fabrication.
+    // Every numerical replacement includes both verified sides, even if the
+    // provider emits only buys. Never preserve an unrelated stale sell ladder.
     void buyLevels; void sellLevels;
-    if (buyMatches && !pricesCross(action.code, action.buyLevels!.map(level => level.priceMinor!))) return [{ ...pause, buyPaused: true, buyLevels: action.buyLevels }];
+    if (plan && matches('buyLevels') && matches('sellLevels')) return [{ ...pause, buyPaused: true, ...plan }];
     return pause.buyPaused === undefined ? [] : [pause];
   });
   // Explicit regeneration must not depend on whether the model emits a machine
@@ -199,27 +204,23 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     const summaries: string[] = [];
     for (const saved of scope.slice(0, 10)) {
       const pricing = context.research?.stocks.find(stock => stock.code === saved.code)?.pricing;
-      if (!pricing?.canApply || pricing.status !== 'ready' || pricing.grid.length !== 3) {
+      const plan = pricing ? dividendPricingPlan(pricing) : null;
+      if (!pricing || !plan) {
         const gaps = pricing?.blockers.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')) ?? [];
         summaries.push(chinese ? `${saved.name}：${gaps.length ? gaps.join('；') : '尚无完整定价数据，请先完成该股票研究'}。补齐后才能生成三锚价格，已有计划保留。`
           : `${saved.name}: ${gaps.length ? gaps.join('; ') : 'complete pricing evidence has not been collected'}. Complete these inputs before calculating the three-anchor valuation; the saved plan is preserved.`);
         continue;
       }
       const money = (value: number) => (value / 100).toFixed(2);
-      if (pricesCross(saved.code, pricing.grid.map(level => level.priceMinor))) {
-        summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元，新三档${pricing.grid.map(level => money(level.priceMinor)).join('／')}元。新买价与原卖价交叉，暂不能写入；请先协调卖出计划，加仓继续暂停。`
-          : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}, new levels ${pricing.grid.map(level => money(level.priceMinor)).join(' / ')}. These buy prices cross the saved sell plan and cannot be applied yet; review the sell plan and keep buying paused.`);
-        continue;
-      }
       const pauseDetails = (pricing.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join(chinese ? '；' : '; ');
       const reason = chinese
-        ? `按列示数据和三锚估值${money(pricing.theoreticalPriceMinor!)}元重建三档；先保存并暂停加仓，财务与走势复核后再决定恢复。${pauseDetails}`
-        : `Rebuild three levels from the three-anchor valuation of CNY ${money(pricing.theoreticalPriceMinor!)}. Save with buying paused; review financial evidence and trend before resuming. ${pauseDetails}`;
+        ? `按三锚估值${money(pricing.theoreticalPriceMinor!)}元重建三档买入、四档卖出；卖出要求收益率取主锚的90%／80%／70%／60%，每档卖出25%。保存时暂停加仓，点击“重新复核加仓条件”完成经营、价格和技术复核后预览恢复。${pauseDetails}`
+        : `Rebuild three buy and four sell levels from the three-anchor valuation of CNY ${money(pricing.theoreticalPriceMinor!)}. Sell yields are 90/80/70/60% of the selected anchor, 25% per level. Save paused, then use the fresh buying-condition review before previewing resumption. ${pauseDetails}`;
       result.actions = result.actions.filter(action => action.code !== saved.code);
       result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason: reason.slice(0, 2000), buyPaused: true,
-        buyLevels: pricing.grid.map((level, index) => ({ priceMinor: level.priceMinor, yieldBps: level.yieldBps, portionBps: [3333, 3333, 3334][index] })) });
-      summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元，新三档${pricing.grid.map(level => money(level.priceMinor)).join('／')}元。可预览并确认写入，保存时暂停加仓。${pauseDetails}`
-        : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}, new levels ${pricing.grid.map(level => money(level.priceMinor)).join(' / ')}. Preview and confirm to save with buying paused. ${pauseDetails}`);
+        ...plan });
+      summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元。买入三档${plan.buyLevels.map(level => money(level.priceMinor!)).join('／')}元；卖出四档${plan.sellLevels.map(level => money(level.priceMinor!)).join('／')}元，每档25%。卖出沿用原默认梯度比例，以本次可持续分红及主锚的90%／80%／70%／60%收益率重算。预览确认后同时替换两侧，保存时暂停加仓；到选股检查点击“重新复核加仓条件”查看是否可恢复。${pauseDetails}`
+        : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}. Buy levels ${plan.buyLevels.map(level => money(level.priceMinor!)).join(' / ')}; sell levels ${plan.sellLevels.map(level => money(level.priceMinor!)).join(' / ')}, 25% each. Sells use the existing default ladder ratios at 90/80/70/60% of this anchor and the same sustainable dividend. Preview and confirm to replace both sides with buying paused, then use the buying-condition review in Stock Checks. ${pauseDetails}`);
     }
     // For explicit repricing, the deterministic result owns both prices and
     // readiness. Do not append a contradictory model refusal or another price.

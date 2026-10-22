@@ -49,6 +49,18 @@ export interface DividendYieldHistory {
   capitalActionsVerified: boolean;
   sourceUrls: string[];
 }
+export interface DividendYieldHistoryCoverage {
+  usable: boolean;
+  sampleCount: number;
+  requiredSamples: 60;
+  spanYears: number;
+  requiredSpanYears: 4.8;
+  from?: string;
+  through?: string;
+  ageDays?: number;
+  maxAgeDays: 40;
+  reasons: ('history_unavailable' | 'samples_insufficient' | 'span_insufficient' | 'stale' | 'capital_actions_unverified')[];
+}
 export type DividendPricingBlocker = 'annual_eps_missing' | 'annual_payout_missing' | 'non_positive_earnings'
   | 'payout_above_100' | 'fcf_missing' | 'fcf_below_150' | 'fcf_non_positive' | 'fcf_dividend_capped' | 'financial_sector_review'
   | 'treasury_missing' | 'treasury_stale' | 'yield_history_missing' | 'capital_actions_unverified'
@@ -100,6 +112,7 @@ export interface DividendPricingResult {
   grid: DividendPricingGrid[];
   treasury?: DividendTreasuryResearch;
   history?: DividendYieldHistory;
+  historyCoverage?: DividendYieldHistoryCoverage;
   sourceUrls: string[];
   opportunity?: DividendOpportunityResearch;
   currentPriceMinor?: number;
@@ -224,7 +237,10 @@ export function dividendPricingPriceHistory(raw: unknown, symbol: string, asOf: 
   const p = raw as { code?: number; data?: Record<string, { month?: unknown[][] }> };
   const list = p?.data?.[symbol]?.month;
   if (p?.code !== 0 || !Array.isArray(list)) throw new Error('PRICE_HISTORY_INVALID');
-  return list.flatMap(row => { const d = date(row[0]), price = scaled(row[2], 100); return d && d <= asOf && price && price > 0 ? [{ date: d, priceMinor: price }] : []; }).sort((a,b) => a.date.localeCompare(b.date));
+  const prices = list.flatMap(row => { if (!Array.isArray(row)) return []; const d = date(row[0]), price = scaled(row[2], 100); return d && d <= asOf && price && price > 0 ? [{ date: d, priceMinor: price }] : []; }).sort((a,b) => a.date.localeCompare(b.date));
+  if (!prices.length) throw new Error('PRICE_HISTORY_EMPTY');
+  // A duplicated provider row cannot count as an extra monthly observation.
+  return [...new Map(prices.map(price => [price.date.slice(0,7), price])).values()];
 }
 export function dividendPricingYieldHistory(prices: { date: string; priceMinor: number }[], distributionRaw: unknown, code: string,
   treasury?: DividendTreasuryResearch): DividendYieldHistory | undefined {
@@ -267,6 +283,26 @@ export function dividendPricingPercentile(values: number[], fraction: number): n
   if (!values.length) return undefined;
   const sorted = [...values].sort((a,b) => a-b), position = (sorted.length - 1) * fraction, lo = Math.floor(position), hi = Math.ceil(position);
   return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (position-lo));
+}
+export function dividendPricingHistoryCoverage(history: DividendYieldHistory | undefined, asOf: string): DividendYieldHistoryCoverage {
+  const samples = history?.samples.filter(sample => Number.isSafeInteger(sample.yieldBps) && sample.yieldBps > 0 && sample.yieldBps < 3000
+    && !!date(sample.date) && sample.date.slice(0,7) < asOf.slice(0,7)).sort((a,b) => a.date.localeCompare(b.date)) ?? [];
+  const monthly = [...new Map(samples.map(sample => [sample.date.slice(0,7), sample])).values()];
+  const from = monthly[0]?.date;
+  // A stale declared observation boundary remains stale even when an imported
+  // snapshot inconsistently contains later rows.
+  const through = monthly.at(-1)?.date && history?.through && date(history.through)
+    ? [monthly.at(-1)!.date, history.through].sort()[0] : monthly.at(-1)?.date;
+  const spanYears = from && through ? Math.max(0, (Date.parse(through) - Date.parse(from)) / (365.25 * 86400000)) : 0;
+  const ageDays = through ? (Date.parse(asOf) - Date.parse(through)) / 86400000 : undefined;
+  const reasons: DividendYieldHistoryCoverage['reasons'] = [];
+  if (!history || !monthly.length) reasons.push('history_unavailable');
+  if (monthly.length < 60) reasons.push('samples_insufficient');
+  if (spanYears < 4.8) reasons.push('span_insufficient');
+  if (ageDays === undefined || ageDays < 0 || ageDays > 40) reasons.push('stale');
+  if (history && !history.capitalActionsVerified) reasons.push('capital_actions_unverified');
+  return { usable: reasons.length === 0, sampleCount: monthly.length, requiredSamples:60, spanYears, requiredSpanYears:4.8,
+    from, through, ageDays, maxAgeDays:40, reasons };
 }
 export function calculateDividendPricing(input: DividendPricingInput): DividendPricingResult {
   const { method, annuals, treasury, history, asOf } = input;
@@ -334,9 +370,10 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const treasuryUsable = treasuryValid && age(treasury!.asOf) <= 10;
   if (!treasuryValid) warnings.push('treasury_missing');
   if (treasury && age(treasury.asOf) > 10) warnings.push('treasury_stale');
-  const historyValues = history?.samples.filter(sample => Number.isSafeInteger(sample.yieldBps) && sample.yieldBps > 0 && sample.yieldBps < 3000
-    && !!date(sample.date) && sample.date <= asOf).map(sample => sample.yieldBps) ?? [];
-  const historyLongEnough = !!history && history.capitalActionsVerified && historyValues.length >= 60 && age(history.through) <= 40 && Date.parse(history.through)-Date.parse(history.from) >= 4.8*365.25*86400000;
+  const historyCoverage = dividendPricingHistoryCoverage(history, asOf);
+  const historyValues = [...new Map((history?.samples ?? []).filter(sample => Number.isSafeInteger(sample.yieldBps) && sample.yieldBps > 0 && sample.yieldBps < 3000
+    && !!date(sample.date) && sample.date.slice(0,7) < asOf.slice(0,7)).sort((a,b) => a.date.localeCompare(b.date)).map(sample => [sample.date.slice(0,7), sample.yieldBps])).values()];
+  const historyLongEnough = historyCoverage.usable;
   if (!historyLongEnough) warnings.push('yield_history_missing');
   if (history && !history.capitalActionsVerified) warnings.push('capital_actions_unverified');
   const opportunity = method.opportunityCostBps !== undefined ? { yieldBps: method.opportunityCostBps, asOf: method.opportunityCostAsOf ?? '', sourceUrl: method.opportunityCostSource ?? '', basis: 'User-selected comparable opportunity cost' } : input.opportunity;
@@ -393,7 +430,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
     sustainablePayoutBps, taxBps, earningsDividendMicros, fcfDividendCapMicros, fcfCapApplied, fcfEvidence, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
-    currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps, sourceUrls: input.sourceUrls ?? [] };
+    currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, historyCoverage, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps, sourceUrls: input.sourceUrls ?? [] };
 }
 
 const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]> = {
@@ -455,6 +492,13 @@ export function dividendPricingReadable(result: DividendPricingResult) {
     'Government yield percent and source date': result.treasury ? { percent: result.treasury.yieldBps/100, date: result.treasury.asOf, source: result.treasury.sourceUrl } : null,
     'Opportunity comparison': result.opportunity ? { percent: result.opportunity.yieldBps/100, date: result.opportunity.asOf, source: result.opportunity.sourceUrl, basis: result.opportunity.basis } : null,
     'Historical yield basis': result.history ? { basis: result.history.basis, from: result.history.from, through: result.history.through, observations: result.history.samples.length, 'Bonus share conversion captured': result.history.capitalActionsVerified } : null,
+    'Historical yield coverage': result.historyCoverage ? { 'Usable historical anchor':result.historyCoverage.usable,
+      'Distinct completed monthly observations':result.historyCoverage.sampleCount, 'Required observations':result.historyCoverage.requiredSamples,
+      'Observed span in years':result.historyCoverage.spanYears, 'Required span in years':result.historyCoverage.requiredSpanYears,
+      from:result.historyCoverage.from, through:result.historyCoverage.through,
+      'Latest observation age in days':result.historyCoverage.ageDays, 'Maximum age in days':result.historyCoverage.maxAgeDays,
+      'Evidence gaps':result.historyCoverage.reasons.map(reason => ({ history_unavailable:'Historical cash-yield observations unavailable', samples_insufficient:'Fewer than 60 distinct completed monthly observations',
+        span_insufficient:'Historical observations span less than 4.8 years', stale:'Latest completed month unavailable or more than 40 days old', capital_actions_unverified:'Bonus-share adjustments unverified' })[reason]) } : null,
     'Annual evidence': result.annuals.map(y => ({ year:y.year, 'Report published':y.noticeDate, 'Reported EPS CNY':cash(y.epsMicros,1e6), 'Adjusted EPS CNY':cash(y.adjustedEpsMicros,1e6), 'Dividend CNY per share':cash(y.dividendMicros,1e6), 'Payout percent':cash(y.payoutBps), 'ROE percent':cash(y.roeBps), 'Operating cash CNY':cash(y.operatingCashMinor), 'Capital expenditure CNY':cash(y.capitalExpenditureMinor), 'Dividend cash CNY':cash(y.dividendCashMinor), 'FCF / dividend percent':cash(y.fcfCoverageBps) })),
     'Three exact grid prices': result.grid.map((g,i) => ({ level:i+1, 'Price CNY':g.priceMinor/100, 'D1 yield percent':g.yieldBps/100, 'Change from current price percent':cash(g.changeFromCurrentBps), 'Cumulative allocation percent':g.cumulativePortionBps/100, 'Meets selected margin':g.meetsSafetyMargin })), 'Sources':result.sourceUrls };
 }

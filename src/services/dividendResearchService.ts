@@ -8,7 +8,7 @@ import {
   type DividendResearchSource, type DividendSelectionPrinciples, type DividendStockResearch,
 } from '../lib/dividendResearch';
 import { calculateDividendPricing, defaultDividendPricingMethod, isDividendPricingMethod, parseDividendTreasury, dividendPricingAnnuals,
-  dividendPricingPriceHistory, dividendPricingYieldHistory, parseDividendOpportunityRows, DIVIDEND_OPPORTUNITY_URL,
+  dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingHistoryCoverage, parseDividendOpportunityRows, DIVIDEND_OPPORTUNITY_URL,
   type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from '../lib/dividendPricing';
 import { dateInChina } from '../lib/dividendWorkbench';
 
@@ -79,13 +79,16 @@ async function readJson(url: string): Promise<unknown> {
   catch { throw new Error('RESEARCH_INVALID_DATA'); }
 }
 
-async function download<T>(kind: DividendResearchSource['kind'], url: string, parser: (raw: unknown) => T) {
+async function download<T>(kind: DividendResearchSource['kind'], url: string, parser: (raw: unknown) => T,
+  options: { retryUrl?: string; validate?: (data: T) => Promise<string | undefined>; preferPartial?: (candidate:T, previous:T) => boolean } = {}):
+  Promise<{ data?:T; source?:DividendResearchSource; issue?:DividendResearchIssue }> {
   // The two Tencent hosts expose the same dated payload. Retry a failed or invalid
   // response once through Tencent's public proxy, preserving the successful URL.
   const urls = url.startsWith('https://web.ifzq.gtimg.cn/')
-    ? [url, url.replace('https://web.ifzq.gtimg.cn', 'https://proxy.finance.qq.com/ifzqgtimg')] : [url];
+    ? [url, options.retryUrl ?? url.replace('https://web.ifzq.gtimg.cn', 'https://proxy.finance.qq.com/ifzqgtimg')] : [url];
   let reason: DividendResearchIssue['reason'] = 'request_failed';
   const failures: string[] = [];
+  let partial: { data: T; source: DividendResearchSource } | undefined;
   for (const sourceUrl of urls) {
     try {
       const raw = await readJson(sourceUrl);
@@ -97,25 +100,45 @@ async function download<T>(kind: DividendResearchSource['kind'], url: string, pa
         continue;
       }
       const source: DividendResearchSource = { kind, provider: kind === 'technical' ? 'Tencent' : 'Eastmoney', url:sourceUrl, fetchedAt: Date.now() };
+      const gap = await options.validate?.(data);
+      if (gap) {
+        reason = 'invalid_data'; failures.push(gap);
+        // Keep a real partial series/current price if every attempt is short.
+        if (!partial || options.preferPartial?.(data, partial.data)) partial = { data, source };
+        continue;
+      }
       return { data, source };
     } catch (error) {
       reason = error instanceof Error && error.message === 'RESEARCH_INVALID_DATA' ? 'invalid_data' : 'request_failed';
       failures.push(error instanceof Error ? error.message : 'RESEARCH_REQUEST_FAILED');
     }
   }
-  return { issue: { kind, reason, url, detail:failures.join(' → ').slice(0,300), attempts:urls.length } as DividendResearchIssue };
+  return { ...partial, issue: { kind, reason, url, detail:failures.join(' → ').slice(0,300), attempts:urls.length } as DividendResearchIssue };
 }
 
 async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principles: DividendSelectionPrinciples, method: DividendPricingMethod,
   macro: Promise<DividendTreasuryResearch | undefined>, opportunityTask: Promise<DividendOpportunityResearch | undefined>): Promise<DividendStockResearch> {
   const symbol = quoteSymbol(stock.code);
   const asOf = dateInChina(), cashUrl = dividendCashFlowSourceUrl(stock.code), monthUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},month,,,120,`;
+  const distributionTask = download('dividend', dividendResearchDistributionUrl(stock.code), raw => ({...parseDividendDistributionResearch(raw, stock.code), pricingRaw:raw}));
   const [technical, financial, distributions, cash, monthly, treasury, opportunity] = await Promise.all([
     download('technical', dividendTechnicalSourceUrl(symbol), raw => parseDividendTechnicalResearch(raw, stock.code, symbol)),
     download('financial', dividendFinancialSourceUrl(stock.code), raw => ({...parseDividendFinancialResearch(raw, stock.code), pricingRaw:raw})),
-    download('dividend', dividendResearchDistributionUrl(stock.code), raw => ({...parseDividendDistributionResearch(raw, stock.code), pricingRaw:raw})),
+    distributionTask,
     download('financial', cashUrl, raw => { const p=raw as {success?:boolean;result?:{data?:Record<string,unknown>[]}}; if (!p?.success || !Array.isArray(p.result?.data) || p.result.data.some(r=>r.SECURITY_CODE!==stock.code)) throw new Error('CASH_INVALID'); return raw; }),
-    download('technical', monthUrl, raw => dividendPricingPriceHistory(raw,symbol,asOf)), macro, opportunityTask,
+    download('technical', monthUrl, raw => dividendPricingPriceHistory(raw,symbol,asOf), {
+      retryUrl:`https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=${symbol},month,,,320,`,
+      preferPartial:(candidate, previous) => candidate.at(-1)!.date > previous.at(-1)!.date
+        || candidate.at(-1)!.date === previous.at(-1)!.date && candidate.length > previous.length,
+      validate:async prices => {
+        const distribution = await distributionTask;
+        if (!distribution.data) return undefined;
+        const history = dividendPricingYieldHistory(prices.filter(p => p.date.slice(0,7) < asOf.slice(0,7)), distribution.data.pricingRaw, stock.code);
+        const coverage = dividendPricingHistoryCoverage(history, asOf);
+        const gaps = coverage.reasons.filter(reason => reason !== 'capital_actions_unverified');
+        return gaps.length ? `PRICE_HISTORY_INCOMPLETE:${coverage.sampleCount}/60:${coverage.from ?? '-'}:${coverage.through ?? '-'}:${gaps.join(',')}` : undefined;
+      },
+    }), macro, opportunityTask,
   ]);
   if (technical.source) technical.source.asOf = technical.data!.asOf;
   if (financial.source) financial.source.asOf = financial.data!.latest.reportDate;
@@ -135,7 +158,7 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
       history:monthly.data ? dividendPricingYieldHistory(monthly.data.filter(p => p.date.slice(0,7) < asOf.slice(0,7)),distributions.data.pricingRaw,stock.code,treasury) : undefined,
       opportunity, priceMinor:unadjusted?.priceMinor,priceDate:unadjusted?.date,bvpsMicros:bvps,asOf,
       currentCashYieldBps:unadjusted ? Math.round(distributions.data.dpsMicros/unadjusted.priceMinor) : undefined,
-      sourceUrls:[dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
+      sourceUrls:[dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthly.source?.url ?? monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
   }
   return evaluateDividendResearch({ code: stock.code, name: financial.data?.name || stock.name, pricing,
     technical: technical.data, financial: financial.data, distributions: distributions.data,

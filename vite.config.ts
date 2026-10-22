@@ -21,6 +21,7 @@ export default defineConfig({
       '/dividend-api': { target: 'https://datacenter.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-api/, '') },
       '/dividend-schedule-api': { target: 'https://emweb.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-schedule-api/, '') },
       '/dividend-index-api': { target: 'https://oss-ch.csindex.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-index-api/, '') },
+      '/dividend-search-api': { target: 'https://searchapi.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-search-api/, '') },
       '/qt-api': { target: 'https://qt.gtimg.cn', changeOrigin: true, rewrite: p => p.replace(/^\/qt-api/, '') },
       '/fund-api': { target: 'https://fundgz.1234567.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/fund-api/, '') },
       // Sina needs a Referer header or it 403s; add it server-side (the browser can't set it).

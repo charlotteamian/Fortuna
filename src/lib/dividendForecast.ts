@@ -26,6 +26,10 @@ export interface HoldingYearDividendEvent {
   dpsMicros: number;
   basis: 'announced' | 'historical';
   basisDate: string;
+  /** Original fiscal period supplying an estimated amount, never a current disclosure. */
+  basisReportDate?: string;
+  /** The current announcement exists but has not supplied its per-share amount. */
+  amountUnannounced?: boolean;
   stage: DividendStage;
   expectedExDate: string;
   expectedPaymentDate?: string;
@@ -131,8 +135,9 @@ export function gridAnnualDps(stock: DividendStock, asOf = chinaToday()): number
 
 /**
  * Forecast the next calendar year of entitlement for a new holding today.
- * Announced amounts replace only their matching fiscal period. An already ex-dividend
- * period supplies the following year's estimate, with its dates shifted forward.
+ * Disclosed amounts replace only their matching fiscal period. An announcement with
+ * an unknown amount uses the exact prior-year period as an explicitly labelled estimate.
+ * An already ex-dividend period supplies the following year's estimate, with its dates shifted forward.
  */
 export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaToday(), shares = 1): HoldingYearDividendForecast {
   if (!validDividendDate(asOf) || !Number.isFinite(shares) || shares < 0 || shares > 1e12) throw new Error('INVALID_DIVIDEND_FORECAST');
@@ -142,6 +147,17 @@ export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaT
   if (data?.schemaVersion !== 2 || !Array.isArray(data.announcements)) return { ...result, missingReason: 'refresh-required' };
   const announcements = data.announcements.filter(item => item.announcedAt <= asOf && item.reportDate <= asOf).sort((a,b) => b.reportDate.localeCompare(a.reportDate));
   const completed = announcements.filter(item => item.stage === 'implemented' && item.exDate && item.exDate <= asOf);
+  const priorYearAmount = (item: DividendAnnouncement) => {
+    if (item.nonRecurring) return undefined;
+    const priorReportDate = shiftYear(item.reportDate, -1);
+    const previous = completed.filter(old => old.reportDate === priorReportDate && !old.nonRecurring);
+    // Several current events cannot each inherit a whole prior period's amount.
+    // An ambiguous partial disclosure remains incomplete until its events can be matched.
+    if (!previous.length || previous.some(old => old.dpsMicros === undefined)
+      || announcements.filter(current => current.reportDate === item.reportDate && !['cancelled', 'none'].includes(current.stage)).length !== 1) return undefined;
+    return { dpsMicros: previous.reduce((sum, old) => sum + old.dpsMicros!, 0),
+      basisDate: previous.map(old => old.announcedAt).sort().at(-1)!, basisReportDate: priorReportDate, sourceUrl: previous[0].sourceUrl };
+  };
   const recentCutoff = shiftYear(asOf, -1);
   // At day granularity, buying on record date is eligible if held at that day's close.
   const future = announcements.filter(item => !['cancelled', 'none'].includes(item.stage) && item.announcedAt > recentCutoff
@@ -170,7 +186,7 @@ export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaT
     if (item.dpsMicros === undefined) { result.incompleteReportDates.push(reportDate); continue; }
     if (item.dpsMicros <= 0) continue;
     events.set(`${reportDate}:${expectedExDate}`, { reportDate, dpsMicros: item.dpsMicros, basis: 'historical', basisDate: item.announcedAt,
-      stage: 'implemented', expectedExDate, expectedPaymentDate, dateEstimated: true, sourceUrl: item.sourceUrl });
+      basisReportDate: item.reportDate, stage: 'implemented', expectedExDate, expectedPaymentDate, dateEstimated: true, sourceUrl: item.sourceUrl });
   }
   for (const item of future) {
     const prior = completed.filter(old => old.reportDate.slice(5) === item.reportDate.slice(5)).sort((a,b) => b.reportDate.localeCompare(a.reportDate))[0];
@@ -180,10 +196,14 @@ export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaT
     // and use a clearly estimated date, never fabricate an official pay date.
     const expectedExDate = item.exDate ?? (seasonalExDate && seasonalExDate > asOf ? seasonalExDate : through);
     if (expectedExDate <= asOf || expectedExDate > through || item.paymentDate && item.paymentDate > through) continue;
-    if (item.dpsMicros === undefined) { result.incompleteReportDates.push(item.reportDate); continue; }
-    events.set(`${item.reportDate}:${expectedExDate}`, { reportDate: item.reportDate, dpsMicros: item.dpsMicros, basis: 'announced', basisDate: item.announcedAt,
+    const previousAmount = item.dpsMicros === undefined ? priorYearAmount(item) : undefined;
+    const dpsMicros = item.dpsMicros ?? previousAmount?.dpsMicros;
+    if (dpsMicros === undefined) { result.incompleteReportDates.push(item.reportDate); continue; }
+    events.set(`${item.reportDate}:${expectedExDate}`, { reportDate: item.reportDate, dpsMicros, basis: previousAmount ? 'historical' : 'announced',
+      basisDate: previousAmount?.basisDate ?? item.announcedAt, basisReportDate: previousAmount?.basisReportDate,
+      amountUnannounced: item.dpsMicros === undefined || undefined,
       stage: item.stage, expectedExDate, expectedPaymentDate: item.paymentDate, dateEstimated: !item.exDate,
-      recordDate: item.recordDate, sourceUrl: item.sourceUrl });
+      recordDate: item.recordDate, sourceUrl: previousAmount?.sourceUrl ?? item.sourceUrl });
   }
   // Explicit cancellation/non-distribution is evidence for zero; it also blocks the
   // same season's prior-year extrapolation, already handled by report-date matching.

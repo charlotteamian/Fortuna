@@ -67,20 +67,87 @@ test('latest quarter cannot silently fall back to earlier annual DPS and quarter
   assert.equal(forecastHoldingYearDividends(s, '2026-10-21').events.filter(e => e.reportDate === '2026-09-30').length, 1);
 });
 
-test('latest policy without per-share amount is retained as unknown and blocks old amount substitution', () => {
+test('latest policy stays unknown while its forecast explicitly estimates the exact prior-year period', () => {
   const policy = { ...interim, PRETAX_BONUS_RMB: null, IMPL_PLAN_PROFILE: '现金分红金额占半年度归属于普通股股东净利润的比例为35%', NOTICE_DATE: '2026-08-29', ASSIGN_PROGRESS: '预披露', EX_DIVIDEND_DATE: null, EQUITY_RECORD_DATE: null };
   const s = stock([annual, oldInterim, policy]);
   assert.equal(latestReportDividend(s)?.reportDate, '2026-06-30');
   assert.equal(effectiveDps(s), undefined);
   const f = forecastHoldingYearDividends(s, '2026-10-21');
-  assert.equal(f.dpsMicros, undefined);
-  assert.equal(f.amountMinor, undefined);
-  assert.deepEqual(f.incompleteReportDates, ['2026-06-30']);
-  assert.equal(f.missingReason, 'amount-unannounced');
-  assert.equal(f.historicalDpsMicros, 168900);
+  assert.equal(f.dpsMicros, 310300);
+  assert.equal(f.amountMinor, 31);
+  assert.deepEqual(f.incompleteReportDates, []);
+  assert.equal(f.missingReason, undefined);
+  assert.equal(f.announcedDpsMicros, 0);
+  assert.equal(f.historicalDpsMicros, 310300);
+  const estimated = f.events.find(event => event.reportDate === '2026-06-30')!;
+  assert.equal(estimated.dpsMicros, 141400);
+  assert.equal(estimated.basis, 'historical');
+  assert.equal(estimated.basisReportDate, '2025-06-30');
+  assert.equal(estimated.basisDate, '2025-12-09');
+  assert.equal(estimated.amountUnannounced, true);
+  assert.equal(estimated.expectedExDate, '2026-12-15');
+  assert.equal(estimated.stage, latestReportDividend(s)?.stage);
+  assert.equal(estimated.dpsMicros === 2 * 168900, false);
   const brokenImplemented = forecastHoldingYearDividends(stock([annual, { ...interim, PRETAX_BONUS_RMB: null }]), '2026-10-21');
   assert.equal(brokenImplemented.dpsMicros, undefined);
   assert.deepEqual(brokenImplemented.incompleteReportDates, ['2027-06-30']);
+});
+
+test('an undisclosed annual amount uses last annual period, never doubles the latest interim', () => {
+  const priorAnnual = { ...annual, REPORT_DATE: '2024-12-31', NOTICE_DATE: '2025-04-01', PLAN_NOTICE_DATE: '2025-04-01', EX_DIVIDEND_DATE: '2025-07-01', EQUITY_RECORD_DATE: '2025-06-30', PRETAX_BONUS_RMB: 1.25 };
+  const pendingAnnual = { ...annual, PRETAX_BONUS_RMB: null, ASSIGN_PROGRESS: '董事会预案', NOTICE_DATE: '2026-03-28', EX_DIVIDEND_DATE: null, EQUITY_RECORD_DATE: null };
+  const s = stock([priorAnnual, oldInterim, pendingAnnual], '2026-04-01');
+  const f = forecastHoldingYearDividends(s, '2026-04-01', 1000);
+  const estimate = f.events.find(event => event.reportDate === '2025-12-31')!;
+  assert.equal(effectiveDps(s), undefined);
+  assert.equal(f.dpsMicros, 266400);
+  assert.equal(f.amountMinor, 26640);
+  assert.equal(estimate.dpsMicros, 125000);
+  assert.equal(estimate.basisReportDate, '2024-12-31');
+  assert.equal(estimate.amountUnannounced, true);
+  assert.equal(estimate.dpsMicros === 2 * 141400, false);
+});
+
+test('later disclosure replaces the matching same-period estimate without changing other periods', () => {
+  const pending = { ...interim, PRETAX_BONUS_RMB: null, NOTICE_DATE: '2026-08-29', ASSIGN_PROGRESS: '董事会预案', EX_DIVIDEND_DATE: null, EQUITY_RECORD_DATE: null };
+  const disclosed = { ...pending, PRETAX_BONUS_RMB: 1.7, NOTICE_DATE: '2026-10-22', ASSIGN_PROGRESS: '股东大会决议通过' };
+  const f = forecastHoldingYearDividends(stock([annual, oldInterim, pending, disclosed], '2026-10-22'), '2026-10-22');
+  assert.equal(f.dpsMicros, 338900);
+  assert.equal(f.announcedDpsMicros, 170000);
+  assert.equal(f.historicalDpsMicros, 168900);
+  assert.equal(f.events.filter(event => event.reportDate === '2026-06-30').length, 1);
+  const event = f.events.find(item => item.reportDate === '2026-06-30')!;
+  assert.equal(event.basis, 'announced');
+  assert.equal(event.basisReportDate, undefined);
+  assert.equal(event.amountUnannounced, undefined);
+});
+
+test('unknown amount stays incomplete without exact last-year implemented recurring evidence', () => {
+  const pending = { ...interim, PRETAX_BONUS_RMB: null, NOTICE_DATE: '2026-08-29', ASSIGN_PROGRESS: '董事会预案', EX_DIVIDEND_DATE: null, EQUITY_RECORD_DATE: null };
+  for (const prior of [undefined,
+    { ...oldInterim, REPORT_DATE: '2024-06-30', NOTICE_DATE: '2024-08-29', EX_DIVIDEND_DATE: '2024-12-15', EQUITY_RECORD_DATE: '2024-12-12' },
+    { ...oldInterim, ASSIGN_PROGRESS: '董事会预案' },
+    { ...oldInterim, IMPL_PLAN_PROFILE: '一次性特别分红' },
+    { ...oldInterim, PRETAX_BONUS_RMB: null }]) {
+    const f = forecastHoldingYearDividends(stock([annual, pending, ...(prior ? [prior] : [])]), '2026-10-21');
+    assert.equal(f.dpsMicros, undefined);
+    assert.equal(f.missingReason, 'amount-unannounced');
+    assert.deepEqual(f.incompleteReportDates, ['2026-06-30']);
+  }
+  const special = forecastHoldingYearDividends(stock([annual, oldInterim, { ...pending, IMPL_PLAN_PROFILE: '特别分红' }]), '2026-10-21');
+  assert.equal(special.dpsMicros, undefined);
+});
+
+test('a prior reporting period with several payments is summed once for one unknown current announcement', () => {
+  const extra = { ...oldInterim, NOTICE_DATE: '2026-01-15', EX_DIVIDEND_DATE: '2026-02-01', EQUITY_RECORD_DATE: '2026-01-30', PRETAX_BONUS_RMB: 0.2 };
+  const pending = { ...interim, PRETAX_BONUS_RMB: null, NOTICE_DATE: '2026-08-29', ASSIGN_PROGRESS: '董事会预案', EX_DIVIDEND_DATE: null, EQUITY_RECORD_DATE: null };
+  const f = forecastHoldingYearDividends(stock([annual, oldInterim, extra, pending]), '2026-10-21');
+  assert.equal(f.events.find(event => event.reportDate === '2026-06-30')?.dpsMicros, 161400);
+  assert.equal(f.dpsMicros, 330300);
+  const secondPending = { ...pending, EX_DIVIDEND_DATE: '2027-02-01', EQUITY_RECORD_DATE: '2027-01-30', NOTICE_DATE: '2026-10-20' };
+  const firstPending = { ...pending, EX_DIVIDEND_DATE: '2026-12-15', EQUITY_RECORD_DATE: '2026-12-12' };
+  const ambiguous = forecastHoldingYearDividends(stock([annual, oldInterim, extra, firstPending, secondPending]), '2026-10-21');
+  assert.equal(ambiguous.dpsMicros, undefined);
 });
 
 test('zero/non-distribution is real zero, not missing data and not the previous interim amount', () => {
@@ -181,6 +248,22 @@ test('captured primary-source fixture verifies report versus forecast and offici
   assert.equal(latestReportDividend(s)?.exDate, '2026-10-21');
   assert.equal(latestReportDividend(s)?.paymentDate, '2026-10-21');
   assert.equal(forecastHoldingYearDividends(s, '2026-10-21', 1000).amountMinor, 32000);
+});
+
+test('captured CMB policy with unknown interim amount uses prior interim plus separate annual, never annual times two', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/dividend-forecast-cmb-2026-10-22.json', import.meta.url), 'utf8'));
+  const dividend = parseDividendResponse(fixture.report, '600036', '2026-10-22', 1);
+  const s = { ...defaultDividendStocks()[0], code: '600036', name: '招商银行', dividend };
+  assert.equal(latestReportDividend(s)?.reportDate, '2026-06-30');
+  assert.equal(effectiveDps(s), undefined);
+  const f = forecastHoldingYearDividends(s, '2026-10-22', 1000);
+  assert.equal(f.dpsMicros, 2016000);
+  assert.equal(f.amountMinor, 201600);
+  assert.equal(f.announcedDpsMicros, 0);
+  assert.deepEqual(f.incompleteReportDates, []);
+  assert.deepEqual(f.events.map(event => [event.reportDate, event.dpsMicros, event.basisReportDate, event.amountUnannounced]), [
+    ['2026-06-30', 1013000, '2025-06-30', true], ['2026-12-31', 1003000, '2025-12-31', undefined],
+  ]);
 });
 
 test('ordinary and special distributions in one report remain separate events and aggregate once', () => {

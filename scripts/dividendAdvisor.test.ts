@@ -7,7 +7,7 @@ import Dexie from 'dexie';
 import * as XLSX from 'xlsx';
 import { buildDividendAdvisorContext, dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt } from '../src/lib/dividendAdvisor.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
-import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
+import { parseDividendResponse, type DividendStock } from '../src/lib/dividendWorkbench.ts';
 import { askDividendAdvisor, askDividendAdvisorWithActions, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
 import { defaultDividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
 import type { DividendPricingResult } from '../src/lib/dividendPricing.ts';
@@ -93,6 +93,21 @@ test('model snapshot uses readable units and dates rather than implementation fi
   assert.match(prompt, /Do not discuss gaps, old dates or empty holdings in the alternative saved plan/);
 });
 
+test('model receives the exact prior-year dividend estimate alongside the undisclosed current amount', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/dividend-forecast-cmb-2026-10-22.json', import.meta.url), 'utf8'));
+  const dividend = parseDividendResponse(fixture.report, '600036', '2026-10-22', 1);
+  const data = buildDividendAdvisorContext({ stocks: [{ ...stock, code: '600036', name: '招商银行', dividend }],
+    strategy: 'stocks', budgetMinor: 1000000, budgetConfigured: true, positions: new Map(), fundPlan: defaultDividendFundPlan() }, new Date('2026-10-22T03:00:00Z').getTime());
+  const payload = JSON.stringify(dividendAdvisorReadableSnapshot(data));
+  assert.equal(data.stockPlan.stocks[0].dpsMicros, null);
+  assert.equal(data.stockPlan.stocks[0].holdingYearForecast.dpsMicros, 2016000);
+  assert.match(payload, /"Original reporting period supplying the estimated amount":"2025-06-30"/);
+  assert.match(payload, /"Current announcement amount remains undisclosed":true/);
+  assert.match(payload, /"Historical seasonal estimate CNY per share":2.016/);
+  assert.match(payload, /"CNY per share":1.013/);
+  assert.doesNotMatch(payload, /basisReportDate|amountUnannounced/);
+});
+
 test('manual annual DPS stays separate from latest-report DPS and manual shares override linked positions', () => {
   const data = buildDividendAdvisorContext({ stocks: [{ ...stock, shareMode: 'manual', manualShares: 50, manualDpsMicros: 0 }],
     strategy: 'stocks', budgetMinor: 0, budgetConfigured: false, fundPlan: defaultDividendFundPlan(), positions: new Map() }, now);
@@ -138,7 +153,7 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
   const run = (buyLevels = levels) => askDividendAdvisorWithActions(config(), data, '复核定价', [], { transport: async () => ({ status: 200,
     data: response('openai', `资料检查。\n\`\`\`fortuna-actions\n${JSON.stringify([{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true, buyLevels }])}\n\`\`\``) }) });
   assert.deepEqual((await run()).actions, [{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true }]);
-  data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, status: 'ready', canApply: true, grid: levels } as unknown as DividendPricingResult;
+  data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, status: 'ready', canApply: true, grid: levels, d1Micros: 200000, anchors: { selectedBps: 500 } } as unknown as DividendPricingResult;
   assert.deepEqual((await run()).actions[0].buyLevels, levels);
   assert.equal((await run([{ ...levels[0], priceMinor: 401 }, ...levels.slice(1)])).actions[0].buyLevels, undefined);
   assert.equal((await run(levels.map((level, index) => ({ ...level, portionBps: index === 0 ? 9000 : 500 })))).actions[0].buyLevels, undefined);
@@ -175,7 +190,7 @@ test('regeneration supplies a verified paused ladder without a model draft and p
   assert.equal((await run('什么是股息率？')).actions.length, 0);
   const all = await run('重新生成网格计划');
   assert.equal(all.actions.length, 2);
-  assert.ok(all.actions.every(action => action.buyLevels?.length === 3 && action.buyPaused));
+  assert.ok(all.actions.every(action => action.buyLevels?.length === 3 && action.sellLevels?.length === 4 && action.buyPaused));
   data.stockPlan.stocks[0].code = '601288'; data.stockPlan.stocks[0].name = '农业银行';
   data.research!.stocks[0].code = '601288'; data.research!.stocks[0].name = '农业银行';
   assert.deepEqual((await run('重新生成农行网格计划')).actions.map(action => action.code), ['601288']);
@@ -190,11 +205,13 @@ test('regeneration supplies a verified paused ladder without a model draft and p
   assert.equal((await run('重新生成中国石油网格计划')).actions.length, 0);
   data.stockPlan.stocks[1].sellGrid = [{ yieldBps: 100, portionBps: 10000, priceMinor: 100 } as typeof data.stockPlan.stocks[1]['sellGrid'][number]];
   const crossing = await run('重新生成美的集团的网格计划');
-  assert.equal(crossing.actions.length, 0);
-  assert.match(crossing.answer, /卖出计划/);
+  assert.equal(crossing.actions.length, 1);
+  assert.equal(crossing.actions[0].sellLevels?.length, 4);
+  assert.ok(crossing.actions[0].sellLevels!.every(level => level.priceMinor! > Math.max(...pricing.grid.map(row => row.priceMinor))));
+  assert.match(crossing.answer, /卖出四档/);
   assert.ok(crossing.answer.includes(`三锚估值${(pricing.theoreticalPriceMinor!/100).toFixed(2)}元`));
   assert.ok(crossing.answer.includes(pricing.grid.map(level=>(level.priceMinor/100).toFixed(2)).join('／')));
-  assert.match(crossing.answer,/暂不能写入/);
+  assert.match(crossing.answer,/同时替换两侧/);
   data.stockPlan.stocks[1].sellGrid = [];
   data.research!.stocks[1].technical!.state = 'accelerating_down';
   const modelDraft = { id: 'long-reason', code: '000333', buyPaused: false, reason: '复核'.repeat(995), buyLevels: all.actions[0].buyLevels };
@@ -242,6 +259,8 @@ test('the method prompt distinguishes single-period dividends, holding-year even
   const prompt = dividendAdvisorSystemPrompt('zh');
   assert.match(prompt, /latest announced reporting period only/);
   assert.match(prompt, /upcoming announcements replace their corresponding historical seasonal estimate/);
+  assert.match(prompt, /exact prior-year same-reporting-period implemented amount as a labelled estimate/);
+  assert.match(prompt, /Never double an interim amount/);
   assert.match(prompt, /Do not multiply D1 by growth again/);
   assert.match(prompt, /Do not append generic investment-risk statements/);
   assert.match(prompt, /Anchor disagreement is not a veto/);

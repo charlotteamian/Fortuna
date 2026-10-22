@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
-import { calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory,
+import { calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingHistoryCoverage,
   parseDividendTreasury, parseDividendOpportunityRows, dividendPricingReadable, type DividendYieldHistory, type DividendPricingAnnual } from '../src/lib/dividendPricing.ts';
 
 const asOf = '2026-10-21';
 const annuals: DividendPricingAnnual[] = Array.from({length:5},(_,i) => ({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
   epsMicros:1000000,adjustedEpsMicros:1000000,roeBps:1000,dividendMicros:500000,payoutBps:5000,fcfCoverageBps:20000}));
-const history: DividendYieldHistory = {basis:'implemented_cash_ex_date_trailing_year_over_unadjusted_month_close',capitalActionsVerified:true,from:'2016-01-31',through:'2026-09-30',sourceUrls:[],
-  samples:Array.from({length:120},(_,i) => ({date:`${2016+Math.floor(i/12)}-${String(i%12+1).padStart(2,'0')}-28`,yieldBps:500,spreadBps:300}))};
+const history: DividendYieldHistory = {basis:'implemented_cash_ex_date_trailing_year_over_unadjusted_month_close',capitalActionsVerified:true,from:'2016-10-28',through:'2026-09-28',sourceUrls:[],
+  samples:Array.from({length:120},(_,i) => ({date:`${2016+Math.floor((i+9)/12)}-${String((i+9)%12+1).padStart(2,'0')}-28`,yieldBps:500,spreadBps:300}))};
 function input() { return {code:'600000',name:'Fixture',financialSector:false,method:defaultDividendPricingMethod(),annuals:structuredClone(annuals),asOf,
   history:structuredClone(history),treasury:{yieldBps:200,asOf,fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'},
   opportunity:{yieldBps:500,asOf,sourceUrl:'https://example.com/comparison',basis:'Dated comparator'},priceMinor:1000,priceDate:asOf,bvpsMicros:20000000}; }
@@ -202,4 +202,28 @@ test('historical yield uses only implemented cash before each sample and convert
     {SECURITY_CODE:'600000',REPORT_DATE:'2024-12-31',EX_DIVIDEND_DATE:'2025-06-01',ASSIGN_PROGRESS:'董事会预案',PRETAX_BONUS_RMB:100,BONUS_RATIO:0,IT_RATIO:0}]}};
   const h=dividendPricingYieldHistory([{date:'2024-07-01',priceMinor:1000}],dist,'600000');
   assert.equal(h!.samples[0].yieldBps,500);assert.equal(h!.capitalActionsVerified,true);
+});
+test('captured CMB data produces a verified historical anchor from completed unadjusted months', () => {
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-history-cmb-2026-10-22.json',import.meta.url),'utf8'));
+  const prices=dividendPricingPriceHistory(f.sources.month.data,'sh600036','2026-10-22');
+  const h=dividendPricingYieldHistory(prices.filter(p=>p.date.slice(0,7)<'2026-10'),f.sources.distribution.data,'600036');
+  const coverage=dividendPricingHistoryCoverage(h,'2026-10-22');
+  assert.equal(coverage.usable,true);assert.equal(coverage.sampleCount,118);assert.equal(coverage.through,'2026-09-30');
+  assert.equal(h!.samples.at(-1)!.yieldBps,489);assert.equal(h!.capitalActionsVerified,true);
+  assert.equal(calculateDividendPricing({...input(),history:h}).anchors.historicalPercentileBps,489);
+});
+test('history coverage counts distinct completed months and reports actual shortages without lowering the gate', () => {
+  const h=structuredClone(history);h.samples=h.samples.slice(-59);
+  h.samples.push({...h.samples.at(-1)!},{date:'2026-10-21',yieldBps:1000});
+  let coverage=dividendPricingHistoryCoverage(h,asOf);
+  assert.equal(coverage.sampleCount,59);assert.equal(coverage.usable,false);assert.ok(coverage.reasons.includes('samples_insufficient'));
+  h.samples=history.samples.slice(-60);coverage=dividendPricingHistoryCoverage(h,asOf);
+  assert.equal(coverage.usable,true);assert.equal(coverage.sampleCount,60);
+  h.through='2026-06-28';coverage=dividendPricingHistoryCoverage(h,asOf);
+  assert.ok(coverage.reasons.includes('stale'));assert.equal(coverage.usable,false);
+});
+test('empty monthly data fails parsing and repeated monthly rows cannot manufacture observations', () => {
+  assert.throws(()=>dividendPricingPriceHistory({code:0,data:{sh600036:{month:[]}}},'sh600036',asOf),/PRICE_HISTORY_EMPTY/);
+  const rows=[['2026-09-29','40','41'],['2026-09-30','40','42'],null,['2026-10-22','40','43']];
+  assert.deepEqual(dividendPricingPriceHistory({code:0,data:{sh600036:{month:rows}}},'sh600036',asOf),[{date:'2026-09-30',priceMinor:4200}]);
 });

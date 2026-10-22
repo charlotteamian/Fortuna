@@ -266,3 +266,61 @@ test('both Tencent hosts failing retain the HTTP status, original request URL an
     assert.ok(result.indices.every(index => index.issues[0]?.detail === 'RESEARCH_HTTP_503 → RESEARCH_HTTP_503'));
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('a syntactically valid short monthly response retries an expanded history and restores the historical anchor', async () => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-history-cmb-2026-10-22.json',import.meta.url),'utf8'));
+  const originalFetch=globalThis.fetch, monthlyRequests:string[]=[];
+  globalThis.fetch=async input => {
+    const url=String(input);
+    if (url.includes(',month,')) {
+      monthlyRequests.push(url);
+      const data=structuredClone(f.sources.month.data);
+      if (url.startsWith('/dividend-trend-api')) data.data.sh600036.month=data.data.sh600036.month.slice(-36);
+      return Response.json(data);
+    }
+    if (url.includes(',day,')) {
+      const symbol=new URL(url,'https://example.test').searchParams.get('param')!.split(',')[0];
+      return Response.json({code:0,data:{[symbol]:liveFixtures.indexDaily.data.data.sh000300}});
+    }
+    if (url.includes('RPT_F10_FINANCE_MAINFINADATA')) return Response.json(liveFixtures.bankFinancial.data);
+    if (url.includes('RPT_SHAREBONUS_DET')) return Response.json(f.sources.distribution.data);
+    throw new TypeError('fixture feed intentionally unavailable');
+  };
+  try {
+    const result=await fetchDividendResearch([{code:'600036',name:'招商银行'}],principles);
+    const stock=result.stocks[0];
+    assert.equal(monthlyRequests.length,2);assert.match(monthlyRequests[1],/dividend-tencent-api.*month,,,320,/);
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount,118);assert.equal(stock.pricing?.historyCoverage?.usable,true);
+    assert.equal(stock.pricing?.anchors.historicalPercentileBps,489);
+    assert.ok(!stock.issues.some(issue=>issue.kind==='technical'));
+    assert.ok(stock.sources.some(source=>source.url.includes('month,,,320,')));
+  } finally { globalThis.fetch=originalFetch; }
+});
+
+test('genuinely short listing history keeps the actual current price and explains the missing anchor after bounded retry', async () => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-history-cmb-2026-10-22.json',import.meta.url),'utf8'));
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async input => {
+    const url=String(input);
+    if (url.includes(',month,')) {
+      const data=structuredClone(f.sources.month.data);
+      data.data.sh600036.month=data.data.sh600036.month.slice(url.startsWith('/dividend-trend-api')?-24:-48);
+      return Response.json(data);
+    }
+    if (url.includes('RPT_F10_FINANCE_MAINFINADATA')) return Response.json(liveFixtures.bankFinancial.data);
+    if (url.includes('RPT_SHAREBONUS_DET')) return Response.json(f.sources.distribution.data);
+    throw new TypeError('fixture feed intentionally unavailable');
+  };
+  try {
+    const result=await fetchDividendResearch([{code:'600036',name:'招商银行'}],principles);
+    const stock=result.stocks[0];
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount,47);assert.equal(stock.pricing?.anchors.historicalPercentileBps,undefined);
+    assert.ok(stock.pricing?.historyCoverage?.reasons.includes('samples_insufficient'));
+    assert.equal(stock.pricing?.currentPriceMinor,4179);
+    const issue=stock.issues.find(issue=>issue.url?.includes(',month,'));
+    assert.equal(issue?.attempts,2);assert.match(issue?.detail??'',/PRICE_HISTORY_INCOMPLETE:47\/60/);
+    assert.ok(stock.sources.some(source=>source.url.includes('month,,,320,')));
+  } finally { globalThis.fetch=originalFetch; }
+});
