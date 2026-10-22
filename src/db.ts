@@ -1,3 +1,4 @@
+import { isPriceMonitor, type PriceMonitor } from './lib/priceMonitor';
 import { isDividendStock, type DividendStock } from './lib/dividendWorkbench';
 import { isDividendSelectionPrinciples, type DividendSelectionPrinciples } from './lib/dividendResearch';
 import { isDividendPricingMethod, type DividendPricingMethod } from './lib/dividendPricing';
@@ -259,6 +260,7 @@ class AssetManagerDB extends Dexie {
   holdings!: Table<Holding>;
   holdingTxns!: Table<HoldingTxn>;
   dividendStocks!: Table<DividendStock>;
+  priceMonitors!: Table<PriceMonitor>;
 
   constructor() {
     super('AssetManagerDB');
@@ -326,6 +328,7 @@ class AssetManagerDB extends Dexie {
       holdingTxns: 'id, accountId, holdingId, date, createdAt',
     });
     this.version(10).stores({ dividendStocks: 'code, group' });
+    this.version(11).stores({ priceMonitors: 'id, kind, status, accountId, createdAt' });
   }
 }
 
@@ -475,24 +478,24 @@ async function migrateMetalRecords(): Promise<void> {
 
 // ---- Data Import / Export ----
 export async function hasLedgerData(): Promise<boolean> {
-  const tables = [db.accounts, db.records, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks];
+  const tables = [db.accounts, db.records, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks, db.priceMonitors];
   return db.transaction('r', tables, async () => (await Promise.all(tables.map(table => table.count()))).some(count => count > 0));
 }
 
 async function readBackupTables() {
   // Keep all tables at the same point in time; concurrent writes wait until this
   // read transaction ends, so exports cannot contain orphan records/holdings.
-  return db.transaction('r', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
-    const [accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks] = await Promise.all([
+  return db.transaction('r', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks, db.priceMonitors], async () => {
+    const [accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks, priceMonitors] = await Promise.all([
       db.accounts.toArray(), db.records.toArray(), db.exchangeRates.toArray(), db.settings.toArray(), db.products.toArray(),
-      db.planItems.toArray(), db.planTargets.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(), db.dividendStocks.toArray(),
+      db.planItems.toArray(), db.planTargets.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(), db.dividendStocks.toArray(), db.priceMonitors.toArray(),
     ]);
-    return { accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks };
+    return { accounts, records, exchangeRates, settings, products, planItems, planTargets, holdings, holdingTxns, dividendStocks, priceMonitors };
   });
 }
 
 export async function exportData(): Promise<string> {
-  const data = { version: 13, timestamp: Date.now(), ...await readBackupTables() };
+  const data = { version: 14, timestamp: Date.now(), ...await readBackupTables() };
   return JSON.stringify(data);
 }
 
@@ -503,7 +506,9 @@ export async function importData(jsonData: string): Promise<boolean> {
     if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
     if (data.dividendStocks !== undefined && (!Array.isArray(data.dividendStocks) || !data.dividendStocks.every(isDividendStock))) return false;
 
-    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
+    if (data.priceMonitors !== undefined && (!Array.isArray(data.priceMonitors) || !data.priceMonitors.every(isPriceMonitor) || new Set(data.priceMonitors.map((plan: PriceMonitor) => plan.id)).size !== data.priceMonitors.length)) return false;
+
+    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks, db.priceMonitors], async () => {
       await db.accounts.clear();
       await db.records.clear();
       await db.settings.clear();
@@ -514,6 +519,7 @@ export async function importData(jsonData: string): Promise<boolean> {
       await db.holdings.clear();
       await db.holdingTxns.clear();
       await db.dividendStocks.clear();
+      await db.priceMonitors.clear();
 
       if (data.accounts.length > 0) await db.accounts.bulkAdd(data.accounts);
       if (data.records.length > 0) await db.records.bulkAdd(data.records);
@@ -525,6 +531,7 @@ export async function importData(jsonData: string): Promise<boolean> {
       if (data.holdings && data.holdings.length > 0) await db.holdings.bulkAdd(data.holdings);
       if (data.holdingTxns && data.holdingTxns.length > 0) await db.holdingTxns.bulkAdd(data.holdingTxns);
       if (data.dividendStocks?.length) await db.dividendStocks.bulkAdd(data.dividendStocks);
+      if (data.priceMonitors?.length) await db.priceMonitors.bulkAdd(data.priceMonitors);
     });
     return true;
   } catch (e) {
@@ -535,7 +542,7 @@ export async function importData(jsonData: string): Promise<boolean> {
 
 export async function exportToExcel(): Promise<string> {
   const XLSX = await import('xlsx');
-  const { accounts, records, exchangeRates, settings: settingsRows, products, planItems, planTargets, holdings, holdingTxns, dividendStocks } = await readBackupTables();
+  const { accounts, records, exchangeRates, settings: settingsRows, products, planItems, planTargets, holdings, holdingTxns, dividendStocks, priceMonitors } = await readBackupTables();
   const settingsExport = settingsRows.map(row => {
     const publicRow = { ...row } as Record<string, unknown>;
     delete publicRow[LEGACY_SNAPSHOT_FOCUS_KEY];
@@ -551,7 +558,7 @@ export async function exportToExcel(): Promise<string> {
   });
   const metadataExport = [{
     format: 'Fortuna Excel Backup',
-    version: 5,
+    version: 6,
     exportedAt: new Date().toISOString(),
   }];
 
@@ -647,6 +654,7 @@ export async function exportToExcel(): Promise<string> {
   const wsHistory = XLSX.utils.json_to_sheet(historyExport);
 
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dividendStocks.map(s => ({ code: s.code, data: JSON.stringify(s) }))), "DividendStocks");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(priceMonitors.map(plan => ({ id: plan.id, data: JSON.stringify(plan) }))), "PriceMonitors");
   XLSX.utils.book_append_sheet(wb, wsMetadata, "BackupInfo");
   XLSX.utils.book_append_sheet(wb, wsSettings, "Settings");
   XLSX.utils.book_append_sheet(wb, wsExchangeRates, "ExchangeRates");
@@ -689,13 +697,17 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     const dividendStocks: DividendStock[] = wb.Sheets.DividendStocks
       ? XLSX.utils.sheet_to_json<{ data: string }>(wb.Sheets.DividendStocks).map(row => JSON.parse(row.data)) : [];
     if (!dividendStocks.every(isDividendStock) || new Set(dividendStocks.map(s => s.code)).size !== dividendStocks.length) return fail('invalid_data', sheet);
+    sheet = 'PriceMonitors';
+    const priceMonitors: PriceMonitor[] = wb.Sheets.PriceMonitors
+      ? XLSX.utils.sheet_to_json<{ data: string }>(wb.Sheets.PriceMonitors).map(row => JSON.parse(row.data)) : [];
+    if (!priceMonitors.every(isPriceMonitor) || new Set(priceMonitors.map(plan => plan.id)).size !== priceMonitors.length) return fail('invalid_data', sheet);
     sheet = 'BackupInfo';
     const metadata = wsMetadata
       ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsMetadata)[0]
       : undefined;
     const recognizedBackup = metadata?.format === 'Fortuna Excel Backup';
     const backupVersion = Number(metadata?.version) || 0;
-    if (recognizedBackup && backupVersion > 5) return fail('unsupported_version');
+    if (recognizedBackup && backupVersion > 6) return fail('unsupported_version');
     const needsLegacyMetalMigration = !recognizedBackup || backupVersion < 2;
     
     const parseBoolean = (value: unknown, fallback: boolean): boolean => {
@@ -953,7 +965,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
 
     stage = 'restore_failed';
     sheet = undefined;
-    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks], async () => {
+    await db.transaction('rw', [db.accounts, db.records, db.exchangeRates, db.settings, db.products, db.planItems, db.planTargets, db.holdings, db.holdingTxns, db.dividendStocks, db.priceMonitors], async () => {
       await db.accounts.clear();
       await db.records.clear();
       await db.products.clear();
@@ -962,6 +974,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       await db.holdings.clear();
       await db.holdingTxns.clear();
       await db.dividendStocks.clear();
+      await db.priceMonitors.clear();
       await db.settings.clear();
       await db.exchangeRates.clear();
       if (accounts.length > 0) await db.accounts.bulkAdd(accounts);
@@ -972,6 +985,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       if (holdings.length > 0) await db.holdings.bulkAdd(holdings);
       if (holdingTxns.length > 0) await db.holdingTxns.bulkAdd(holdingTxns);
       if (dividendStocks.length) await db.dividendStocks.bulkAdd(dividendStocks);
+      if (priceMonitors.length) await db.priceMonitors.bulkAdd(priceMonitors);
       if (restoredSettings.length > 0) await db.settings.bulkAdd(restoredSettings);
       else {
         await db.settings.add({ ...createDefaultSettings(), onboardingVersion: CURRENT_ONBOARDING_VERSION,

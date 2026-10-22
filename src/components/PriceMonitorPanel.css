@@ -1,0 +1,39 @@
+.price-monitor-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); margin: 10px 0 14px; min-width: 0; }
+.price-monitor-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 46px; padding: 10px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.price-monitor-toggle-title { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: .82rem; font-weight: 650; }
+.price-monitor-toggle-title > span { color: var(--asset-color); }
+.price-monitor-toggle-title > small { font-size: .7rem; font-weight: 400; color: var(--text-muted); }
+.price-monitor-body { padding: 0 12px 12px; border-top: 1px solid var(--border); min-width: 0; }
+.price-monitor-note, .price-monitor-quote, .price-monitor-error, .price-monitor-near, .price-monitor-empty, .price-monitor-schedule { font-size: .73rem; line-height: 1.55; overflow-wrap: anywhere; margin: 6px 0; }
+.price-monitor-note, .price-monitor-empty, .price-monitor-schedule { color: var(--text-muted); }
+.price-monitor-body > .price-monitor-note { margin-top: 10px; }
+.price-monitor-quote { color: var(--text-secondary); }
+.price-monitor-error { color: var(--liability-color); }
+.price-monitor-near { color: var(--asset-color); font-weight: 600; }
+.price-monitor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.price-monitor-actions .btn { white-space: normal; min-height: 36px; }
+.price-monitor-toolbar { margin: 10px 0; }
+.price-monitor-card { margin: 10px 0 0; padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-glass); min-width: 0; }
+.price-monitor-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.price-monitor-card-heading > div { min-width: 0; }
+.price-monitor-card-heading strong { font-size: .86rem; display: block; overflow-wrap: anywhere; }
+.price-monitor-card-heading small { display: block; font-size: .68rem; color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
+.price-monitor-status { flex-shrink: 0; font-size: .66rem; color: var(--asset-color); background: var(--asset-dim); padding: 3px 6px; border-radius: 5px; }
+.price-monitor-stopped .price-monitor-status, .price-monitor-reached .price-monitor-status { color: var(--text-secondary); background: var(--bg-card); }
+.price-monitor-target { font-size: .8rem; font-weight: 600; margin: 9px 0 3px; overflow-wrap: anywhere; }
+.price-monitor-card > .price-monitor-actions { padding-top: 5px; }
+.price-monitor-delete { border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: .73rem; padding: 7px; cursor: pointer; margin-left: auto; min-height: 36px; }
+.price-monitor-delete:disabled { opacity: .5; cursor: default; }
+.price-monitor-form { border: 1px solid var(--border); border-radius: 10px; padding: 11px; background: var(--bg-glass); margin: 12px 0; min-width: 0; }
+.price-monitor-form h3 { font-size: .9rem; margin: 0 0 12px; }
+.price-monitor-form label { display: flex; flex-direction: column; min-width: 0; gap: 5px; margin-bottom: 10px; }
+.price-monitor-form label > span { font-size: .72rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.price-monitor-form input, .price-monitor-form select { width: 100%; max-width: 100%; min-width: 0; font-size: .85rem; }
+.price-monitor-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; }
+.price-monitor-ended { margin-top: 12px; }
+.price-monitor-ended > summary { cursor: pointer; font-size: .75rem; color: var(--text-secondary); padding: 7px 0; }
+.price-monitor-schedule { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 12px; font-size: .68rem; }
+.price-monitor-confirm { border-top: 1px solid var(--border); padding-top: 9px; margin-top: 7px; font-size: .75rem; }
+.price-monitor-toggle:focus-visible, .price-monitor-delete:focus-visible { outline: 2px solid var(--asset-color); outline-offset: 2px; }
+.font-large .price-monitor-form-grid { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 340px) { .price-monitor-form-grid { grid-template-columns: minmax(0, 1fr); } }

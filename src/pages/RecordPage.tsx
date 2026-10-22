@@ -11,6 +11,7 @@ import { formatLocalDate } from '../lib/localDate';
 import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
 import { DEFAULT_ARCHIVE_FILTERS, queryArchive } from '../lib/archiveQuery';
 import ArchiveControls from '../components/ArchiveControls';
+import PriceMonitorPanel from '../components/PriceMonitorPanel';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
 
@@ -469,6 +470,8 @@ export default function RecordPage({ onOpenAccount }: Props) {
                       <div style={{ fontFamily: 'var(--font-mono)' }}>{masked(fmt(subtotal))}</div>
                     </div>
                     {items.map(acct => renderEntryItem(acct))}
+                    {category === assetAccounts.find(acct => ['股票/ETF', '股票'].includes(acct.category))?.category && <PriceMonitorPanel kind="security" />}
+                    {category === assetAccounts.find(acct => acct.metalType === 'XAU')?.category && <PriceMonitorPanel kind="gold" />}
                   </div>
                 );
               })}
@@ -530,6 +533,9 @@ export default function RecordPage({ onOpenAccount }: Props) {
           <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', margin: '12px 0 24px' }}>{t('long_press_hint')}</div>
         </>
       )}
+
+      {!loading && !loadError && !assetAccounts.some(acct => ['股票/ETF', '股票'].includes(acct.category)) && <PriceMonitorPanel kind="security" />}
+      {!loading && !loadError && !assetAccounts.some(acct => acct.metalType === 'XAU') && <PriceMonitorPanel kind="gold" />}
 
       {showExportMenu && (
         <div className="modal-overlay" onClick={() => setShowExportMenu(false)} role="presentation">

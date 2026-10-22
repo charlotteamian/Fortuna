@@ -8,6 +8,8 @@ import { useAppContext } from '../app-context';
 import { useTranslation } from 'react-i18next';
 import { getFieldsForCategory } from '../lib/categoryFields';
 import PortfolioPanel from '../components/PortfolioPanel';
+import PriceMonitorPanel from '../components/PriceMonitorPanel';
+import { refreshPriceMonitorQuotes } from '../services/priceMonitorQuoteService';
 import AccountEditModal from '../components/AccountEditModal';
 import { getDefaultHoldingModeForCategory } from '../lib/productPortfolio';
 import {
@@ -111,6 +113,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     try {
       const ppg = await getMetalPricePerGram(account.metalType, account.currency, settings?.goldPriceSource ?? 'international', true);
       setMetalPricePerGram(ppg);
+      void refreshPriceMonitorQuotes({ force: true }).catch(error => console.warn('Price monitor refresh failed', error));
     } catch (e) {
       console.error(e);
     }
@@ -380,6 +383,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
         </div>
 
         {account.hidden && <p className="account-hidden-note">{t('hidden_account_edit_hint')}</p>}
+
+        {account.type === 'asset' && ['股票/ETF', '股票'].includes(account.category) && <PriceMonitorPanel kind="security" accountId={account.id} />}
+        {account.type === 'asset' && account.metalType === 'XAU' && <PriceMonitorPanel kind="gold" accountId={account.id} />}
 
         {isArchived && (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>

@@ -28,11 +28,11 @@ const SINA_HEADERS = { Referer: 'https://finance.sina.com.cn' };
 
 async function httpGetText(url: string, headers?: Record<string, string>): Promise<string> {
   if (isWeb) {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(12000), cache: 'no-store' });
     if (!resp.ok) throw new Error(`quote api ${resp.status}`);
     return resp.text();
   }
-  const resp = await CapacitorHttp.get({ url, responseType: 'text', headers });
+  const resp = await CapacitorHttp.get({ url, responseType: 'text', headers, connectTimeout: 10000, readTimeout: 10000 });
   if (resp.status < 200 || resp.status >= 300) throw new Error(`quote api ${resp.status}`);
   return httpResponseDataToText(resp.data);
 }
@@ -83,6 +83,7 @@ function tencentCodes(symbol: string, market?: string): string[] {
   // 4-5 digits → HK
   if (isHk(market) || /^\d{4,5}$/.test(s)) return ['hk' + s.padStart(5, '0')];
   if (/^\d{6}$/.test(s)) {
+    if (s.startsWith('92')) return ['bj' + s];
     const first = s[0];
     if ('569'.includes(first)) return ['sh' + s];
     if ('0123'.includes(first)) return ['sz' + s];
@@ -90,6 +91,49 @@ function tencentCodes(symbol: string, market?: string): string[] {
     return ['sh' + s, 'sz' + s];
   }
   return [];
+}
+
+export interface SecurityMonitorQuote {
+  priceMicros: number;
+  date: string;
+  fetchedAt: number;
+}
+
+/** Only dated source quotes are eligible for alerts; never relabel an old cache as today. */
+export function parseSecurityMonitorQuotes(text: string, targets: (QuoteTarget & { currency: string })[], now = Date.now()): Record<string, SecurityMonitorQuote> {
+  const quotesByCode = new Map<string, SecurityMonitorQuote>();
+  for (const match of text.matchAll(/v_([\w.]+)="([^"]*)"/g)) {
+    const fields = match[2].split('~');
+    const priceMicros = Math.round(Number(fields[3]) * 1e6);
+    const stamp = fields[30] ?? '';
+    const parts = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(stamp)
+      ?? /^(\d{4})[-/](\d{2})[-/](\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(stamp);
+    if (!parts || !Number.isSafeInteger(priceMicros) || priceMicros <= 0 || priceMicros > 1e12) continue;
+    const date = `${parts[1]}-${parts[2]}-${parts[3]} ${parts[4]}:${parts[5]}`;
+    const parsed = new Date(`${date.replace(' ', 'T')}:${parts[6]}Z`);
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== `${date.replace(' ', 'T')}:${parts[6]}`) continue;
+    // Source timestamps use market-local clocks. A full day allows for US/Asian zones.
+    if (parsed.getTime() > now + 86400000 || now - parsed.getTime() > 10 * 86400000) continue;
+    quotesByCode.set(match[1].toLowerCase(), { priceMicros, date, fetchedAt: now });
+  }
+  const result: Record<string, SecurityMonitorQuote> = {};
+  for (const target of targets) {
+    for (const code of tencentCodes(target.symbol ?? '', target.market)) {
+      const currency = code.startsWith('us') ? 'USD' : code.startsWith('hk') ? 'HKD' : 'CNY';
+      const quote = quotesByCode.get(code.toLowerCase());
+      if (quote && target.currency === currency) { result[target.id] = quote; break; }
+    }
+  }
+  return result;
+}
+
+export async function fetchSecurityMonitorQuotes(targets: (QuoteTarget & { currency: string })[]): Promise<Record<string, SecurityMonitorQuote>> {
+  const codes = [...new Set(targets.flatMap(target => tencentCodes(target.symbol ?? '', target.market)))];
+  const results = await Promise.allSettled(Array.from({ length: Math.ceil(codes.length / 100) }, async (_, index) => {
+    const text = await httpGetText(TENCENT_BASE + codes.slice(index * 100, (index + 1) * 100).join(','));
+    return parseSecurityMonitorQuotes(text, targets);
+  }));
+  return Object.assign({}, ...results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])) as Record<string, SecurityMonitorQuote>;
 }
 
 /** Equity quotes (A-share / HK / US) via Tencent, one batched request → id → price. */
@@ -103,7 +147,7 @@ async function fetchTencentEquities(targets: QuoteTarget[]): Promise<Record<stri
   const text = await httpGetText(TENCENT_BASE + allCodes.join(','));
 
   const priceByCode: Record<string, number> = {};
-  const re = /v_(\w+)="([^"]*)"/g;
+  const re = /v_([\w.]+)="([^"]*)"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const price = parseFloat(m[2].split('~')[3]);

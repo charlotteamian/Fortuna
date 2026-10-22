@@ -1,3 +1,4 @@
+import type { PriceMonitor } from './priceMonitor';
 import type { DividendStock } from './dividendWorkbench';
 import type {
   Account,
@@ -31,6 +32,7 @@ export interface PortableSnapshotInput {
   planStatus: PlanStatus;
   settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
   dividendStocks?: DividendStock[];
+  priceMonitors?: PriceMonitor[];
   generatedAt?: Date;
   trigger?: string;
 }
@@ -388,6 +390,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
   return {
     schemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION,
     dividendWorkbench: { currency: 'CNY', strategy: input.settings.dividendStrategy ?? 'stocks', budgetMinor: input.settings.dividendBudgetMinor ?? null, stocks: input.dividendStocks ?? [], fundPlan: input.settings.dividendFundPlan ?? null, pricingMethod: input.settings.dividendPricingMethod ?? null, selectionPrinciples: input.settings.dividendSelectionPrinciples ?? null },
+    priceMonitors: input.priceMonitors ?? [],
     source: 'Fortuna',
     scope: 'all active accounts, liabilities, allocation plan, holdings, and ledgers',
     generatedAt: generatedAt.toISOString(),

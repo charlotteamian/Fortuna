@@ -10,6 +10,7 @@ import {
   type HoldingWithPosition,
 } from '../services/holdingService';
 import { fetchQuotes } from '../services/quoteService';
+import { refreshPriceMonitorQuotes } from '../services/priceMonitorQuoteService';
 import { useAppContext } from '../app-context';
 import { getArchivedHoldingMarket, getHoldingLastRecordDates, splitHoldingsByArchive } from '../lib/holdingArchive';
 import { DEFAULT_ARCHIVE_FILTERS, queryArchive } from '../lib/archiveQuery';
@@ -142,7 +143,10 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     const current = await getHoldingsWithPositions(account.id);
     const { active } = splitHoldingsByArchive(current);
     const targets = active.filter(h => (h.symbol || '').trim() || resolveUsOptionContract(h));
-    if (targets.length === 0) return;
+    if (targets.length === 0) {
+      void refreshPriceMonitorQuotes({ force: true }).catch(error => console.warn('Price monitor refresh failed', error));
+      return;
+    }
     refreshingRef.current = true;
     setRefreshing(true);
     try {
@@ -167,6 +171,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         onChanged();
       }
       if (!silent || res.ok > 0) flashQuoteMsg(t('quotes_updated', { ok: res.ok, total: res.total }));
+      void refreshPriceMonitorQuotes({ force: true }).catch(error => console.warn('Price monitor refresh failed', error));
     } catch (e) {
       console.error('Quote refresh failed', e);
       if (!silent) flashQuoteMsg(t('quotes_failed'));

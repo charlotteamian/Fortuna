@@ -124,7 +124,7 @@ test('snapshot focus labels are optional and only accept active accounts', () =>
   );
 });
 
-test('automatic snapshot v10 exports all active accounts and marks optional focus accounts', () => {
+test('automatic snapshot v11 exports all active accounts and marks optional focus accounts', () => {
   const snapshot = buildAutomaticSnapshot({
     accounts: [focusAccount, reserveAccount, archivedAccount],
     records,
@@ -137,7 +137,7 @@ test('automatic snapshot v10 exports all active accounts and marks optional focu
     trigger: 'test',
   });
 
-  assert.equal(snapshot.schemaVersion, 10);
+  assert.equal(snapshot.schemaVersion, 11);
   assert.equal(snapshot.accountCount, 2);
   assert.equal(snapshot.focusAccountCount, 1);
   assert.deepEqual(snapshot.totals, {
@@ -343,4 +343,14 @@ test('automatic snapshot carries both dividend strategies without adding planned
   assert.deepEqual(snapshot.dividendWorkbench.fundPlan, fundPlan);
   assert.equal(snapshot.dividendWorkbench.budgetMinor, 123456);
   assert.equal(snapshot.totals.assets, 300);
+});
+
+
+test('automatic snapshot includes independent monitor plans after the tracked holding is sold or removed', () => {
+  const monitor = { id: 'watch-empty', name: 'Former holding', kind: 'security' as const, symbol: '510300', currency: 'CNY',
+    targetPriceMicros: 4000000, toleranceBps: 500, direction: 'at_or_below' as const, status: 'active' as const,
+    accountId: 'deleted-account', holdingId: 'deleted-holding', createdAt: 1, updatedAt: 1 };
+  const snapshot = buildAutomaticSnapshot({ accounts: [], records: [], holdings: [], transactions: [], exchangeRates: [],
+    planStatus: emptyPlanStatus(0), settings: { primaryCurrency: 'CNY' }, priceMonitors: [monitor] });
+  assert.deepEqual(snapshot.priceMonitors, [monitor]);
 });

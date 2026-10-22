@@ -30,7 +30,7 @@ async function performSnapshotWrite(trigger: string): Promise<PortableSnapshotRe
     return { written: false, status };
   }
 
-  const [settings, accountData, records, holdings, transactions, exchangeRates, planStatus, dividendStocks] = await Promise.all([
+  const [settings, accountData, records, holdings, transactions, exchangeRates, planStatus, dividendStocks, priceMonitors] = await Promise.all([
     initializeSettings(),
     getAccountsWithLatest(),
     db.records.toArray(),
@@ -39,6 +39,7 @@ async function performSnapshotWrite(trigger: string): Promise<PortableSnapshotRe
     db.exchangeRates.toArray(),
     getPlanStatus(),
     db.dividendStocks.toArray(),
+    db.priceMonitors.toArray(),
   ]);
   const snapshot = buildPortableSnapshot({
     accounts: accountData.accounts,
@@ -48,6 +49,7 @@ async function performSnapshotWrite(trigger: string): Promise<PortableSnapshotRe
     exchangeRates,
     planStatus,
     dividendStocks,
+    priceMonitors,
     settings,
     trigger,
   });

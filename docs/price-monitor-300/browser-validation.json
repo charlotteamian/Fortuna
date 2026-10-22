@@ -1,0 +1,61 @@
+{
+  "checkedAt": "2026-10-22T15:08:11.775Z",
+  "browser": "Google Chrome headless",
+  "source": "Synthetic isolated IndexedDB, intercepted dated Tencent and gold API responses",
+  "classificationEntry": true,
+  "closedHoldingSelection": true,
+  "requiredTolerancePreventedSave": true,
+  "nearBanner": true,
+  "sameDayDismissRetained": true,
+  "targetCrossingEndsMonitoring": true,
+  "stopAndRestart": true,
+  "goldPerGramQuote": true,
+  "reloadPersisted": true,
+  "ledgerUnchanged": {
+    "accounts": 2,
+    "holdings": 1,
+    "trades": 2
+  },
+  "widths": [
+    {
+      "viewport": 390,
+      "width": 390,
+      "panels": [
+        {
+          "width": 357,
+          "scroll": 357
+        },
+        {
+          "width": 357,
+          "scroll": 357
+        }
+      ]
+    },
+    {
+      "viewport": 320,
+      "width": 320,
+      "panels": [
+        {
+          "width": 292,
+          "scroll": 292
+        },
+        {
+          "width": 292,
+          "scroll": 292
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "limits": [
+    "No physical Android device tested",
+    "No live market data accuracy tested",
+    "Lifecycle daily interval covered by core tests, not a full real-day browser wait"
+  ],
+  "prefixedHistoricalNormalization": {
+    "input": "sh600036 without market",
+    "symbol": "600036",
+    "market": "A股",
+    "currency": "CNY"
+  }
+}

@@ -10,6 +10,8 @@ import { flushPortableSnapshot, schedulePortableSnapshot } from './services/port
 import { addPortableSnapshotBackgroundListener } from './native/portableSnapshot';
 import { refreshRatesInBackground } from './services/rateService';
 import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_SETTINGS_REQUEST_EVENT } from './lib/dividendAdvisorNavigation';
+import { usePriceMonitors } from './hooks/usePriceMonitors';
+import PriceMonitorBanner from './components/PriceMonitorBanner';
 
 const AccountDetail = lazy(() => import('./pages/AccountDetail'));
 const ChartPage = lazy(() => import('./pages/ChartPage'));
@@ -34,6 +36,7 @@ function App() {
   const [resolvedAppearance, setResolvedAppearance] = useState<'dark' | 'light'>('dark');
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [startupError, setStartupError] = useState(false);
+  usePriceMonitors(Boolean(settings));
 
   const refresh = () => setRefreshKey(k => k + 1);
 
@@ -158,6 +161,8 @@ function App() {
   if (editingAccountId) {
     return (
       <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
+        <div className="app-monitor-shell">
+        <PriceMonitorBanner />
         <div className="account-detail-host" hidden={holdingApiSettingsOpen}>
           <Suspense fallback={pageFallback}><AccountDetail accountId={editingAccountId} onBack={closeAccount}
             onOpenApiSettings={() => setHoldingApiSettingsOpen(true)} apiConfigRevision={holdingApiConfigRevision} /></Suspense>
@@ -172,6 +177,7 @@ function App() {
               onOpenOnboarding={() => setOnboardingOpen(true)} /></Suspense>
           </main>
         </div>}
+        </div>
       </AppContext.Provider>
     );
   }
@@ -183,6 +189,7 @@ function App() {
           if (tab === 'settings') setTab(returnTab);
           else { setReturnTab(tab); setTab('settings'); }
         }}>{tab === 'settings' ? `← ${t('back')}` : `⚙ ${t('settings')}`}</button></header>
+        <PriceMonitorBanner />
         <main className="app-content">
           {tab === 'record' && <RecordPage key={refreshKey} onOpenAccount={openAccount} onRefresh={refresh} />}
           <Suspense fallback={pageFallback}>
@@ -274,6 +281,7 @@ function App() {
       </div>
       {dividendApiSettingsOpen && <div className="app">
         <header className="app-topbar"><span>{t('div_ai_settings_title')}</span><button className="btn btn-secondary" onClick={() => setDividendApiSettingsOpen(false)}>← {t('back')}</button></header>
+        <PriceMonitorBanner />
         <main className="app-content">
           <Suspense fallback={pageFallback}><SettingsPage focusDividendAdvisor
             onRefresh={() => { void loadSettings(); refresh(); }} onAccountsChanged={refresh}

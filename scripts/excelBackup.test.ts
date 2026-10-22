@@ -85,7 +85,7 @@ test('binary reads with missing or generic MIME restore all ledger tables and fi
   }
 });
 
-test('version 5 backups preserve literal separators in user-defined plan categories', async () => {
+test('current backups preserve literal separators in user-defined plan categories', async () => {
   const { updateSettings } = await import('../src/db.ts');
   const settings = await initializeSettings();
   await updateSettings({ categories: [...settings.categories, { name: '应急|备用', type: 'asset', icon: '📌' }] });
@@ -94,7 +94,7 @@ test('version 5 backups preserve literal separators in user-defined plan categor
   await db.planItems.add({ id: 'separator-plan', name: '应急配置', categories, targetPercent: 100, sortOrder: 0, createdAt: 1 });
   const backup = await exportToExcel();
   const workbook = XLSX.read(backup, { type: 'base64' });
-  assert.equal(XLSX.utils.sheet_to_json<{ version: number }>(workbook.Sheets.BackupInfo)[0].version, 5);
+  assert.equal(XLSX.utils.sheet_to_json<{ version: number }>(workbook.Sheets.BackupInfo)[0].version, 6);
   assert.deepEqual(JSON.parse(XLSX.utils.sheet_to_json<{ categories: string }>(workbook.Sheets.Plan)[0].categories), categories);
   assert.equal(await importFromExcel(backup), true);
   assert.deepEqual((await db.planItems.get('separator-plan'))?.categories, categories);
