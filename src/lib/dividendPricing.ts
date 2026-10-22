@@ -54,12 +54,12 @@ export type DividendPricingBlocker = 'annual_eps_missing' | 'annual_payout_missi
   | 'treasury_missing' | 'treasury_stale' | 'yield_history_missing' | 'capital_actions_unverified'
   | 'opportunity_cost_missing' | 'opportunity_cost_stale' | 'anchors_conflict' | 'growth_return_conflict'
   | 'quote_missing' | 'roe_bps_missing' | 'cyclical_normalisation_required' | 'annual_stale'
-  | 'dividend_continuity_missing' | 'implausible_yield';
+  | 'dividend_continuity_missing' | 'implausible_yield' | 'anchors_missing';
 export interface DividendPricingGrid {
   discountBps: 9500 | 8500 | 7500;
   priceMinor: number;
   yieldBps: number;
-  changeFromCurrentBps: number;
+  changeFromCurrentBps?: number;
   cumulativePortionBps: number;
   meetsSafetyMargin: boolean;
 }
@@ -68,6 +68,8 @@ export interface DividendPricingResult {
   canApply: boolean;
   riskClass: DividendPricingRiskClass;
   blockers: DividendPricingBlocker[];
+  /** Eligibility/pacing checks never erase a calculable valuation or paused draft. */
+  pauseReasons?: DividendPricingBlocker[];
   warnings: DividendPricingBlocker[];
   annuals: DividendPricingAnnual[];
   normalizedEpsMicros?: number;
@@ -271,23 +273,26 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   if (!isDividendPricingMethod(method)) throw new Error('INVALID_DIVIDEND_PRICING_METHOD');
   const override = method.stockOverrides[input.code];
   const riskClass = override?.riskClass ?? (input.financialSector && /银行/.test(`${input.name} ${input.sector ?? ''}`) ? 'bank' : /煤|钢|矿|有色|石油|化工|航运/.test(`${input.name} ${input.sector ?? ''}`) ? 'cyclical' : /电力|水电|水务|高速|铁路|长江电力/.test(`${input.name} ${input.sector ?? ''}`) ? 'bondlike' : 'other');
-  const blockers: DividendPricingBlocker[] = [], warnings: DividendPricingBlocker[] = [];
+  const blockers: DividendPricingBlocker[] = [], warnings: DividendPricingBlocker[] = [], pauseReasons: DividendPricingBlocker[] = [];
   const block = (condition: boolean, key: DividendPricingBlocker) => { if (condition) blockers.push(key); };
+  const pause = (condition: boolean, key: DividendPricingBlocker) => { if (condition) pauseReasons.push(key); };
   const age = (d?: string) => !date(d) || d! > asOf ? Infinity : (Date.parse(asOf) - Date.parse(d!)) / 86400000;
   const recent = annuals.slice(0,3);
   const manual = override?.normalizedEpsMicros !== undefined && !!override.normalizationSource?.trim() && age(override.normalizationAsOf) <= 550;
   const adjusted = recent.map(y => y.adjustedEpsMicros);
   const normalizedEpsMicros = manual ? override!.normalizedEpsMicros : adjusted.length === 3 && adjusted.every(v => v !== undefined) ? Math.round(adjusted.reduce<number>((s,v) => s+v!,0)/3) : undefined;
   block(normalizedEpsMicros === undefined, 'annual_eps_missing'); block(normalizedEpsMicros !== undefined && normalizedEpsMicros <= 0, 'non_positive_earnings');
-  block(riskClass === 'cyclical' && !manual, 'cyclical_normalisation_required');
+  pause(riskClass === 'cyclical' && !manual, 'cyclical_normalisation_required');
   block(annuals.length < 5 || annuals.slice(0,5).some(y => y.payoutBps === undefined), 'annual_payout_missing');
-  block(annuals.some(y => (y.payoutBps ?? 0) > 10000), 'payout_above_100');
-  block(annuals.slice(0,5).some(y => y.dividendMicros === undefined || y.dividendMicros <= 0), 'dividend_continuity_missing');
-  block(!annuals[0]?.noticeDate || age(annuals[0].reportDate) > 550, 'annual_stale');
+  pause(annuals.some(y => (y.payoutBps ?? 0) > 10000), 'payout_above_100');
+  pause(annuals.slice(0,5).some(y => y.dividendMicros === undefined || y.dividendMicros <= 0), 'dividend_continuity_missing');
+  pause(!annuals[0]?.noticeDate || age(annuals[0].reportDate) > 550, 'annual_stale');
   const payouts = annuals.slice(0,5).flatMap(y => y.payoutBps === undefined ? [] : [y.payoutBps]).sort((a,b) => a-b);
-  const sustainablePayoutBps = payouts.length === 5 ? payouts[2] : undefined;
+  // A historical distribution above earnings is a reason to pause buying,
+  // not to reuse an unsupported >100% payout in the dividend numerator.
+  const sustainablePayoutBps = payouts.length === 5 ? Math.min(payouts[2], 10000) : undefined;
   const fcfEvidence: NonNullable<DividendPricingResult['fcfEvidence']> = [];
-  if (input.financialSector) block(input.financialReview?.status !== 'pass' || age(input.financialReview?.asOf) > 230, 'financial_sector_review');
+  if (input.financialSector) pause(input.financialReview?.status !== 'pass' || age(input.financialReview?.asOf) > 230, 'financial_sector_review');
   else {
     for (const year of recent) {
       const cashKnown = Number.isSafeInteger(year.operatingCashMinor) && Number.isSafeInteger(year.capitalExpenditureMinor)
@@ -320,6 +325,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const fcfDividendCapMicros = fcfEvidence.length === 3 ? Math.min(...fcfEvidence.map(year => year.dividendCapMicros)) : undefined;
   const fcfCapApplied = earningsDividendMicros !== undefined && fcfDividendCapMicros !== undefined && fcfDividendCapMicros < earningsDividendMicros;
   if (fcfCapApplied) warnings.push('fcf_dividend_capped');
+  pause(warnings.includes('fcf_below_150') || fcfCapApplied, 'fcf_below_150');
   const pretaxDividendMicros = earningsDividendMicros === undefined ? undefined : fcfDividendCapMicros === undefined
     ? earningsDividendMicros : Math.min(earningsDividendMicros, fcfDividendCapMicros);
   const d1Micros = pretaxDividendMicros === undefined ? undefined : Math.floor(pretaxDividendMicros * (1-taxBps/10000));
@@ -354,9 +360,12 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
     anchors.selection = useHighest ? 'highest_available' : 'median';
     if (conflict) warnings.push('anchors_conflict');
   }
+  block(!anchorValues.length, 'anchors_missing');
   const gordonYieldBps = method.requiredReturnBps - method.growthBps;
-  block(method.growthBps >= method.requiredReturnBps - 200, 'growth_return_conflict');
-  block(!input.priceMinor || age(input.priceDate) > 10, 'quote_missing');
+  const gordonUsable = method.growthBps < method.requiredReturnBps - 200;
+  pause(!gordonUsable, 'growth_return_conflict');
+  const quoteUsable = Number.isSafeInteger(input.priceMinor) && input.priceMinor! > 0 && age(input.priceDate) <= 10;
+  pause(!quoteUsable, 'quote_missing');
   const roes = recent.flatMap(y => y.roeBps === undefined ? [] : [y.roeBps]);
   const meanRoeBps = roes.length === 3 ? Math.round(roes.reduce((s,v) => s+v,0)/3) : undefined;
   const currentPbBps = input.priceMinor && input.bvpsMicros && input.bvpsMicros > 0 ? Math.round(input.priceMinor * 1e8 / input.bvpsMicros) : undefined;
@@ -364,33 +373,72 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const pbImpliedYieldBps = sustainablePayoutBps !== undefined && meanRoeBps !== undefined && currentPbBps ? Math.round(sustainablePayoutBps * meanRoeBps / currentPbBps) : undefined;
   const reasonablePbBps = sustainablePayoutBps !== undefined && meanRoeBps !== undefined && anchors.selectedBps ? Math.round(sustainablePayoutBps * meanRoeBps / anchors.selectedBps) : undefined;
   const priceFor = (yieldBps?: number) => d1Micros !== undefined && d1Micros > 0 && yieldBps && yieldBps > 0 ? Math.floor(d1Micros/yieldBps) : undefined;
-  const gordonPriceMinor = priceFor(gordonYieldBps), anchorPriceMinor = priceFor(anchors.selectedBps);
+  const gordonPriceMinor = gordonUsable ? priceFor(gordonYieldBps) : undefined, anchorPriceMinor = priceFor(anchors.selectedBps);
   const pbBridgePriceMinor = reasonablePbBps && input.bvpsMicros ? Math.floor(reasonablePbBps * input.bvpsMicros / 1e8 * (1-taxBps/10000)) : undefined;
-  const prices = [gordonPriceMinor, anchorPriceMinor, pbBridgePriceMinor].filter((v): v is number => v !== undefined && v > 0);
-  // Gordon is the primary price. Usable auxiliary checks may lower its ceiling;
-  // missing comparisons remain explicit reviews and never become invented data.
-  const candidatePriceMinor = gordonPriceMinor && gordonPriceMinor > 0 ? Math.min(...prices) : undefined;
-  block(!!d1Micros && !!input.priceMinor && d1Micros/input.priceMinor > 3000, 'implausible_yield');
+  // The user selects the three observable yield anchors as the primary method.
+  // Gordon and PB remain independent comparisons, never an implicit price cap.
+  const candidatePriceMinor = anchorPriceMinor;
+  pause(quoteUsable && !!d1Micros && d1Micros/input.priceMinor! > 3000, 'implausible_yield');
   block(candidatePriceMinor !== undefined && candidatePriceMinor < 10, 'implausible_yield');
   const canApply = !blockers.length && !!candidatePriceMinor && !!d1Micros;
   const theoreticalPriceMinor = canApply ? candidatePriceMinor : undefined;
   const marginPriceMinor = theoreticalPriceMinor ? Math.floor(theoreticalPriceMinor*(1-method.safetyMarginBps/10000)) : undefined;
   const grid: DividendPricingGrid[] = canApply ? ([9500,8500,7500] as const).map((discountBps,index) => { const priceMinor = Math.floor(theoreticalPriceMinor! * discountBps / 10000); return { discountBps, priceMinor,
-    yieldBps: Math.round(d1Micros!/priceMinor), changeFromCurrentBps: Math.round((priceMinor/input.priceMinor!-1)*10000), cumulativePortionBps: [3333,6666,10000][index], meetsSafetyMargin: priceMinor <= marginPriceMinor! }; }) : [];
+    yieldBps: Math.round(d1Micros!/priceMinor), changeFromCurrentBps: quoteUsable ? Math.round((priceMinor/input.priceMinor!-1)*10000) : undefined, cumulativePortionBps: [3333,6666,10000][index], meetsSafetyMargin: priceMinor <= marginPriceMinor! }; }) : [];
   // Match the historical spread numerator: implemented trailing cash, not D1.
   const currentSpreadBps = input.currentCashYieldBps !== undefined && treasury ? input.currentCashYieldBps-treasury.yieldBps : undefined;
   const spreads = history?.samples.flatMap(s => s.spreadBps === undefined ? [] : [s.spreadBps]) ?? [];
   const spreadPercentileBps = currentSpreadBps !== undefined && spreads.length >= 60 ? Math.round(spreads.filter(v => v <= currentSpreadBps).length / spreads.length * 10000) : undefined;
-  return { status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], warnings: [...new Set(warnings)], annuals,
+  return { status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], pauseReasons: [...new Set(pauseReasons)], warnings: [...new Set(warnings)], annuals,
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
     sustainablePayoutBps, taxBps, earningsDividendMicros, fcfDividendCapMicros, fcfCapApplied, fcfEvidence, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
     currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps, sourceUrls: input.sourceUrls ?? [] };
 }
 
+const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]> = {
+  annual_eps_missing: ['缺少三年扣非每股收益或有效归一盈利依据', 'Three-year recurring EPS or documented normalised earnings are missing'],
+  annual_payout_missing: ['缺少五年可核实派息率', 'Five verified annual payout ratios are missing'],
+  non_positive_earnings: ['归一盈利非正，无法形成正的可持续分红', 'Normalised earnings are non-positive'],
+  payout_above_100: ['历史派息率超过100%，先暂停加仓；估值派息率最多取100%', 'A historical payout exceeds earnings; pause buying and cap the valuation payout at 100%'],
+  fcf_missing: ['缺少三年可核实每股自由现金流', 'Three verified annual free-cash-flow-per-share observations are missing'],
+  fcf_below_150: ['现金流覆盖不足150%，按现金支持上限估值并暂停加仓', 'Cash-flow coverage is below 150%; use the cash-supported dividend ceiling and pause buying'],
+  fcf_non_positive: ['近三年存在非正自由现金流，无法确认正的现金支持分红', 'Recent free cash flow is non-positive'],
+  fcf_dividend_capped: ['估值分红已按现金流支持上限下调', 'The valuation dividend has been reduced to its cash-flow ceiling'],
+  financial_sector_review: ['金融行业专项证据未通过或待补充，估值可保留但暂停加仓', 'Financial-sector evidence is incomplete, stale or failed; preserve the valuation and pause buying'],
+  treasury_missing: ['缺少有效十年国债收益率', 'A verified ten-year government yield is missing'],
+  treasury_stale: ['十年国债收益率依据已过期', 'The ten-year government yield observation is stale'],
+  yield_history_missing: ['自身历史股息率样本不足或已过期', 'Own-history dividend-yield observations are insufficient or stale'],
+  capital_actions_unverified: ['历史送转股口径未核实', 'Historical bonus-share adjustments are unverified'],
+  opportunity_cost_missing: ['缺少可核实的机会成本收益率', 'A verified comparable opportunity-cost yield is missing'],
+  opportunity_cost_stale: ['机会成本收益率依据已过期', 'The opportunity-cost yield observation is stale'],
+  anchors_conflict: ['三锚收益率分歧较大，采用有效锚中最高收益率', 'The yield anchors disagree; use the highest verified yield'],
+  growth_return_conflict: ['增长与总回报参数不符合戈登参考价条件，三锚估值仍独立计算', 'Growth and total-return inputs invalidate the Gordon comparison; the three-anchor valuation remains independent'],
+  quote_missing: ['当前行情缺失或过期，保留估值但暂停加仓，涨跌幅待更新', 'The current quote is missing or stale; preserve the valuation, pause buying and defer the price comparison'],
+  roe_bps_missing: ['ROE或市净率依据不足，排除PB参考价', 'ROE or book-value evidence is incomplete; exclude the PB comparison'],
+  cyclical_normalisation_required: ['周期行业尚需归一盈利复核，暂按三年扣非均值估值并暂停加仓', 'Cyclical earnings need normalisation review; use the three-year recurring-EPS mean provisionally and pause buying'],
+  annual_stale: ['年报依据过期或披露日期待核实，按列示历史数据估值并暂停加仓', 'Annual evidence is stale or its publication date is unverified; preserve the dated historical valuation and pause buying'],
+  dividend_continuity_missing: ['连续分红记录待核实，保留估值并暂停加仓', 'Dividend continuity needs verification; preserve the valuation and pause buying'],
+  implausible_yield: ['计算结果或行情的数量级异常，需要核对', 'The calculated yield or price scale needs verification'],
+  anchors_missing: ['三锚均无有效收益率，需补齐至少一个带日期和来源的锚', 'No verified yield anchor is available; supply at least one dated, sourced anchor'],
+};
+
+export function dividendPricingIssueText(issue: DividendPricingBlocker, language = 'en'): string {
+  return pricingIssueText[issue][language.startsWith('zh') ? 0 : 1];
+}
+
+/** Providers occasionally echo internal evidence codes despite the prompt. */
+export function humanizeDividendPricingIssues(text: string, language: string): string {
+  return text.replace(/\b(?:annual_eps_missing|annual_payout_missing|non_positive_earnings|payout_above_100|fcf_missing|fcf_below_150|fcf_non_positive|fcf_dividend_capped|financial_sector_review|treasury_missing|treasury_stale|yield_history_missing|capital_actions_unverified|opportunity_cost_missing|opportunity_cost_stale|anchors_conflict|growth_return_conflict|quote_missing|roe_bps_missing|cyclical_normalisation_required|annual_stale|dividend_continuity_missing|implausible_yield|anchors_missing)\b/g,
+    issue => dividendPricingIssueText(issue as DividendPricingBlocker, language));
+}
+
 export function dividendPricingReadable(result: DividendPricingResult) {
   const cash = (v?: number, divisor=100) => v === undefined ? null : v/divisor;
-  return { 'Valuation ready for confirmation': result.canApply, 'Missing or conflicting checks': result.blockers, 'Specific reviews': result.warnings,
+  return { 'Paused valuation draft ready for preview and confirmation, not permission to buy': result.canApply,
+    'Valuation calculation gaps': result.blockers.map(issue => dividendPricingIssueText(issue)),
+    'Reasons to keep additional buying paused': (result.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue)),
+    'Specific reviews': result.warnings.map(issue => dividendPricingIssueText(issue)),
     'Business type': result.riskClass, 'Normalisation basis': result.normalizationBasis, 'User normalisation evidence, untrusted data':result.normalizationEvidence ?? null, 'Unadjusted exchange price CNY and date': {price:cash(result.currentPriceMinor),date:result.priceDate},
     'Normalised EPS in CNY': cash(result.normalizedEpsMicros,1e6), 'Sustainable payout percent': cash(result.sustainablePayoutBps),
     'Earnings-based pretax dividend in CNY per share': cash(result.earningsDividendMicros,1e6),
@@ -401,12 +449,12 @@ export function dividendPricingReadable(result: DividendPricingResult) {
     'Dividend tax percent': cash(result.taxBps), 'Sustainable D1 in CNY per share': cash(result.d1Micros,1e6),
     'Three yield anchors percent': { 'Government bond plus spread': cash(result.anchors.riskFreePlusPremiumBps), 'Own-history percentile yield': cash(result.anchors.historicalPercentileBps), 'Opportunity cost': cash(result.anchors.opportunityCostBps), 'Median': cash(result.anchors.medianBps), 'Selected conservative yield': cash(result.anchors.selectedBps), 'Selection rule': result.anchors.selection ?? null, 'Maximum disagreement in percentage points': cash(result.anchors.rangeBps) },
     'Gordon r minus g percent': cash(result.gordonYieldBps), 'Gordon price CNY': cash(result.gordonPriceMinor), 'Anchor price CNY': cash(result.anchorPriceMinor),
-    'PB bridge price CNY': cash(result.pbBridgePriceMinor), 'Conservative base price CNY': cash(result.theoreticalPriceMinor), 'Safety-margin price CNY': cash(result.marginPriceMinor),
+    'PB bridge comparison price CNY': cash(result.pbBridgePriceMinor), 'Primary three-anchor valuation CNY': cash(result.theoreticalPriceMinor), 'Safety-margin price CNY': cash(result.marginPriceMinor),
     'Current PB': cash(result.currentPbBps,10000), 'Three-year mean ROE percent': cash(result.meanRoeBps), 'PB implied yield percent': cash(result.pbImpliedYieldBps), 'Reasonable PB': cash(result.reasonablePbBps,10000),
     'Current implemented trailing cash yield minus government yield in percentage points': cash(result.currentSpreadBps), 'Own historical spread percentile percent': cash(result.spreadPercentileBps),
     'Government yield percent and source date': result.treasury ? { percent: result.treasury.yieldBps/100, date: result.treasury.asOf, source: result.treasury.sourceUrl } : null,
     'Opportunity comparison': result.opportunity ? { percent: result.opportunity.yieldBps/100, date: result.opportunity.asOf, source: result.opportunity.sourceUrl, basis: result.opportunity.basis } : null,
     'Historical yield basis': result.history ? { basis: result.history.basis, from: result.history.from, through: result.history.through, observations: result.history.samples.length, 'Bonus share conversion captured': result.history.capitalActionsVerified } : null,
     'Annual evidence': result.annuals.map(y => ({ year:y.year, 'Report published':y.noticeDate, 'Reported EPS CNY':cash(y.epsMicros,1e6), 'Adjusted EPS CNY':cash(y.adjustedEpsMicros,1e6), 'Dividend CNY per share':cash(y.dividendMicros,1e6), 'Payout percent':cash(y.payoutBps), 'ROE percent':cash(y.roeBps), 'Operating cash CNY':cash(y.operatingCashMinor), 'Capital expenditure CNY':cash(y.capitalExpenditureMinor), 'Dividend cash CNY':cash(y.dividendCashMinor), 'FCF / dividend percent':cash(y.fcfCoverageBps) })),
-    'Three exact grid prices': result.grid.map((g,i) => ({ level:i+1, 'Price CNY':g.priceMinor/100, 'D1 yield percent':g.yieldBps/100, 'Change from current price percent':g.changeFromCurrentBps/100, 'Cumulative allocation percent':g.cumulativePortionBps/100, 'Meets selected margin':g.meetsSafetyMargin })), 'Sources':result.sourceUrls };
+    'Three exact grid prices': result.grid.map((g,i) => ({ level:i+1, 'Price CNY':g.priceMinor/100, 'D1 yield percent':g.yieldBps/100, 'Change from current price percent':cash(g.changeFromCurrentBps), 'Cumulative allocation percent':g.cumulativePortionBps/100, 'Meets selected margin':g.meetsSafetyMargin })), 'Sources':result.sourceUrls };
 }

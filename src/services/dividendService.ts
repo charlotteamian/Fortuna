@@ -40,6 +40,13 @@ export async function saveDividendStock(stock: DividendStock) {
   });
   requestPortableSnapshot('dividend-stock');
 }
+/** Category changes must preserve any newer grid, quote or budget edits. */
+export async function saveDividendStockGroup(code: string, group: DividendStock['group']) {
+  if (mainlandCode(code) !== code || !['core', 'watch', 'hidden'].includes(group)) throw new Error('INVALID_DIVIDEND_STOCK');
+  const updated = await db.dividendStocks.update(code, { group });
+  if (!updated) throw new Error('DIVIDEND_STOCK_MISSING');
+  requestPortableSnapshot('dividend-stock-group');
+}
 export async function deleteDividendStock(code: string, redistribute = true) {
   await db.transaction('rw', db.dividendStocks, db.holdings, db.holdingTxns, async () => {
     if ((await previewDividendRiskRemoval([code])).protected.length) throw new Error('DIVIDEND_STOCK_HELD');

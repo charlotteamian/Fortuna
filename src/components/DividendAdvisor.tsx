@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { db } from '../db';
 import type { DividendAdvisorContext, DividendAdvisorMessage } from '../lib/dividendAdvisor';
@@ -20,7 +20,7 @@ async function restoreHistory(value: DividendAdvisorHistoryState) {
   return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
 }
 
-export default function DividendAdvisor({ onUpdated, amountVisible, planManagement }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, openPlanRequest = 0 }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; openPlanRequest?: number }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +79,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     return () => { window.removeEventListener('popstate', syncRoute); window.removeEventListener('hashchange', syncRoute); };
   }, []);
 
-  const openReader = (panel: 'chat' | 'plan' = 'chat') => {
+  const openReader = useCallback((panel: 'chat' | 'plan' = 'chat') => {
     setInitialPanel(panel);
     if (window.location.hash !== DIVIDEND_ADVISOR_READER_HASH) {
       const scroller = entryRef.current?.closest('.app-content');
@@ -88,7 +88,10 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       window.history.pushState({ ...window.history.state, fortunaDividendReader: true, dividendReaderPreviousHash: previousHash }, '', dividendAdvisorReaderUrl(window.location.href));
     }
     setReaderOpen(true);
-  };
+  }, []);
+  useEffect(() => {
+    if (openPlanRequest) openReader('plan');
+  }, [openPlanRequest, openReader]);
   const closeReader = () => {
     setReaderOpen(false);
     if (window.location.hash === DIVIDEND_ADVISOR_READER_HASH) {
@@ -169,10 +172,10 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
 
   const refreshLimited = Boolean(snapshot && (snapshot.coverage.quoteRefreshFailures || snapshot.coverage.dividendRefreshFailures || snapshot.dividendRefreshDeferredCodes.length));
   return <>
-    <section className="div-advisor" aria-labelledby="div-ai-title" ref={entryRef}>
+    <section className="div-advisor div-home-advisor" aria-labelledby="div-ai-title" ref={entryRef}>
       <div className="div-advisor-heading"><span className="div-advisor-badge" aria-hidden="true">AI</span><div><h2 id="div-ai-title">{t('div_ai_title')}</h2></div></div>
-      <div className="div-advisor-entry-actions"><button className="btn btn-primary" disabled={loading} onClick={() => openReader()}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
-        {planManagement && <button type="button" className="div-advisor-text-button" onClick={() => openReader('plan')}>{t('div_ai_tab_plan')}</button>}
+      <div className="div-advisor-entry-actions"><button className="div-advisor-text-button" disabled={loading} onClick={() => openReader()}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
+        {planManagement && <button type="button" className="div-advisor-text-button" onClick={() => openReader('plan')}>{t('div_ai_tab_plan')} <span aria-hidden="true">↗</span></button>}
         {!saved && !loading && <button type="button" className="div-advisor-text-button" onClick={openSettings}>{t('div_ai_go_settings')}</button>}
       </div>
       {busy && !readerOpen && <p className="div-advisor-status" role="status">{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>}

@@ -4,6 +4,7 @@ import { holdingRecognitionProviderBody } from '../lib/holdingRecognitionProvide
 import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type DividendAdvisorContext, type DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
 import { parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
+import { dividendPricingIssueText, humanizeDividendPricingIssues } from '../lib/dividendPricing.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -158,12 +159,18 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   // Numerical drafts must come from the verified method, never a model's guess.
   // Pausing is independent of valuation and remains available when inputs are missing.
   result.actions = result.actions.flatMap(action => {
-    if (!action.buyLevels && !action.sellLevels) return [action];
     const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
+    if (!action.buyLevels && !action.sellLevels) return [pricing?.pauseReasons?.length && action.buyPaused === false
+      ? { ...action, buyPaused: true, reason: pricing.pauseReasons.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join('；') }
+      : action];
     const buyMatches = pricing?.canApply && pricing.status === 'ready' && action.buyLevels && action.buyLevels.length === pricing.grid.length
       && action.buyLevels.every((level, index) => level.priceMinor === pricing.grid[index].priceMinor
         && level.yieldBps === pricing.grid[index].yieldBps && level.portionBps === [3333, 3333, 3334][index]);
     const { buyLevels, sellLevels, ...pause } = action;
+    if (pricing?.pauseReasons?.length && pause.buyPaused === false) {
+      pause.buyPaused = true;
+      pause.reason = pricing.pauseReasons.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join('；');
+    }
     // The reference method defines buy levels only. A separately supplied sell
     // ladder needs a user's manual plan review rather than model fabrication.
     void buyLevels; void sellLevels;
@@ -173,41 +180,50 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   // Explicit regeneration must not depend on whether the model emits a machine
   // draft. Use only the same deterministic ladder shown in the research card.
   const question = args[2];
-  const negated = /(?:不要|别|无需|不用|不必|暂不|先不|不想|不需要)[^，。；！？\n]{0,8}(?:生成|重做|重建|重设|更新|调整|修正|修改|定价)/.test(question)
-    || /(?:do not|don't|no need to|without)\s+(?:regenerat|generat|rebuild|revis|adjust|replac)/i.test(question);
+  const negated = /(?:不要|别|无需|不用|不必|暂不|先不|不想|不需要)[^，。；！？\n]{0,8}(?:生成|重做|重建|重设|更新|调整|修正|修改|定价|计算|估算|给出|给个|提供)/.test(question)
+    || /(?:do not|don't|no need to|without)\s+(?:regenerat|generat|rebuild|revis|adjust|replac|calculat|estimat)/i.test(question);
   if (negated) result.actions = result.actions.flatMap(({ buyLevels, sellLevels, ...action }) => {
     void buyLevels; void sellLevels;
     return action.buyPaused === undefined ? [] : [action];
   });
-  const regenerate = !negated && (/(?:生成|重做|重建|重设|更新|调整|修正|修改|重新评估|重新定价)/.test(question) && /(?:网格|计划|买价|买入价|锚点)/.test(question)
-    || /(?:regenerat|generat|rebuild|revis|adjust|replac|new)[\s\S]{0,60}(?:grid|plan|buy price)/i.test(question));
+  const regenerate = !negated && (/(?:生成|重做|重建|重设|更新|调整|修正|修改|重新评估|重新定价|估算|计算|给出|给个|提供)/.test(question) && /(?:网格|计划|买价|买入价|锚点|估值|定价|价格)/.test(question)
+    || /(?:regenerat|generat|rebuild|revis|adjust|replac|new|calculat|estimat)[\s\S]{0,60}(?:grid|plan|buy price|valuation|price)/i.test(question));
   if (context.activeStrategy === 'stocks' && regenerate) {
     const aliases: Record<string, string[]> = { '601288': ['农行'], '601398': ['工行'], '601939': ['建行'], '601988': ['中行'], '601328': ['交行'], '600036': ['招行'], '601658': ['邮储'] };
     const named = context.stockPlan.stocks.filter(stock => [stock.code, stock.name,
       stock.name.replace(/集团|股份|有限公司/g, '').trim(), ...aliases[stock.code] ?? []]
       .some(name => name.length >= 2 && question.toLowerCase().includes(name.toLowerCase())));
     const general = /所有|全部|各只|整个组合|all (?:stock|grid|plan)/i.test(question)
-      || /^(?:请|帮我|麻烦|能否|可以|我要|我想|再|重新|生成|新建|调整|更新|重做|一下|一个|新的|当前|我的|现有|的|网格|计划|买价|买入价|锚点|价格|方案|[。！？\s])+$/.test(question);
+      || /^(?:请|帮我|麻烦|能否|可以|我要|我想|再|重新|生成|新建|调整|更新|重做|估算|计算|给出|给个|提供|一下|一个|新的|当前|我的|现有|的|网格|计划|买价|买入价|锚点|价格|估值|定价|方案|[。！？\s])+$/.test(question);
     const scope = named.length ? named : general ? context.stockPlan.stocks : [];
     const summaries: string[] = [];
     for (const saved of scope.slice(0, 10)) {
       const pricing = context.research?.stocks.find(stock => stock.code === saved.code)?.pricing;
-      if (!pricing?.canApply || pricing.status !== 'ready' || pricing.grid.length !== 3) continue;
-      if (pricesCross(saved.code, pricing.grid.map(level => level.priceMinor))) {
-        summaries.push(chinese ? `${saved.name}：新买价与原卖价交叉，请先协调卖出计划。` : `${saved.name}: the new buy prices cross the saved sell plan; review the sell plan first.`);
+      if (!pricing?.canApply || pricing.status !== 'ready' || pricing.grid.length !== 3) {
+        const gaps = pricing?.blockers.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')) ?? [];
+        summaries.push(chinese ? `${saved.name}：${gaps.length ? gaps.join('；') : '尚无完整定价数据，请先完成该股票研究'}。补齐后才能生成三锚价格，已有计划保留。`
+          : `${saved.name}: ${gaps.length ? gaps.join('; ') : 'complete pricing evidence has not been collected'}. Complete these inputs before calculating the three-anchor valuation; the saved plan is preserved.`);
         continue;
       }
       const money = (value: number) => (value / 100).toFixed(2);
+      if (pricesCross(saved.code, pricing.grid.map(level => level.priceMinor))) {
+        summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元，新三档${pricing.grid.map(level => money(level.priceMinor)).join('／')}元。新买价与原卖价交叉，暂不能写入；请先协调卖出计划，加仓继续暂停。`
+          : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}, new levels ${pricing.grid.map(level => money(level.priceMinor)).join(' / ')}. These buy prices cross the saved sell plan and cannot be applied yet; review the sell plan and keep buying paused.`);
+        continue;
+      }
+      const pauseDetails = (pricing.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join(chinese ? '；' : '; ');
       const reason = chinese
-        ? `按当前数据和保守评估价${money(pricing.theoreticalPriceMinor!)}元重建三档；先保存并暂停加仓，财务与走势复核后再决定恢复。`
-        : `Rebuild three levels from the current conservative base of CNY ${money(pricing.theoreticalPriceMinor!)}. Save with buying paused; review financial evidence and trend before resuming.`;
+        ? `按列示数据和三锚估值${money(pricing.theoreticalPriceMinor!)}元重建三档；先保存并暂停加仓，财务与走势复核后再决定恢复。${pauseDetails}`
+        : `Rebuild three levels from the three-anchor valuation of CNY ${money(pricing.theoreticalPriceMinor!)}. Save with buying paused; review financial evidence and trend before resuming. ${pauseDetails}`;
       result.actions = result.actions.filter(action => action.code !== saved.code);
-      result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason, buyPaused: true,
+      result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason: reason.slice(0, 2000), buyPaused: true,
         buyLevels: pricing.grid.map((level, index) => ({ priceMinor: level.priceMinor, yieldBps: level.yieldBps, portionBps: [3333, 3333, 3334][index] })) });
-      summaries.push(chinese ? `${saved.name}：保守评估价${money(pricing.theoreticalPriceMinor!)}元，新三档${pricing.grid.map(level => money(level.priceMinor)).join('／')}元。可预览并确认写入，保存时暂停加仓。`
-        : `${saved.name}: conservative base CNY ${money(pricing.theoreticalPriceMinor!)}, new levels ${pricing.grid.map(level => money(level.priceMinor)).join(' / ')}. Preview and confirm to save with buying paused.`);
+      summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元，新三档${pricing.grid.map(level => money(level.priceMinor)).join('／')}元。可预览并确认写入，保存时暂停加仓。${pauseDetails}`
+        : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}, new levels ${pricing.grid.map(level => money(level.priceMinor)).join(' / ')}. Preview and confirm to save with buying paused. ${pauseDetails}`);
     }
-    if (summaries.length) result.answer = `${summaries.join('\n\n')}\n\n${result.answer}`;
+    // For explicit repricing, the deterministic result owns both prices and
+    // readiness. Do not append a contradictory model refusal or another price.
+    if (summaries.length) result.answer = summaries.join('\n\n');
   }
   // Make the user's pacing rule deterministic even if a provider omits a draft.
   // A draft always needs a fresh preview and a separate confirmation before writing.
@@ -228,5 +244,7 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
       : `Pacing check: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline. Pause additional buying and review the grid; a reached price alone is insufficient.`}\n\n${result.answer}`;
   }
   result.actions = result.actions.slice(0, 10);
+  result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');
+  result.actions = result.actions.map(action => ({ ...action, reason: humanizeDividendPricingIssues(action.reason, chinese ? 'zh' : 'en').slice(0, 2000) }));
   return result;
 }

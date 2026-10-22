@@ -22,7 +22,7 @@ registerHooks({
 });
 
 const { db, initializeSettings } = await import('../src/db.ts');
-const { importDividendStocks, loadDividendWorkbench, allocateDividendBudget, deleteDividendStock } = await import('../src/services/dividendService.ts');
+const { importDividendStocks, loadDividendWorkbench, allocateDividendBudget, deleteDividendStock, saveDividendStockGroup } = await import('../src/services/dividendService.ts');
 
 function workbook(sheets: Record<string, XLSX.WorkSheet>, bookType: 'xlsx' | 'xls' | 'csv' = 'xlsx'): ArrayBuffer {
   const book = XLSX.utils.book_new();
@@ -155,6 +155,22 @@ test('selected import adds stocks and updates only specified fields while preser
   assert.equal(await db.dividendStocks.get('600900'), undefined);
   assert.deepEqual(await db.holdings.toArray(), holdingsBefore);
   assert.equal((await loadDividendWorkbench()).stocks.length, 2);
+});
+
+test('target category changes preserve the latest stock plan, holdings and every other target', async () => {
+  const current: DividendStock = { ...stock('000001', 2500), shareMode: 'manual', manualShares: 800,
+    buyLevels: [{ yieldBps: 600, portionBps: 10000, priceMinor: 640 }], buyPaused: true,
+    quote: { priceMinor: 1000, date: '2026-10-22', fetchedAt: 1 } };
+  const other = { ...stock('600036', 3500), group: 'core' as const };
+  await db.dividendStocks.bulkAdd([current, other]);
+  for (const group of ['core', 'hidden', 'watch'] as const) {
+    await saveDividendStockGroup(current.code, group);
+    assert.deepEqual(await db.dividendStocks.get(current.code), { ...current, group });
+    assert.deepEqual(await db.dividendStocks.get(other.code), other);
+  }
+  await assert.rejects(saveDividendStockGroup('000001', 'invalid' as DividendStock['group']), /INVALID_DIVIDEND_STOCK/);
+  await assert.rejects(saveDividendStockGroup('600900', 'core'), /DIVIDEND_STOCK_MISSING/);
+  assert.equal(await db.dividendStocks.count(), 2);
 });
 
 test('import validates selected rows and current final weight before any writes', async () => {

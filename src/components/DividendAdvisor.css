@@ -74,7 +74,7 @@
 @media (prefers-reduced-motion: reduce) { .div-advisor-thinking-dot { animation: none; } }
 @media (max-width: 400px) { .div-advisor { padding: 15px; } .div-advisor-reader-column { padding: 22px 20px 18px; } .div-advisor-reader-header { gap: 8px; padding-right: 14px; padding-left: 14px; } .div-advisor-reader-compose { padding-right: 14px; padding-left: 14px; } .div-advisor-markdown { font-size: 15px; } .div-advisor-compose-row .btn { max-width: 78px; } }
 .div-advisor-workspace-tabs { flex: 0 0 auto; display: flex; gap: 5px; justify-content: center; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
-.div-advisor-workspace-tabs button { flex: 1; max-width: 220px; min-height: 40px; padding: 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.div-advisor-workspace-tabs button { flex: 1; min-width: 0; max-width: 220px; min-height: 40px; padding: 8px 4px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .div-advisor-workspace-tabs button.active { color: var(--asset-color); background: color-mix(in srgb, var(--asset-color) 10%, var(--bg-card)); border-color: color-mix(in srgb, var(--asset-color) 25%, var(--border)); font-weight: 650; }
 .div-ai-history, .div-ai-candidate-search, .div-ai-index-context { margin: 0 0 20px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); }
 .div-ai-history summary, .div-ai-candidate-search summary, .div-ai-index-context summary, .div-ai-research-card summary, .div-ai-plan-action summary { min-height: 24px; cursor: pointer; font-size: 13px; font-weight: 600; line-height: 1.8; }
@@ -142,6 +142,13 @@
 .div-ai-metrics dt { color: var(--text-muted); font-size: 10px; }
 .div-ai-metrics dd { margin: 5px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; }
 .div-ai-principles-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; margin-top: 24px; }
+.div-ai-override-list { display: grid; gap: 8px; margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; }
+.div-ai-override-list > strong { font-size: 12px; }
+.div-ai-override-item { display: grid; gap: 2px; padding: 6px 0; min-width: 0; }
+.div-ai-override-item > button { justify-self: start; text-align: left; overflow-wrap: anywhere; }
+.div-ai-override-item > button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.div-ai-override-item > span { color: var(--text-secondary); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.div-ai-principles-form.div-ai-stock-override-fields label > span { flex: none; }
 .div-ai-principles-form label { display: flex; flex-direction: column; gap: 7px; min-width: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .div-ai-principles-form label > span { flex: 1; }
 .div-ai-principles-form label small { color: var(--text-muted); font-size: 11px; line-height: 1.7; }

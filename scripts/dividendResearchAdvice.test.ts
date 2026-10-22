@@ -26,6 +26,10 @@ test('a usable price requires current stock and broad-market evidence and verifi
 test('cheap prices never override verified risks, acceleration or a falling broad market', () => {
   assert.equal(dividendResearchAdvice({ ...stock, checks: [{ rule: 'payout', status: 'risk' }] }, market).decision, 'risk');
   assert.equal(dividendResearchAdvice({ ...stock, pricing: { ...pricing, blockers: ['fcf_below_150'], canApply: false } }, market).decision, 'risk');
+  const pausedValuation=dividendResearchAdvice({ ...stock, pricing: { ...pricing, pauseReasons: ['payout_above_100', 'fcf_below_150'], canApply: true } }, market);
+  assert.equal(pausedValuation.decision,'risk');assert.deepEqual(pausedValuation.pricingBlockers,[]);
+  assert.deepEqual(pausedValuation.pricingPauseReasons,['payout_above_100','fcf_below_150']);
+  assert.equal(dividendResearchAdvice({ ...stock, pricing: { ...pricing, pauseReasons: ['financial_sector_review'], canApply: true } }, market).decision,'evidence');
   assert.equal(dividendResearchAdvice(stock, [{ ...market[0], technical: { ...technical, pacing: 'pause_add', state: 'accelerating_down' } }]).decision, 'pause');
   assert.equal(dividendResearchAdvice(stock, [{ ...market[0], technical: { ...technical, pacing: 'review_grid', state: 'falling' } }]).decision, 'wait_stable');
   assert.equal(dividendResearchAdvice(stock, [{ ...market[0], technical: { ...technical, currentUsable: false, pacing: 'pause_add' } }]).decision, 'evidence');

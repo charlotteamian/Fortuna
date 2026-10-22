@@ -7,6 +7,7 @@ import { fetchDividendResearch, defaultDividendResearchCandidates } from '../ser
 import { addDividendResearchCandidate, loadDividendSelectionPrinciples, previewDividendRiskRemoval,
   removeDividendRiskStocks, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } from '../services/dividendAdvisorActionsService';
 import type { DividendPricingMethod } from '../lib/dividendPricing';
+import type { DividendStock } from '../lib/dividendWorkbench';
 import { DividendFinancialReviewCard, DividendPricingCard, DividendPricingEditor } from './DividendAdvisorPricing';
 import { dividendResearchAdvice } from '../lib/dividendResearchAdvice';
 
@@ -105,11 +106,19 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
   const [scope, setScope] = useState<'plan' | 'candidates'>('plan');
   const [codes, setCodes] = useState('');
   const [configuredCodes, setConfiguredCodes] = useState<string[]>([]);
+  const [configuredStocks, setConfiguredStocks] = useState<Pick<DividendStock, 'code' | 'name'>[]>([]);
   const [removal, setRemoval] = useState<RemovalPreview | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const mounted = useRef(false);
   const lock = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    void db.dividendStocks.toArray().then(stocks => { if (active) setConfiguredStocks(stocks); })
+      .catch(() => { if (active) setError(t('div_ai_error_storage')); });
+    return () => { active = false; };
+  }, [activePanel, t]);
 
   useEffect(() => {
     let active = true; mounted.current = true;
@@ -155,8 +164,8 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
           value={notesDraft ?? principles.notes ?? ''} onChange={event => setNotesDraft(event.target.value)} placeholder={t('div_ai_principles_notes_placeholder')} /><small>{t('div_ai_principles_notes_help')}</small></label>
         <button type="submit" className="btn btn-primary" disabled={!ready || busy || (!draft && notesDraft === null)}>{t('div_ai_principles_save')}</button>
       </form></details>
-      {pricingMethod && <details className="div-method" open><summary>{t('div_v2_pricing_settings')} · {t('div_v2_pricing_summary', { r: pricingMethod.requiredReturnBps / 100, g: pricingMethod.growthBps / 100 })}</summary>
-        <DividendPricingEditor key={JSON.stringify(pricingMethod)} method={pricingMethod} opportunity={snapshot?.opportunity} disabled={busy} onSave={value => run(async () => {
+      {pricingMethod && <details className="div-method" open><summary>{t('div_v2_pricing_settings')} · {t('div_v2_pricing_summary', { margin: pricingMethod.safetyMarginBps / 100 })}</summary>
+        <DividendPricingEditor key={JSON.stringify(pricingMethod)} method={pricingMethod} stocks={configuredStocks} opportunity={snapshot?.opportunity} disabled={busy} onSave={value => run(async () => {
           await saveDividendPricingMethod(value); if (mounted.current) { setPricingMethod(value); setSnapshot(null); setRemoval(null); setNotice(t('div_v2_pricing_saved')); }
         })} />
       </details>}</section>}

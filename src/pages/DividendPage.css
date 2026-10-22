@@ -131,6 +131,12 @@
 .div-quote-status p { margin: 5px 0; }
 .div-quote-status small { display: block; font-size: .7rem; color: var(--text-secondary); overflow-wrap: anywhere; line-height: 1.5; margin-top: .2rem; }
 .div-active-strategy { color: var(--text-secondary); font-size: .72rem; }
+.dividend-page .div-home-advisor { gap: .35rem .7rem; margin: .75rem 0; padding: .55rem .75rem; }
+.div-home-advisor .div-advisor-heading { gap: .45rem; }
+.div-home-advisor .div-advisor-heading h2 { font-size: .9rem; }
+.div-home-advisor .div-advisor-badge { flex-basis: 26px; width: 26px; height: 26px; border-radius: 8px; font-size: .65rem; }
+.div-home-advisor .div-advisor-entry-actions { flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: .2rem .6rem; }
+.div-home-advisor .div-advisor-entry-actions > button { display: inline-flex; align-items: center; justify-content: space-between; gap: .3rem; min-height: 38px; padding: .25rem .15rem; font-size: .75rem; }
 .div-forecast-hero { padding: .9rem 1rem; }
 .div-forecast-hero > .div-muted { margin-bottom: 0; font-size: .72rem; }
 .div-stock-reading .div-key-metrics { gap: .75rem; }
@@ -154,6 +160,7 @@
 .div-plan-manager-list > details { padding: .7rem .65rem; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-card); }
 .div-plan-manager-list > details > summary { display: flex; flex-wrap: wrap; gap: .35rem .6rem; font-size: .8rem; cursor: pointer; }
 .div-plan-manager-list > details > summary > span { color: var(--text-secondary); font-size: .7rem; }
+.div-plan-stock-group { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .75rem; margin: .65rem 0; font-size: .75rem; color: var(--text-secondary); }
 .div-plan-manager .div-details { margin-top: .7rem; }
 .div-plan-manager table { width: 100%; border-collapse: collapse; text-align: right; font-size: .7rem; }
 .div-plan-manager th, .div-plan-manager td { padding: .55rem .25rem; border-bottom: 1px solid var(--border); }

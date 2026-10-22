@@ -1,0 +1,91 @@
+{
+  "verifiedAt": "2026-10-22T02:53:28.589Z",
+  "data": "Synthetic stock settings in isolated browser context; no user storage modified",
+  "knownStockPicker": true,
+  "threeIndependentOverridesPersisted": true,
+  "switchingUnsavedDraftsPreservesEachStock": true,
+  "reloadRestoresCorrectValues": true,
+  "updatePreservesOthers": true,
+  "removePreservesOthers": true,
+  "automaticSelectionDoesNotCreateEmptyOverride": true,
+  "invalidNormalisationOnOtherCodeBlocksWrite": true,
+  "clearingEpsRestoresAutomaticWithoutBlankOverride": true,
+  "finalOverrides": {
+    "601088": {
+      "riskClass": "cyclical",
+      "normalizedEpsMicros": 3200000,
+      "normalizationAsOf": "2026-08-30",
+      "normalizationSource": "Synthetic verification: 2023–2025 adjusted EPS normalisation."
+    },
+    "601398": {
+      "riskClass": "other"
+    }
+  },
+  "widths": [
+    {
+      "viewport": 390,
+      "documentWidth": 390,
+      "documentScrollWidth": 390,
+      "elements": [
+        {
+          "className": "div-advisor-reader",
+          "width": 390,
+          "scrollWidth": 390
+        },
+        {
+          "className": "div-ai-pricing-editor",
+          "width": 324,
+          "scrollWidth": 324
+        },
+        {
+          "className": "div-ai-override-list",
+          "width": 297,
+          "scrollWidth": 297
+        },
+        {
+          "className": "div-ai-override-item",
+          "width": 273,
+          "scrollWidth": 273
+        },
+        {
+          "className": "div-ai-override-item",
+          "width": 273,
+          "scrollWidth": 273
+        }
+      ]
+    },
+    {
+      "viewport": 320,
+      "documentWidth": 320,
+      "documentScrollWidth": 320,
+      "elements": [
+        {
+          "className": "div-advisor-reader",
+          "width": 320,
+          "scrollWidth": 320
+        },
+        {
+          "className": "div-ai-pricing-editor",
+          "width": 254,
+          "scrollWidth": 254
+        },
+        {
+          "className": "div-ai-override-list",
+          "width": 227,
+          "scrollWidth": 227
+        },
+        {
+          "className": "div-ai-override-item",
+          "width": 203,
+          "scrollWidth": 203
+        },
+        {
+          "className": "div-ai-override-item",
+          "width": 203,
+          "scrollWidth": 203
+        }
+      ]
+    }
+  ],
+  "pageErrors": []
+}

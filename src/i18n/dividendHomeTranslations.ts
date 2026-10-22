@@ -8,7 +8,7 @@ export const dividendHomeZh = {
   div_home_buy_target: '累计持有 {{shares}} 股',
   div_home_sell_target: '累计卖出 {{shares}} 股',
   div_home_allocation: '累计 {{percent}}%',
-  div_home_plan_note: '买入档显示累计持仓目标；触价差额另扣现仓并按整手取整。卖出按当前持仓模拟。新增前先看“选股与检查”的综合建议。',
+  div_home_plan_note: '买入档显示累计持仓目标；触价差额另扣现仓并按整手取整。卖出按当前持仓模拟。新增前先看“选股检查”的综合建议。',
   div_home_buy_paused: '加仓已暂停，保留现有买入计划。',
   div_home_buy_budget_missing: '尚未设置总预算；到计划管理填写后计算买入股数。',
   div_home_buy_budget_empty: '本股尚未分配买入资金；调整预算或计划占比后再加仓。',

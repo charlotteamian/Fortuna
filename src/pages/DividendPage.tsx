@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppContext } from '../app-context';
 import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, latestReportDividend, forecastHoldingYearDividends, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
-import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendStock } from '../services/dividendService';
+import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendAdvisor from '../components/DividendAdvisor';
@@ -19,7 +18,7 @@ const numeric = (value: number, max = 2) => value.toLocaleString(undefined, { ma
 
 export default function DividendPage() {
   const { t } = useTranslation();
-  const { amountVisible, setAmountVisible } = useAppContext();
+  const [amountVisible, setAmountVisible] = useState(true);
   const [data, setData] = useState<Workbench | null>(null);
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
@@ -32,6 +31,10 @@ export default function DividendPage() {
   const [group, setGroup] = useState('all');
   const [search, setSearch] = useState('');
   const [managerSearch, setManagerSearch] = useState('');
+  const [focusedPlanCode, setFocusedPlanCode] = useState('');
+  const [openPlanRequest, setOpenPlanRequest] = useState(0);
+  const scrolledPlanRequest = useRef(0);
+  const [groupSaving, setGroupSaving] = useState(false);
   const [editor, setEditor] = useState<DividendStock | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [message, setMessage] = useState('');
@@ -105,6 +108,16 @@ export default function DividendPage() {
     catch { setError(t('div_save_error')); }
     finally { setStrategySaving(false); }
   };
+  const changeStockGroup = async (code: string, value: DividendStock['group']) => {
+    if (groupSaving) return;
+    setGroupSaving(true); setError('');
+    try { await saveDividendStockGroup(code, value); await load(); setMessage(t('div_saved')); }
+    catch { setError(t('div_save_error')); }
+    finally { setGroupSaving(false); }
+  };
+  const openStockPlan = (code: string) => {
+    setManagerSearch(''); setFocusedPlanCode(code); setOpenPlanRequest(value => value + 1);
+  };
   const sharesFor = (stock: DividendStock) => stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
   const today = dateInChina();
   const held = data.stocks.filter(stock => sharesFor(stock) > 0);
@@ -129,13 +142,15 @@ export default function DividendPage() {
         {weight > 10000 && <p className="div-warning">{t('div_over_budget')}</p>}<p className="div-muted">{t('div_allocation_rule')}</p>
         <button className="btn btn-secondary" disabled={Boolean(progress) || weight <= 0 || weight >= 10000} onClick={() => setAllocationOpen(true)}>{t('div_allocate_unused')}</button>
       </details>
-      <details className="div-method"><summary>{t('div_manage_stocks')} · {data.stocks.length}</summary>
+      <details className="div-method" open={Boolean(focusedPlanCode)}><summary>{t('div_manage_stocks')} · {data.stocks.length}</summary>
         <div className="div-plan-manager-actions"><button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => { setIsNew(true); setEditor({ code: '', name: '', group: 'watch', weightBps: 0, shareMode: 'linked', manualShares: 0, lotSize: 100 }); }}>{t('div_add')}</button>
           <button className="btn btn-secondary" disabled={Boolean(progress) || untracked.length === 0} onClick={() => setLinkedPickerOpen(true)}>{t('div_add_linked', { count: untracked.length })}</button>
           <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => setImportOpen(true)}>{t('div_import')}</button></div>
         <input aria-label={t('div_search')} placeholder={t('div_search')} value={managerSearch} onChange={event => setManagerSearch(event.target.value)} />
-        <div className="div-plan-manager-list">{sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor).map(stock => <details key={stock.code}>
+        <div className="div-plan-manager-list">{sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor).map(stock => <details key={stock.code} open={stock.code === focusedPlanCode}
+          ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }}>
           <summary><strong>{stock.name}</strong><span>{stock.code} · {t(`div_group_${stock.group}`)}</span></summary>
+          <label className="div-plan-stock-group">{t('div_group')}<select value={stock.group} aria-label={`${stock.name} ${t('div_group')}`} disabled={groupSaving} onChange={event => void changeStockGroup(stock.code, event.target.value as DividendStock['group'])}>{(['core', 'watch', 'hidden'] as const).map(value => <option key={value} value={value}>{t(`div_group_${value}`)}</option>)}</select></label>
           <div className="div-budget-line"><span>{t('div_stock_weight')} <strong>{numeric(stock.weightBps / 100)}%</strong></span><span>{t('div_stock_budget')} <strong>{money(stockBudgetMinor(data.budgetMinor, stock.weightBps))}</strong></span></div>
           <button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
           {stock.buyPaused && <p className="div-warning">{t('div_buy_paused_note')}</p>}
@@ -160,7 +175,8 @@ export default function DividendPage() {
     }} />}
     <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><small className="div-active-strategy">{t(`div_strategy_${data.strategy}`)}</small></div>
       <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button></div>
-    <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} />
+    <section className="div-strategy" aria-label={t('div_strategy')}>{strategySelector}</section>
+    <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} openPlanRequest={openPlanRequest} />
     <section className="div-quote-status" aria-label={t('div_auto_quotes')}><div role="status"><strong>{t(quotes.refreshing ? 'div_quotes_updating' : 'div_auto_quotes')}</strong>
       {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) })}</small>}
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
@@ -180,7 +196,7 @@ export default function DividendPage() {
               {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
               {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</div></div>
           <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
-            onEdit={() => { setIsNew(false); setEditor(stock); }} />
+            onEdit={() => openStockPlan(stock.code)} />
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>
             {shares > 0 && <div><span>{t('div_v2_holding_amount', { shares: quantity(shares) })}</span><strong>{forecast.amountMinor === undefined ? '—' : money(forecast.amountMinor)}</strong></div>}</div>
           {!latest && <button className="div-advisor-text-button" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_v2_refresh_disclosures')}</button>}

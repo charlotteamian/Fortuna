@@ -1,0 +1,177 @@
+{
+  "verifiedAt": "2026-10-22T02:51:26.983Z",
+  "source": "Actual UI research request using archived 2026-10-22 public Eastmoney/Tencent responses and current official CSI spreadsheet",
+  "cardResults": [
+    {
+      "code": "000333",
+      "ready": true,
+      "selectedYieldBps": 421,
+      "basePriceMinor": 7371,
+      "previewEnabled": true,
+      "numeratorAndAuxiliaryLabelsChecked": true
+    },
+    {
+      "code": "601288",
+      "ready": true,
+      "selectedYieldBps": 617,
+      "basePriceMinor": 389,
+      "previewEnabled": true,
+      "numeratorAndAuxiliaryLabelsChecked": true
+    }
+  ],
+  "widths": [
+    {
+      "viewport": 390,
+      "reader": [
+        {
+          "width": 390,
+          "scrollWidth": 390
+        }
+      ],
+      "cards": [
+        {
+          "width": 318,
+          "scrollWidth": 318
+        },
+        {
+          "width": 318,
+          "scrollWidth": 318
+        }
+      ]
+    },
+    {
+      "viewport": 320,
+      "reader": [
+        {
+          "width": 320,
+          "scrollWidth": 320
+        }
+      ],
+      "cards": [
+        {
+          "width": 248,
+          "scrollWidth": 248
+        },
+        {
+          "width": 248,
+          "scrollWidth": 248
+        }
+      ]
+    }
+  ],
+  "previewShowsPause": true,
+  "previewReadOnly": true,
+  "pageErrors": [],
+  "researchRequests": [
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&p=1&ps=500&sr=-1&st=REPORT_DATE&source=HSF10&client=PC",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&p=1&ps=500&sr=-1&st=REPORT_DATE&source=HSF10&client=PC",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=1&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=2&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=3&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=4&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=5&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=6&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls",
+      "status": 200,
+      "source": "live official spreadsheet"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,day,,,250,qfq",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,month,,,120,",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,day,,,250,qfq",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,month,,,120,",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,250,qfq",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000300,day,,,250,qfq",
+      "status": 200,
+      "source": "archived public response"
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz399006,day,,,250,qfq",
+      "status": 200,
+      "source": "archived public response"
+    }
+  ]
+}

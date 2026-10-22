@@ -1286,7 +1286,7 @@
   "div_allocation_result": "本次重新分配的计算逻辑",
   "div_allocation_changes": "查看各股票占比变化",
   "div_strategy": "策略选择",
-  "div_strategy_stocks": "直接持有红利股票",
+  "div_strategy_stocks": "持有红利股票",
   "div_strategy_funds": "持有红利基金",
   "div_strategy_preserved": "两种策略分别保存预算与标的，切换后可继续编辑。",
   "df_subtitle": "规划红利基金、仓位占比与买入参考条件",

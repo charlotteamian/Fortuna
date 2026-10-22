@@ -34,6 +34,13 @@ test('advice rendering safely handles tables, links and untrusted model output w
   assert.doesNotMatch(html, /<img|<script|evil\.example|javascript:|onerror/);
 });
 
+test('saved pricing explanations render readable reasons instead of internal blocker codes', () => {
+  const html = renderToStaticMarkup(createElement(DividendAdvisorMarkdown, { language: 'zh', children: '历史记录：`payout_above_100`，`fcf_below_150`。' }));
+  assert.doesNotMatch(html, /payout_above_100|fcf_below_150/);
+  assert.match(html, /历史派息率超过100%/);
+  assert.match(html, /现金流覆盖不足150%/);
+});
+
 test('the reading route retains the app address and query and replaces only the fragment', () => {
   const address = dividendAdvisorReaderUrl('https://localhost/?mode=mobile#old-page');
   assert.equal(address, `https://localhost/?mode=mobile${DIVIDEND_ADVISOR_READER_HASH}`);

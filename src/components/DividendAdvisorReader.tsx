@@ -125,7 +125,7 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
         {messages.length > 0 && amountVisible && <div className="div-advisor-reader-messages">{messages.map((message, index) => <article className={`div-advisor-reading-message ${message.role}`} key={index}>
           {index === messages.length - 2 && <div className="div-advisor-reading-anchor" ref={latestRef} />}
           {message.role === 'user' ? <><span className="div-advisor-question-kicker">{t('div_ai_you')}</span><h2>{message.content}</h2></>
-            : <><DividendAdvisorMarkdown>{message.content}</DividendAdvisorMarkdown>{renderActions?.(message, index)}</>}
+            : <><DividendAdvisorMarkdown language={i18n.language}>{message.content}</DividendAdvisorMarkdown>{renderActions?.(message, index)}</>}
         </article>)}</div>}
         {checkedAt && <p className="div-advisor-answer-date">{t('div_ai_answer_date', { time: new Date(checkedAt).toLocaleString(i18n.language) })}</p>}
         {refreshLimited && <p className="div-advisor-reading-note">{t('div_ai_refresh_limited')}</p>}

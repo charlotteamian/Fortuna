@@ -1,0 +1,191 @@
+{
+  "verifiedAt": "2026-10-22T02:49:09.335Z",
+  "source": "Current public Eastmoney/Tencent and CSI endpoints fetched by current research service",
+  "stocks": [
+    {
+      "code": "000333",
+      "name": "美的集团",
+      "screeningStatus": "risk",
+      "canPreviewPausedPlan": true,
+      "sustainableD1Micros": 3103350,
+      "selectedAnchorYieldBps": 421,
+      "anchorPriceMinor": 7371,
+      "gordonReferencePriceMinor": 3879,
+      "primaryPriceMinor": 7371,
+      "grid": [
+        {
+          "discountBps": 9500,
+          "priceMinor": 7002,
+          "yieldBps": 443,
+          "changeFromCurrentBps": -1692,
+          "cumulativePortionBps": 3333,
+          "meetsSafetyMargin": false
+        },
+        {
+          "discountBps": 8500,
+          "priceMinor": 6265,
+          "yieldBps": 495,
+          "changeFromCurrentBps": -2566,
+          "cumulativePortionBps": 6666,
+          "meetsSafetyMargin": true
+        },
+        {
+          "discountBps": 7500,
+          "priceMinor": 5528,
+          "yieldBps": 561,
+          "changeFromCurrentBps": -3441,
+          "cumulativePortionBps": 10000,
+          "meetsSafetyMargin": true
+        }
+      ],
+      "pauseReasons": [
+        "fcf_below_150"
+      ],
+      "blockers": [],
+      "sourceIssues": []
+    },
+    {
+      "code": "601288",
+      "name": "农业银行",
+      "screeningStatus": "pass",
+      "canPreviewPausedPlan": true,
+      "sustainableD1Micros": 240525,
+      "selectedAnchorYieldBps": 617,
+      "anchorPriceMinor": 389,
+      "gordonReferencePriceMinor": 300,
+      "primaryPriceMinor": 389,
+      "grid": [
+        {
+          "discountBps": 9500,
+          "priceMinor": 369,
+          "yieldBps": 652,
+          "changeFromCurrentBps": -4945,
+          "cumulativePortionBps": 3333,
+          "meetsSafetyMargin": false
+        },
+        {
+          "discountBps": 8500,
+          "priceMinor": 330,
+          "yieldBps": 729,
+          "changeFromCurrentBps": -5479,
+          "cumulativePortionBps": 6666,
+          "meetsSafetyMargin": true
+        },
+        {
+          "discountBps": 7500,
+          "priceMinor": 291,
+          "yieldBps": 827,
+          "changeFromCurrentBps": -6014,
+          "cumulativePortionBps": 10000,
+          "meetsSafetyMargin": true
+        }
+      ],
+      "pauseReasons": [],
+      "blockers": [],
+      "sourceIssues": []
+    }
+  ],
+  "requests": [
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=1&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.887Z",
+      "status": 200
+    },
+    {
+      "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls",
+      "fetchedAt": "2026-10-22T02:49:08.931Z",
+      "status": 200,
+      "bytes": 8192
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "fetchedAt": "2026-10-22T02:49:08.935Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=4&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.930Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,month,,,120,",
+      "fetchedAt": "2026-10-22T02:49:08.936Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "fetchedAt": "2026-10-22T02:49:08.933Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=6&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.931Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=3&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.930Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=5&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.930Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,month,,,120,",
+      "fetchedAt": "2026-10-22T02:49:08.934Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD&columns=SOLAR_DATE%2CEMM00166466&pageNumber=2&pageSize=500&sortColumns=SOLAR_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.929Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh601288,day,,,250,qfq",
+      "fetchedAt": "2026-10-22T02:49:08.934Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,250,qfq",
+      "fetchedAt": "2026-10-22T02:49:08.937Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz399006,day,,,250,qfq",
+      "fetchedAt": "2026-10-22T02:49:08.937Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.936Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000333,day,,,250,qfq",
+      "fetchedAt": "2026-10-22T02:49:08.932Z",
+      "status": 200
+    },
+    {
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000300,day,,,250,qfq",
+      "fetchedAt": "2026-10-22T02:49:08.937Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.935Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.932Z",
+      "status": 200
+    },
+    {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "fetchedAt": "2026-10-22T02:49:08.934Z",
+      "status": 200
+    }
+  ]
+}

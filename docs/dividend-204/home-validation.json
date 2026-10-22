@@ -1,0 +1,85 @@
+{
+  "verification": "Isolated Chromium contexts, synthetic IndexedDB fixture and quote responses; no user browser data or live provider calls.",
+  "results": [
+    {
+      "viewport": 390,
+      "homeDimensions": {
+        "clientWidth": 359,
+        "scrollWidth": 359
+      },
+      "readerDimensions": {
+        "clientWidth": 390,
+        "scrollWidth": 390
+      },
+      "entryButtons": [
+        {
+          "text": "继续阅读 ↗",
+          "className": "div-advisor-text-button",
+          "width": 66.75,
+          "height": 38,
+          "padding": "4px 2.4px",
+          "fontSize": "12px"
+        },
+        {
+          "text": "计划管理 ↗",
+          "className": "div-advisor-text-button",
+          "width": 66.75,
+          "height": 38,
+          "padding": "4px 2.4px",
+          "fontSize": "12px"
+        }
+      ],
+      "dividendAmountsDefaultVisibleWithGlobalMask": true,
+      "globalVisibilityPreferencePreserved": true,
+      "fundSelectorPersistsAfterReload": true,
+      "bothPlansPreservedAcrossSwitches": true,
+      "homeEditOpensPlanTabAtCurrentStock": true,
+      "noHomeParallelEditor": true,
+      "categoryChangePreservesLatestGrid": true,
+      "sameAndDifferentStockRepeatedEntry": true,
+      "managerTypingDoesNotJump": true,
+      "manualManagerCollapseSurvivesDataReload": true,
+      "pageErrors": []
+    },
+    {
+      "viewport": 320,
+      "homeDimensions": {
+        "clientWidth": 294,
+        "scrollWidth": 294
+      },
+      "readerDimensions": {
+        "clientWidth": 320,
+        "scrollWidth": 320
+      },
+      "entryButtons": [
+        {
+          "text": "继续阅读 ↗",
+          "className": "div-advisor-text-button",
+          "width": 66.75,
+          "height": 38,
+          "padding": "4px 2.4px",
+          "fontSize": "12px"
+        },
+        {
+          "text": "计划管理 ↗",
+          "className": "div-advisor-text-button",
+          "width": 66.75,
+          "height": 38,
+          "padding": "4px 2.4px",
+          "fontSize": "12px"
+        }
+      ],
+      "dividendAmountsDefaultVisibleWithGlobalMask": true,
+      "globalVisibilityPreferencePreserved": true,
+      "fundSelectorPersistsAfterReload": true,
+      "bothPlansPreservedAcrossSwitches": true,
+      "homeEditOpensPlanTabAtCurrentStock": true,
+      "noHomeParallelEditor": true,
+      "categoryChangePreservesLatestGrid": true,
+      "sameAndDifferentStockRepeatedEntry": true,
+      "managerTypingDoesNotJump": true,
+      "manualManagerCollapseSurvivesDataReload": true,
+      "pageErrors": []
+    }
+  ]
+}
