@@ -1,10 +1,10 @@
-import type { DividendPricingResult } from './dividendPricing.ts';
+import { DIVIDEND_PRICING_CALCULATION_VERSION, type DividendPricingResult } from './dividendPricing.ts';
 import { BUY_LEVELS, SELL_LEVELS, type GridLevel } from './dividendWorkbench.ts';
 
 /** Keep both sides on the same sustainable dividend and valuation yield. */
 export function dividendPricingPlan(pricing: DividendPricingResult): { buyLevels: GridLevel[]; sellLevels: GridLevel[] } | null {
   const dividend = pricing.d1Micros, anchor = pricing.anchors.selectedBps;
-  if (!pricing.canApply || pricing.status !== 'ready' || pricing.grid.length !== 3
+  if (pricing.calculationVersion !== DIVIDEND_PRICING_CALCULATION_VERSION || !pricing.canApply || pricing.status !== 'ready' || pricing.grid.length !== 3
     || !dividend || !Number.isSafeInteger(dividend) || !anchor || !Number.isSafeInteger(anchor)) return null;
   const buyLevels = pricing.grid.map((level, index) => ({ priceMinor: level.priceMinor, yieldBps: level.yieldBps,
     portionBps: index === 2 ? 3334 : 3333 }));

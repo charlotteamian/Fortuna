@@ -135,7 +135,8 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
         if (!distribution.data) return undefined;
         const history = dividendPricingYieldHistory(prices.filter(p => p.date.slice(0,7) < asOf.slice(0,7)), distribution.data.pricingRaw, stock.code);
         const coverage = dividendPricingHistoryCoverage(history, asOf);
-        const gaps = coverage.reasons.filter(reason => reason !== 'capital_actions_unverified');
+        // More monthly prices cannot repair a dividend-feed evidence gap.
+        const gaps = coverage.reasons.filter(reason => reason !== 'capital_actions_unverified' && reason !== 'cash_distributions_incomplete');
         return gaps.length ? `PRICE_HISTORY_INCOMPLETE:${coverage.sampleCount}/60:${coverage.from ?? '-'}:${coverage.through ?? '-'}:${gaps.join(',')}` : undefined;
       },
     }), macro, opportunityTask,

@@ -144,6 +144,8 @@
 .dividend-page .div-home-advisor { gap: .35rem .7rem; margin: .75rem 0; padding: .55rem .75rem; }
 .div-home-advisor .div-advisor-heading { gap: .45rem; }
 .div-home-advisor .div-advisor-heading h2 { font-size: .9rem; }
+.div-home-advisor .div-advisor-heading { flex-shrink: 0; }
+.div-home-advisor .div-advisor-heading h2 { white-space: nowrap; }
 .div-home-advisor .div-advisor-badge { flex-basis: 26px; width: 26px; height: 26px; border-radius: 8px; font-size: .65rem; }
 .div-home-advisor .div-advisor-entry-actions { flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: .2rem .6rem; }
 .div-home-advisor .div-advisor-entry-actions > button { display: inline-flex; align-items: center; justify-content: space-between; gap: .3rem; min-height: 38px; padding: .25rem .15rem; font-size: .75rem; }
@@ -152,6 +154,15 @@
 .div-stock-reading .div-key-metrics { gap: .75rem; }
 .div-stock-reading .div-key-metrics strong { font-size: clamp(1.1rem, 4.5vw, 1.4rem); }
 .div-stock-reading .div-key-metrics small { font-size: .68rem; line-height: 1.6; }
+.div-stock-toggle { display: block; width: 100%; padding: 0; border: 0; background: none; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.div-stock-toggle:focus-visible { outline: 2px solid var(--asset-color); outline-offset: 5px; border-radius: 4px; }
+.div-stock-toggle .div-stock-title { display: block; font-size: 1.07rem; font-weight: 600; margin-bottom: .3rem; }
+.div-stock-title > span { color: var(--text-secondary); font-size: .76rem; font-weight: 400; }
+.div-stock-toggle .div-stock-heading > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.div-stock-toggle .div-stock-toggle-state { display: grid; justify-items: center; gap: .15rem; flex-shrink: 0; font-size: .65rem; color: var(--text-secondary); }
+.div-stock-chevron { font-size: 1.2rem; line-height: 1; }
+.div-stock-toggle .div-key-metrics > span { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; min-width: 0; }
+.div-stock-toggle .div-key-metrics > span > span { min-height: 2.8em; line-height: 1.4; }
 .div-stock-paused { flex-shrink: 0; border-radius: 7px; padding: 4px 6px; background: var(--liability-dim, var(--bg-secondary)); color: var(--liability-color); font-size: .65rem; }
 .div-forecast-line { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; padding: .75rem 0; border-top: 1px solid var(--border); }
 .div-forecast-line > div { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }

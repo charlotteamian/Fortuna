@@ -1,0 +1,55 @@
+{
+  "environment": "Isolated Chrome browser context with synthetic IndexedDB; real React components, navigation and history database. Context preparation and answer transport mocked only in this context.",
+  "checks": [
+    {
+      "name": "Opening assistant starts blank even when an older conversation was selected before reload",
+      "passed": true
+    },
+    {
+      "name": "Explicitly resumed conversation is saved on Back; reopening starts a separate blank chat",
+      "passed": true
+    },
+    {
+      "name": "Browser back archives current chat; browser forward opens a fresh chat",
+      "passed": true
+    },
+    {
+      "name": "Reload starts a fresh chat and preserves the complete old conversation",
+      "passed": true
+    },
+    {
+      "name": "Exiting before conversation creation returns still preserves the first submitted question atomically",
+      "passed": true
+    },
+    {
+      "name": "Question is persisted before generation; leaving cancels request and late answer cannot enter the next chat",
+      "passed": true,
+      "firstId": "ee571ab3-6a04-4f61-97fc-8735a45a74ed",
+      "secondId": "77cea2aa-0395-4ef4-85f5-a279a558118e"
+    },
+    {
+      "name": "Unfinished saved question is restored into composer and retry completes it without duplicating user turns",
+      "passed": true
+    },
+    {
+      "name": "Reload during generation preserves the submitted question and returns to a fresh chat",
+      "passed": true
+    },
+    {
+      "name": "Page-hide lifecycle event archives current chat and reopening starts blank",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "screenshots": [
+    "chat-resumed.png",
+    "chat-new-after-exit.png"
+  ],
+  "limitations": [
+    "Mocked context preparation and answer transport verify lifecycle isolation, not live model or research correctness.",
+    "Native Android hardware back and background event delivery are not exercised by this browser test.",
+    "Synthetic data is isolated from the user app and actual device data."
+  ],
+  "physicalDeviceTested": false,
+  "passed": true
+}

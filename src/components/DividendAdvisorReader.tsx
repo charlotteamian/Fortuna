@@ -123,7 +123,7 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
         </section>}
         {messages.length > 0 && !amountVisible && <p className="div-advisor-hidden" role="status">{t('div_ai_reading_hidden')}</p>}
         {messages.length > 0 && amountVisible && <div className="div-advisor-reader-messages">{messages.map((message, index) => <article className={`div-advisor-reading-message ${message.role}`} key={index}>
-          {index === messages.length - 2 && <div className="div-advisor-reading-anchor" ref={latestRef} />}
+          {index === (messages.at(-1)?.role === 'user' ? messages.length - 1 : messages.length - 2) && <div className="div-advisor-reading-anchor" ref={latestRef} />}
           {message.role === 'user' ? <><span className="div-advisor-question-kicker">{t('div_ai_you')}</span><h2>{message.content}</h2></>
             : <><DividendAdvisorMarkdown language={i18n.language}>{message.content}</DividendAdvisorMarkdown>{renderActions?.(message, index)}</>}
         </article>)}</div>}

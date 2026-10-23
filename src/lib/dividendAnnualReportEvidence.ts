@@ -35,3 +35,8 @@ export function dividendAnnualReportEvidence(code: string, year: number, asOf: s
     && Math.abs(reportedNetProfitMinor-evidence.netProfitMinor) <= Math.max(1,evidence.netProfitMinor*1e-6)
     ? structuredClone(evidence) : undefined;
 }
+
+/** Cash disclosures can audit a dividend feed independently of its profit denominator. */
+export function dividendAnnualCashEvidence(code: string, asOf: string): DividendAnnualReportEvidence[] {
+  return code === '300750' ? structuredClone(CATL_ANNUAL_CASH.filter(record => record.publishedAt <= asOf)) : [];
+}

@@ -1,3 +1,4 @@
+import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dividendResearchAdvice as evaluateDividendResearchAdvice } from '../src/lib/dividendResearchAdvice.ts';
@@ -9,7 +10,7 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-21', fetchedAt: 1,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2, state: 'rising', pacing: 'observe' };
 const market: DividendIndexResearch[] = [{ code: 'sh000300', name: 'CSI 300', technical, sources: [], issues: [] }];
-const pricing: DividendPricingResult = { status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
+const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
   normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: {}, gordonYieldBps: 800,
   grid: [1200, 1100, 1000].map((priceMinor, index) => ({ priceMinor, discountBps: [9500, 8500, 7500][index] as 9500 | 8500 | 7500,
     yieldBps: 500, cumulativePortionBps: [3333, 6666, 10000][index], meetsSafetyMargin: index > 1 })),

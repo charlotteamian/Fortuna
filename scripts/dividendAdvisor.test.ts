@@ -1,3 +1,4 @@
+import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
 import 'fake-indexeddb/auto';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -153,10 +154,16 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
   const run = (buyLevels = levels) => askDividendAdvisorWithActions(config(), data, '复核定价', [], { transport: async () => ({ status: 200,
     data: response('openai', `资料检查。\n\`\`\`fortuna-actions\n${JSON.stringify([{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true, buyLevels }])}\n\`\`\``) }) });
   assert.deepEqual((await run()).actions, []);
-  data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, status: 'ready', canApply: true, grid: levels, d1Micros: 200000, anchors: { selectedBps: 500 } } as unknown as DividendPricingResult;
+  data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, grid: levels, d1Micros: 200000, anchors: { selectedBps: 500 } } as unknown as DividendPricingResult;
   assert.deepEqual((await run()).actions[0].buyLevels, levels);
   assert.equal((await run([{ ...levels[0], priceMinor: 401 }, ...levels.slice(1)])).actions.length, 0);
   assert.equal((await run(levels.map((level, index) => ({ ...level, portionBps: index === 0 ? 9000 : 500 })))).actions.length, 0);
+  // Bypass the cache deliberately: persisted or caller-supplied obsolete math
+  // must not become a new draft just because an AI repeats its old prices.
+  delete data.research!.stocks[0].pricing!.calculationVersion;
+  assert.deepEqual((await run()).actions, []);
+  assert.equal((await askDividendAdvisorWithActions(config(), data, '重新生成网格计划', [], { transport: async () => ({ status: 200,
+    data: response('openai', '已经按历史价格重算。') }) })).actions.length, 0);
 });
 
 test('regeneration supplies a verified ladder without changing manual pause state, even during accelerating declines', async () => {

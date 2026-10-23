@@ -2,6 +2,8 @@ import 'fake-indexeddb/auto';
 import assert from 'node:assert/strict';
 import test, { after, beforeEach } from 'node:test';
 import Dexie from 'dexie';
+import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
+import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
 import { defaultDividendSelectionPrinciples, type DividendResearchSnapshot, type DividendStockResearch } from '../src/lib/dividendResearch.ts';
 import { closeDividendResearchCache, dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache,
   saveDividendResearchCache, saveDividendResearchCollapse } from '../src/services/dividendResearchCacheService.ts';
@@ -17,6 +19,25 @@ const stock = (code: string, name = code): DividendStockResearch => ({ code, nam
 const snapshot = (generatedAt: number, stocks: DividendStockResearch[]): DividendResearchSnapshot => ({ generatedAt,
   principles: defaultDividendSelectionPrinciples(), indices: [], stocks });
 const save = (value: DividendResearchSnapshot) => saveDividendResearchCache({ snapshot: value, scope: 'candidates', candidateInput: '招商银行' });
+
+test('an upgrade retires persisted pricing arithmetic without deleting evidence or changing the saved stock context', async () => {
+  const pricing=calculateDividendPricing({code:'600036',name:'招商银行',financialSector:true,method:defaultDividendPricingMethod(),asOf:'2026-10-23',
+    annuals:Array.from({length:5},(_,i)=>({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
+      adjustedEpsMicros:1000000,dividendMicros:500000,payoutBps:5000})),
+    treasury:{yieldBps:200,asOf:'2026-10-23',fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'}});
+  assert.ok(dividendPricingPlan(pricing));
+  const historical={...pricing,calculationVersion:undefined};
+  const old=snapshot(1000,[{...stock('600036'),pricing:historical}]);
+  await stored.table('results').put({id:'latest',snapshot:old,scope:'plan',candidateInput:'',collapsedCodes:['600036']});
+  const restored=(await loadDividendResearchCache())!, retired=restored.snapshot.stocks[0].pricing!;
+  assert.equal(retired.canApply,false);assert.equal(dividendPricingPlan(retired),null);
+  assert.ok(retired.blockers.includes('pricing_calculation_stale'));
+  assert.deepEqual(retired.grid,JSON.parse(JSON.stringify(historical.grid)));assert.deepEqual(retired.annuals,JSON.parse(JSON.stringify(historical.annuals)));
+  assert.deepEqual(restored.collapsedCodes,['600036']);assert.equal(restored.snapshot.generatedAt,1000);
+  const updated=await save(snapshot(2000,[{...stock('600036'),pricing}]));
+  assert.equal(updated.snapshot.stocks[0].pricing?.canApply,true);
+  assert.ok(dividendPricingPlan(updated.snapshot.stocks[0].pricing!));
+});
 
 test('completed screening preserves its date/scope/input, ignores stale results and keeps the last result after a failure', async () => {
   assert.equal(await loadDividendResearchCache(), null);

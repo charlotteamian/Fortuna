@@ -1403,7 +1403,7 @@
   "settings_currency_rates": "Base currency, exchange rates and gold",
   "settings_items_count": "{{count}} items",
   "div_ai_eyebrow": "PLANS × QUOTES × CONVERSATION",
-  "div_ai_title": "Dividend assistant",
+  "div_ai_title": "Assistant",
   "div_ai_provider": "Model provider",
   "div_ai_model": "Chat model name",
   "div_ai_model_presets": "Suggested models",

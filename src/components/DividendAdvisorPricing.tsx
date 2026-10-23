@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendPricingRiskClass, type DividendPricingStockOverride, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
+import { dividendPricingMarketComparison, invalidateOutdatedDividendPricing, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendPricingRiskClass, type DividendPricingStockOverride, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
@@ -16,7 +16,7 @@ const GAP_HELP: Record<DividendPricingBlocker, string> = {
   treasury_missing: 'macro', treasury_stale: 'macro', yield_history_missing: 'history', capital_actions_unverified: 'history',
   opportunity_cost_missing: 'opportunity', opportunity_cost_stale: 'opportunity', anchors_conflict: 'anchors', anchors_missing: 'anchors', growth_return_conflict: 'method',
   quote_missing: 'price', roe_bps_missing: 'financials', cyclical_normalisation_required: 'normalisation', annual_stale: 'financials',
-  dividend_continuity_missing: 'financials', implausible_yield: 'risk',
+  dividend_continuity_missing: 'financials', implausible_yield: 'risk', pricing_calculation_stale: 'financials',
 };
 
 export function DividendFinancialReviewCard({ review, code }: { review: DividendFinancialSectorReview; code: string }) {
@@ -154,29 +154,44 @@ export function DividendPricingEditor({ method, opportunity, stocks = [], disabl
 
 export function DividendPricingCard({ code, pricing, disabled, onUpdated }: { code: string; pricing: DividendPricingResult; disabled: boolean; onUpdated: () => Promise<unknown> }) {
   const { t } = useTranslation();
+  pricing = invalidateOutdatedDividendPricing(pricing);
   const yuan = (value?: number, scale = 100) => value === undefined ? '—' : `¥${(value / scale).toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
   const pct = (value?: number) => value === undefined ? '—' : `${(value / 100).toFixed(2)}%`;
   const historyCoverage = pricing.historyCoverage;
+  const comparison = dividendPricingMarketComparison(pricing);
   const plan = dividendPricingPlan(pricing);
   const proposal: DividendPlanProposal | null = plan ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: yuan(pricing.d1Micros, 1e6), price: yuan(pricing.theoreticalPriceMinor) }),
     ...plan,
   } : null;
+  if (pricing.blockers.includes('pricing_calculation_stale')) return <div className="div-ai-pricing-card div-ai-pricing-model-alert">
+    <strong>{t('div_v2_pricing_model_stale_title')}</strong><p>{t('div_v2_pricing_model_stale')}</p>
+  </div>;
   return <details className="div-ai-pricing-card" open><summary>{t('div_v2_pricing_chain')} · {t(pricing.canApply ? 'div_v2_pricing_ready' : 'div_v2_pricing_gaps')}</summary>
+    {pricing.canApply && <div className="div-ai-pricing-model-summary"><p>{t('div_v2_pricing_model_formula', { d1: yuan(pricing.d1Micros, 1e6), anchor: pct(pricing.anchors.selectedBps), estimate: yuan(pricing.theoreticalPriceMinor) })}</p>
+      {comparison.quoteUsable && <p>{t('div_v2_pricing_model_quote', { price: yuan(pricing.currentPriceMinor), date: pricing.priceDate, yield: pct(comparison.sustainableYieldAtQuoteBps), gap: `${comparison.estimateGapBps! >= 0 ? '+' : ''}${pct(comparison.estimateGapBps)}` })}</p>}
+      {comparison.reachedBuyLevels.length > 0 && <p className="div-ai-pricing-model-alert">{t('div_v2_pricing_model_reached', { levels: comparison.reachedBuyLevels.join('、') })}</p>}
+      {comparison.largeDiscount && <p className="div-ai-pricing-model-alert">{t('div_v2_pricing_model_large_discount')}</p>}
+    </div>}
+    {pricing.grid.length > 0 && <div className="div-ai-pricing-grid">{pricing.grid.map((grid, index) => <div key={grid.discountBps}><span>{t('div_v2_pricing_grid_level', { level: index + 1 })}</span><strong>{yuan(grid.priceMinor)}</strong><small>{t('div_v2_pricing_grid_metrics', { yield: pct(grid.yieldBps), gap: pct(grid.changeFromCurrentBps), portion: pct(grid.cumulativePortionBps) })}</small><small>{t(grid.meetsSafetyMargin ? 'div_v2_pricing_margin_met' : 'div_v2_pricing_margin_not_met')}</small></div>)}</div>}
+    {plan && <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_sell_title')}</h4><p>{t('div_v2_pricing_sell_method', { d1: yuan(pricing.d1Micros, 1e6), anchor: pct(pricing.anchors.selectedBps) })}</p>
+      <div className="div-ai-pricing-grid">{plan.sellLevels.map((level, index) => <div key={index}><span>{t('div_v2_pricing_sell_level', { level: index + 1 })}</span><strong>{yuan(level.priceMinor)}</strong><small>{t('div_v2_pricing_sell_metrics', { yield: pct(level.yieldBps), portion: (index + 1) * 25 })}</small></div>)}</div>
+    </div>}
+    <details className="div-ai-pricing-calculation"><summary>{t('div_v2_pricing_model_evidence')}</summary>
     <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_numerator')}</h4><p>{t('div_v2_pricing_d1_chain', { eps: yuan(pricing.normalizedEpsMicros, 1e6), payout: pct(pricing.sustainablePayoutBps), earnings: yuan(pricing.earningsDividendMicros, 1e6) })}</p>
       <p>{pricing.fcfDividendCapMicros === undefined ? t('div_v2_pricing_tax_chain', { tax: pct(pricing.taxBps) })
         : t('div_v2_pricing_fcf_chain', { earnings: yuan(pricing.earningsDividendMicros, 1e6), cap: yuan(pricing.fcfDividendCapMicros, 1e6), tax: pct(pricing.taxBps) })}</p>
       <strong>D₁ {yuan(pricing.d1Micros, 1e6)}</strong>
       <details><summary>{t('div_v2_pricing_payout_evidence')}</summary>
         <p>{t('div_v2_pricing_payout_method')}</p>
-        <ul>{pricing.annuals.slice(0,5).map(year => <li key={year.year}>
-          {t('div_v2_pricing_payout_year', { year:year.year, payout:pct(year.payoutBps) })}
-          <small> · {t(year.reportEvidence?.basis === 'reported_no_dividend' ? 'div_v2_pricing_payout_zero'
+        <div className="div-ai-annual-evidence">{pricing.annuals.slice(0,5).map(year => <div className="div-ai-annual-record" key={year.year}>
+          <div className="div-ai-annual-head"><strong>{year.year}</strong><strong>{pct(year.payoutBps)}</strong></div>
+          <small>{t(year.reportEvidence?.basis === 'reported_no_dividend' ? 'div_v2_pricing_payout_zero'
             : year.reportEvidence ? 'div_v2_pricing_payout_report' : year.payoutBasis === 'reported_cash_over_profit'
               ? 'div_v2_pricing_payout_source_cash' : year.payoutBps === undefined ? 'div_v2_pricing_payout_missing' : 'div_v2_pricing_payout_source_eps')}</small>
-          {year.reportEvidence && <><p>{t('div_v2_pricing_payout_verified', { date:year.reportEvidence.publishedAt, verified:year.reportEvidence.verifiedAt })}</p>
-            {year.reportEvidence.sources.map((source,index) => <a key={source.url} href={`${source.url}#page=${source.pdfPages[0]}`} target="_blank" rel="noopener noreferrer">{t('div_v2_pricing_payout_source', { index:index+1 })} </a>)}</>}
-        </li>)}</ul>
+          {year.reportEvidence && <><p className="div-ai-evidence-date">{t('div_v2_pricing_payout_verified', { date:year.reportEvidence.publishedAt, verified:year.reportEvidence.verifiedAt })}</p>
+            <div className="div-ai-evidence-links">{year.reportEvidence.sources.map((source,index) => <a key={source.url} href={`${source.url}#page=${source.pdfPages[0]}`} target="_blank" rel="noopener noreferrer">{t('div_v2_pricing_payout_source', { index:index+1 })}</a>)}</div></>}
+        </div>)}</div>
       </details>
       {pricing.fcfCapApplied && <p>{t('div_v2_pricing_gap_fcf_dividend_capped')}</p>}
       {!!pricing.fcfEvidence?.length && <details><summary>{t('div_v2_pricing_fcf_evidence')}</summary><ul>{pricing.fcfEvidence.map(year => <li key={year.year}>
@@ -201,11 +216,8 @@ export function DividendPricingCard({ code, pricing, disabled, onUpdated }: { co
       {pricing.treasury && <p className="div-ai-muted">{t('div_v2_pricing_treasury_date', { yield: pct(pricing.treasury.yieldBps), date: pricing.treasury.asOf })}</p>}
       {pricing.history && <p className="div-ai-muted">{t('div_v2_pricing_history_dates', { from: pricing.history.from, through: pricing.history.through })}</p>}
     </details>
-    {pricing.grid.length > 0 && <div className="div-ai-pricing-grid">{pricing.grid.map((grid, index) => <div key={grid.discountBps}><span>{t('div_v2_pricing_grid_level', { level: index + 1 })}</span><strong>{yuan(grid.priceMinor)}</strong><small>{t('div_v2_pricing_grid_metrics', { yield: pct(grid.yieldBps), gap: pct(grid.changeFromCurrentBps), portion: pct(grid.cumulativePortionBps) })}</small><small>{t(grid.meetsSafetyMargin ? 'div_v2_pricing_margin_met' : 'div_v2_pricing_margin_not_met')}</small></div>)}</div>}
-    {plan && <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_sell_title')}</h4><p>{t('div_v2_pricing_sell_method', { d1: yuan(pricing.d1Micros, 1e6), anchor: pct(pricing.anchors.selectedBps) })}</p>
-      <div className="div-ai-pricing-grid">{plan.sellLevels.map((level, index) => <div key={index}><span>{t('div_v2_pricing_sell_level', { level: index + 1 })}</span><strong>{yuan(level.priceMinor)}</strong><small>{t('div_v2_pricing_sell_metrics', { yield: pct(level.yieldBps), portion: (index + 1) * 25 })}</small></div>)}</div>
-    </div>}
-    {!!pricing.pauseReasons?.length && <details className="div-ai-pricing-gap-list" open><summary>{t('div_v2_pricing_pause_reasons')}</summary><p className="div-ai-muted">{t('div_v2_pricing_pause_independent')}</p><ul>{pricing.pauseReasons.map(reason => <PricingGap key={reason} blocker={reason} code={code} />)}</ul></details>}
+    </details>
+    {!!pricing.pauseReasons?.length && <details className="div-ai-pricing-gap-list"><summary>{t('div_v2_pricing_pause_reasons')}</summary><p className="div-ai-muted">{t('div_v2_pricing_pause_independent')}</p><ul>{pricing.pauseReasons.map(reason => <PricingGap key={reason} blocker={reason} code={code} />)}</ul></details>}
     {pricing.blockers.length > 0 && <details className="div-ai-pricing-gap-list" open><summary>{t('div_v2_pricing_gaps')}</summary><ul>{pricing.blockers.map(blocker => <PricingGap key={blocker} blocker={blocker} code={code} />)}</ul></details>}
     {pricing.warnings?.length > 0 && <details className="div-ai-pricing-gap-list" open={pricing.fcfCapApplied || pricing.warnings.includes('anchors_conflict')}><summary>{t('div_v2_pricing_reviews')}</summary><ul>{pricing.warnings.map(warning => <li key={warning}>{t(`div_v2_pricing_gap_${warning}`)}</li>)}</ul></details>}
     {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} initiallyExpanded previewLabel={t('div_v2_pricing_preview')} />}

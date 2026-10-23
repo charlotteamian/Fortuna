@@ -1,3 +1,4 @@
+import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
 import 'fake-indexeddb/auto';
 import test, { after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,7 +33,7 @@ const stock: DividendStock = { code: '600036', name: '招商银行', group: 'cor
 const technical: DividendTechnicalResearch = { asOf: '2026-10-22', fetchedAt: now, priceBasis: 'qfq', currentUsable: true,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2, state: 'rising', pacing: 'observe' };
-const pricing: DividendPricingResult = { status: 'ready', canApply: true, riskClass: 'bank', blockers: [], pauseReasons: [], warnings: [], annuals: [],
+const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, riskClass: 'bank', blockers: [], pauseReasons: [], warnings: [], annuals: [],
   normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: { selectedBps: 413 }, d1Micros: 1980400, gordonYieldBps: 800,
   grid: [4555, 4075, 3596].map((priceMinor, index) => ({ discountBps: [9500, 8500, 7500][index] as 9500 | 8500 | 7500, priceMinor,
     yieldBps: Math.round(1980400 / priceMinor), cumulativePortionBps: [3333, 6666, 10000][index], meetsSafetyMargin: index > 0 })),

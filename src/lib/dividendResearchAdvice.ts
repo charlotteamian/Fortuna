@@ -1,5 +1,5 @@
 import type { DividendIndexResearch, DividendResearchRule, DividendStockResearch } from './dividendResearch.ts';
-import type { DividendPricingBlocker } from './dividendPricing.ts';
+import { invalidateOutdatedDividendPricing, type DividendPricingBlocker } from './dividendPricing.ts';
 import { buildDividendHomePlan, buildGrid, dateInChina, type DividendStock } from './dividendWorkbench.ts';
 
 export type DividendResearchDecision = 'evidence' | 'wait_price' | 'eligible';
@@ -32,6 +32,7 @@ export function dividendPricingIssueIsRisk(issue: DividendPricingBlocker, stock:
 
 /** A deterministic, evidence-bound conclusion is available without configuring an AI model. */
 export function dividendResearchAdvice(stock: DividendStockResearch, indices: DividendIndexResearch[], additionalRules?: string, savedStock?: DividendStock, asOf = dateInChina()): DividendResearchAdvice {
+  if (stock.pricing) stock = { ...stock, pricing: invalidateOutdatedDividendPricing(stock.pricing) };
   const failedRules = stock.checks.filter(check => check.status === 'risk').map(check => check.rule);
   const missingRules = stock.checks.filter(check => check.status === 'unknown').map(check => check.rule);
   const pricingBlockers = stock.pricing?.blockers ?? [];

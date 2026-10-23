@@ -22,7 +22,7 @@ registerHooks({
 });
 
 const { db, initializeSettings } = await import('../src/db.ts');
-const { importDividendStocks, loadDividendWorkbench, allocateDividendBudget, deleteDividendStock, saveDividendStockGroup } = await import('../src/services/dividendService.ts');
+const { importDividendStocks, loadDividendWorkbench, allocateDividendBudget, deleteDividendStock, saveDividendStockGroup, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
 
 function workbook(sheets: Record<string, XLSX.WorkSheet>, bookType: 'xlsx' | 'xls' | 'csv' = 'xlsx'): ArrayBuffer {
   const book = XLSX.utils.book_new();
@@ -38,6 +38,17 @@ beforeEach(async () => {
   await initializeSettings();
 });
 after(() => db.close());
+
+test('home reading preferences survive reload and concurrent card toggles without changing financial data', async () => {
+  const original = stock('000001', 1200);
+  await db.dividendStocks.put(original);
+  await Promise.all([saveDividendHomeCollapse('000001', true), saveDividendHomeCollapse('300750', true)]);
+  assert.deepEqual(new Set((await loadDividendWorkbench()).collapsedCodes), new Set(['000001', '300750']));
+  await saveDividendHomeCollapse('000001', false);
+  assert.deepEqual((await loadDividendWorkbench()).collapsedCodes, ['300750']);
+  assert.deepEqual(await db.dividendStocks.get('000001'), original);
+  await assert.rejects(saveDividendHomeCollapse('invalid', true), /INVALID_DIVIDEND_STOCK/);
+});
 
 test('xlsx and xls preserve independent weights, numeric stock codes, percent formats and optional fields', () => {
   const sheet = XLSX.utils.aoa_to_sheet([

@@ -21,7 +21,18 @@ export async function loadDividendWorkbench() {
   const [stocks, settings, accounts, holdings, txns] = await Promise.all([
     db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
   ]);
-  return { stocks, strategy: settings?.dividendStrategy ?? 'stocks', fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(), budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
+  return { stocks, collapsedCodes: settings?.dividendHomeCollapsedCodes ?? [], strategy: settings?.dividendStrategy ?? 'stocks', fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(), budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
+}
+/** Persist reading preferences without touching positions, grids or other cards. */
+export async function saveDividendHomeCollapse(code: string, collapsed: boolean) {
+  if (mainlandCode(code) !== code || typeof collapsed !== 'boolean') throw new Error('INVALID_DIVIDEND_STOCK');
+  await initializeSettings();
+  await db.transaction('rw', db.settings, async () => {
+    const settings = await db.settings.get('main');
+    const codes = new Set(settings?.dividendHomeCollapsedCodes ?? []);
+    if (collapsed) codes.add(code); else codes.delete(code);
+    await db.settings.update('main', { dividendHomeCollapsedCodes: [...codes] });
+  });
 }
 export async function saveDividendBudget(budgetMinor: number) {
   if (!Number.isSafeInteger(budgetMinor) || budgetMinor < 0 || budgetMinor > 1e14) throw new Error('INVALID_BUDGET');

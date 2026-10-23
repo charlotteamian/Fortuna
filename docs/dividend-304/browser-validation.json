@@ -1,0 +1,630 @@
+{
+  "environment": "Isolated Chrome, synthetic IndexedDB and transport; real rendered app components",
+  "checks": [
+    {
+      "name": "home 390 scale 1",
+      "passed": true,
+      "viewport": 390,
+      "width": 390
+    },
+    {
+      "name": "whole stock header and quote area toggle the card; public metric baselines align",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "metrics": [
+        {
+          "y": 405.640625,
+          "text": "¥11.2"
+        },
+        {
+          "y": 405.640625,
+          "text": "—"
+        }
+      ]
+    },
+    {
+      "name": "home 320 scale 1",
+      "passed": true,
+      "viewport": 320,
+      "width": 320
+    },
+    {
+      "name": "whole stock header and quote area toggle the card; public metric baselines align",
+      "passed": true,
+      "width": 320,
+      "scale": 1,
+      "metrics": [
+        {
+          "y": 167.4375,
+          "text": "¥11.2"
+        },
+        {
+          "y": 167.4375,
+          "text": "—"
+        }
+      ]
+    },
+    {
+      "name": "home 320 scale 1.3",
+      "passed": true,
+      "viewport": 320,
+      "width": 320
+    },
+    {
+      "name": "whole stock header and quote area toggle the card; public metric baselines align",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "metrics": [
+        {
+          "y": 186.890625,
+          "text": "¥11.2"
+        },
+        {
+          "y": 186.890625,
+          "text": "—"
+        }
+      ]
+    },
+    {
+      "name": "homepage collapse survives reload",
+      "passed": true
+    },
+    {
+      "name": "research 390 scale 1",
+      "passed": true,
+      "viewport": 390,
+      "width": 390
+    },
+    {
+      "name": "buy and sell plan table columns fit",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "widths": [
+        {
+          "width": 310,
+          "parent": 310,
+          "cells": [
+            {
+              "text": "¥9.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥8.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥7.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.34%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 310,
+          "parent": 310,
+          "cells": [
+            {
+              "text": "¥11.11",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥12.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥14.28",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥16.66",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 310,
+          "parent": 310,
+          "cells": [
+            {
+              "text": "¥10.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥8.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥6.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.34%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 310,
+          "parent": 310,
+          "cells": [
+            {
+              "text": "¥12.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥14.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥16.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥18.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "research 320 scale 1",
+      "passed": true,
+      "viewport": 320,
+      "width": 320
+    },
+    {
+      "name": "buy and sell plan table columns fit",
+      "passed": true,
+      "width": 320,
+      "scale": 1,
+      "widths": [
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥9.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥8.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥7.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.34%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥11.11",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥12.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥14.28",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥16.66",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥10.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥8.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥6.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.34%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥12.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥14.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥16.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥18.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "research 320 scale 1.3",
+      "passed": true,
+      "viewport": 320,
+      "width": 320
+    },
+    {
+      "name": "buy and sell plan table columns fit",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "widths": [
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥9.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥8.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥7.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.34%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥11.11",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥12.50",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥14.28",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥16.66",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥10.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥8.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.33%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥6.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "33.34%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        },
+        {
+          "width": 240,
+          "parent": 240,
+          "cells": [
+            {
+              "text": "¥12.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥14.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥16.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "¥18.00",
+              "nowrap": "nowrap",
+              "clipped": false
+            },
+            {
+              "text": "25%",
+              "nowrap": "nowrap",
+              "clipped": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "research and annual evidence render without horizontal page overflow",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "screenshots": [
+    "home-390-1.png",
+    "home-320-1.png",
+    "home-320-1.3.png",
+    "research-390-1.png",
+    "annual-390-1.png",
+    "preview-390-1.png",
+    "research-320-1.png",
+    "annual-320-1.png",
+    "preview-320-1.png",
+    "research-320-1.3.png",
+    "annual-320-1.3.png",
+    "preview-320-1.3.png"
+  ],
+  "physicalDeviceTested": false,
+  "passed": true
+}

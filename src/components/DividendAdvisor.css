@@ -1,7 +1,7 @@
 .div-advisor { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; margin: 12px 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--asset-color) 36%, var(--border)); border-radius: var(--radius); background: linear-gradient(125deg, color-mix(in srgb, var(--asset-color) 10%, var(--bg-card)), color-mix(in srgb, var(--liability-color) 5%, var(--bg-card))); }
 .div-advisor > .div-advisor-status, .div-advisor > .div-warning { grid-column: 1 / -1; }
 .div-advisor .div-advisor-heading { gap: 8px; }
-.div-advisor .div-advisor-heading h2 { font-size: 16px; }
+.div-advisor .div-advisor-heading h2 { font-size: 16px; white-space: nowrap; }
 .div-advisor .div-advisor-badge { flex-basis: 32px; width: 32px; height: 32px; border-radius: 10px; font-size: 12px; }
 .div-advisor-heading { display: flex; align-items: center; gap: 12px; }
 .div-advisor-heading > div { min-width: 0; }
@@ -162,13 +162,26 @@
 .div-ai-plan-actions { display: grid; gap: 10px; margin: 18px 0; }
 .div-ai-plan-action { padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); }
 .div-ai-plan-action > p { font-size: 13px; line-height: 1.8; }
-.div-ai-grid-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.div-ai-grid-comparison h3 { margin: 16px 0 8px; font-size: 13px; }
+.div-ai-grid-comparison { display: grid; gap: 14px; min-width: 0; }
+.div-ai-grid-comparison h3 { margin: 14px 0 8px; font-size: 13px; }
 .div-ai-grid-comparison h4 { margin: 12px 0 6px; font-size: 12px; font-weight: 550; }
 .div-ai-grid-comparison details { margin-top: 10px; }
-.div-ai-grid-comparison details > summary { font-size: 11px; font-weight: 500; }
-.div-ai-grid-levels { margin: 0; padding-left: 14px; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.div-ai-grid-comparison details > summary { padding: 5px 0; font-size: 12px; font-weight: 550; }
+.div-ai-grid-side > summary > span { margin-left: 8px; color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.div-ai-grid-current { padding-top: 8px; border-top: 1px solid var(--border); }
+.div-ai-grid-current > summary { color: var(--text-secondary); }
+.div-ai-grid-levels { width: 100%; margin: 6px 0 0; border-collapse: collapse; table-layout: fixed; font-size: 13px; line-height: 1.5; }
+.div-ai-grid-levels col:first-child { width: 40px; }
+.div-ai-grid-levels col:last-child { width: 76px; }
+.div-ai-grid-levels th, .div-ai-grid-levels td { padding: 10px 4px; border-bottom: 1px solid var(--border); vertical-align: middle; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.div-ai-grid-levels thead th { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.div-ai-grid-levels th:first-child { padding-left: 0; text-align: left; }
+.div-ai-grid-levels tbody th { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.div-ai-grid-levels tbody td:nth-child(2) { color: var(--text-primary); font-weight: 650; }
+.div-ai-grid-levels tbody td:last-child { color: var(--text-secondary); }
+.div-ai-grid-levels tbody tr:last-child > * { border-bottom: 0; }
 .div-ai-pricing-card > summary { color: var(--asset-color); }
+.div-ai-pricing-card { min-width: 0; font-size: 12px; line-height: 1.7; }
 .div-ai-pricing-step { padding: 12px 0; border-bottom: 1px solid var(--border); }
 .div-ai-pricing-step h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 .div-ai-pricing-step p { color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
@@ -189,11 +202,34 @@
 .div-ai-pricing-editor .div-method { margin: 14px 0; }
 .div-ai-pricing-editor select, .div-ai-principles-form select { width: 100%; padding: 10px; min-width: 0; font-size: 12px; }
 .div-ai-pricing-code { display: grid; gap: 6px; max-width: 260px; margin: 12px 0; color: var(--text-secondary); font-size: 12px; }
+.div-ai-pricing-step > details { margin-top: 10px; }
+.div-ai-pricing-step > details > summary { padding: 6px 0; color: var(--text-secondary); font-size: 12px; }
+.div-ai-annual-evidence { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.div-ai-annual-record { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary, var(--bg-card)); font-size: 12px; line-height: 1.65; }
+.div-ai-annual-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--text-primary); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.div-ai-annual-head > * { white-space: nowrap; }
+.div-ai-annual-record > small { display: block; margin-top: 5px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+.div-ai-pricing-step .div-ai-evidence-date { margin: 6px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.65; }
+.div-ai-evidence-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 5px; font-size: 12px; }
+.div-ai-evidence-links a { padding: 3px 0; color: var(--asset-color); text-decoration: none; }
+.div-ai-evidence-links a:hover, .div-ai-evidence-links a:focus-visible { text-decoration: underline; }
+.div-ai-pricing-model-summary { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary, var(--bg-card)); font-size: 12px; line-height: 1.7; }
+.div-ai-pricing-model-summary > strong { display: block; color: var(--text-primary); font-size: 13px; }
+.div-ai-pricing-model-summary p { margin: 5px 0 0; color: var(--text-secondary); font-size: 12px; }
+.div-ai-pricing-model-alert { padding-left: 10px; border-left: 3px solid var(--asset-color); color: var(--text-primary); font-size: 12px; line-height: 1.7; }
+.div-ai-pricing-card .div-ai-plan-action { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.div-ai-plan-action .div-ai-confirm { min-width: 0; padding: 12px; }
+.div-ai-plan-action .div-ai-confirm > strong { display: block; font-size: 13px; line-height: 1.6; }
+.div-ai-plan-action .div-ai-confirm > .div-ai-muted { margin: 14px 0 10px; font-size: 11px; line-height: 1.65; }
+.div-ai-plan-action .div-actions .btn-primary { flex: 1 1 170px; min-width: 0; min-height: 42px; padding: 10px 12px; font-size: 12px; }
+.div-ai-research-card-body > .div-ai-financial-review { margin: 0; }
+.div-ai-research-card-body > details > summary { padding: 5px 0; }
+.div-ai-research-card-body .div-ai-evidence-section > summary { color: var(--text-secondary); font-size: 12px; }
 .div-ai-override-codes { display: flex; flex-wrap: wrap; gap: 8px; }
 .div-advisor-reader .div-plan-manager { font-size: 13px; }
 .div-advisor-reader .div-plan-manager .btn { min-height: 38px; padding: 8px 10px; font-size: 12px; }
 @media (max-width: 400px) { .div-advisor-workspace-tabs { gap: 2px; padding-inline: 10px; } .div-advisor-workspace-tabs button { padding: 7px 4px; font-size: 12px; } .div-ai-pricing-grid { grid-template-columns: 1fr; } .div-ai-pricing-grid > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; } .div-ai-pricing-grid small { grid-column: 1 / -1; } }
-@media (max-width: 400px) { .div-ai-grid-comparison { grid-template-columns: 1fr; } .div-ai-grid-comparison > section + section { border-top: 1px solid var(--border); } .div-ai-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .div-ai-principles-form { gap: 14px 10px; } }
+@media (max-width: 400px) { .div-ai-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .div-ai-principles-form { gap: 14px 10px; } .div-advisor-reader-column { padding-inline: 16px; } .div-ai-research-card-body { padding-inline: 12px; } .div-ai-grid-levels col:first-child { width: 32px; } .div-ai-grid-levels col:last-child { width: 65px; } .div-ai-plan-action .div-ai-confirm { padding: 10px; } }
 
 .div-ai-research-card > header .div-ai-research-toggle { min-height: 32px; padding: 5px 9px; font-size: 11px; }
 .div-ai-stock-checked { margin: 0 15px 10px; font-size: 11px; }

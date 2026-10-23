@@ -279,6 +279,15 @@ const dividendAdviceEn: Record<keyof typeof dividendAdviceZh, string> = {
 };
 
 const dividendAiV2Zh = {
+  div_v2_pricing_model_stale_title: '定价需要重新检查',
+  div_v2_pricing_model_stale: '计算口径已更新，旧缓存价格不再生成新草案。请重新检查该股票；历史聊天和已保存计划保留。',
+  div_v2_pricing_model_formula: '估值用全年可持续分红 {{d1}} ÷ 要求股息率 {{anchor}} = {{estimate}}。这是红利现金收益口径，未把成长溢价计入价格。',
+  div_v2_pricing_model_quote: '现价 {{price}}（{{date}}）；同一可持续分红对应收益率 {{yield}}，模型估值较现价 {{gap}}。',
+  div_v2_pricing_model_reached: '按此报价，第 {{levels}} 档已达到价格条件。档位是买入上限，实际可买数量还需扣除已有持仓并受预算约束。',
+  div_v2_pricing_model_large_discount: '红利模型价低于现价40%以上，差距较大。先复核可持续分红和要求股息率是否适合这家公司；这不表示股价会跌到该档位。',
+  div_v2_pricing_model_evidence: '查看计算与年度依据',
+  div_v2_pricing_gap_pricing_calculation_stale: '计算口径已更新，请重新检查该股票后再生成价格计划。',
+  div_v2_history_cash_distributions_incomplete: '分红接口遗漏已核验公告中的现金分红，不能把偏低的历史股息率当作有效锚；本轮已排除。',
   div_v2_report_multiple: '{{report}} 报告期内 {{count}} 笔分红合计；最新公告 {{date}}，各次日程分别核对。',
   div_v2_opportunity_reference: '查看比较依据',
   div_v2_held_delete_blocked: '这只股票仍有持仓，不能删除；可暂停加仓或调整计划。',
@@ -346,6 +355,15 @@ const dividendAiV2Zh = {
 };
 
 const dividendAiV2En: Record<keyof typeof dividendAiV2Zh, string> = {
+  div_v2_pricing_model_stale_title: 'Review pricing again',
+  div_v2_pricing_model_stale: 'The calculation has changed. Historical cached prices cannot create new drafts. Review this stock again; saved plans and chat history remain available.',
+  div_v2_pricing_model_formula: 'Annual sustainable dividend {{d1}} / required cash yield {{anchor}} = {{estimate}}. This dividend-income estimate excludes a growth premium.',
+  div_v2_pricing_model_quote: 'Quote {{price}} ({{date}}); the same sustainable dividend yields {{yield}}. The estimate is {{gap}} from this quote.',
+  div_v2_pricing_model_reached: 'This quote has reached buy levels {{levels}}. Levels are maximum entry prices; quantities still depend on budget and existing holdings.',
+  div_v2_pricing_model_large_discount: 'The dividend estimate is at least 40% below the quote. Review whether sustainable dividends and the required cash yield suit this company. This does not predict a fall to these levels.',
+  div_v2_pricing_model_evidence: 'Calculation and annual evidence',
+  div_v2_pricing_gap_pricing_calculation_stale: 'The calculation has changed. Review this stock again before creating a price plan.',
+  div_v2_history_cash_distributions_incomplete: 'The dividend feed omits cash confirmed in issuer disclosures. This understated historical yield anchor is excluded.',
   div_v2_report_multiple: '{{count}} distributions for report {{report}} combined; latest disclosure {{date}}. Check each event’s schedule separately.',
   div_v2_opportunity_reference: 'Comparison source',
   div_v2_held_delete_blocked: 'This stock has a holding and cannot be removed. Pause additions or adjust its plan.',
@@ -417,7 +435,7 @@ export const dividendAiWorkspaceZh = {
   ...dividendAiV2Zh,
   div_ai_metric_index_points: '指数点位', div_ai_index_basis: '指数以点位展示，历史走势仅作节奏参考。', div_ai_unadjusted_basis: '该来源为未复权价格，除权除息可能影响趋势比较。',
   div_ai_workspace_label: '红利 AI 工作区', div_ai_tab_chat: '聊天', div_ai_tab_research: '选股检查', div_ai_tab_principles: '选股原则',
-  div_ai_new_chat: '新建聊天', div_ai_history: '历史聊天', div_ai_history_local: '聊天自动保存在本机。发送时仅使用当前红利计划和最近对话。',
+  div_ai_new_chat: '新建聊天', div_ai_history: '历史聊天', div_ai_history_local: '退出后自动保存本次聊天，再次进入会打开新聊天。可在这里选择继续历史聊天。',
   div_ai_history_empty: '还没有保存的聊天。', div_ai_untitled_chat: '新聊天', div_ai_hidden_chat: '已隐藏的聊天', div_ai_history_messages: '{{count}} 条消息',
   div_ai_delete_chat_confirm: '永久删除这段聊天？', div_ai_history_save_failed: '回答已显示，但聊天保存失败。请稍后重试。',
   div_ai_research_intro: '检查当前组合，或输入股票名称／代码了解新候选。检查结果自动保存在本机，候选由你选择后加入组合。',
@@ -471,7 +489,7 @@ export const dividendAiWorkspaceEn: Record<keyof typeof dividendAiWorkspaceZh, s
   ...dividendAiV2En,
   div_ai_metric_index_points: 'Index points', div_ai_index_basis: 'Indices are shown in points. Historical trends inform pacing only.', div_ai_unadjusted_basis: 'The source is unadjusted; distributions and corporate actions may affect trend comparisons.',
   div_ai_workspace_label: 'Dividend AI workspace', div_ai_tab_chat: 'Chat', div_ai_tab_research: 'Screen & review', div_ai_tab_principles: 'Selection rules',
-  div_ai_new_chat: 'New chat', div_ai_history: 'Chat history', div_ai_history_local: 'Chats are saved on this device. Only the current dividend plan and recent conversation are sent.',
+  div_ai_new_chat: 'New chat', div_ai_history: 'Chat history', div_ai_history_local: 'Leaving saves this chat on this device. Return to a new chat, or choose a saved chat here to continue.',
   div_ai_history_empty: 'No saved chats yet.', div_ai_untitled_chat: 'New chat', div_ai_hidden_chat: 'Hidden chat', div_ai_history_messages: '{{count}} messages',
   div_ai_delete_chat_confirm: 'Permanently delete this chat?', div_ai_history_save_failed: 'The answer is shown, but saving failed. Please try again later.',
   div_ai_research_intro: 'Review the current portfolio or enter stock names or codes to research candidates. Results save on this device; you choose which candidates to add.',

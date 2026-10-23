@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import { isDividendSelectionPrinciples, type DividendResearchSnapshot } from '../lib/dividendResearch.ts';
 import { mainlandCode } from '../lib/dividendWorkbench.ts';
+import { invalidateOutdatedDividendPricing } from '../lib/dividendPricing.ts';
 
 export interface SavedDividendResearch {
   snapshot: DividendResearchSnapshot;
@@ -49,7 +50,9 @@ function reviewedCodes(value: SavedDividendResearch) {
 }
 
 function cleanResearch(value: SavedDividendResearch): SavedDividendResearch {
-  return JSON.parse(JSON.stringify({ snapshot: value.snapshot, scope: value.scope, candidateInput: value.candidateInput,
+  const snapshot = { ...value.snapshot, stocks: value.snapshot.stocks.map(stock => stock.pricing
+    ? { ...stock, pricing: invalidateOutdatedDividendPricing(stock.pricing) } : stock) };
+  return JSON.parse(JSON.stringify({ snapshot, scope: value.scope, candidateInput: value.candidateInput,
     reviewedCodes: reviewedCodes(value),
     stockContexts: Object.fromEntries(value.snapshot.stocks.map(stock => [stock.code, contextOf(value.stockContexts?.[stock.code] ?? value.snapshot)])),
     collapsedCodes: [...new Set(value.collapsedCodes ?? [])].filter(code => value.snapshot.stocks.some(stock => stock.code === code)) }));

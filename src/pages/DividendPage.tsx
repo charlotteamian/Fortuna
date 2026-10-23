@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
-import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
+import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendAdvisor from '../components/DividendAdvisor';
@@ -31,6 +31,9 @@ export default function DividendPage() {
   const allocationResultRef = useRef<HTMLElement>(null);
   const [group, setGroup] = useState('all');
   const [search, setSearch] = useState('');
+  const [collapsedCodes, setCollapsedCodes] = useState<string[]>([]);
+  const collapseLoaded = useRef(false);
+  const collapseState = useRef<string[]>([]);
   const [managerSearch, setManagerSearch] = useState('');
   const [focusedPlanCode, setFocusedPlanCode] = useState('');
   const [openPlanRequest, setOpenPlanRequest] = useState(0);
@@ -50,6 +53,9 @@ export default function DividendPage() {
     const next = await loadDividendWorkbench();
     if (alive.current && id === loadId.current) {
       setData(next);
+      if (!collapseLoaded.current) {
+        collapseLoaded.current = true; collapseState.current = next.collapsedCodes; setCollapsedCodes(next.collapsedCodes);
+      }
       const budget = next.budgetConfigured ? next.budgetMinor : null;
       if (savedBudget.current !== budget) { savedBudget.current = budget; setBudgetInput(budget === null ? '' : String(budget / 100)); }
     }
@@ -118,6 +124,12 @@ export default function DividendPage() {
   };
   const openStockPlan = (code: string) => {
     setManagerSearch(''); setFocusedPlanCode(code); setOpenPlanRequest(value => value + 1);
+  };
+  const toggleStock = (code: string) => {
+    const collapsed = !collapseState.current.includes(code);
+    const next = collapsed ? [...collapseState.current, code] : collapseState.current.filter(value => value !== code);
+    collapseState.current = next; setCollapsedCodes(next);
+    void saveDividendHomeCollapse(code, collapsed).catch(() => { if (alive.current) setError(t('div_save_error')); });
   };
   const sharesFor = (stock: DividendStock) => stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
   const today = dateInChina();
@@ -202,12 +214,16 @@ export default function DividendPage() {
       <div className="div-filters" aria-label={t('div_group')}>{['all', 'held', 'core', 'watch', 'hidden'].map(value => <button key={value} className={group === value ? 'selected' : ''} aria-pressed={group === value} onClick={() => setGroup(value)}>{t(`div_group_${value}`)}</button>)}</div>
       <div className="div-stock-list">{displayed.map(stock => {
         const shares = sharesFor(stock), latest = latestReportDividend(stock), forecast = forecastHoldingYearDividends(stock, today, shares);
+        const expanded = !collapsedCodes.includes(stock.code);
         return <article className="div-stock div-stock-reading" key={stock.code}>
-          <div className="div-stock-heading"><div><h2>{stock.name} <span>{stock.code}</span></h2><small>{shares > 0 ? `${t('div_group_held')} · ` : ''}{t(`div_group_${stock.group}`)}</small></div>{stock.buyPaused && <span className="div-stock-paused">{t('div_ai_buy_paused')}</span>}</div>
-          <div className="div-metrics div-key-metrics"><div><span>{t('div_quote')}</span><strong>{stock.quote ? `¥${numeric(stock.quote.priceMinor / 100)}` : '—'}</strong><small>{stock.quote?.date ?? t('div_not_fetched')}</small></div>
-            <div><span>{t('div_v2_latest_report_dividend')}</span><strong>{latest?.dpsMicros === undefined ? '—' : `¥${numeric(latest.dpsMicros / 1e6, 6)}`}</strong><small>{latest ? latest.basis === 'manual' ? t('div_manual') : `${latest.reportDate} · ${t(`div_v2_period_${latest.period}`)}` : t('div_v2_refresh_required')}</small>
+          <button type="button" className="div-stock-toggle" aria-expanded={expanded} aria-controls={`div-stock-body-${stock.code}`} onClick={() => toggleStock(stock.code)}>
+          <span className="div-stock-heading"><span><span className="div-stock-title">{stock.name} <span>{stock.code}</span></span><small>{shares > 0 ? `${t('div_group_held')} · ` : ''}{t(`div_group_${stock.group}`)}</small></span><span className="div-stock-toggle-state">{stock.buyPaused && <span className="div-stock-paused">{t('div_ai_buy_paused')}</span>}<span className="div-stock-chevron" aria-hidden="true">{expanded ? '⌃' : '⌄'}</span><span>{t(expanded ? 'div_home_collapse' : 'div_home_expand')}</span></span></span>
+          <span className="div-metrics div-key-metrics"><span><span>{t('div_quote')}</span><strong>{stock.quote ? `¥${numeric(stock.quote.priceMinor / 100)}` : '—'}</strong><small>{stock.quote?.date ?? t('div_not_fetched')}</small></span>
+            <span><span>{t('div_v2_latest_report_dividend')}</span><strong>{latest?.dpsMicros === undefined ? '—' : `¥${numeric(latest.dpsMicros / 1e6, 6)}`}</strong><small>{latest ? latest.basis === 'manual' ? t('div_manual') : `${latest.reportDate} · ${t(`div_v2_period_${latest.period}`)}` : t('div_v2_refresh_required')}</small>
               {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
-              {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</div></div>
+              {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</span></span>
+          </button>
+          <div id={`div-stock-body-${stock.code}`} hidden={!expanded}>
           {fundedCodes.has(stock.code) && <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
             onEdit={() => openStockPlan(stock.code)} />}
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>
@@ -230,6 +246,7 @@ export default function DividendPage() {
             {stock.note && <p className="div-muted">{stock.note}</p>}
             <button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_v2_refresh_disclosures')}</button>
           </details>
+          </div>
         </article>;
       })}</div>{!displayed.length && <p className="div-notice">{t('div_empty')}</p>}
     </>}

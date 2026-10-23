@@ -3,7 +3,7 @@ import { dividendFundAllocation, dividendFundEntry, type DividendFundPlan, type 
 import { dividendResearchReadableSnapshot, type DividendResearchSnapshot } from './dividendResearch.ts';
 import type { DividendPlanProposal } from './dividendAdvisorActions.ts';
 
-export interface DividendAdvisorMessage { role: 'user' | 'assistant'; content: string; actions?: DividendPlanProposal[] }
+export interface DividendAdvisorMessage { role: 'user' | 'assistant'; content: string; actions?: DividendPlanProposal[]; pricingCalculationVersion?: number }
 export interface DividendAdvisorInput {
   stocks: DividendStock[];
   strategy: DividendStrategy;

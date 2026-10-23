@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
 import { dividendAnnualReportEvidence } from '../src/lib/dividendAnnualReportEvidence.ts';
-import { calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingHistoryCoverage,
+import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
+import { DIVIDEND_PRICING_CALCULATION_VERSION, calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingHistoryCoverage, dividendPricingMarketComparison, invalidateOutdatedDividendPricing,
   parseDividendTreasury, parseDividendOpportunityRows, dividendPricingReadable, type DividendYieldHistory, type DividendPricingAnnual } from '../src/lib/dividendPricing.ts';
 
 const asOf = '2026-10-21';
@@ -14,6 +15,63 @@ const history: DividendYieldHistory = {basis:'implemented_cash_ex_date_trailing_
 function input() { return {code:'600000',name:'Fixture',financialSector:false,method:defaultDividendPricingMethod(),annuals:structuredClone(annuals),asOf,
   history:structuredClone(history),treasury:{yieldBps:200,asOf,fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'},
   opportunity:{yieldBps:500,asOf,sourceUrl:'https://example.com/comparison',basis:'Dated comparator'},priceMinor:1000,priceDate:asOf,bvpsMicros:20000000}; }
+
+test('old or incompatible calculation versions retain evidence but cannot recreate a fresh price plan', () => {
+  const current = calculateDividendPricing(input());
+  assert.equal(current.calculationVersion, DIVIDEND_PRICING_CALCULATION_VERSION);
+  assert.ok(dividendPricingPlan(current));
+  for (const calculationVersion of [undefined, DIVIDEND_PRICING_CALCULATION_VERSION - 1, DIVIDEND_PRICING_CALCULATION_VERSION + 1]) {
+    const historic = { ...current, calculationVersion }, before = structuredClone(historic);
+    const guarded = invalidateOutdatedDividendPricing(historic);
+    assert.equal(guarded.canApply, false);
+    assert.ok(guarded.blockers.includes('pricing_calculation_stale'));
+    assert.deepEqual(guarded.annuals, current.annuals);
+    assert.deepEqual(guarded.grid, current.grid);
+    assert.equal(dividendPricingPlan(historic), null, 'raw supplied context cannot bypass the version check');
+    assert.equal(dividendPricingReadable(historic)['Valuation draft ready for preview and confirmation'], false);
+    assert.equal(dividendPricingMarketComparison(historic).quoteUsable, false);
+    assert.deepEqual(historic, before, 'dated historical results must not be mutated');
+  }
+});
+
+test('captured Ping An Bank sources produce a cash-based payout and correctly recognise already reached price limits', () => {
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json',import.meta.url),'utf8'));
+  const prices=dividendPricingPriceHistory(f.sources.month.data,'sz000001',f.asOf), quote=prices.at(-1)!;
+  const treasury=parseDividendTreasury(f.sources.treasury.data,f.asOf);
+  const opportunity=parseDividendOpportunityRows(f.sources.opportunity.data,f.asOf);
+  const years=dividendPricingAnnuals(f.sources.financial.data,undefined,f.sources.distribution.data,'000001',f.asOf);
+  const p=calculateDividendPricing({code:'000001',name:'平安银行',financialSector:true,asOf:f.asOf,
+    method:defaultDividendPricingMethod(),annuals:years,treasury,opportunity,
+    history:dividendPricingYieldHistory(prices.filter(price=>price.date.slice(0,7)<'2026-10'),f.sources.distribution.data,'000001',treasury),
+    priceMinor:quote.priceMinor,priceDate:quote.date});
+  assert.deepEqual(years.map(year=>[year.year,year.payoutBps]),[[2025,2713],[2024,2651],[2023,3004],[2022,1215],[2021,1218]]);
+  assert.equal(p.normalizedEpsMicros,2160000);assert.equal(p.sustainablePayoutBps,2651);assert.equal(p.d1Micros,572616);
+  assert.equal(p.anchors.selectedBps,413);assert.equal(p.theoreticalPriceMinor,1386);
+  assert.deepEqual(p.grid.map(level=>level.priceMinor),[1316,1178,1039]);
+  assert.deepEqual(dividendPricingMarketComparison(p),{quoteUsable:true,estimateGapBps:2375,reachedBuyLevels:[1,2],sustainableYieldAtQuoteBps:511,largeDiscount:false});
+  assert.equal(dividendPricingPlan(p)?.sellLevels.length,4);
+});
+
+test('CATL historical cash omissions exclude that anchor and a large dividend-model gap stays explicit without fabricating higher buy prices', () => {
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-2026-10-23.json',import.meta.url),'utf8'));
+  const market=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-market-2026-10-23.json',import.meta.url),'utf8'));
+  const macro=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json',import.meta.url),'utf8'));
+  const asOf='2026-10-23', prices=dividendPricingPriceHistory(market.data,'sz300750',asOf), quote=prices.at(-1)!;
+  const treasury=parseDividendTreasury(macro.sources.treasury.data,asOf), opportunity=parseDividendOpportunityRows(macro.sources.opportunity.data,asOf);
+  const history=dividendPricingYieldHistory(prices.filter(price=>price.date.slice(0,7)<'2026-10'),f.sources.distribution.data,'300750',treasury);
+  assert.equal(history?.cashDistributionsComplete,false);
+  assert.ok(dividendPricingHistoryCoverage(history,asOf).reasons.includes('cash_distributions_incomplete'));
+  const p=calculateDividendPricing({code:'300750',name:'宁德时代',financialSector:false,asOf,method:defaultDividendPricingMethod(),
+    annuals:dividendPricingAnnuals(f.sources.financial.data,f.sources.cash.data,f.sources.distribution.data,'300750',asOf),
+    treasury,opportunity,history,priceMinor:quote.priceMinor,priceDate:quote.date});
+  assert.equal(p.anchors.historicalPercentileBps,undefined);
+  assert.equal(p.d1Micros,5898867);assert.equal(p.anchors.selectedBps,464);assert.equal(p.theoreticalPriceMinor,12713);
+  assert.deepEqual(p.grid.map(level=>level.priceMinor),[12077,10806,9534]);
+  assert.deepEqual(p.grid.map(level=>level.changeFromCurrentBps),[-4917,-5452,-5987]);
+  assert.equal(dividendPricingMarketComparison(p).largeDiscount,true);
+  assert.deepEqual(dividendPricingMarketComparison(p).reachedBuyLevels,[]);
+  assert.equal(dividendPricingPlan(p)?.sellLevels.length,4);
+});
 
 test('independent arithmetic: three-year recurring earnings, five-year payout and primary three-anchor price independent of Gordon/PB', () => {
   const p=calculateDividendPricing(input());

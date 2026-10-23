@@ -59,9 +59,9 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
     <span className={`div-ai-status ${stock.status}`}>{t(`div_ai_research_${stock.status}`)}</span>
     <button type="button" className="btn btn-secondary div-ai-research-toggle" disabled={busy} aria-expanded={!collapsed} aria-controls={`div-ai-stock-${stock.code}`} onClick={onToggle}>{t(collapsed ? 'div_ai_research_expand' : 'div_ai_research_collapse')}</button></header>
     <div id={`div-ai-stock-${stock.code}`} hidden={collapsed}>
-    <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
     {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
     <StockConclusion stock={stock} snapshot={snapshot} savedStock={savedStock} />
+    <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
     {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button></div>}
     {!canAdd && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
     <details className="div-ai-research-details"><summary>{t('div_ai_research_details')}</summary>
@@ -73,13 +73,13 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
         {check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
       </li>)}</ul></details>
       {stock.pricing && <DividendPricingCard code={stock.code} pricing={stock.pricing} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />}
-      <details><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
-      {stock.financial && <details><summary>{t('div_ai_research_financial')}</summary><p className="div-ai-muted">{stock.financial.sector}</p>
+      <details className="div-ai-evidence-section"><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
+      {stock.financial && <details className="div-ai-evidence-section"><summary>{t('div_ai_research_financial')}</summary><p className="div-ai-muted">{stock.financial.sector}</p>
         <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}>
           <strong>{period.reportDate}</strong><p>{t('div_ai_financial_period', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`, roe: period.roeBps === undefined ? '—' : `${period.roeBps / 100}%` })}</p>
           {period.noticeDate && <small>{t('div_ai_financial_published', { date: period.noticeDate })}</small>}
         </li>)}</ul></details>}
-      <details><summary>{t('div_ai_research_sources')}</summary><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
+      <details className="div-ai-evidence-section"><summary>{t('div_ai_research_sources')}</summary><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
         <a href={source.url} target="_blank" rel="noopener noreferrer">{source.provider} · {t(`div_ai_source_${source.kind}`)}</a><small>{source.asOf ?? new Date(source.fetchedAt).toLocaleDateString()}</small>
       </li>)}</ul>{stock.issues.length > 0 && <ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>
         {issue.attempts !== undefined && <span>{t('div_ai_issue_attempts', { count: issue.attempts })}</span>}

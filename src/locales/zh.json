@@ -1403,7 +1403,7 @@
   "settings_currency_rates": "本位币、汇率与金价",
   "settings_items_count": "{{count}} 项",
   "div_ai_eyebrow": "计划 × 行情 × 对话",
-  "div_ai_title": "红利助手",
+  "div_ai_title": "助手",
   "div_ai_provider": "模型服务商",
   "div_ai_model": "对话模型名称",
   "div_ai_model_presets": "常用模型",

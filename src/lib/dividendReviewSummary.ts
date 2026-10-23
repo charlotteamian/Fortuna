@@ -24,7 +24,7 @@ const pricingTopic: Record<DividendPricingBlocker, string> = {
   financial_sector_review: 'financial_sector', treasury_missing: 'treasury', treasury_stale: 'treasury',
   yield_history_missing: 'yield_history', capital_actions_unverified: 'yield_history', opportunity_cost_missing: 'opportunity', opportunity_cost_stale: 'opportunity',
   anchors_conflict: 'anchors', anchors_missing: 'anchors', growth_return_conflict: 'gordon', quote_missing: 'quote',
-  roe_bps_missing: 'pb_reference', annual_stale: 'report', dividend_continuity_missing: 'dividend_history', implausible_yield: 'valuation_scale',
+  roe_bps_missing: 'pb_reference', annual_stale: 'report', dividend_continuity_missing: 'dividend_history', implausible_yield: 'valuation_scale', pricing_calculation_stale: 'financial_evidence',
 };
 
 /** Count topics once while retaining every rule and pricing observation for the details. */

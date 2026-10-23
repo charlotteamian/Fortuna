@@ -162,6 +162,7 @@ export interface Settings {
   metalTxnMigrated?: boolean;         // legacy metal snapshot records converted to buy/sell deltas
   dividendBudgetMinor?: number; // CNY cents
   dividendWorkbenchInitialized?: boolean;
+  dividendHomeCollapsedCodes?: string[];
   dividendStrategy?: DividendStrategy;
   dividendFundPlan?: DividendFundPlan;
   dividendSelectionPrinciples?: DividendSelectionPrinciples;
