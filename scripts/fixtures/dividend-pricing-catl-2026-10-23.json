@@ -1,0 +1,400 @@
+{
+  "fetchedAt": "2026-10-23",
+  "note": "Public provider rows projected to the consumed fields, preserving nulls and missing 2021 distribution",
+  "sources": {
+    "financial": {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?columns=ALL&filter=%28SECURITY_CODE%3D%22300750%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1&reportName=RPT_F10_FINANCE_MAINFINADATA",
+      "data": {
+        "success": true,
+        "result": {
+          "data": [
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2025-12-31 00:00:00",
+              "NOTICE_DATE": "2026-03-10 00:00:00",
+              "EPSJB": 16.14,
+              "EPSKCJB": 14.42,
+              "ROEJQ": 24.91,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 72201282000
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2024-12-31 00:00:00",
+              "NOTICE_DATE": "2025-03-15 00:00:00",
+              "EPSJB": 11.58,
+              "EPSKCJB": 10.26,
+              "ROEJQ": 24.13,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 50744682000
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2023-12-31 00:00:00",
+              "NOTICE_DATE": "2024-03-16 00:00:00",
+              "EPSJB": 10.06,
+              "EPSKCJB": 10.7132,
+              "ROEJQ": 24.04,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 44121248000
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2022-12-31 00:00:00",
+              "NOTICE_DATE": "2023-03-10 00:00:00",
+              "EPSJB": 7.1766,
+              "EPSKCJB": 11.8601,
+              "ROEJQ": 24.67,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 30729163500
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2021-12-31 00:00:00",
+              "NOTICE_DATE": "2022-04-22 00:00:00",
+              "EPSJB": 6.876,
+              "EPSKCJB": 5.8017,
+              "ROEJQ": 21.52,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 15931317900
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2020-12-31 00:00:00",
+              "NOTICE_DATE": "2021-04-28 00:00:00",
+              "EPSJB": 2.4942,
+              "EPSKCJB": 1.9051,
+              "ROEJQ": 11.27,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 5583338700
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2019-12-31 00:00:00",
+              "NOTICE_DATE": "2020-04-25 00:00:00",
+              "EPSJB": 2.0937,
+              "EPSKCJB": 1.7975,
+              "ROEJQ": 12.78,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 4560307432.71
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2018-12-31 00:00:00",
+              "NOTICE_DATE": "2019-04-25 00:00:00",
+              "EPSJB": 1.6412,
+              "EPSKCJB": 1.5158,
+              "ROEJQ": 11.75,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 3387035207.64
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2017-12-31 00:00:00",
+              "NOTICE_DATE": "2018-03-12 00:00:00",
+              "EPSJB": 2.0084,
+              "EPSKCJB": 1.2304,
+              "ROEJQ": 18.99,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 3877954869.7
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2016-12-31 00:00:00",
+              "NOTICE_DATE": "2017-11-10 00:00:00",
+              "EPSJB": 1.8736,
+              "EPSKCJB": 1.8307,
+              "ROEJQ": 69.55,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 2851821419.26
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2015-12-31 00:00:00",
+              "NOTICE_DATE": "2017-11-10 00:00:00",
+              "EPSJB": 0.7755,
+              "EPSKCJB": 0.7334,
+              "ROEJQ": 130.37,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 930646375.1
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2014-12-31 00:00:00",
+              "NOTICE_DATE": "2017-11-10 00:00:00",
+              "EPSJB": null,
+              "EPSKCJB": null,
+              "ROEJQ": 23.72,
+              "TOTAL_SHARE": 4627249686,
+              "PARENTNETPROFIT": 54425751.28
+            }
+          ]
+        }
+      }
+    },
+    "cash": {
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?columns=ALL&filter=%28SECURITY_CODE%3D%22300750%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1&reportName=RPT_DMSK_FN_CASHFLOW",
+      "data": {
+        "success": true,
+        "result": {
+          "data": [
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2025-12-31 00:00:00",
+              "NOTICE_DATE": "2026-03-10 00:00:00",
+              "NETCASH_OPERATE": 133219982000,
+              "CONSTRUCT_LONG_ASSET": 42344558000
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2024-12-31 00:00:00",
+              "NOTICE_DATE": "2026-03-10 00:00:00",
+              "NETCASH_OPERATE": 96990345000,
+              "CONSTRUCT_LONG_ASSET": 31179943000
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2023-12-31 00:00:00",
+              "NOTICE_DATE": "2025-03-15 00:00:00",
+              "NETCASH_OPERATE": 92826124000,
+              "CONSTRUCT_LONG_ASSET": 33624897000
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2022-12-31 00:00:00",
+              "NOTICE_DATE": "2024-03-16 00:00:00",
+              "NETCASH_OPERATE": 61208843300,
+              "CONSTRUCT_LONG_ASSET": 48215268100
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2021-12-31 00:00:00",
+              "NOTICE_DATE": "2023-03-10 00:00:00",
+              "NETCASH_OPERATE": 42908008700,
+              "CONSTRUCT_LONG_ASSET": 43767770800
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2020-12-31 00:00:00",
+              "NOTICE_DATE": "2022-04-22 00:00:00",
+              "NETCASH_OPERATE": 18429902600,
+              "CONSTRUCT_LONG_ASSET": 13302355800
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2019-12-31 00:00:00",
+              "NOTICE_DATE": "2021-04-28 00:00:00",
+              "NETCASH_OPERATE": 13471954556.8,
+              "CONSTRUCT_LONG_ASSET": 9626986411.07
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2018-12-31 00:00:00",
+              "NOTICE_DATE": "2020-04-25 00:00:00",
+              "NETCASH_OPERATE": 11316265700.53,
+              "CONSTRUCT_LONG_ASSET": 6629274672.98
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2017-12-31 00:00:00",
+              "NOTICE_DATE": "2019-04-25 00:00:00",
+              "NETCASH_OPERATE": 2449210410.25,
+              "CONSTRUCT_LONG_ASSET": 7180281117.24
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2016-12-31 00:00:00",
+              "NOTICE_DATE": "2018-05-29 00:00:00",
+              "NETCASH_OPERATE": 2109126726.79,
+              "CONSTRUCT_LONG_ASSET": 2800818908.69
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2015-12-31 00:00:00",
+              "NOTICE_DATE": "2018-05-29 00:00:00",
+              "NETCASH_OPERATE": 664533984.01,
+              "CONSTRUCT_LONG_ASSET": 1553786649.12
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2014-12-31 00:00:00",
+              "NOTICE_DATE": "2017-11-10 00:00:00",
+              "NETCASH_OPERATE": -138904402.07,
+              "CONSTRUCT_LONG_ASSET": 300525204.81
+            }
+          ]
+        }
+      }
+    },
+    "distribution": {
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22300750%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "data": {
+        "success": true,
+        "result": {
+          "data": [
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2026-06-30 00:00:00",
+              "NOTICE_DATE": "2026-08-04 00:00:00",
+              "PLAN_NOTICE_DATE": "2026-03-10 00:00:00",
+              "EX_DIVIDEND_DATE": "2026-08-10 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 14.11,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 4626654919,
+              "IMPL_PLAN_PROFILE": "10派14.11元(含税,扣税后12.699元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2025-12-31 00:00:00",
+              "NOTICE_DATE": "2026-04-15 00:00:00",
+              "PLAN_NOTICE_DATE": "2026-03-10 00:00:00",
+              "EX_DIVIDEND_DATE": "2026-04-22 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 69.57,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 4564080128,
+              "IMPL_PLAN_PROFILE": "10派69.57元(含税,扣税后62.613元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2025-06-30 00:00:00",
+              "NOTICE_DATE": "2025-08-13 00:00:00",
+              "PLAN_NOTICE_DATE": "2025-07-31 00:00:00",
+              "EX_DIVIDEND_DATE": "2025-08-20 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 10.07,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 4559310331,
+              "IMPL_PLAN_PROFILE": "10派10.07元(含税,扣税后9.063元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2024-12-31 00:00:00",
+              "NOTICE_DATE": "2025-04-15 00:00:00",
+              "PLAN_NOTICE_DATE": "2025-03-15 00:00:00",
+              "EX_DIVIDEND_DATE": "2025-04-22 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 45.53,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 4403394911,
+              "IMPL_PLAN_PROFILE": "10派45.53元(含税,扣税后40.977元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2023-12-31 00:00:00",
+              "NOTICE_DATE": "2024-04-23 00:00:00",
+              "PLAN_NOTICE_DATE": "2024-03-16 00:00:00",
+              "EX_DIVIDEND_DATE": "2024-04-30 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 20.11,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 4399041236,
+              "IMPL_PLAN_PROFILE": "10派20.11元(含税,扣税后18.099元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2022-12-31 00:00:00",
+              "NOTICE_DATE": "2023-04-18 00:00:00",
+              "PLAN_NOTICE_DATE": "2023-03-10 00:00:00",
+              "EX_DIVIDEND_DATE": "2023-04-26 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 25.2,
+              "BONUS_RATIO": null,
+              "IT_RATIO": 8,
+              "TOTAL_SHARES": 2442384964,
+              "IMPL_PLAN_PROFILE": "10转8.00派25.20元(含税,扣税后22.68元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2022-06-30 00:00:00",
+              "NOTICE_DATE": "2022-09-21 00:00:00",
+              "PLAN_NOTICE_DATE": "2022-08-24 00:00:00",
+              "EX_DIVIDEND_DATE": "2022-09-28 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 6.528,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 2440471007,
+              "IMPL_PLAN_PROFILE": "10派6.528元(含税,扣税后5.8752元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2020-12-31 00:00:00",
+              "NOTICE_DATE": "2021-06-28 00:00:00",
+              "PLAN_NOTICE_DATE": "2021-04-28 00:00:00",
+              "EX_DIVIDEND_DATE": "2021-07-05 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 2.40048,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 2329007802,
+              "IMPL_PLAN_PROFILE": "10派2.40048元(含税,扣税后2.160432元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2019-12-31 00:00:00",
+              "NOTICE_DATE": "2020-05-28 00:00:00",
+              "PLAN_NOTICE_DATE": "2020-04-25 00:00:00",
+              "EX_DIVIDEND_DATE": "2020-06-04 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 2.201281,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 2207113780,
+              "IMPL_PLAN_PROFILE": "10派2.201281元(含税,扣税后1.981153元)"
+            },
+            {
+              "SECURITY_CODE": "300750",
+              "REPORT_DATE": "2018-12-31 00:00:00",
+              "NOTICE_DATE": "2019-07-16 00:00:00",
+              "PLAN_NOTICE_DATE": "2019-04-25 00:00:00",
+              "EX_DIVIDEND_DATE": "2019-07-22 00:00:00",
+              "ASSIGN_PROGRESS": "实施分配",
+              "PRETAX_BONUS_RMB": 1.42037,
+              "BONUS_RATIO": null,
+              "IT_RATIO": null,
+              "TOTAL_SHARES": 2194445000,
+              "IMPL_PLAN_PROFILE": "10派1.42037元(含税,扣税后1.278333元)"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "verifiedIssuerDocuments": [
+    {
+      "name": "2021年度不进行利润分配专项说明",
+      "url": "https://static.cninfo.com.cn/finalpage/2022-04-22/1213027685.PDF",
+      "pdfPages": "1",
+      "sha256": "797d7ab8fc5243d8282e45a06e2e230a831ecbe42db85ba759fcd1815e3492a5",
+      "bytes": 263387
+    },
+    {
+      "name": "2025年度利润分配公告（含2023、2024实际现金分红表）",
+      "url": "https://www.hkexnews.hk/listedco/listconews/sehk/2026/0310/2026031000015_c.pdf",
+      "pdfPages": "17、18",
+      "sha256": "90acfaf9917fb847ff37f8f6fe993908f6f045b1b08aaeddd6f7325fb109e733",
+      "bytes": 913729
+    },
+    {
+      "name": "2024年度报告（2023年度实际每10股50.28元）",
+      "url": "https://disc.static.szse.cn/download/disc/disk03/finalpage/2025-03-14/60f3502e-72d6-4b20-9f9f-026c73a57c83.PDF",
+      "pdfPages": "58",
+      "sha256": "b4f1713d7b821eb076c102711d177fe942ccc2bc8dd171ae5d7a95799a65b0ad",
+      "bytes": 2070073
+    },
+    {
+      "name": "2025半年报（2024两次实施每10股12.30、45.53元）",
+      "url": "https://static.sse.com.cn/disclosure/bond/announcement/company/c/new/2025-08-29/241526_20250829_3ZTB.pdf",
+      "pdfPages": "30",
+      "sha256": "94da19aaaf50205fa69d8afa9598262e1c785159c34c42f459bd1104fa14c46f",
+      "bytes": 1590151
+    }
+  ]
+}

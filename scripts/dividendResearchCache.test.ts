@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test, { after, beforeEach } from 'node:test';
 import Dexie from 'dexie';
 import { defaultDividendSelectionPrinciples, type DividendResearchSnapshot, type DividendStockResearch } from '../src/lib/dividendResearch.ts';
-import { closeDividendResearchCache, dividendResearchSnapshotForStock, loadDividendResearchCache,
+import { closeDividendResearchCache, dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache,
   saveDividendResearchCache, saveDividendResearchCollapse } from '../src/services/dividendResearchCacheService.ts';
 
 const stored = new Dexie('FortunaDividendResearchCache');
@@ -45,6 +45,44 @@ test('checking one stock retains all other checked stocks with their original da
   assert.deepEqual(dividendResearchSnapshotForStock(saved, '600036'), { ...original, stocks: [original.stocks[0]] });
   assert.deepEqual(dividendResearchSnapshotForStock(saved, '000333'), updated);
   assert.deepEqual(await loadDividendResearchCache(), saved);
+});
+
+test('plan results follow current membership while candidate results and refresh targets follow only the requested batch', async () => {
+  const original = await saveDividendResearchCache({ snapshot: snapshot(1000, [stock('600036'), stock('000333')]), scope: 'plan', candidateInput: '' });
+  assert.deepEqual(dividendResearchScopeStocks(original, ['000333']).map(value => value.code), ['000333'], 'deleted plan stocks must disappear immediately');
+  assert.deepEqual(dividendResearchScopeStocks(original, []).map(value => value.code), [], 'an empty plan must not restore historical/default stocks');
+  const plan = await saveDividendResearchCache({ snapshot: snapshot(2000, [stock('000333')]), scope: 'plan', candidateInput: '' });
+  assert.equal(plan.snapshot.stocks.length, 2, 'dated evidence may be retained without rejoining the plan');
+  const candidate = await saveDividendResearchCache({ snapshot: snapshot(3000, [stock('300750', '宁德时代')]), scope: 'candidates', candidateInput: '宁德时代' });
+  assert.deepEqual(candidate.reviewedCodes, ['300750']);
+  assert.deepEqual(dividendResearchScopeStocks(candidate, ['000333']).map(value => value.code), ['300750']);
+  const resumed = await saveDividendResearchCache({ snapshot: snapshot(4000, [stock('000333', 'reviewed')]), scope: candidate.scope,
+    candidateInput: candidate.candidateInput, reviewedCodes: candidate.reviewedCodes });
+  assert.deepEqual(dividendResearchScopeStocks(resumed, []).map(value => value.code), ['300750'], 'a single-stock follow-up must not expand the next candidate refresh');
+  const restored = (await loadDividendResearchCache())!;
+  assert.deepEqual(dividendResearchScopeStocks(restored, []).map(value => value.code), ['300750']);
+});
+
+test('legacy merged candidate caches restore only the most recently checked batch', async () => {
+  const old = snapshot(1000, [stock('600036')]), latest = snapshot(2000, [stock('300750')]);
+  await stored.table('results').put({ id: 'latest', snapshot: { ...latest, stocks: [...old.stocks, ...latest.stocks] },
+    scope: 'candidates', candidateInput: '宁德时代', stockContexts: { '600036': old, '300750': latest } });
+  const restored = (await loadDividendResearchCache())!;
+  assert.deepEqual(restored.reviewedCodes, ['300750']);
+  assert.deepEqual(dividendResearchScopeStocks(restored, []).map(value => value.code), ['300750']);
+  await assert.rejects(saveDividendResearchCache({ ...restored, reviewedCodes: ['invalid'] }), /INVALID_RESEARCH_CACHE/);
+});
+
+test('checking an empty plan switches away from candidates without restoring historical entries', async () => {
+  await save(snapshot(1000, [stock('300750', '宁德时代')]));
+  const emptyPlan = await saveDividendResearchCache({ snapshot: snapshot(2000, []), scope: 'plan', candidateInput: '宁德时代', reviewedCodes: [] });
+  assert.equal(emptyPlan.scope, 'plan');
+  assert.deepEqual(emptyPlan.reviewedCodes, []);
+  assert.deepEqual(dividendResearchScopeStocks(emptyPlan, []), []);
+  const restored = (await loadDividendResearchCache())!;
+  assert.equal(restored.scope, 'plan');
+  assert.deepEqual(dividendResearchScopeStocks(restored, []), []);
+  assert.deepEqual(dividendResearchSnapshotForStock(restored, '300750').stocks.map(value => value.code), ['300750'], 'research evidence remains available without joining the empty plan');
 });
 
 test('out-of-order reviews merge by each stock date instead of a single global batch date', async () => {

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { liveQuery } from 'dexie';
 import { useTranslation } from 'react-i18next';
 import { db } from '../db';
 import { defaultDividendSelectionPrinciples, isDividendSelectionPrinciples,
   type DividendResearchSnapshot, type DividendSelectionPrinciples, type DividendStockResearch, type DividendTechnicalResearch } from '../lib/dividendResearch';
-import { fetchDividendResearch, defaultDividendResearchCandidates } from '../services/dividendResearchService';
+import { fetchDividendResearch } from '../services/dividendResearchService';
 import { addDividendResearchCandidate, loadDividendSelectionPrinciples, previewDividendRiskRemoval,
   removeDividendRiskStocks, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } from '../services/dividendAdvisorActionsService';
 import type { DividendPricingMethod } from '../lib/dividendPricing';
@@ -11,7 +12,7 @@ import type { DividendStock } from '../lib/dividendWorkbench';
 import { DividendFinancialReviewCard, DividendPricingCard, DividendPricingEditor } from './DividendAdvisorPricing';
 import { dividendResearchAdvice } from '../lib/dividendResearchAdvice';
 import { DividendCandidateError, resolveDividendCandidates } from '../services/dividendCandidateService';
-import { dividendResearchSnapshotForStock, loadDividendResearchCache, saveDividendResearchCache, saveDividendResearchCollapse, type SavedDividendResearch } from '../services/dividendResearchCacheService';
+import { dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache, saveDividendResearchCache, saveDividendResearchCollapse, type SavedDividendResearch } from '../services/dividendResearchCacheService';
 import DividendAdvisorResumeReview from './DividendAdvisorResumeReview';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendReviewSummary } from '../lib/dividendReviewSummary';
@@ -61,6 +62,7 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
     <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
     {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
     <StockConclusion stock={stock} snapshot={snapshot} savedStock={savedStock} />
+    {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button></div>}
     {!canAdd && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
     <details className="div-ai-research-details"><summary>{t('div_ai_research_details')}</summary>
     <div className="div-ai-research-card-body">{stock.financial?.sectorReview && <DividendFinancialReviewCard code={stock.code} review={stock.financial.sectorReview} />}<details><summary>{t('div_ai_research_rules')}</summary>
@@ -89,8 +91,7 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
         <a href={`https://data.eastmoney.com/stockdata/${stock.code}.html`} target="_blank" rel="noopener noreferrer">{t('div_ai_open_financial_source')}</a>
         <a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>
       </div></div>}
-      <div className="div-actions"><button type="button" className="btn btn-primary" disabled={busy} onClick={onDiscuss}>{t('div_ai_discuss_stock')}</button>
-        {canAdd && <button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button>}</div>
+      <div className="div-actions"><button type="button" className="btn btn-primary" disabled={busy} onClick={onDiscuss}>{t('div_ai_discuss_stock')}</button></div>
     </div></details></div></article>;
 }
 
@@ -106,9 +107,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
   const busy = working || disabled;
   const [savedResearch, setSavedResearch] = useState<SavedDividendResearch | null>(null);
   const snapshot = savedResearch?.snapshot ?? null;
-  const [scope, setScope] = useState<'plan' | 'candidates'>('plan');
   const [codes, setCodes] = useState('');
-  const [configuredCodes, setConfiguredCodes] = useState<string[]>([]);
   const [configuredStocks, setConfiguredStocks] = useState<DividendStock[]>([]);
   const [removal, setRemoval] = useState<RemovalPreview | null>(null);
   const [error, setError] = useState('');
@@ -118,11 +117,12 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
   const lock = useRef(false);
 
   useEffect(() => {
-    let active = true;
-    void db.dividendStocks.toArray().then(stocks => { if (active) setConfiguredStocks(stocks); })
-      .catch(() => { if (active) setError(t('div_ai_error_storage')); });
-    return () => { active = false; };
-  }, [activePanel, t]);
+    const subscription = liveQuery(() => db.dividendStocks.toArray()).subscribe({
+      next: stocks => setConfiguredStocks(stocks),
+      error: () => setError(t('div_ai_error_storage')),
+    });
+    return () => subscription.unsubscribe();
+  }, [t]);
 
   useEffect(() => {
     let active = true; mounted.current = true;
@@ -130,7 +130,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
       if (active) setError(t('div_ai_error_storage')); return null;
     })]).then(([value, method, saved]) => { if (active) {
       setPrinciples(value); setPricingMethod(method); setReady(true);
-      if (saved) { setSavedResearch(saved); setScope(saved.scope); setCodes(saved.candidateInput); setRestored(true); }
+      if (saved) { setSavedResearch(saved); setCodes(saved.candidateInput); setRestored(true); }
     } })
       .catch(() => { if (active) setError(t('div_ai_error_storage')); });
     return () => { active = false; mounted.current = false; };
@@ -148,19 +148,27 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
   const notifyUpdated = async () => {
     await onUpdated();
     const current = await db.dividendStocks.toArray();
-    if (mounted.current) { setConfiguredStocks(current); setConfiguredCodes(current.map(stock => stock.code)); }
+    if (mounted.current) setConfiguredStocks(current);
   };
-  const research = (selected: 'plan' | 'candidates') => void run(async () => {
+  const research = (selected: 'plan' | 'candidates', repeatLast = false) => void run(async () => {
     const current = await db.dividendStocks.toArray();
-    const stocks = selected === 'plan' ? current.map(({ code, name }) => ({ code, name })) : codes.trim()
-      ? await resolveDividendCandidates(codes, [...current, ...defaultDividendResearchCandidates()]) : defaultDividendResearchCandidates();
-    if (!stocks.length) { setNotice(t('div_ai_research_no_stocks')); return; }
+    const stocks = selected === 'plan' ? current.map(({ code, name }) => ({ code, name }))
+      : repeatLast && savedResearch ? dividendResearchScopeStocks(savedResearch, []).map(({ code, name }) => ({ code, name }))
+      : await resolveDividendCandidates(codes, [...current, ...(snapshot?.stocks ?? [])]);
     setRemoval(null);
-    const value = await fetchDividendResearch(stocks, principles, { ...(pricingMethod ? { pricingMethod } : {}) });
+    // Selecting an empty plan must also leave the previous candidate view. Save
+    // its empty scope without downloading or treating archived evidence as targets.
+    const value: DividendResearchSnapshot = stocks.length
+      ? await fetchDividendResearch(stocks, principles, { ...(pricingMethod ? { pricingMethod } : {}) })
+      : { generatedAt: Date.now(), principles, indices: [], stocks: [], ...(pricingMethod ? { pricingMethod } : {}) };
     // Finish saving even when navigation unmounts this screen during the download.
     try {
-      const saved = await saveDividendResearchCache({ snapshot: value, scope: selected, candidateInput: codes });
-      if (mounted.current) { setSavedResearch(saved); setScope(saved.scope); setRestored(false); setConfiguredStocks(current); setConfiguredCodes(current.map(stock => stock.code)); }
+      const saved = await saveDividendResearchCache({ snapshot: value, scope: selected, candidateInput: repeatLast ? savedResearch?.candidateInput ?? codes : codes,
+        reviewedCodes: stocks.map(stock => stock.code) });
+      const latestStocks = await db.dividendStocks.toArray();
+      if (mounted.current) {
+        setSavedResearch(saved); setRestored(false); setConfiguredStocks(latestStocks);
+      }
     }
     catch { throw new Error('RESEARCH_CACHE_SAVE_FAILED'); }
   });
@@ -172,16 +180,18 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
     await saveDividendSelectionPrinciples(value);
     if (mounted.current) { setPrinciples(value); setDraft(null); setNotesDraft(null); setRemoval(null); setNotice(t('div_ai_principles_saved')); }
   });
-  const riskCodes = snapshot?.stocks.filter(stock => (configuredCodes.includes(stock.code) || configuredStocks.some(current => current.code === stock.code))
-    && stock.checks.some(check => check.status === 'risk')).map(stock => stock.code) ?? [];
+  const visibleStocks = savedResearch ? dividendResearchScopeStocks(savedResearch, configuredStocks.map(stock => stock.code)) : [];
+  const riskCodes = visibleStocks.filter(stock => configuredStocks.some(current => current.code === stock.code)
+    && stock.checks.some(check => check.status === 'risk')).map(stock => stock.code);
   const isOutdated = (value: DividendResearchSnapshot) => JSON.stringify(value.principles) !== JSON.stringify(principles)
     || JSON.stringify(value.pricingMethod) !== JSON.stringify(pricingMethod)
     || dateInChina(new Date(value.generatedAt)) !== dateInChina();
-  const outdated = !!savedResearch && savedResearch.snapshot.stocks.some(stock => isOutdated(dividendResearchSnapshotForStock(savedResearch, stock.code)));
+  const outdated = !!savedResearch && visibleStocks.some(stock => isOutdated(dividendResearchSnapshotForStock(savedResearch, stock.code)));
   const onResearchUpdated = async (value: DividendResearchSnapshot) => {
     const current = await db.dividendStocks.toArray();
-    const saved = await saveDividendResearchCache({ snapshot: value, scope, candidateInput: codes });
-    if (mounted.current) { setSavedResearch(saved); setRestored(false); setConfiguredStocks(current); setConfiguredCodes(current.map(stock => stock.code)); }
+    const saved = await saveDividendResearchCache({ snapshot: value, scope: savedResearch?.scope ?? 'plan', candidateInput: savedResearch?.candidateInput ?? codes,
+      reviewedCodes: savedResearch?.reviewedCodes });
+    if (mounted.current) { setSavedResearch(saved); setRestored(false); setConfiguredStocks(current); }
   };
   const toggleStock = (code: string) => void run(async () => {
     const collapsed = !savedResearch?.collapsedCodes?.includes(code);
@@ -210,18 +220,21 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
       <details className="div-ai-candidate-search"><summary>{t('div_ai_screen_candidates')}</summary><label htmlFor="div-ai-candidates">{t('div_ai_candidate_codes')}</label>
         <textarea className="form-input" id="div-ai-candidates" value={codes} rows={2} maxLength={400} disabled={busy}
           placeholder={t('div_ai_candidate_placeholder')} onChange={event => setCodes(event.target.value)} />
-        <button type="button" className="btn btn-secondary" disabled={!ready || busy} onClick={() => research('candidates')}>{t('div_ai_screen_candidates')}</button></details>
+        <p className="div-ai-muted">{t('div_ai_candidate_review_only')}</p>
+        <button type="button" className="btn btn-secondary" disabled={!ready || busy || !codes.trim()} onClick={() => research('candidates')}>{t('div_ai_screen_candidates')}</button></details>
       {working && <p className="div-advisor-status" role="status">{t('div_ai_research_loading')}</p>}
       {snapshot && !amountVisible && <p className="div-advisor-hidden">{t('div_ai_reading_hidden')}</p>}
-      {snapshot && amountVisible && <div className="div-ai-research-results"><p className="div-ai-muted">{t('div_ai_research_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
+      {snapshot && amountVisible && <div className="div-ai-research-results">{visibleStocks.length > 0 && <p className="div-ai-muted">{t('div_ai_research_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>}
+        <p className="div-ai-muted">{t(savedResearch?.scope === 'candidates' ? 'div_ai_research_candidate_results' : 'div_ai_research_plan_results')}</p>
         {restored && <p className="div-ai-muted">{t('div_ai_research_restored')}</p>}
         {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
-        <button type="button" className="btn btn-secondary" disabled={!ready || busy} onClick={() => research(scope)}>{t('div_ai_refresh_last_check')}</button>
-        {snapshot.stocks.map(stock => {
+        <button type="button" className="btn btn-secondary" disabled={!ready || busy} onClick={() => research(savedResearch!.scope, true)}>{t(savedResearch?.scope === 'candidates' ? 'div_ai_refresh_candidates' : 'div_ai_refresh_plan')}</button>
+        {!visibleStocks.length && <p className="div-ai-muted">{t('div_ai_research_no_stocks')}</p>}
+        {visibleStocks.map(stock => {
           const stockSnapshot = dividendResearchSnapshotForStock(savedResearch!, stock.code);
-          return <StockResearch key={stock.code} stock={stock} snapshot={stockSnapshot} onUpdated={notifyUpdated} onResearchUpdated={onResearchUpdated} savedStock={configuredStocks.find(current => current.code === stock.code)} canAdd={!configuredStocks.some(current => current.code === stock.code) && !configuredCodes.includes(stock.code)} busy={busy} outdated={isOutdated(stockSnapshot)} collapsed={savedResearch?.collapsedCodes?.includes(stock.code) ?? false} onToggle={() => toggleStock(stock.code)} onDiscuss={() => onDiscuss(stock, stockSnapshot)} onAdd={() => void run(async () => {
-          await addDividendResearchCandidate(stock.code, stock.name); await onUpdated();
-          if (mounted.current) { setConfiguredCodes(current => [...current, stock.code]); setNotice(t('div_ai_added_watch')); }
+          return <StockResearch key={stock.code} stock={stock} snapshot={stockSnapshot} onUpdated={notifyUpdated} onResearchUpdated={onResearchUpdated} savedStock={configuredStocks.find(current => current.code === stock.code)} canAdd={!configuredStocks.some(current => current.code === stock.code)} busy={busy} outdated={isOutdated(stockSnapshot)} collapsed={savedResearch?.collapsedCodes?.includes(stock.code) ?? false} onToggle={() => toggleStock(stock.code)} onDiscuss={() => onDiscuss(stock, stockSnapshot)} onAdd={() => void run(async () => {
+          await addDividendResearchCandidate(stock.code, stock.name); await notifyUpdated();
+          if (mounted.current) setNotice(t('div_ai_added_watch'));
         })} />; })}
         {riskCodes.length > 0 && <div className="div-ai-removal"><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void run(async () => {
           const preview = await previewDividendRiskRemoval(riskCodes); if (mounted.current) setRemoval(preview);
@@ -233,7 +246,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
             <div className="div-actions">{removal.removable.length > 0 && <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void run(async () => {
               const result = await removeDividendRiskStocks(removal.removable.map(stock => stock.code)); await onUpdated();
               const current = await db.dividendStocks.toArray();
-              if (mounted.current) { setRemoval(null); setConfiguredStocks(current); setConfiguredCodes(current.map(stock => stock.code)); setNotice(t('div_ai_removed', { count: result.removable.length })); }
+              if (mounted.current) { setRemoval(null); setConfiguredStocks(current); setNotice(t('div_ai_removed', { count: result.removable.length })); }
             })}>{t('div_ai_remove_confirm', { count: removal.removable.length })}</button>}
               <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setRemoval(null)}>{t('cancel')}</button></div>
           </div>}

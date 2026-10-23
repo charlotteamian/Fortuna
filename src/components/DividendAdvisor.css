@@ -101,6 +101,7 @@
 .div-ai-research-card > header > span:first-child { flex: 1; min-width: 0; }
 .div-ai-research-card > header strong { font-size: 14px; overflow-wrap: anywhere; }
 .div-ai-research-card > header small { margin-left: 8px; color: var(--text-muted); font-size: 11px; }
+.div-ai-research-card > div > .div-actions { margin: 0 15px 12px; }
 .div-ai-research-details > summary { margin: 0 15px; padding: 10px 0 14px; }
 .div-ai-conclusion { margin: 0 15px 12px; padding: 13px; border-radius: 10px; background: color-mix(in srgb, var(--asset-color) 7%, var(--bg-card)); line-height: 1.75; }
 .div-ai-conclusion h3 { margin: 4px 0 7px; font-size: 15px; }

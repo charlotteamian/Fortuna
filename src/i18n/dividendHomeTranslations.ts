@@ -1,5 +1,7 @@
 export const dividendHomeZh = {
   div_v2_management_intro: '在这里调整股票、预算、网格和基金策略；红利首页直接查看各股计划与执行状态。',
+  div_unfunded_stocks: '未分配资金的股票 · {{count}}',
+  div_no_funded_plans: '暂无已分配资金的股票计划。可在下方编辑股票，设置预算和占比。',
   div_home_plan: '当前计划',
   div_home_plan_calculation: '股数计算说明',
   div_home_edit_plan: '调整计划',
@@ -30,6 +32,8 @@ export const dividendHomeZh = {
 
 export const dividendHomeEn: Record<keyof typeof dividendHomeZh, string> = {
   div_v2_management_intro: 'Manage stocks, budgets, grids and fund strategies here. Each stock’s plan and execution status are visible on the overview.',
+  div_unfunded_stocks: 'Stocks without an allocation · {{count}}',
+  div_no_funded_plans: 'No stocks have an allocated budget yet. Edit a stock below and set the budget and weight.',
   div_home_plan: 'Current plan',
   div_home_plan_calculation: 'How quantities are calculated',
   div_home_edit_plan: 'Edit plan',

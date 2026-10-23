@@ -42,12 +42,15 @@ export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: 
   };
   const funds = plan.funds.filter(fund => `${fund.name} ${fund.code ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => b.weightBps - a.weightBps || a.name.localeCompare(b.name));
   return <>
-    <section className="div-hero">
-      <div className="div-overview">
-        <div className="div-estimate"><span>{t('df_planned_budget')}</span><strong>{plan.budgetMinor === undefined ? '—' : money(plan.budgetMinor)}</strong><small>{t('div_allocation_short', { percent: number(allocation.totalWeightBps / 100) })}</small></div>
-        <div className="div-estimate df-mode-summary"><span>{t('df_mode')}</span><strong>{t(`df_mode_${plan.mode}`)}</strong></div>
-      </div>
-      {plan.mode === 'rebalance' && <div className="div-budget-line"><span>{t('df_equity_budget')} <strong>{money(allocation.fundBudgetMinor)}</strong></span><span>{t('df_bond_budget')} <strong>{money(allocation.bondBudgetMinor)}</strong></span></div>}
+    <section className="div-hero df-plan-hero">
+      <dl className="df-plan-summary">
+        <div className="df-budget-summary"><dt>{t('df_planned_budget')}</dt><dd><span>{plan.budgetMinor === undefined ? '—' : money(plan.budgetMinor)}</span><small>{t('div_allocation_short', { percent: number(allocation.totalWeightBps / 100) })}</small></dd></div>
+        <div className="df-mode-summary"><dt>{t('df_mode')}</dt><dd>{t(`df_mode_${plan.mode}`)}</dd></div>
+        {plan.mode === 'rebalance' && <>
+          <div className="df-summary-amount"><dt>{t('df_equity_budget')}</dt><dd>{money(allocation.fundBudgetMinor)}</dd></div>
+          <div className="df-summary-amount"><dt>{t('df_bond_budget')}</dt><dd>{money(allocation.bondBudgetMinor)}</dd></div>
+        </>}
+      </dl>
       <details className="div-details div-plan-details df-plan-settings"><summary>{t(plan.budgetMinor === undefined ? 'df_setup_plan' : 'df_edit_plan')}</summary><form onSubmit={event => void persist(event)} className="div-budget df-config">
         <fieldset disabled={saving}>
           <div className="div-form-fields">

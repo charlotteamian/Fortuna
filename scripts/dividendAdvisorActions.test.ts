@@ -28,7 +28,8 @@ const { db, initializeSettings, updateSettings, exportData, importData, exportTo
 const { isDividendPlanProposal, parseDividendAdvisorActions } = await import('../src/lib/dividendAdvisorActions.ts');
 const { defaultDividendSelectionPrinciples } = await import('../src/lib/dividendResearch.ts');
 const { previewDividendPlanChange, applyDividendPlanChange, previewDividendRiskRemoval, removeDividendRiskStocks,
-  loadDividendSelectionPrinciples, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } = await import('../src/services/dividendAdvisorActionsService.ts');
+  addDividendResearchCandidate, loadDividendSelectionPrinciples, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } = await import('../src/services/dividendAdvisorActionsService.ts');
+const { saveDividendResearchCache, closeDividendResearchCache } = await import('../src/services/dividendResearchCacheService.ts');
 
 function stock(code = '601398', updates: Partial<DividendStock> = {}): DividendStock {
   return { code, name: `Stock ${code}`, group: 'watch', weightBps: 2500, shareMode: 'linked', manualShares: 0, lotSize: 100,
@@ -61,7 +62,26 @@ beforeEach(async () => {
   await updateSettings({ dividendBudgetMinor: 40000000, dividendStrategy: 'stocks' });
   await db.dividendStocks.bulkAdd([stock(), stock('600036', { weightBps: 1500 }), stock('600900', { group: 'hidden', weightBps: 0 })]);
 });
-after(() => db.close());
+after(() => { db.close(); closeDividendResearchCache(); });
+
+test('screening and saving a new candidate preserve the ledger until explicit portfolio addition', async () => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  const before = await state();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('offline candidate fixture'); };
+  try {
+    const snapshot = await fetchDividendResearch([{ code: '300750', name: '宁德时代' }], defaultDividendSelectionPrinciples());
+    await saveDividendResearchCache({ snapshot, scope: 'candidates', candidateInput: '宁德时代', reviewedCodes: ['300750'] });
+    assert.deepEqual(await state(), before, 'reviewing a candidate must not add or change any plan or holding');
+    await addDividendResearchCandidate('300750', '宁德时代');
+    const added = await db.dividendStocks.get('300750');
+    assert.equal(added?.weightBps, 0, 'an explicit addition still requires the user to allocate funds');
+    assert.equal(added?.manualShares, 0);
+    assert.deepEqual(await state(), { ...before, dividendStocks: await db.dividendStocks.toArray() });
+    await assert.rejects(addDividendResearchCandidate('300750', '宁德时代'), /DIVIDEND_CANDIDATE_EXISTS/);
+    assert.deepEqual(await db.dividendStocks.get('300750'), added);
+  } finally { globalThis.fetch = originalFetch; }
+});
 
 test('action parsing only admits saved stocks once and rebuilds the grid contract without arbitrary model fields', () => {
   const draft = { ...proposal(), weightBps: 10000, manualShares: 99999,

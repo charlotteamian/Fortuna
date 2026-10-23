@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUY_LEVELS, buildDividendHomePlan, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
+import { BUY_LEVELS, buildDividendHomePlan, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, fundedDividendStocks, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
 import { repairPlanReferences } from '../src/lib/planReferences.ts';
 import type { Account, Holding, HoldingTxn, PlanItem, PlanTarget } from '../src/db.ts';
 const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, NOTICE_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
@@ -67,6 +67,19 @@ test('home ordering places holdings before core and watch, with stable group, al
   assert.equal(rows[0].code, '601398', 'the saved array is not mutated');
   const weighted = sortDividendStocks([{ ...rows[0], group: 'core', manualShares: 0, weightBps: 100 }, { ...rows[1], group: 'core', shareMode: 'manual', manualShares: 0, weightBps: 500 }], () => 0);
   assert.equal(weighted[0].weightBps, 500);
+});
+
+test('execution lists exclude zero funded stocks without dropping saved management records', () => {
+  const stocks = defaultDividendStocks();
+  const codes = stocks.map(stock => stock.code);
+  const funded = fundedDividendStocks(stocks, 1000000);
+  assert.equal(funded.length, stocks.filter(stock => stock.weightBps > 0).length);
+  assert.ok(funded.every(stock => stockBudgetMinor(1000000, stock.weightBps) > 0));
+  assert.ok(funded.some(stock => stock.group === 'hidden'), 'a funded hidden stock remains editable in the plan');
+  assert.deepEqual(fundedDividendStocks(stocks, undefined), []);
+  assert.deepEqual(fundedDividendStocks(stocks, 0), []);
+  assert.deepEqual(fundedDividendStocks([{ ...stocks[0], weightBps: 1 }], 1), [], 'rounding to zero minor units is unfunded');
+  assert.deepEqual(stocks.map(stock => stock.code), codes, 'the saved zero weight records are retained');
 });
 
 test('home plan retains every saved level and calculates additions after existing holdings, using integer lots', () => {

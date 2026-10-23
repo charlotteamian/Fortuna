@@ -6,6 +6,7 @@ export interface SavedDividendResearch {
   snapshot: DividendResearchSnapshot;
   scope: 'plan' | 'candidates';
   candidateInput: string;
+  reviewedCodes?: string[];
   stockContexts?: Record<string, Omit<DividendResearchSnapshot, 'stocks'>>;
   collapsedCodes?: string[];
 }
@@ -29,7 +30,9 @@ function valid(value: SavedDividendResearch): boolean {
     && (value.stockContexts === undefined || (!!value.stockContexts && typeof value.stockContexts === 'object'
       && Object.entries(value.stockContexts).every(([code, context]) => mainlandCode(code) === code && validContext(context))))
     && (value.collapsedCodes === undefined || (Array.isArray(value.collapsedCodes)
-      && value.collapsedCodes.every(code => typeof code === 'string' && mainlandCode(code) === code)));
+      && value.collapsedCodes.every(code => typeof code === 'string' && mainlandCode(code) === code)))
+    && (value.reviewedCodes === undefined || (Array.isArray(value.reviewedCodes)
+      && value.reviewedCodes.every(code => typeof code === 'string' && mainlandCode(code) === code)));
 }
 
 function contextOf(snapshot: Omit<DividendResearchSnapshot, 'stocks'>): Omit<DividendResearchSnapshot, 'stocks'> {
@@ -38,14 +41,28 @@ function contextOf(snapshot: Omit<DividendResearchSnapshot, 'stocks'>): Omit<Div
     ...(snapshot.macro ? { macro: snapshot.macro } : {}), ...(snapshot.opportunity ? { opportunity: snapshot.opportunity } : {}) };
 }
 
+function reviewedCodes(value: SavedDividendResearch) {
+  // Older caches merged history into the latest snapshot. Each stock's own date
+  // identifies the last requested batch without treating that history as a plan.
+  return [...new Set(value.reviewedCodes ?? value.snapshot.stocks.filter(stock =>
+    (value.stockContexts?.[stock.code] ?? value.snapshot).generatedAt === value.snapshot.generatedAt).map(stock => stock.code))];
+}
+
 function cleanResearch(value: SavedDividendResearch): SavedDividendResearch {
   return JSON.parse(JSON.stringify({ snapshot: value.snapshot, scope: value.scope, candidateInput: value.candidateInput,
+    reviewedCodes: reviewedCodes(value),
     stockContexts: Object.fromEntries(value.snapshot.stocks.map(stock => [stock.code, contextOf(value.stockContexts?.[stock.code] ?? value.snapshot)])),
     collapsedCodes: [...new Set(value.collapsedCodes ?? [])].filter(code => value.snapshot.stocks.some(stock => stock.code === code)) }));
 }
 
 export function dividendResearchSnapshotForStock(value: SavedDividendResearch, code: string): DividendResearchSnapshot {
   return { ...contextOf(value.stockContexts?.[code] ?? value.snapshot), stocks: value.snapshot.stocks.filter(stock => stock.code === code) };
+}
+
+/** History stays available for evidence, but never becomes membership or a refresh target. */
+export function dividendResearchScopeStocks(value: SavedDividendResearch, configuredCodes: readonly string[]) {
+  const codes = new Set(value.scope === 'plan' ? configuredCodes : reviewedCodes(value));
+  return value.snapshot.stocks.filter(stock => codes.has(stock.code));
 }
 
 function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDividendResearch): SavedDividendResearch {

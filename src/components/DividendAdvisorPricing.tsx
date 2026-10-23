@@ -167,6 +167,17 @@ export function DividendPricingCard({ code, pricing, disabled, onUpdated }: { co
       <p>{pricing.fcfDividendCapMicros === undefined ? t('div_v2_pricing_tax_chain', { tax: pct(pricing.taxBps) })
         : t('div_v2_pricing_fcf_chain', { earnings: yuan(pricing.earningsDividendMicros, 1e6), cap: yuan(pricing.fcfDividendCapMicros, 1e6), tax: pct(pricing.taxBps) })}</p>
       <strong>D₁ {yuan(pricing.d1Micros, 1e6)}</strong>
+      <details><summary>{t('div_v2_pricing_payout_evidence')}</summary>
+        <p>{t('div_v2_pricing_payout_method')}</p>
+        <ul>{pricing.annuals.slice(0,5).map(year => <li key={year.year}>
+          {t('div_v2_pricing_payout_year', { year:year.year, payout:pct(year.payoutBps) })}
+          <small> · {t(year.reportEvidence?.basis === 'reported_no_dividend' ? 'div_v2_pricing_payout_zero'
+            : year.reportEvidence ? 'div_v2_pricing_payout_report' : year.payoutBasis === 'reported_cash_over_profit'
+              ? 'div_v2_pricing_payout_source_cash' : year.payoutBps === undefined ? 'div_v2_pricing_payout_missing' : 'div_v2_pricing_payout_source_eps')}</small>
+          {year.reportEvidence && <><p>{t('div_v2_pricing_payout_verified', { date:year.reportEvidence.publishedAt, verified:year.reportEvidence.verifiedAt })}</p>
+            {year.reportEvidence.sources.map((source,index) => <a key={source.url} href={`${source.url}#page=${source.pdfPages[0]}`} target="_blank" rel="noopener noreferrer">{t('div_v2_pricing_payout_source', { index:index+1 })} </a>)}</>}
+        </li>)}</ul>
+      </details>
       {pricing.fcfCapApplied && <p>{t('div_v2_pricing_gap_fcf_dividend_capped')}</p>}
       {!!pricing.fcfEvidence?.length && <details><summary>{t('div_v2_pricing_fcf_evidence')}</summary><ul>{pricing.fcfEvidence.map(year => <li key={year.year}>
         {t('div_v2_pricing_fcf_year', { year: year.year, cash: yuan(year.fcfPerShareMicros, 1e6), cap: yuan(year.dividendCapMicros, 1e6) })}

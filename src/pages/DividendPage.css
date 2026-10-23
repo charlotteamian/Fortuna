@@ -15,11 +15,21 @@
 .df-plan-settings .div-budget { margin-top: .5rem; padding-top: .5rem; }
 .df-fund-list { margin-top: 1rem; }
 .div-hero { border: 1px solid var(--border); background: linear-gradient(130deg, var(--asset-dim), var(--bg-card)); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; }
-.div-overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
 .div-estimate { display: flex; flex-direction: column; gap: .35rem; }
 .div-estimate > span { font-size: .75rem; color: var(--text-secondary); }
 .div-estimate > strong { font-size: clamp(1.15rem, 4.8vw, 1.7rem); font-variant-numeric: tabular-nums; color: var(--asset-color); overflow-wrap: anywhere; }
-.df-mode-summary > strong { font-size: 1.05rem; line-height: 1.65; }
+.df-plan-summary { display: grid; gap: .7rem; margin: 0; font-size: .8rem; line-height: 1.6; }
+.df-plan-summary > div { min-width: 0; }
+.df-plan-summary dt { color: var(--text-secondary); }
+.df-plan-summary dd { margin: 0; font-weight: 400; }
+.df-budget-summary { display: grid; gap: .25rem; }
+.df-budget-summary dd { display: grid; gap: .2rem; }
+.df-budget-summary dd > span { color: var(--asset-color); font-size: 1.35rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.df-budget-summary small { color: var(--text-secondary); font-size: .75rem; }
+.df-mode-summary { display: grid; gap: .2rem; padding-top: .7rem; border-top: 1px solid var(--border); }
+.df-summary-amount { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: .5rem 1rem; }
+.df-summary-amount dd { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.df-fund-list .div-budget-line strong, .df-fund-list .div-metrics strong { font-weight: 400; font-size: 1rem; }
 .div-estimate > small, .div-muted { color: var(--text-secondary); font-size: .78rem; line-height: 1.65; }
 .div-budget { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .div-budget label { display: block; margin-bottom: .5rem; font-size: .9rem; }
@@ -94,10 +104,10 @@
 .div-delete-preview { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
 .div-allocation-preview { margin: .75rem 0 1rem; }
 .div-allocation-result { margin: 1rem 0; padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
-.div-allocation-preview table { table-layout: fixed; }
-.div-allocation-preview th:first-child { width: 30%; }
-.div-allocation-preview th:nth-child(2), .div-allocation-preview th:nth-child(3) { width: 18%; }
-.div-allocation-preview td { overflow-wrap: anywhere; }
+.div-allocation-preview table { table-layout: auto; }
+.div-allocation-preview th:first-child { width: 34%; }
+.div-allocation-preview td { overflow-wrap: normal; }
+.div-allocation-preview td:not(:first-child) { white-space: nowrap; }
 .div-allocation-preview caption { text-align: left; font-weight: 600; padding: .5rem 0; }
 .div-allocation-preview th:first-child, .div-allocation-preview td:first-child { text-align: left; }
 .div-preview-code { display: block; font-size: .65rem; color: var(--text-secondary); }
@@ -160,6 +170,14 @@
 .div-plan-manager-list > details { padding: .7rem .65rem; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-card); }
 .div-plan-manager-list > details > summary { display: flex; flex-wrap: wrap; gap: .35rem .6rem; font-size: .8rem; cursor: pointer; }
 .div-plan-manager-list > details > summary > span { color: var(--text-secondary); font-size: .7rem; }
+.div-plan-manager .div-budget-line strong { font-weight: 400; }
+.div-unfunded-stocks { margin-top: 1rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.div-unfunded-stocks > summary { cursor: pointer; color: var(--text-secondary); font-size: .75rem; }
+.div-unfunded-stock-list { display: grid; gap: .4rem; margin-top: .5rem; }
+.div-unfunded-stock-list > div { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--border); font-size: .8rem; }
+.div-unfunded-stock-list > div > span { min-width: 0; }
+.div-unfunded-stock-list small { display: block; color: var(--text-secondary); font-size: .7rem; }
+.div-unfunded-stock-list .btn { flex-shrink: 0; font-size: .75rem; }
 .div-plan-stock-group { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .75rem; margin: .65rem 0; font-size: .75rem; color: var(--text-secondary); }
 .div-plan-manager .div-details { margin-top: .7rem; }
 .div-plan-manager table { width: 100%; border-collapse: collapse; text-align: right; font-size: .7rem; }
@@ -173,29 +191,31 @@
 .div-home-plan-budget strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .div-home-plan-side { margin: .7rem 0; }
 .div-home-plan-side h4 { font-size: .75rem; margin: 0 0 .3rem; }
-.div-grid-trigger-status { display: inline-block; font-size: .65rem; font-weight: 500; color: var(--text-secondary); padding: .1rem .35rem; border-radius: 5px; background: var(--bg-glass); }
-.div-grid-trigger-status.is-triggered, .div-plan-manager-list > details > summary > .div-grid-trigger-status.is-triggered { color: var(--asset-color); background: var(--asset-dim); font-weight: 700; }
+.div-grid-trigger-status { display: inline-block; font-size: .65rem; font-weight: 400; color: var(--text-secondary); padding: .1rem .35rem; border-radius: 5px; background: var(--bg-glass); white-space: nowrap; }
+.div-grid-trigger-status.is-triggered, .div-plan-manager-list > details > summary > .div-grid-trigger-status.is-triggered { color: var(--asset-color); background: var(--asset-dim); font-weight: 400; }
+.div-plan-grid > summary { font-weight: 400; }
 .div-home-plan-side h4 > .div-grid-trigger-status, .div-plan-grid summary > .div-grid-trigger-status { margin-left: .3rem; }
 .div-home-plan-state { font-size: .72rem; line-height: 1.6; color: var(--text-secondary); margin: .2rem 0 .45rem; }
-.div-home-plan-triggered { color: var(--asset-color); font-weight: 600; }
-table.div-grid-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .7rem; margin-top: .35rem; }
+.div-home-plan-triggered { color: var(--asset-color); font-weight: 400; }
+.div-grid-scroll { max-width: 100%; }
+table.div-grid-table { width: 100%; table-layout: auto; border-collapse: collapse; font-size: .7rem; margin-top: .35rem; }
 .div-grid-table col:nth-child(1) { width: 21%; }
 .div-grid-table col:nth-child(2) { width: 20%; }
 .div-grid-table col:nth-child(3) { width: 22%; }
 .div-grid-table col:nth-child(4) { width: 18%; }
 .div-grid-table col:nth-child(5) { width: 19%; }
-table.div-grid-table th, table.div-grid-table td { padding: .38rem .12rem; overflow-wrap: anywhere; text-align: right; vertical-align: middle; line-height: 1.45; }
+table.div-grid-table th, table.div-grid-table td { padding: .5rem .12rem; overflow-wrap: normal; text-align: right; vertical-align: middle; line-height: 1.6; font-weight: 400; }
+table.div-grid-table tbody td { white-space: nowrap; }
 table.div-grid-table thead th { font-size: .62rem; background: var(--bg-secondary); font-weight: 500; }
 .div-grid-table thead th small { display: block; font-size: .54rem; font-weight: 400; }
 table.div-grid-table th:first-child { text-align: left; padding-left: .3rem; }
 table.div-grid-table th:last-child, table.div-grid-table td:last-child { padding-right: .3rem; }
-.div-grid-table tbody th { font-weight: 600; color: var(--text-primary); }
+.div-grid-table tbody th { font-weight: 400; color: var(--text-primary); }
 .div-grid-table tbody th small { display: block; font-size: .58rem; color: var(--text-secondary); font-weight: 400; }
-.div-grid-table td > strong { font-weight: 700; }
 .div-grid-table td:nth-child(4) { font-size: .6rem; white-space: nowrap; }
 .div-grid-table .div-grid-row-triggered { color: var(--asset-color); background: var(--asset-dim); }
 .div-grid-table .div-grid-row-triggered th { box-shadow: inset 3px 0 var(--asset-color); }
-.div-grid-table .div-grid-cell-triggered { font-weight: 700; }
+.div-grid-table .div-grid-cell-triggered { font-weight: 400; font-size: .62rem; }
 .div-grid-table .div-grid-cell-waiting, .div-grid-table .div-grid-cell-pending, .div-grid-table .div-grid-cell-unpriced { color: var(--text-secondary); font-size: .62rem; }
 .div-home-plan-note { color: var(--text-secondary); font-size: .65rem; line-height: 1.65; margin: .45rem 0 0; }
 .div-home-plan-note > summary { cursor: pointer; padding: .4rem 0; min-height: 24px; }

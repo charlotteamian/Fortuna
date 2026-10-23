@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
+import { dividendAnnualReportEvidence } from '../src/lib/dividendAnnualReportEvidence.ts';
 import { calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingHistoryCoverage,
   parseDividendTreasury, parseDividendOpportunityRows, dividendPricingReadable, type DividendYieldHistory, type DividendPricingAnnual } from '../src/lib/dividendPricing.ts';
 
@@ -194,6 +195,40 @@ test('public source fixture verifies financial/cash fields, treasury units and u
   const b=XLSX.read(readFileSync(new URL('./fixtures/dividend-index-000922-2026-10-21.xls',import.meta.url)),{type:'buffer'});
   const o=parseDividendOpportunityRows(XLSX.utils.sheet_to_json(b.Sheets[b.SheetNames[0]],{header:1}),asOf);
   assert.equal(o.yieldBps,409);assert.equal(o.asOf,'2026-10-20');
+});
+test('captured CATL evidence includes a verified zero and omitted special cash without weakening the five-year requirement', () => {
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-2026-10-23.json',import.meta.url),'utf8'));
+  const years=dividendPricingAnnuals(f.sources.financial.data,f.sources.cash.data,f.sources.distribution.data,'300750','2026-10-23');
+  assert.deepEqual(years.map(year=>[year.year,year.payoutBps]),[[2025,5034],[2024,5000],[2023,5000],[2022,2521],[2021,0]]);
+  assert.equal(years[4].reportEvidence?.basis,'reported_no_dividend');
+  assert.equal(years[4].dividendMicros,0);
+  assert.equal(years[2].dividendMicros,5028000);assert.equal(years[1].dividendMicros,5783000);
+  assert.equal(years[3].payoutBasis,'reported_cash_over_profit');
+  // 2022's raw pre-capitalisation DPS / restated EPS would incorrectly be 44.21%.
+  assert.equal(Math.round(years[3].dividendMicros!/years[3].epsMicros!*10000),4421);
+  const p=calculateDividendPricing({...input(),code:'300750',name:'宁德时代',annuals:years,asOf:'2026-10-23'});
+  assert.equal(p.normalizedEpsMicros,11797733);assert.equal(p.sustainablePayoutBps,5000);
+  assert.equal(p.earningsDividendMicros,5898867);assert.equal(p.fcfDividendCapMicros,8529361);
+  assert.equal(p.d1Micros,5898867);assert.equal(p.canApply,true);
+  assert.ok(!p.blockers.includes('annual_payout_missing'));
+  const readable=dividendPricingReadable(p);
+  assert.equal(readable['Annual evidence'][4]['Archival issuer disclosure, not fetched live']?.publishedAt,'2022-04-22');
+});
+test('archival cash evidence respects issuer, year, publication date and matching profit rather than filling arbitrary gaps', () => {
+  assert.equal(dividendAnnualReportEvidence('300750',2023,'2026-03-09',4412124800000),undefined);
+  assert.equal(dividendAnnualReportEvidence('600000',2021,'2026-10-23',1593131790000),undefined);
+  assert.equal(dividendAnnualReportEvidence('300750',2022,'2026-10-23',3072916350000),undefined);
+  assert.equal(dividendAnnualReportEvidence('300750',2021,'2026-10-23',159313179000),undefined);
+  const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-2026-10-23.json',import.meta.url),'utf8'));
+  const noProfit=structuredClone(f.sources.financial.data);
+  noProfit.result.data.find((row:Record<string,unknown>)=>String(row.REPORT_DATE).startsWith('2021-12-31')).PARENTNETPROFIT=null;
+  const years=dividendPricingAnnuals(noProfit,f.sources.cash.data,f.sources.distribution.data,'300750','2026-10-23');
+  assert.equal(years[4].dividendMicros,undefined);assert.equal(years[4].payoutBps,undefined);
+  assert.ok(calculateDividendPricing({...input(),annuals:years}).blockers.includes('annual_payout_missing'));
+  const contradictory=structuredClone(f.sources.distribution.data);
+  contradictory.result.data.push({SECURITY_CODE:'300750',REPORT_DATE:'2021-12-31',NOTICE_DATE:'2022-07-01',EX_DIVIDEND_DATE:'2022-07-10',ASSIGN_PROGRESS:'实施分配',PRETAX_BONUS_RMB:1,TOTAL_SHARES:1000});
+  const changed=dividendPricingAnnuals(f.sources.financial.data,f.sources.cash.data,contradictory,'300750','2026-10-23');
+  assert.equal(changed[4].reportEvidence,undefined);assert.equal(changed[4].dividendMicros,100000);
 });
 test('historical yield uses only implemented cash before each sample and converts stock bonuses to the sample share basis', () => {
   const dist={success:true,result:{data:[

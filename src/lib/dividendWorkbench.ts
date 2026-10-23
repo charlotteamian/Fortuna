@@ -139,6 +139,11 @@ export function effectiveDps(stock: DividendStock): number | undefined { return 
 export function dividendEstimateMinor(shares: number, dpsMicros: number): number { return Math.round(shares * dpsMicros / 10000); }
 export function stockBudgetMinor(budgetMinor: number, weightBps: number): number { return Math.round(budgetMinor * weightBps / 10000); }
 
+/** Execution plans include only stocks with an actual, positive allocation in minor units. */
+export function fundedDividendStocks(stocks: DividendStock[], totalBudgetMinor: number | undefined): DividendStock[] {
+  return totalBudgetMinor === undefined ? [] : stocks.filter(stock => stockBudgetMinor(totalBudgetMinor, stock.weightBps) > 0);
+}
+
 /** Holdings take priority, then the user's groups and allocation; never mutate the saved order. */
 export function sortDividendStocks(stocks: DividendStock[], sharesFor: (stock: DividendStock) => number): DividendStock[] {
   const groupOrder = { core: 0, watch: 1, hidden: 2 };

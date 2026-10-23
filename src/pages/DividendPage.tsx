@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestReportDividend, forecastHoldingYearDividends, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
+import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
 import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
@@ -129,6 +129,10 @@ export default function DividendPage() {
   const untracked = [...data.positions.values()].filter(position => !data.stocks.some(stock => stock.code === position.code)).sort((a, b) => a.code.localeCompare(b.code));
   const displayed = sortDividendStocks(data.stocks.filter(stock => (group === 'all' ? stock.group !== 'hidden' || sharesFor(stock) > 0 : group === 'held' ? sharesFor(stock) > 0 : stock.group === group)
     && `${stock.name} ${stock.code}`.toLowerCase().includes(search.trim().toLowerCase())), sharesFor);
+  const fundedCodes = new Set(fundedDividendStocks(data.stocks, data.budgetConfigured ? data.budgetMinor : undefined).map(stock => stock.code));
+  const managedStocks = sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor);
+  const fundedPlans = managedStocks.filter(stock => fundedCodes.has(stock.code));
+  const unfundedPlans = managedStocks.filter(stock => !fundedCodes.has(stock.code));
   const strategySelector = <div className="div-strategy-options" role="group" aria-label={t('div_strategy')}>{(['stocks', 'funds'] as const).map(strategy => <button key={strategy}
     className={data.strategy === strategy ? 'selected' : ''} aria-pressed={data.strategy === strategy} disabled={strategySaving || budgetSaving || Boolean(progress)} onClick={() => void changeStrategy(strategy)}>{t(`div_strategy_${strategy}`)}</button>)}</div>;
   const planManagement = <div className="div-plan-manager">
@@ -148,7 +152,7 @@ export default function DividendPage() {
           <button className="btn btn-secondary" disabled={Boolean(progress) || untracked.length === 0} onClick={() => setLinkedPickerOpen(true)}>{t('div_add_linked', { count: untracked.length })}</button>
           <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => setImportOpen(true)}>{t('div_import')}</button></div>
         <input aria-label={t('div_search')} placeholder={t('div_search')} value={managerSearch} onChange={event => setManagerSearch(event.target.value)} />
-        <div className="div-plan-manager-list">{sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor).map(stock => {
+        <div className="div-plan-manager-list">{fundedPlans.map(stock => {
           const plan = buildDividendHomePlan(stock, data.budgetConfigured ? data.budgetMinor : undefined, sharesFor(stock), today);
           return <details key={stock.code} open={stock.code === focusedPlanCode}
           ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }}>
@@ -160,6 +164,13 @@ export default function DividendPage() {
           {stock.buyPaused && <p className="div-warning">{t('div_buy_paused_note')}</p>}
           {(['buy', 'sell'] as const).map(side => <DividendPlanGrid key={side} plan={plan} side={side} amountVisible={amountVisible} />)}
         </details>; })}</div>
+        {fundedPlans.length === 0 && <p className="div-muted">{t('div_no_funded_plans')}</p>}
+        {unfundedPlans.length > 0 && <details className="div-unfunded-stocks" open={unfundedPlans.some(stock => stock.code === focusedPlanCode)}><summary>{t('div_unfunded_stocks', { count: unfundedPlans.length })}</summary>
+          <div className="div-unfunded-stock-list">{unfundedPlans.map(stock => <div key={stock.code}
+            ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }}>
+            <span>{stock.name}<small>{stock.code}</small></span><button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
+          </div>)}</div>
+        </details>}
       </details>
     </>}
     {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
@@ -197,8 +208,8 @@ export default function DividendPage() {
             <div><span>{t('div_v2_latest_report_dividend')}</span><strong>{latest?.dpsMicros === undefined ? '—' : `¥${numeric(latest.dpsMicros / 1e6, 6)}`}</strong><small>{latest ? latest.basis === 'manual' ? t('div_manual') : `${latest.reportDate} · ${t(`div_v2_period_${latest.period}`)}` : t('div_v2_refresh_required')}</small>
               {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
               {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</div></div>
-          <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
-            onEdit={() => openStockPlan(stock.code)} />
+          {fundedCodes.has(stock.code) && <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
+            onEdit={() => openStockPlan(stock.code)} />}
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>
             {shares > 0 && <div><span>{t('div_v2_holding_amount', { shares: quantity(shares) })}</span><strong>{forecast.amountMinor === undefined ? '—' : money(forecast.amountMinor)}</strong></div>}</div>
           {!latest && <button className="div-advisor-text-button" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_v2_refresh_disclosures')}</button>}
@@ -333,7 +344,7 @@ function AllocationPreview({ before, after, budgetMinor, amountVisible }: { befo
   return <div className="div-allocation-preview">
     <p className="div-muted">{oldTotal > 0 && t('div_allocation_formula', { before: numeric(oldTotal / 100), after: numeric(newTotal / 100) })}</p>
     <p className="div-muted">{t('div_allocation_remaining', { percent: numeric(Math.max(0, 10000 - newTotal) / 100), amount: amountVisible ? `¥${numeric(Math.max(0, budgetMinor - stockBudgetMinor(budgetMinor, newTotal)) / 100)}` : '••••' })}</p>
-    <div className="div-table-scroll"><table><caption>{t('div_allocation_preview')}</caption><thead><tr><th>{t('name')}</th><th>{t('div_allocation_before')}</th><th>{t('div_allocation_after')}</th><th>{t('div_stock_budget')}</th></tr></thead><tbody>{after.map(stock => <tr key={stock.code}>
+    <div className="div-table-scroll"><table><caption>{t('div_allocation_preview')}</caption><thead><tr><th>{t('name')}</th><th>{t('div_allocation_before')}</th><th>{t('div_allocation_after')}</th><th>{t('div_stock_budget')}</th></tr></thead><tbody>{fundedDividendStocks(after, budgetMinor).map(stock => <tr key={stock.code}>
       <td>{stock.name}<small className="div-preview-code">{stock.code}{stock.group === 'hidden' ? ` · ${t('div_group_hidden')}` : ''}</small></td>
       <td>{numeric((before.find(s => s.code === stock.code)?.weightBps ?? 0) / 100)}%</td><td>{numeric(stock.weightBps / 100)}%</td><td>{amountVisible ? `¥${numeric(stockBudgetMinor(budgetMinor, stock.weightBps) / 100)}` : '••••'}</td>
     </tr>)}</tbody></table></div>

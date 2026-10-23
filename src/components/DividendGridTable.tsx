@@ -8,7 +8,7 @@ export default function DividendGridTable({ plan, side, amountVisible }: {
   plan: ReturnType<typeof buildDividendHomePlan>; side: 'buy' | 'sell'; amountVisible: boolean;
 }) {
   const { t } = useTranslation();
-  return <table className="div-grid-table" aria-label={t(`div_home_${side}`)}>
+  return <div className="div-table-scroll div-grid-scroll"><table className="div-grid-table" aria-label={t(`div_home_${side}`)}>
     <colgroup><col /><col /><col /><col /><col /></colgroup>
     <thead><tr><th scope="col">{t('div_grid_level_column')}<small>{t('div_grid_cumulative_shares_short')}</small></th><th scope="col">{t('div_grid_target_yield')}</th>
       <th scope="col">{t('div_grid_price_short')}</th><th scope="col" title={t(`div_grid_${side}_portion_basis`)}>{t('div_grid_portion')}</th><th scope="col">{t('div_grid_status')}</th></tr></thead>
@@ -21,10 +21,10 @@ export default function DividendGridTable({ plan, side, amountVisible }: {
           <small aria-label={quantity === undefined ? t('div_home_allocation', { percent: numeric(row.cumulative / 100) }) : t(`div_home_${side}_target`, { shares: quantity })}>
             {quantity === undefined ? `${numeric(row.cumulative / 100)}%` : `${quantity} ${t('div_one_share')}`}</small></th>
         <td>{numeric(row.yieldBps / 100)}%</td>
-        <td><strong>{row.priceMinor === undefined ? '—' : `¥${numeric(row.priceMinor / 100)}`}</strong></td>
+        <td>{row.priceMinor === undefined ? '—' : `¥${numeric(row.priceMinor / 100)}`}</td>
         <td>{numeric(row.portionBps / 100)}%</td>
         <td className={`div-grid-cell-${state}`} aria-label={row.touched ? t('div_grid_price_triggered') : undefined}>{t(`div_grid_row_${state}`)}</td>
       </tr>;
     })}</tbody>
-  </table>;
+  </table></div>;
 }

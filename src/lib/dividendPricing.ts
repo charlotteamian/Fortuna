@@ -1,4 +1,5 @@
 import type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
+import { dividendAnnualReportEvidence, type DividendAnnualReportEvidence } from './dividendAnnualReportEvidence.ts';
 export type DividendPricingRiskClass = 'bondlike' | 'bank' | 'cyclical' | 'other';
 export interface DividendPricingStockOverride {
   riskClass?: DividendPricingRiskClass;
@@ -39,6 +40,9 @@ export interface DividendPricingAnnual {
   dividendMicros?: number;
   dividendCashMinor?: number;
   payoutBps?: number;
+  payoutBasis?: 'reported_cash_over_profit' | 'per_share_dividend_over_eps';
+  netProfitMinor?: number;
+  reportEvidence?: DividendAnnualReportEvidence;
   fcfCoverageBps?: number;
 }
 export interface DividendYieldHistory {
@@ -220,16 +224,30 @@ export function dividendPricingAnnuals(financialRaw: unknown, cashRaw: unknown |
     }
     const ds = [...events.values()];
     const amounts = ds.map(r => scaled(r.PRETAX_BONUS_RMB, 100000));
-    const dividendMicros = ds.length && amounts.every(v => v !== undefined && v >= 0) ? amounts.reduce<number>((s,v) => s + v!, 0) : undefined;
+    const sourceDividendMicros = ds.length && amounts.every(v => v !== undefined && v >= 0) ? amounts.reduce<number>((s,v) => s + v!, 0) : undefined;
     const cashAmounts = ds.map(r => { const shares = numeric(r.TOTAL_SHARES), dps = scaled(r.PRETAX_BONUS_RMB, 100000); return shares && dps !== undefined ? Math.round(shares * dps / 10000) : undefined; });
-    const dividendCashMinor = cashAmounts.length && cashAmounts.every(v => v !== undefined && Number.isSafeInteger(v)) ? cashAmounts.reduce<number>((s,v) => s + v!, 0) : undefined;
+    const sourceCashMinor = cashAmounts.length && cashAmounts.every(v => v !== undefined && Number.isSafeInteger(v)) ? cashAmounts.reduce<number>((s,v) => s + v!, 0) : undefined;
     const epsMicros = scaled(f?.EPSJB, 1e6), adjustedEpsMicros = scaled(f?.EPSKCJB, 1e6);
+    const sourceNetProfitMinor = scaled(f?.PARENTNETPROFIT, 100);
+    const reportEvidence = dividendAnnualReportEvidence(code,year,asOf,sourceNetProfitMinor);
+    // An explicit issuer-reported zero is evidence. A missing row alone is not.
+    // Do not apply a no-distribution extract if live implemented cash contradicts it.
+    const usableEvidence = reportEvidence && (reportEvidence.basis !== 'reported_no_dividend' || !ds.length) ? reportEvidence : undefined;
+    const dividendMicros = usableEvidence?.dividendMicros ?? sourceDividendMicros;
+    const dividendCashMinor = usableEvidence?.dividendCashMinor ?? sourceCashMinor;
+    const netProfitMinor = usableEvidence?.netProfitMinor ?? sourceNetProfitMinor;
     const operatingCashMinor = scaled(c?.NETCASH_OPERATE, 100), capitalExpenditureMinor = scaled(c?.CONSTRUCT_LONG_ASSET, 100);
-    const payoutBps = epsMicros !== undefined && epsMicros > 0 && dividendMicros !== undefined ? Math.round(dividendMicros / epsMicros * 10000) : undefined;
+    // Full-year cash / same-year profit avoids dividing pre-bonus dividends by
+    // restated post-bonus EPS (e.g. CATL's 2022 ten-for-eight capitalisation).
+    const cashPayout = netProfitMinor !== undefined && netProfitMinor > 0 && dividendCashMinor !== undefined
+      ? Math.round(dividendCashMinor/netProfitMinor*10000) : undefined;
+    const payoutBps = cashPayout ?? (epsMicros !== undefined && epsMicros > 0 && dividendMicros !== undefined ? Math.round(dividendMicros / epsMicros * 10000) : undefined);
+    const payoutBasis = payoutBps === undefined ? undefined : cashPayout !== undefined ? 'reported_cash_over_profit' as const : 'per_share_dividend_over_eps' as const;
     const fcfCoverageBps = operatingCashMinor !== undefined && capitalExpenditureMinor !== undefined && dividendCashMinor && dividendCashMinor > 0
       ? Math.round((operatingCashMinor - capitalExpenditureMinor) / dividendCashMinor * 10000) : undefined;
     return { year, reportDate, noticeDate: date(f?.NOTICE_DATE), epsMicros, adjustedEpsMicros, roeBps: scaled(f?.ROEJQ, 100),
-      operatingCashMinor, capitalExpenditureMinor, totalShares: numeric(f?.TOTAL_SHARE), dividendMicros, dividendCashMinor, payoutBps, fcfCoverageBps };
+      operatingCashMinor, capitalExpenditureMinor, totalShares: numeric(f?.TOTAL_SHARE), dividendMicros, dividendCashMinor, netProfitMinor,
+      payoutBps, payoutBasis, reportEvidence:usableEvidence, fcfCoverageBps };
   });
 }
 
@@ -430,7 +448,8 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
     sustainablePayoutBps, taxBps, earningsDividendMicros, fcfDividendCapMicros, fcfCapApplied, fcfEvidence, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
-    currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, historyCoverage, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps, sourceUrls: input.sourceUrls ?? [] };
+    currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, historyCoverage, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps,
+    sourceUrls:[...new Set([...(input.sourceUrls ?? []),...annuals.flatMap(year=>year.reportEvidence?.sources.map(source=>source.url) ?? [])])] };
 }
 
 const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]> = {
@@ -499,6 +518,8 @@ export function dividendPricingReadable(result: DividendPricingResult) {
       'Latest observation age in days':result.historyCoverage.ageDays, 'Maximum age in days':result.historyCoverage.maxAgeDays,
       'Evidence gaps':result.historyCoverage.reasons.map(reason => ({ history_unavailable:'Historical cash-yield observations unavailable', samples_insufficient:'Fewer than 60 distinct completed monthly observations',
         span_insufficient:'Historical observations span less than 4.8 years', stale:'Latest completed month unavailable or more than 40 days old', capital_actions_unverified:'Bonus-share adjustments unverified' })[reason]) } : null,
-    'Annual evidence': result.annuals.map(y => ({ year:y.year, 'Report published':y.noticeDate, 'Reported EPS CNY':cash(y.epsMicros,1e6), 'Adjusted EPS CNY':cash(y.adjustedEpsMicros,1e6), 'Dividend CNY per share':cash(y.dividendMicros,1e6), 'Payout percent':cash(y.payoutBps), 'ROE percent':cash(y.roeBps), 'Operating cash CNY':cash(y.operatingCashMinor), 'Capital expenditure CNY':cash(y.capitalExpenditureMinor), 'Dividend cash CNY':cash(y.dividendCashMinor), 'FCF / dividend percent':cash(y.fcfCoverageBps) })),
+    'Annual evidence': result.annuals.map(y => ({ year:y.year, 'Report published':y.noticeDate, 'Reported EPS CNY':cash(y.epsMicros,1e6), 'Adjusted EPS CNY':cash(y.adjustedEpsMicros,1e6), 'Dividend CNY per share':cash(y.dividendMicros,1e6), 'Payout percent':cash(y.payoutBps), 'Payout calculation basis':y.payoutBasis,
+      'Matching annual net profit CNY':cash(y.netProfitMinor), 'Archival issuer disclosure, not fetched live':y.reportEvidence ?? null,
+      'ROE percent':cash(y.roeBps), 'Operating cash CNY':cash(y.operatingCashMinor), 'Capital expenditure CNY':cash(y.capitalExpenditureMinor), 'Dividend cash CNY':cash(y.dividendCashMinor), 'FCF / dividend percent':cash(y.fcfCoverageBps) })),
     'Three exact grid prices': result.grid.map((g,i) => ({ level:i+1, 'Price CNY':g.priceMinor/100, 'D1 yield percent':g.yieldBps/100, 'Change from current price percent':cash(g.changeFromCurrentBps), 'Cumulative allocation percent':g.cumulativePortionBps/100, 'Meets selected margin':g.meetsSafetyMargin })), 'Sources':result.sourceUrls };
 }
