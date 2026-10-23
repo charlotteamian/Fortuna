@@ -98,6 +98,29 @@ test('home plan distinguishes missing budget, zero allocation, absent prices, pa
   assert.equal(buildDividendHomePlan(stock, 1000000, 0, '2026-10-21').sellState, 'no_holding');
 });
 
+test('grid tier price triggers include exact boundaries and remain distinct from execution controls', () => {
+  const stock = { ...defaultDividendStocks()[0], weightBps: 10000,
+    buyLevels: [{ priceMinor: 1000, yieldBps: 500, portionBps: 5000 }, { priceMinor: 800, yieldBps: 600, portionBps: 5000 }],
+    sellLevels: [{ priceMinor: 1200, yieldBps: 400, portionBps: 5000 }, { priceMinor: 1400, yieldBps: 350, portionBps: 5000 }],
+    quote: { priceMinor: 800, date: '2026-10-21', fetchedAt: 1 } };
+  const buy = buildDividendHomePlan(stock, 1000000, 0, '2026-10-21');
+  assert.equal(buy.buyTriggeredLevel, 2); assert.deepEqual(buy.buy.map(row => row.touched), [true, true]);
+  const paused = buildDividendHomePlan({ ...stock, buyPaused: true }, 1000000, 0, '2026-10-21');
+  assert.equal(paused.buyState, 'paused'); assert.equal(paused.buyTriggeredLevel, 2);
+  const selling = buildDividendHomePlan({ ...stock, quote: { ...stock.quote, priceMinor: 1400 } }, 1000000, 200, '2026-10-21');
+  assert.equal(selling.sellTriggeredLevel, 2); assert.equal(selling.sellShares, 200);
+  const withoutHolding = buildDividendHomePlan({ ...stock, quote: { ...stock.quote, priceMinor: 1400 } }, 1000000, 0, '2026-10-21');
+  assert.equal(withoutHolding.sellTriggeredLevel, 2); assert.equal(withoutHolding.sellState, 'no_holding'); assert.equal(withoutHolding.sellShares, 0);
+  const between = buildDividendHomePlan({ ...stock, quote: { ...stock.quote, priceMinor: 801 } }, 1000000, 0, '2026-10-21');
+  assert.equal(between.buyTriggeredLevel, 1);
+  for (const altered of [{ ...stock, quote: undefined }, { ...stock, quoteFailedAt: 2 },
+    ...['2026-10-01', '2026-10-22', 'invalid'].map(date => ({ ...stock, quote: { ...stock.quote, date } })),
+    { ...stock, quote: { ...stock.quote, priceMinor: 0 } }]) {
+    const unusable = buildDividendHomePlan(altered, 1000000, 200, '2026-10-21');
+    assert.equal(unusable.quoteUsable, false); assert.equal(unusable.buyTriggeredLevel, 0); assert.equal(unusable.sellTriggeredLevel, 0);
+  }
+});
+
 test('deleting an allocation redistributes proportionally, including hidden stocks but preserving zero weights', () => {
   const stocks = defaultDividendStocks().slice(0, 4).map((stock, i) => ({ ...stock, weightBps: [5000, 3000, 2000, 0][i], ...(i === 1 ? { group: 'hidden' as const, note: 'keep', manualShares: 123 } : {}) }));
   const remaining = redistributeDividendWeights(stocks, stocks[2].code);

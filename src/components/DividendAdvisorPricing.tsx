@@ -6,6 +6,7 @@ import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
 import { dividendPricingPlan } from '../lib/dividendPricingPlan';
+import './DividendReviewAlerts.css';
 
 const FIELD_KEYS = ['requiredReturnBps', 'growthBps', 'safetyMarginBps', 'historicalPercentileBps', 'opportunityCostBps'] as const;
 const RISK_CLASSES = ['bondlike', 'bank', 'cyclical', 'other'] as const;
@@ -21,15 +22,23 @@ const GAP_HELP: Record<DividendPricingBlocker, string> = {
 export function DividendFinancialReviewCard({ review, code }: { review: DividendFinancialSectorReview; code: string }) {
   const { t } = useTranslation();
   const pct = (value?: number) => value === undefined ? '—' : `${(value / 100).toFixed(2)}%`;
+  const risks = review.metrics.filter(metric => metric.status === 'risk');
+  const missing = review.metrics.filter(metric => metric.status === 'unknown');
+  const passed = review.metrics.filter(metric => metric.status === 'pass');
   return <details className={`div-ai-financial-review ${review.status}`} open={review.status !== 'pass'}>
-    <summary>{t('div_ai_financial_review_title', { sector: t(`div_ai_financial_sector_${review.sector}`) })} · {t(`div_ai_financial_review_${review.status}`)}{review.reportSupplement && ` · ${t('div_ai_financial_report_extract_short')}`}</summary>
+    <summary>{t('div_ai_financial_review_title', { sector: t(`div_ai_financial_sector_${review.sector}`) })}{review.reportSupplement && ` · ${t('div_ai_financial_report_extract_short')}`}</summary>
+    <div className="div-review-badges">{risks.length > 0 && <span className="div-ai-status risk">{t('div_v3_review_risks', { count: risks.length })}</span>}
+      {(missing.length > 0 || review.missing.length > 0) && <span className="div-ai-status unknown">{t('div_v3_review_missing', { count: missing.length || review.missing.length })}</span>}
+      {!risks.length && !missing.length && !review.missing.length && <span className="div-ai-status pass">{t('div_ai_research_pass')}</span>}</div>
     <p className="div-ai-muted">{t('div_ai_financial_auto_evidence', { date: review.asOf })}</p>
     <p className="div-ai-muted">{t(review.basis === 'dividend_screen' ? 'div_ai_financial_screen_basis' : 'div_ai_financial_regulatory_basis')}</p>
-    <ul className="div-ai-checks">{review.metrics.map(metric => <li key={metric.key}><div><strong>{t(`div_ai_financial_metric_${metric.key}`)}</strong><span className={`div-ai-status ${metric.status}`}>{t(`div_ai_research_${metric.status}`)}</span></div>
+    {([{ status: 'risk', metrics: risks }, { status: 'unknown', metrics: missing }, { status: 'pass', metrics: passed }] as const).filter(group => group.metrics.length > 0).map(group => <section key={group.status} className={group.status === 'pass' ? '' : `div-review-alert ${group.status}`}>
+      <strong>{t(group.status === 'risk' ? 'div_v3_review_risks' : group.status === 'unknown' ? 'div_v3_review_missing' : 'div_v3_review_passed', { count: group.metrics.length })}</strong>
+      <ul className="div-ai-checks">{group.metrics.map(metric => <li key={metric.key}><div><strong>{t(`div_ai_financial_metric_${metric.key}`)}</strong></div>
       <p>{t('div_ai_financial_metric_value', { value: pct(metric.valueBps), direction: t(metric.direction === 'minimum' ? 'div_ai_at_least' : 'div_ai_at_most'), threshold: pct(metric.thresholdBps) })}</p><p>{t('div_ai_research_period', { period: metric.reportDate })}</p>
       {review.reportSupplement && ['comprehensiveSolvency', 'coreSolvency'].includes(metric.key) && <p>{t('div_ai_financial_report_metric_basis')}</p>}
       {metric.changeBps !== undefined && <p>{t('div_ai_financial_yoy_change', { value: `${metric.changeBps > 0 ? '+' : ''}${(metric.changeBps / 100).toFixed(2)}` })}</p>}
-    </li>)}</ul>
+    </li>)}</ul></section>)}
     {review.missing.map(item => <p className="div-ai-muted" key={item}>{t(`div_ai_financial_missing_${item}`, { defaultValue: t('div_ai_financial_missing_other') })}</p>)}
     {review.status !== 'pass' && <p className="div-ai-muted">{t(`div_ai_financial_help_${review.sector}`, { code })}</p>}
     {review.reportSupplement && <div className="div-ai-auto-summary"><strong>{t('div_ai_financial_report_extract')}</strong>
@@ -151,7 +160,6 @@ export function DividendPricingCard({ code, pricing, disabled, onUpdated }: { co
   const plan = dividendPricingPlan(pricing);
   const proposal: DividendPlanProposal | null = plan ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: yuan(pricing.d1Micros, 1e6), price: yuan(pricing.theoreticalPriceMinor) }),
-    buyPaused: true,
     ...plan,
   } : null;
   return <details className="div-ai-pricing-card" open><summary>{t('div_v2_pricing_chain')} · {t(pricing.canApply ? 'div_v2_pricing_ready' : 'div_v2_pricing_gaps')}</summary>

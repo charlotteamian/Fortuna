@@ -1478,7 +1478,7 @@
   "HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION": "New-bond and convertible-bond subscriptions were skipped; they will not be imported as positions or executions.",
   "holding_import_only_bond_subscriptions": "Bond subscriptions were skipped. This screenshot has no eligible positions or executions, so nothing was saved.",
   "div_buy_paused": "Pause additional buying and keep the grid for review",
-  "div_buy_paused_note": "Additional buying is paused; buy levels will not be marked as triggered. Resume in the grid editor.",
+  "div_buy_paused_note": "Buying is manually paused; reached price levels remain visible. Resume in the editor or after reviewing the alerts.",
   "price_monitor_title": "Price watch",
   "price_monitor_title_security": "Stock / ETF price watch",
   "price_monitor_title_gold": "Gold price watch",

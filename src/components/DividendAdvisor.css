@@ -193,3 +193,6 @@
 .div-advisor-reader .div-plan-manager .btn { min-height: 38px; padding: 8px 10px; font-size: 12px; }
 @media (max-width: 400px) { .div-advisor-workspace-tabs { gap: 2px; padding-inline: 10px; } .div-advisor-workspace-tabs button { padding: 7px 4px; font-size: 12px; } .div-ai-pricing-grid { grid-template-columns: 1fr; } .div-ai-pricing-grid > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; } .div-ai-pricing-grid small { grid-column: 1 / -1; } }
 @media (max-width: 400px) { .div-ai-grid-comparison { grid-template-columns: 1fr; } .div-ai-grid-comparison > section + section { border-top: 1px solid var(--border); } .div-ai-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .div-ai-principles-form { gap: 14px 10px; } }
+
+.div-ai-research-card > header .div-ai-research-toggle { min-height: 32px; padding: 5px 9px; font-size: 11px; }
+.div-ai-stock-checked { margin: 0 15px 10px; font-size: 11px; }

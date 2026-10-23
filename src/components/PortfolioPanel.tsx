@@ -660,17 +660,6 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               )}
             </div>
             )}
-            {hTxns.length > 0 && (
-              <div>
-                <div className="holding-history-heading">
-                  <span className="holding-history-title">{t('txn_history')} ({hTxns.length})</span>
-                  <button type="button" className="holding-history-sort" onClick={() => setOldestTxnFirst(value => !value)} aria-label={t(oldestTxnFirst ? 'holding_trade_sort_newest' : 'holding_trade_sort_oldest')}>
-                    {t(oldestTxnFirst ? 'holding_trade_oldest_first' : 'holding_trade_newest_first')} ↕
-                  </button>
-                </div>
-                {displayTxns.map(tx => renderTxnRow(h, tx))}
-              </div>
-            )}
             <div className="holding-management-actions">
               <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }} onClick={() => openTxn(h, 'buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
               {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: 'var(--theme-on-liability)', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>}
@@ -682,6 +671,17 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               <button type="button" className="holding-action-link" onClick={() => openEditHolding(h)}>{editIcon}{t(isBalancePortfolio ? 'edit_product' : 'edit_holding')}</button>
               <button type="button" className="holding-action-link holding-action-delete" onClick={() => setConfirmDeleteHolding(h.id)}>{deleteIcon}{t(isBalancePortfolio ? 'delete_product' : 'delete_holding')}</button>
             </div>
+            {hTxns.length > 0 && (
+              <div>
+                <div className="holding-history-heading">
+                  <span className="holding-history-title">{t('txn_history')} ({hTxns.length})</span>
+                  <button type="button" className="holding-history-sort" onClick={() => setOldestTxnFirst(value => !value)} aria-label={t(oldestTxnFirst ? 'holding_trade_sort_newest' : 'holding_trade_sort_oldest')}>
+                    {t(oldestTxnFirst ? 'holding_trade_oldest_first' : 'holding_trade_newest_first')} ↕
+                  </button>
+                </div>
+                {displayTxns.map(tx => renderTxnRow(h, tx))}
+              </div>
+            )}
           </div>
         )}
       </div>

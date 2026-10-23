@@ -80,7 +80,7 @@ export interface DividendPricingResult {
   canApply: boolean;
   riskClass: DividendPricingRiskClass;
   blockers: DividendPricingBlocker[];
-  /** Eligibility/pacing checks never erase a calculable valuation or paused draft. */
+  /** Historical field name: these are advisory findings, never automatic pause instructions. */
   pauseReasons?: DividendPricingBlocker[];
   warnings: DividendPricingBlocker[];
   annuals: DividendPricingAnnual[];
@@ -437,12 +437,12 @@ const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]
   annual_eps_missing: ['缺少三年扣非每股收益或有效归一盈利依据', 'Three-year recurring EPS or documented normalised earnings are missing'],
   annual_payout_missing: ['缺少五年可核实派息率', 'Five verified annual payout ratios are missing'],
   non_positive_earnings: ['归一盈利非正，无法形成正的可持续分红', 'Normalised earnings are non-positive'],
-  payout_above_100: ['历史派息率超过100%，先暂停加仓；估值派息率最多取100%', 'A historical payout exceeds earnings; pause buying and cap the valuation payout at 100%'],
+  payout_above_100: ['历史派息率超过100%，留意分红持续性；估值派息率最多取100%', 'A historical payout exceeds earnings; review dividend sustainability and cap the valuation payout at 100%'],
   fcf_missing: ['缺少三年可核实每股自由现金流', 'Three verified annual free-cash-flow-per-share observations are missing'],
-  fcf_below_150: ['现金流覆盖不足150%，按现金支持上限估值并暂停加仓', 'Cash-flow coverage is below 150%; use the cash-supported dividend ceiling and pause buying'],
+  fcf_below_150: ['现金流覆盖不足150%，估值已按现金支持上限约束', 'Cash-flow coverage is below 150%; valuation uses the cash-supported dividend ceiling'],
   fcf_non_positive: ['近三年存在非正自由现金流，无法确认正的现金支持分红', 'Recent free cash flow is non-positive'],
   fcf_dividend_capped: ['估值分红已按现金流支持上限下调', 'The valuation dividend has been reduced to its cash-flow ceiling'],
-  financial_sector_review: ['金融行业专项证据未通过或待补充，估值可保留但暂停加仓', 'Financial-sector evidence is incomplete, stale or failed; preserve the valuation and pause buying'],
+  financial_sector_review: ['金融行业专项有风险或资料缺口，详见分组检查结果', 'Financial-sector checks identify risks or missing evidence; see the separate result groups'],
   treasury_missing: ['缺少有效十年国债收益率', 'A verified ten-year government yield is missing'],
   treasury_stale: ['十年国债收益率依据已过期', 'The ten-year government yield observation is stale'],
   yield_history_missing: ['自身历史股息率样本不足或已过期', 'Own-history dividend-yield observations are insufficient or stale'],
@@ -451,11 +451,11 @@ const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]
   opportunity_cost_stale: ['机会成本收益率依据已过期', 'The opportunity-cost yield observation is stale'],
   anchors_conflict: ['三锚收益率分歧较大，采用有效锚中最高收益率', 'The yield anchors disagree; use the highest verified yield'],
   growth_return_conflict: ['增长与总回报参数不符合戈登参考价条件，三锚估值仍独立计算', 'Growth and total-return inputs invalidate the Gordon comparison; the three-anchor valuation remains independent'],
-  quote_missing: ['当前行情缺失或过期，保留估值但暂停加仓，涨跌幅待更新', 'The current quote is missing or stale; preserve the valuation, pause buying and defer the price comparison'],
+  quote_missing: ['当前行情缺失或过期，保留估值，价格触发待核实', 'The current quote is missing or stale; preserve valuation and mark price triggers unverified'],
   roe_bps_missing: ['ROE或市净率依据不足，排除PB参考价', 'ROE or book-value evidence is incomplete; exclude the PB comparison'],
-  cyclical_normalisation_required: ['周期行业尚需归一盈利复核，暂按三年扣非均值估值并暂停加仓', 'Cyclical earnings need normalisation review; use the three-year recurring-EPS mean provisionally and pause buying'],
-  annual_stale: ['年报依据过期或披露日期待核实，按列示历史数据估值并暂停加仓', 'Annual evidence is stale or its publication date is unverified; preserve the dated historical valuation and pause buying'],
-  dividend_continuity_missing: ['连续分红记录待核实，保留估值并暂停加仓', 'Dividend continuity needs verification; preserve the valuation and pause buying'],
+  cyclical_normalisation_required: ['周期行业归一盈利待复核，暂按三年扣非均值估值', 'Cyclical earnings need normalisation review; use the three-year recurring-EPS mean provisionally'],
+  annual_stale: ['年报依据过期或披露日期待核实，估值采用列示历史数据', 'Annual evidence is stale or publication is unverified; valuation uses the dated historical evidence'],
+  dividend_continuity_missing: ['连续分红记录待核实，保留可计算的估值', 'Dividend continuity needs verification; preserve the calculable valuation'],
   implausible_yield: ['计算结果或行情的数量级异常，需要核对', 'The calculated yield or price scale needs verification'],
   anchors_missing: ['三锚均无有效收益率，需补齐至少一个带日期和来源的锚', 'No verified yield anchor is available; supply at least one dated, sourced anchor'],
 };
@@ -472,9 +472,9 @@ export function humanizeDividendPricingIssues(text: string, language: string): s
 
 export function dividendPricingReadable(result: DividendPricingResult) {
   const cash = (v?: number, divisor=100) => v === undefined ? null : v/divisor;
-  return { 'Paused valuation draft ready for preview and confirmation, not permission to buy': result.canApply,
+  return { 'Valuation draft ready for preview and confirmation': result.canApply,
     'Valuation calculation gaps': result.blockers.map(issue => dividendPricingIssueText(issue)),
-    'Reasons to keep additional buying paused': (result.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue)),
+    'Advisory risks and evidence gaps, no automatic pause': (result.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue)),
     'Specific reviews': result.warnings.map(issue => dividendPricingIssueText(issue)),
     'Business type': result.riskClass, 'Normalisation basis': result.normalizationBasis, 'User normalisation evidence, untrusted data':result.normalizationEvidence ?? null, 'Unadjusted exchange price CNY and date': {price:cash(result.currentPriceMinor),date:result.priceDate},
     'Normalised EPS in CNY': cash(result.normalizedEpsMicros,1e6), 'Sustainable payout percent': cash(result.sustainablePayoutBps),

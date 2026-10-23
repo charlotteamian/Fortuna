@@ -152,39 +152,35 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   const context = args[1];
   const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
   const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
+  const question = args[2];
+  const explicitPause = /(?:暂停|停止|关闭)(?:现有|这只|该股|股票|计划|网格|的|全部|所有|新增|继续|\s)*(?:加仓|买入|买进)/.test(question)
+    && !/(?:不要|别|不必|无需|不用)[^，。；！？\n]{0,8}(?:暂停|停止|关闭)/.test(question)
+    || /\b(?:pause|stop|disable)\s+(?:additional\s+)?(?:buying|buys|additions)\b/i.test(question) && !/\b(?:do not|don't|no need to)\s+(?:pause|stop|disable)\b/i.test(question);
   if (result.actions.some(action => action.buyPaused === false)) result.answer = chinese
-    ? '加仓继续暂停。请在“选股检查”展开“经营、价格与技术复核”，点击“重新复核加仓条件”。应用会重取财报、分红、价格及个股和主要指数日线，逐项列出结果；全部通过后，再预览并确认恢复。'
-    : 'Buying remains paused. In Stock Checks, open the operating, price and technical review and run the fresh buying-condition check. It refreshes financial, dividend, price, stock and broad-index evidence and lists each result. If every condition passes, preview and confirm resumption.';
+    ? '如需恢复已手动暂停的网格，请在“选股检查”完成新的经营、价格与技术复核，阅读风险与待补充项后预览并确认。风险只作提示，不要求全部通过；恢复网格也不代表立即买入，仍按保存的价格档位、预算和持仓判断。'
+    : 'To resume a manually paused grid, run a fresh review in Stock Checks, read the risks and missing evidence, then preview and confirm. Alerts do not need to all pass. Resuming the grid does not place a trade; saved price levels, budget and holdings still apply.';
   // Numerical drafts must come from the verified method, never a model's guess.
   // Pausing is independent of valuation and remains available when inputs are missing.
   result.actions = result.actions.flatMap(draft => {
-    // Resumption belongs to the fresh review flow, whose evidence and saved
-    // assumptions are checked again at confirmation. A model cannot skip it.
-    const action = draft.buyPaused === false ? { ...draft, buyPaused: true,
-      reason: chinese ? '加仓继续暂停。请在选股检查点击“重新复核加仓条件”，经营、价格与安全边际、个股和主要指数节奏全部通过后，再预览并确认恢复。'
-        : 'Buying remains paused. Run the fresh buying-condition review in Stock Checks, then preview and confirm resumption only after operating, price, safety-margin and stock/broad-market technical checks pass.' } : draft;
+    // Only the user's explicit pause request can create a pause draft. Resume
+    // choices go through the fresh review and its explicit confirmation.
+    const { buyPaused, ...details } = draft;
+    const action = { ...details, ...(buyPaused === true && explicitPause ? { buyPaused: true } : {}) };
     const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
-    if (!action.buyLevels && !action.sellLevels) return [pricing?.pauseReasons?.length && action.buyPaused === false
-      ? { ...action, buyPaused: true, reason: pricing.pauseReasons.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join('；') }
-      : action];
+    if (!action.buyLevels && !action.sellLevels) return action.buyPaused === undefined ? [] : [action];
     const plan = pricing ? dividendPricingPlan(pricing) : null;
     const matches = (side: 'buyLevels' | 'sellLevels') => !action[side] || !!plan && action[side].length === plan[side].length
       && action[side].every((level, index) => level.priceMinor === plan[side][index].priceMinor
         && level.yieldBps === plan[side][index].yieldBps && level.portionBps === plan[side][index].portionBps);
     const { buyLevels, sellLevels, ...pause } = action;
-    if (pricing?.pauseReasons?.length && pause.buyPaused === false) {
-      pause.buyPaused = true;
-      pause.reason = pricing.pauseReasons.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join('；');
-    }
     // Every numerical replacement includes both verified sides, even if the
     // provider emits only buys. Never preserve an unrelated stale sell ladder.
     void buyLevels; void sellLevels;
-    if (plan && matches('buyLevels') && matches('sellLevels')) return [{ ...pause, buyPaused: true, ...plan }];
+    if (plan && matches('buyLevels') && matches('sellLevels')) return [{ ...pause, ...plan }];
     return pause.buyPaused === undefined ? [] : [pause];
   });
   // Explicit regeneration must not depend on whether the model emits a machine
   // draft. Use only the same deterministic ladder shown in the research card.
-  const question = args[2];
   const negated = /(?:不要|别|无需|不用|不必|暂不|先不|不想|不需要)[^，。；！？\n]{0,8}(?:生成|重做|重建|重设|更新|调整|修正|修改|定价|计算|估算|给出|给个|提供)/.test(question)
     || /(?:do not|don't|no need to|without)\s+(?:regenerat|generat|rebuild|revis|adjust|replac|calculat|estimat)/i.test(question);
   if (negated) result.actions = result.actions.flatMap(({ buyLevels, sellLevels, ...action }) => {
@@ -214,35 +210,27 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
       const money = (value: number) => (value / 100).toFixed(2);
       const pauseDetails = (pricing.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join(chinese ? '；' : '; ');
       const reason = chinese
-        ? `按三锚估值${money(pricing.theoreticalPriceMinor!)}元重建三档买入、四档卖出；卖出要求收益率取主锚的90%／80%／70%／60%，每档卖出25%。保存时暂停加仓，点击“重新复核加仓条件”完成经营、价格和技术复核后预览恢复。${pauseDetails}`
-        : `Rebuild three buy and four sell levels from the three-anchor valuation of CNY ${money(pricing.theoreticalPriceMinor!)}. Sell yields are 90/80/70/60% of the selected anchor, 25% per level. Save paused, then use the fresh buying-condition review before previewing resumption. ${pauseDetails}`;
+        ? `按三锚估值${money(pricing.theoreticalPriceMinor!)}元重建三档买入、四档卖出；卖出要求收益率取主锚的90%／80%／70%／60%，每档卖出25%。保留当前手动暂停设置，仓位按价格档位、预算与持仓判断。风险提示：${pauseDetails || '本次无额外定价提示'}。`
+        : `Rebuild three buy and four sell levels from the three-anchor valuation of CNY ${money(pricing.theoreticalPriceMinor!)}. Sell yields are 90/80/70/60% of the selected anchor, 25% per level. Preserve the manual pause setting; actions depend on price levels, budget and holdings. Alerts: ${pauseDetails || 'no additional pricing alerts'}.`;
       result.actions = result.actions.filter(action => action.code !== saved.code);
-      result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason: reason.slice(0, 2000), buyPaused: true,
+      result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason: reason.slice(0, 2000),
+        ...(explicitPause ? { buyPaused: true } : {}),
         ...plan });
-      summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元。买入三档${plan.buyLevels.map(level => money(level.priceMinor!)).join('／')}元；卖出四档${plan.sellLevels.map(level => money(level.priceMinor!)).join('／')}元，每档25%。卖出沿用原默认梯度比例，以本次可持续分红及主锚的90%／80%／70%／60%收益率重算。预览确认后同时替换两侧，保存时暂停加仓；到选股检查点击“重新复核加仓条件”查看是否可恢复。${pauseDetails}`
-        : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}. Buy levels ${plan.buyLevels.map(level => money(level.priceMinor!)).join(' / ')}; sell levels ${plan.sellLevels.map(level => money(level.priceMinor!)).join(' / ')}, 25% each. Sells use the existing default ladder ratios at 90/80/70/60% of this anchor and the same sustainable dividend. Preview and confirm to replace both sides with buying paused, then use the buying-condition review in Stock Checks. ${pauseDetails}`);
+      summaries.push(chinese ? `${saved.name}：三锚估值${money(pricing.theoreticalPriceMinor!)}元。买入三档${plan.buyLevels.map(level => money(level.priceMinor!)).join('／')}元；卖出四档${plan.sellLevels.map(level => money(level.priceMinor!)).join('／')}元，每档25%。卖出沿用原默认梯度比例，以本次可持续分红及主锚的90%／80%／70%／60%收益率重算。预览确认后同时替换两侧，保留当前手动暂停设置。风险提示：${pauseDetails || '本次无额外定价提示'}；仓位仍按价格档位、预算和持仓判断。`
+        : `${saved.name}: three-anchor valuation CNY ${money(pricing.theoreticalPriceMinor!)}. Buy levels ${plan.buyLevels.map(level => money(level.priceMinor!)).join(' / ')}; sell levels ${plan.sellLevels.map(level => money(level.priceMinor!)).join(' / ')}, 25% each. Sells use the existing default ladder ratios at 90/80/70/60% of this anchor and the same sustainable dividend. Preview and confirm to replace both sides while preserving the manual pause setting. Alerts: ${pauseDetails || 'no additional pricing alerts'}. Actions depend on price levels, budget and holdings.`);
     }
     // For explicit repricing, the deterministic result owns both prices and
     // readiness. Do not append a contradictory model refusal or another price.
     if (summaries.length) result.answer = summaries.join('\n\n');
   }
-  // Make the user's pacing rule deterministic even if a provider omits a draft.
-  // A draft always needs a fresh preview and a separate confirmation before writing.
+  // Show accelerating declines as context without inventing pause actions.
   if (context.activeStrategy === 'stocks') {
     const dateCutoff = new Date(Date.parse(context.generatedAt) - 10 * 86400_000).toISOString().slice(0, 10);
     const accelerating = context.research?.stocks.filter(stock => stock.technical?.state === 'accelerating_down'
       && stock.technical.currentUsable && stock.technical.asOf >= dateCutoff && context.stockPlan.stocks.some(saved => saved.code === stock.code && !saved.buyPaused)) ?? [];
-    for (const stock of accelerating.slice(0, 10)) {
-      const existing = result.actions.find(action => action.code === stock.code);
-      const reason = chinese ? `截至${stock.technical!.asOf}，近期下跌正在加速。先暂停加仓；跌势放缓、短期均线趋稳后复核。`
-        : `As of ${stock.technical!.asOf}, the decline is accelerating. Pause additional buying and review once momentum eases and short-term averages stabilise.`;
-      result.actions = result.actions.filter(action => action.code !== stock.code);
-      result.actions.push({ ...(existing ?? { id: `pause-${stock.code}`, code: stock.code }), buyPaused: true,
-        reason: (existing?.buyLevels ? `${reason} ${existing.reason}` : reason).slice(0, 2000) });
-    }
     if (accelerating.length) result.answer = `${chinese
-      ? `加仓节奏检查：${accelerating.map(stock => stock.name).join('、')}的已获取日线显示下跌加速，先暂停加仓并复核网格；触价本身不足以支持加仓。`
-      : `Pacing check: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline. Pause additional buying and review the grid; a reached price alone is insufficient.`}\n\n${result.answer}`;
+      ? `风险提示：${accelerating.map(stock => stock.name).join('、')}的已获取日线显示下跌加速，短期波动风险较高；不自动暂停，仍按价格档位、预算和持仓自主决定。`
+      : `Risk alert: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline and higher short-term volatility. This does not pause the grid; decide using price levels, budget and holdings.`}\n\n${result.answer}`;
   }
   result.actions = result.actions.slice(0, 10);
   result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');

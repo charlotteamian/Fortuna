@@ -1,0 +1,12 @@
+.div-review-alert { border-radius: 12px; padding: 12px 14px; margin: 12px 0; border-left: 4px solid; font-size: .92rem; }
+.div-review-alert.risk { color: var(--text-primary); background: color-mix(in srgb, #ef7649 12%, var(--bg-card)); border-color: #ef7649; }
+.div-review-alert.unknown { color: var(--text-primary); background: color-mix(in srgb, #e4b649 12%, var(--bg-card)); border-color: #d4a222; }
+.div-review-alert > strong { display: block; margin-bottom: 6px; }
+.div-review-alert ul { margin: 0; padding-left: 20px; }
+.div-review-alert li + li { margin-top: 5px; }
+.div-review-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.div-review-price { display: inline-block; font-size: .86em; }
+.div-review-price.triggered { color: var(--accent); }
+.div-review-policy { padding: 10px 12px; border-radius: 10px; background: var(--bg-glass); font-size: .9rem; }
+.div-review-acknowledgement { display: flex; align-items: flex-start; gap: 9px; margin: 14px 0; font-size: .92rem; cursor: pointer; }
+.div-review-acknowledgement input { flex-shrink: 0; margin-top: 4px; accent-color: var(--accent); }

@@ -186,8 +186,9 @@ export function buildGrid(stock: DividendStock, budgetMinor: number, shares: num
     const targetShares = completePrices && side === 'buy' ? Math.floor(cumulativeBuyShares / stock.lotSize) * stock.lotSize : undefined;
     const displayYieldBps = level.priceMinor ? dps === undefined ? undefined : dps / level.priceMinor : level.yieldBps;
     const sellShares = side === 'sell' ? (cumulative >= 10000 ? shares : Math.floor(shares * cumulative / 10000 / stock.lotSize) * stock.lotSize) : undefined;
-    const touched = Boolean(priceMinor && stock.quote && (side === 'buy' ? !stock.buyPaused && stock.quote.priceMinor <= priceMinor : shares > 0 && stock.quote.priceMinor >= priceMinor));
-    return { ...level, displayYieldBps, cumulative, priceMinor, targetShares, sellShares, touched };
+    const priceTouched = Boolean(priceMinor && stock.quote && (side === 'buy' ? stock.quote.priceMinor <= priceMinor : stock.quote.priceMinor >= priceMinor));
+    const touched = priceTouched && (side === 'buy' ? !stock.buyPaused : shares > 0);
+    return { ...level, displayYieldBps, cumulative, priceMinor, targetShares, sellShares, priceTouched, touched };
   });
 }
 
@@ -196,9 +197,11 @@ export function buildDividendHomePlan(stock: DividendStock, totalBudgetMinor: nu
   const budgetMinor = totalBudgetMinor === undefined ? undefined : stockBudgetMinor(totalBudgetMinor, stock.weightBps);
   const quoteDate = stock.quote?.date.slice(0, 10);
   const quoteAge = quoteDate ? (Date.parse(asOf) - Date.parse(quoteDate)) / 86400000 : NaN;
-  const quoteUsable = !!stock.quote && stock.quoteFailedAt === undefined && quoteAge >= 0 && quoteAge <= 10;
-  const buy = buildGrid(stock, budgetMinor ?? 0, shares, 'buy', asOf).map(row => ({ ...row, touched: quoteUsable && row.touched }));
-  const sell = buildGrid(stock, budgetMinor ?? 0, shares, 'sell', asOf).map(row => ({ ...row, touched: quoteUsable && row.touched }));
+  const quoteUsable = !!stock.quote && Number.isSafeInteger(stock.quote.priceMinor) && stock.quote.priceMinor > 0
+    && stock.quoteFailedAt === undefined && quoteAge >= 0 && quoteAge <= 10;
+  // Price touches remain visible when the user pauses execution or has no sellable shares.
+  const buy = buildGrid(stock, budgetMinor ?? 0, shares, 'buy', asOf).map(row => ({ ...row, touched: quoteUsable && row.priceTouched }));
+  const sell = buildGrid(stock, budgetMinor ?? 0, shares, 'sell', asOf).map(row => ({ ...row, touched: quoteUsable && row.priceTouched }));
   const touchedBuy = buy.filter(row => row.touched);
   const buyTargetShares = Math.max(0, ...touchedBuy.map(row => row.targetShares ?? 0));
   const additionalBuyShares = Math.max(0, Math.floor((buyTargetShares - shares) / stock.lotSize) * stock.lotSize);
@@ -209,7 +212,9 @@ export function buildDividendHomePlan(stock: DividendStock, totalBudgetMinor: nu
     : additionalBuyShares > 0 ? 'triggered' : touchedBuy.length ? buyTargetShares > shares || buyTargetShares <= 0 ? 'below_lot' : 'covered' : 'waiting';
   const sellState = shares <= 0 ? 'no_holding' : sell.every(row => row.priceMinor === undefined) ? 'price_missing'
     : !quoteUsable ? 'quote_missing' : sellShares > 0 ? 'triggered' : 'waiting';
-  return { budgetMinor, buy, sell, buyState, sellState, additionalBuyShares, sellShares,
+  const buyTriggeredLevel = buy.findLastIndex(row => row.touched) + 1;
+  const sellTriggeredLevel = sell.findLastIndex(row => row.touched) + 1;
+  return { budgetMinor, buy, sell, buyState, sellState, additionalBuyShares, sellShares, quoteUsable, buyTriggeredLevel, sellTriggeredLevel,
     incompletePrices: [...buy, ...sell].some(row => row.priceMinor === undefined) };
 }
 

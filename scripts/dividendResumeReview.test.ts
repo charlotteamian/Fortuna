@@ -85,24 +85,40 @@ test('fresh review uses saved user assumptions and only a later confirmed previe
   assert.deepEqual(await db.dividendStocks.get(stock.code), { ...stock, buyPaused: false });
 });
 
-test('financial risks, missing evidence, expensive prices and weak stock or broad-market pacing each keep buying paused', async () => {
+test('financial risks, missing evidence and weak markets remain advisory and never write a pause or require every check to pass', async () => {
   const fixtures: [string, (data: DividendResearchSnapshot) => void][] = [
     ['operating risk', data => { data.stocks[0].checks[0].status = 'risk'; }],
     ['missing operating evidence', data => { data.stocks[0].checks[0].status = 'unknown'; }],
     ['empty checks', data => { data.stocks[0].checks = []; }],
     ['cash coverage', data => { data.stocks[0].pricing!.pauseReasons = ['fcf_below_150']; }],
-    ['price above safety boundary', data => { data.stocks[0].pricing!.currentPriceMinor = 1101; }],
+    ['price above safety reference', data => { data.stocks[0].pricing!.currentPriceMinor = 1101; }],
     ['missing quote', data => { data.stocks[0].pricing!.pauseReasons = ['quote_missing']; }],
     ['falling stock', data => { data.stocks[0].technical!.pacing = 'review_grid'; }],
     ['accelerating market', data => { data.indices[1].technical!.pacing = 'pause_add'; }],
     ['one broad index missing', data => { data.indices[0].technical = undefined; }],
   ];
   for (const [name, edit] of fixtures) {
-    const data = snapshot(); edit(data); const result = await review(data); assert.equal(result.proposal, null, name);
+    const data = snapshot(); edit(data); const result = await review(data); assert.equal(result.proposal?.buyPaused, false, name);
   }
   assert.equal((await db.dividendStocks.get(stock.code))?.buyPaused, true);
   await updateSettings({ dividendSelectionPrinciples: { ...defaultDividendSelectionPrinciples(), notes: '核实关联交易' } });
-  assert.equal((await review()).proposal, null, 'unverified user supplementary rules cannot silently pass');
+  const additional = await review();
+  assert.equal(additional.advice.additionalRulesUnverified, true);
+  assert.equal(additional.proposal?.buyPaused, false, 'unverified supplementary rules remain visible without forbidding the user’s choice');
+});
+
+test('price status uses the saved grid and safety margin never becomes another buying threshold', async () => {
+  const data = snapshot(); data.stocks[0].pricing!.currentPriceMinor = 1000; data.stocks[0].pricing!.marginPriceMinor = 900;
+  const triggered = await review(data);
+  assert.equal(triggered.priceState, 'triggered'); assert.deepEqual(triggered.triggeredBuyLevels, [1]); assert.equal(triggered.pricePass, true);
+  data.stocks[0].pricing!.currentPriceMinor = 1101;
+  const waiting = await review(data);
+  assert.equal(waiting.priceState, 'waiting'); assert.equal(waiting.advice.firstBuyPriceMinor, 1000);
+  assert.deepEqual(waiting.savedBuyPricesMinor, [1000]); assert.equal(waiting.proposal?.buyPaused, false);
+  data.stocks[0].pricing!.pauseReasons = ['quote_missing'];
+  assert.equal((await review(data)).priceState, 'unknown');
+  await db.dividendStocks.update(stock.code, { buyPaused: false });
+  const active = await review(); assert.equal(active.proposal, null); assert.equal(active.wasPaused, false);
 });
 
 test('expired reviews and edits to user principles, pricing assumptions or saved plans require another review', async () => {

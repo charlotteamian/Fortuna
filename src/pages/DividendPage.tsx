@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, latestReportDividend, forecastHoldingYearDividends, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
+import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestReportDividend, forecastHoldingYearDividends, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
 import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendAdvisor from '../components/DividendAdvisor';
 import DividendHomePlan from '../components/DividendHomePlan';
+import DividendPlanGrid from '../components/DividendPlanGrid';
 import { saveDividendStrategy } from '../services/dividendFundService';
 import type { DividendStrategy } from '../lib/dividendFundPlan';
 import { dividendFundPriceMicros } from '../lib/dividendFundPlan';
@@ -147,17 +148,18 @@ export default function DividendPage() {
           <button className="btn btn-secondary" disabled={Boolean(progress) || untracked.length === 0} onClick={() => setLinkedPickerOpen(true)}>{t('div_add_linked', { count: untracked.length })}</button>
           <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => setImportOpen(true)}>{t('div_import')}</button></div>
         <input aria-label={t('div_search')} placeholder={t('div_search')} value={managerSearch} onChange={event => setManagerSearch(event.target.value)} />
-        <div className="div-plan-manager-list">{sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor).map(stock => <details key={stock.code} open={stock.code === focusedPlanCode}
+        <div className="div-plan-manager-list">{sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor).map(stock => {
+          const plan = buildDividendHomePlan(stock, data.budgetConfigured ? data.budgetMinor : undefined, sharesFor(stock), today);
+          return <details key={stock.code} open={stock.code === focusedPlanCode}
           ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }}>
-          <summary><strong>{stock.name}</strong><span>{stock.code} · {t(`div_group_${stock.group}`)}</span></summary>
+          <summary><strong>{stock.name}</strong><span>{stock.code} · {t(`div_group_${stock.group}`)}</span>
+            {(['buy', 'sell'] as const).filter(side => plan[`${side}TriggeredLevel`] > 0).map(side => <span className="div-grid-trigger-status is-triggered" key={side}>{t(`div_home_${side}`)} · {t('div_grid_triggered_level', { level: plan[`${side}TriggeredLevel`] })}</span>)}</summary>
           <label className="div-plan-stock-group">{t('div_group')}<select value={stock.group} aria-label={`${stock.name} ${t('div_group')}`} disabled={groupSaving} onChange={event => void changeStockGroup(stock.code, event.target.value as DividendStock['group'])}>{(['core', 'watch', 'hidden'] as const).map(value => <option key={value} value={value}>{t(`div_group_${value}`)}</option>)}</select></label>
           <div className="div-budget-line"><span>{t('div_stock_weight')} <strong>{numeric(stock.weightBps / 100)}%</strong></span><span>{t('div_stock_budget')} <strong>{money(stockBudgetMinor(data.budgetMinor, stock.weightBps))}</strong></span></div>
           <button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
           {stock.buyPaused && <p className="div-warning">{t('div_buy_paused_note')}</p>}
-          {(['buy', 'sell'] as const).map(side => <details className="div-details" key={side}><summary>{t(`div_grid_${side}`)}</summary><div className="div-table-scroll"><table><thead><tr><th>{t('div_grid_yield')}</th><th>{t('div_grid_price')}</th><th>{t('div_grid_shares')}</th></tr></thead><tbody>
-            {buildGrid(stock, stockBudgetMinor(data.budgetMinor, stock.weightBps), sharesFor(stock), side).map((row,index) => <tr key={index}><td>{row.displayYieldBps === undefined ? '—' : `${numeric(row.displayYieldBps / 100)}%`}</td><td>{row.priceMinor ? `¥${numeric(row.priceMinor / 100)}` : '—'}</td><td>{quantity(side === 'buy' ? row.targetShares ?? 0 : row.sellShares ?? 0)}</td></tr>)}
-          </tbody></table></div></details>)}
-        </details>)}</div>
+          {(['buy', 'sell'] as const).map(side => <DividendPlanGrid key={side} plan={plan} side={side} amountVisible={amountVisible} />)}
+        </details>; })}</div>
       </details>
     </>}
     {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}

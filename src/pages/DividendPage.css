@@ -173,12 +173,19 @@
 .div-home-plan-budget strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .div-home-plan-side { margin: .7rem 0; }
 .div-home-plan-side h4 { font-size: .75rem; margin: 0 0 .3rem; }
+.div-grid-trigger-status { display: inline-block; font-size: .65rem; font-weight: 500; color: var(--text-secondary); padding: .1rem .35rem; border-radius: 5px; background: var(--bg-glass); }
+.div-grid-trigger-status.is-triggered, .div-plan-manager-list > details > summary > .div-grid-trigger-status.is-triggered { color: var(--asset-color); background: var(--asset-dim); font-weight: 700; }
+.div-home-plan-side h4 > .div-grid-trigger-status, .div-plan-grid summary > .div-grid-trigger-status { margin-left: .3rem; }
+.div-plan-grid .div-grid-row-triggered { color: var(--asset-color); background: var(--asset-dim); font-weight: 600; }
+.div-plan-grid td:first-child { text-align: left; }
+.div-plan-grid td:first-child > small { display: block; margin-top: .2rem; font-size: .6rem; }
 .div-home-plan-state { font-size: .72rem; line-height: 1.6; color: var(--text-secondary); margin: .2rem 0 .45rem; }
 .div-home-plan-triggered { color: var(--asset-color); font-weight: 600; }
 .div-home-plan-levels { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .35rem; margin: 0; padding: 0; }
 .div-home-plan-levels > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .4rem; padding: .45rem .5rem; border: 1px solid var(--border); border-radius: 7px; min-width: 0; font-variant-numeric: tabular-nums; }
 .div-home-plan-levels strong { font-size: .76rem; overflow-wrap: anywhere; }
 .div-home-plan-levels span { font-size: .65rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.div-home-plan-levels .div-grid-level-label { flex: 1 1 100%; font-size: .62rem; }
 .div-home-plan-levels small { font-size: .6rem; color: var(--asset-color); }
 .div-home-plan-levels > .div-home-plan-touched { background: var(--asset-dim); border-color: var(--asset-color); }
 .div-home-plan-note { color: var(--text-secondary); font-size: .65rem; line-height: 1.65; margin: .65rem 0; }
