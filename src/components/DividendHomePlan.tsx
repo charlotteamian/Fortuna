@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { buildDividendHomePlan, type DividendStock } from '../lib/dividendWorkbench.ts';
+import DividendGridTable from './DividendGridTable.tsx';
 
 const numeric = (value: number, max = 2) => value.toLocaleString(undefined, { maximumFractionDigits: max });
 
@@ -17,21 +18,11 @@ export default function DividendHomePlan({ stock, totalBudgetMinor, shares, amou
       <h4>{t(`div_home_${side}`)} <span className={`div-grid-trigger-status${plan[`${side}TriggeredLevel`] > 0 ? ' is-triggered' : ''}`}>
         {t(!plan.quoteUsable ? 'div_grid_quote_pending' : plan[side].every(row => row.priceMinor === undefined) ? 'div_grid_prices_pending'
           : plan[`${side}TriggeredLevel`] > 0 ? 'div_grid_triggered_level' : 'div_grid_not_triggered', { level: plan[`${side}TriggeredLevel`] })}</span></h4>
-      <p className={`div-home-plan-state${(side === 'buy' ? plan.buyState : plan.sellState) === 'triggered' ? ' div-home-plan-triggered' : ''}`}>
-        {t(`div_home_${side}_${side === 'buy' ? plan.buyState : plan.sellState}`, { shares: quantity(side === 'buy' ? plan.additionalBuyShares : plan.sellShares) })}</p>
-      <ol className="div-home-plan-levels">{plan[side].map((row, index) => {
-        const target = side === 'buy' ? row.targetShares : row.sellShares;
-        return <li className={row.touched ? 'div-home-plan-touched' : ''} key={index}>
-          <span className="div-grid-level-label">{t('div_grid_level', { level: index + 1 })}</span>
-          <strong>{row.priceMinor === undefined ? t('div_home_unpriced', { yield: numeric(row.yieldBps / 100) }) : `¥${numeric(row.priceMinor / 100)}`}</strong>
-          <span>{target === undefined || side === 'buy' && totalBudgetMinor === undefined || side === 'sell' && shares <= 0
-            ? t('div_home_allocation', { percent: numeric(row.cumulative / 100) })
-            : t(`div_home_${side}_target`, { shares: quantity(target) })}</span>
-          {row.touched && <small>{t('div_grid_price_triggered')}</small>}
-        </li>;
-      })}</ol>
+      {(side === 'buy' ? plan.buyState : plan.sellState) !== 'waiting' && <p className={`div-home-plan-state${(side === 'buy' ? plan.buyState : plan.sellState) === 'triggered' ? ' div-home-plan-triggered' : ''}`}>
+        {t(`div_home_${side}_${side === 'buy' ? plan.buyState : plan.sellState}`, { shares: quantity(side === 'buy' ? plan.additionalBuyShares : plan.sellShares) })}</p>}
+      <DividendGridTable plan={plan} side={side} amountVisible={amountVisible} />
     </div>)}
     {plan.incompletePrices && <p className="div-warning">{t('div_home_partial_prices')}</p>}
-    <p className="div-home-plan-note">{t('div_home_plan_note')}</p>
+    <details className="div-home-plan-note"><summary>{t('div_home_plan_calculation')}</summary><p>{t('div_home_plan_note')}</p></details>
   </section>;
 }

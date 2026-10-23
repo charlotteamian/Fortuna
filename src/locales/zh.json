@@ -1176,6 +1176,8 @@
   "delete_holding": "删除持仓",
   "delete_product": "删除产品",
   "archive_tools": "归档检索工具",
+  "archive_search_filters": "搜索与筛选",
+  "archive_filters_active": "已启用筛选",
   "archive_search": "搜索归档",
   "archive_search_placeholder": "搜索名称或代码",
   "archive_account_search_placeholder": "搜索账户名称、机构或产品代码",

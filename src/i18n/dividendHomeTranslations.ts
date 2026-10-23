@@ -1,6 +1,7 @@
 export const dividendHomeZh = {
   div_v2_management_intro: '在这里调整股票、预算、网格和基金策略；红利首页直接查看各股计划与执行状态。',
   div_home_plan: '当前计划',
+  div_home_plan_calculation: '股数计算说明',
   div_home_edit_plan: '调整计划',
   div_home_buy: '买入档位',
   div_home_sell: '卖出档位',
@@ -8,7 +9,7 @@ export const dividendHomeZh = {
   div_home_buy_target: '累计持有 {{shares}} 股',
   div_home_sell_target: '累计卖出 {{shares}} 股',
   div_home_allocation: '累计 {{percent}}%',
-  div_home_plan_note: '买入档显示累计持仓目标；触价差额另扣现仓并按整手取整。卖出按当前持仓模拟。仓位按价格档位、预算和现仓判断；选股检查另列风险与待补充。',
+  div_home_plan_note: '档位下方股数：买入为累计持仓目标，卖出为累计卖出股数。占比：买入占本股分配资金，卖出占当前持仓。触价差额另扣现仓并按整手取整。风险与待补充见选股检查。',
   div_home_buy_paused: '加仓已暂停，保留现有买入计划。',
   div_home_buy_budget_missing: '尚未设置总预算；到计划管理填写后计算买入股数。',
   div_home_buy_budget_empty: '本股尚未分配买入资金；调整预算或计划占比后再加仓。',
@@ -30,6 +31,7 @@ export const dividendHomeZh = {
 export const dividendHomeEn: Record<keyof typeof dividendHomeZh, string> = {
   div_v2_management_intro: 'Manage stocks, budgets, grids and fund strategies here. Each stock’s plan and execution status are visible on the overview.',
   div_home_plan: 'Current plan',
+  div_home_plan_calculation: 'How quantities are calculated',
   div_home_edit_plan: 'Edit plan',
   div_home_buy: 'Buy levels',
   div_home_sell: 'Sell levels',
@@ -37,7 +39,7 @@ export const dividendHomeEn: Record<keyof typeof dividendHomeZh, string> = {
   div_home_buy_target: 'Cumulative holding {{shares}} shares',
   div_home_sell_target: 'Cumulative sale {{shares}} shares',
   div_home_allocation: 'Cumulative {{percent}}%',
-  div_home_plan_note: 'Buy levels show cumulative targets. The touched-level shortfall deducts holdings and rounds down to whole lots. Sales use current holdings. Use price levels, budget and holdings for position decisions; Screening separately lists risks and missing evidence.',
+  div_home_plan_note: 'Quantities below each level are cumulative holding targets for buys and cumulative shares sold for sales. Weights use this stock’s allocated budget for buys and current holding for sales. The buy shortfall deducts current holdings and rounds down to whole lots. Risks and missing evidence are in Screening.',
   div_home_buy_paused: 'Additions are paused. The saved buy plan is retained.',
   div_home_buy_budget_missing: 'No total budget is set. Enter it in Plan to calculate buy quantities.',
   div_home_buy_budget_empty: 'No buy budget is allocated to this stock. Adjust the budget or weight before adding.',

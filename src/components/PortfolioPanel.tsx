@@ -795,7 +795,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t(isBalancePortfolio ? 'archived_products_hint' : 'archived_holdings_hint')}</div>
             <ArchiveControls filters={archiveFilters} onChange={setArchiveFilters} typeOptions={archiveTypeOptions}
               allowPnlSort={archiveHasPnl} dateHint={t('archive_holding_date_hint')}
-              resultCount={filteredArchive.length} totalCount={archivedHoldings.length} />
+              resultCount={filteredArchive.length} totalCount={archivedHoldings.length} collapsible={isStockPortfolio} />
             {archiveHasPnl && filteredArchive.length > 0 && <div className="archive-pnl-total">
               <span>{t('archive_filtered_pnl')}</span>
               <strong style={{ color: pnlColor(filteredPnlMinor) }}>{masked(`${filteredPnlMinor >= 0 ? '+' : ''}${fmtFull(filteredPnlMinor / 100)} ${account.currency}`)}</strong>

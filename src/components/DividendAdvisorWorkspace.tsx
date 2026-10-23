@@ -14,6 +14,8 @@ import { DividendCandidateError, resolveDividendCandidates } from '../services/d
 import { dividendResearchSnapshotForStock, loadDividendResearchCache, saveDividendResearchCache, saveDividendResearchCollapse, type SavedDividendResearch } from '../services/dividendResearchCacheService';
 import DividendAdvisorResumeReview from './DividendAdvisorResumeReview';
 import { dateInChina } from '../lib/dividendWorkbench';
+import { dividendReviewSummary } from '../lib/dividendReviewSummary';
+import DividendReviewSummary, { DividendReviewPrice } from './DividendReviewSummary';
 
 type Panel = 'chat' | 'research' | 'principles';
 type RemovalPreview = Awaited<ReturnType<typeof previewDividendRiskRemoval>>;
@@ -42,20 +44,11 @@ function TechnicalPosition({ technical }: { technical?: DividendTechnicalResearc
 function StockConclusion({ stock, snapshot, savedStock }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot; savedStock?: DividendStock }) {
   const { t } = useTranslation();
   const advice = dividendResearchAdvice(stock, snapshot.indices, snapshot.principles.notes, savedStock);
-  const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
-  const labels = (rules: typeof advice.failedRules) => rules.map(rule => t(`div_ai_rule_label_${rule}`)).join('、');
-  return <div className={`div-ai-conclusion ${advice.decision}`}><p className="div-ai-conclusion-label">{t('div_ai_conclusion_label')}</p>
-    <h3>{t(`div_ai_decision_${advice.decision}`)}</h3>
-    <p>{t(`div_ai_decision_${advice.decision}_detail`, { price: yuan(advice.currentPriceMinor), margin: yuan(advice.marginPriceMinor), first: yuan(advice.firstBuyPriceMinor) })}</p>
-    {advice.failedRules.length > 0 && <p className="div-review-alert risk">{t('div_ai_conclusion_failed', { rules: labels(advice.failedRules) })}</p>}
-    {advice.missingRules.length > 0 && <p className="div-review-alert unknown">{t('div_ai_conclusion_missing', { rules: labels(advice.missingRules) })}</p>}
-    {advice.pricingRiskReasons.length > 0 && <p className="div-review-alert risk">{t('div_ai_conclusion_pricing_risk', { reasons: advice.pricingRiskReasons.map(reason => t(`div_v2_pricing_gap_${reason}`)).join(' ') })}</p>}
-    {advice.pricingMissingReasons.length > 0 && <p className="div-review-alert unknown">{t('div_ai_conclusion_pricing_missing', { reasons: advice.pricingMissingReasons.map(reason => t(`div_v2_pricing_gap_${reason}`)).join(' ') })}</p>}
-    {advice.technicalMissing && <p>{t('div_ai_conclusion_technical_missing')}</p>}
-    {advice.marketPacing !== 'observe' && <p>{t(`div_ai_conclusion_market_${advice.marketPacing}`)}</p>}
-    {advice.marketMissing && <p>{t('div_ai_conclusion_market_missing')}</p>}
-    {advice.additionalRulesUnverified && <p>{t('div_ai_conclusion_additional_rules')}</p>}
-    <p className="div-ai-conclusion-next"><strong>{t('div_ai_conclusion_next')}</strong>{t(`div_ai_decision_${advice.decision}_next`)}</p>
+  return <div className={`div-ai-conclusion div-review-overview ${advice.decision}`}>
+    <DividendReviewPrice currentPriceMinor={advice.currentPriceMinor} firstBuyPriceMinor={advice.firstBuyPriceMinor} priceDate={advice.currentPriceDate}
+      triggeredBuyLevels={advice.triggeredBuyLevels} priceState={advice.decision === 'eligible' ? 'triggered' : advice.decision === 'wait_price' ? 'waiting' : 'unknown'} saved={!!savedStock} />
+    <DividendReviewSummary summary={dividendReviewSummary(stock, advice)} />
+    <p className="div-review-soft-note">{t('div_v4_soft_note')}</p>
   </div>;
 }
 
@@ -69,9 +62,8 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
     {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
     <StockConclusion stock={stock} snapshot={snapshot} savedStock={savedStock} />
     {!canAdd && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
-    {stock.financial?.sectorReview && <DividendFinancialReviewCard code={stock.code} review={stock.financial.sectorReview} />}
     <details className="div-ai-research-details"><summary>{t('div_ai_research_details')}</summary>
-    <div className="div-ai-research-card-body"><details><summary>{t('div_ai_research_rules')}</summary>
+    <div className="div-ai-research-card-body">{stock.financial?.sectorReview && <DividendFinancialReviewCard code={stock.code} review={stock.financial.sectorReview} />}<details><summary>{t('div_ai_research_rules')}</summary>
       <ul className="div-ai-checks">{stock.checks.map(check => <li key={check.rule}><div><strong>{t(`div_ai_rule_label_${check.rule}`)}</strong>
         <span className={`div-ai-status ${check.status}`}>{t(`div_ai_research_${check.status}`)}</span></div>
         {check.value !== undefined && check.threshold !== undefined && <p>{t('div_ai_research_value', { value: check.rule === 'dividendYears' ? check.value : `${check.value / 100}%`, threshold: check.rule === 'dividendYears' ? check.threshold : `${check.threshold / 100}%` })}</p>}
@@ -79,7 +71,7 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
         {check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
       </li>)}</ul></details>
       {stock.pricing && <DividendPricingCard code={stock.code} pricing={stock.pricing} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />}
-      <details open><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
+      <details><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
       {stock.financial && <details><summary>{t('div_ai_research_financial')}</summary><p className="div-ai-muted">{stock.financial.sector}</p>
         <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}>
           <strong>{period.reportDate}</strong><p>{t('div_ai_financial_period', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`, roe: period.roeBps === undefined ? '—' : `${period.roeBps / 100}%` })}</p>

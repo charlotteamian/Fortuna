@@ -43,7 +43,7 @@ test('home plan shows all buy and sell levels, budget and actionable quantities 
   assert.match(html, /¥10,000/); assert.match(html, /已持仓 200 股/);
   assert.match(html, /已触发第 1 档/); assert.match(html, /价格已触发/);
   assert.match(html, /第 2 档/);
-  assert.doesNotMatch(html, /<details/);
+  assert.match(html, /<details class="div-home-plan-note"><summary>股数计算说明/);
 });
 
 test('plan manager and homepage show the same highest price-triggered tier, including paused plans', () => {
@@ -78,6 +78,17 @@ test('home plan respects amount privacy while retaining public price levels', ()
   const html = render(false);
   assert.match(html, /已持仓 •••• 股/); assert.match(html, /整手差额 •••• 股/);
   assert.match(html, /¥10/); assert.doesNotMatch(html, /¥10,000|300 股|500 股|200 股|1,100 股/);
+});
+
+test('the compact grid retains saved target yields rather than recalculating them from a new dividend', () => {
+  const changedDividend = { ...stock, manualDpsMicros: 1000000 };
+  const plan = buildDividendHomePlan(changedDividend, 1000000, 200, '2026-10-21');
+  assert.notEqual(plan.buy[0].displayYieldBps, plan.buy[0].yieldBps);
+  const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n },
+    createElement(DividendPlanGrid, { plan, side: 'buy', amountVisible: true })));
+  assert.match(html, /<td>5%<\/td>/); assert.match(html, /<td>6%<\/td>/);
+  assert.doesNotMatch(html, /<td>10%<\/td>/);
+  assert.match(html, /<td>50%<\/td>/);
 });
 
 test('home plan shows allocation rather than fabricated zero shares when no budget exists', () => {

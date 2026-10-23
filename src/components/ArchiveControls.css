@@ -2,6 +2,17 @@
   margin: 10px 0 12px; padding: 12px; border: 1px solid var(--border);
   border-radius: var(--radius); background: var(--bg-card); min-width: 0;
 }
+.archive-controls-collapsible { padding: 0; }
+.archive-controls-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 8px; min-height: 44px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.archive-controls-summary::-webkit-details-marker { display: none; }
+.archive-controls-summary::before { content: '▸'; color: var(--text-muted); font-size: .75rem; }
+.archive-controls-collapsible[open] > .archive-controls-summary::before { transform: rotate(90deg); }
+.archive-controls-summary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; border-radius: var(--radius); }
+.archive-controls-summary strong { color: var(--text-primary); font-size: .75rem; }
+.archive-controls-summary-count { min-width: 0; margin-left: auto; color: var(--text-muted); font-size: .68rem; overflow-wrap: anywhere; }
+.archive-controls-summary small { flex-basis: 100%; margin-left: 14px; color: var(--asset-color); font-size: .68rem; }
+.archive-controls-summary small.archive-date-error { color: var(--liability-color); }
+.archive-controls-body { padding: 0 12px 12px; }
 .archive-controls label { display: block; min-width: 0; }
 .archive-controls label > span { display: block; margin-bottom: 5px; color: var(--text-secondary); font-size: .7rem; }
 .archive-controls .form-input, .archive-controls .form-select { min-width: 0; max-width: 100%; min-height: 2.5rem; font-size: .75rem; }

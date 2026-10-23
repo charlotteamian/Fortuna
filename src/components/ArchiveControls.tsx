@@ -12,18 +12,18 @@ interface Props {
   searchPlaceholder?: string;
   resultCount: number;
   totalCount: number;
+  collapsible?: boolean;
 }
 
 const SORTS: ArchiveSort[] = ['date-desc', 'date-asc', 'name-asc', 'name-desc', 'pnl-desc', 'pnl-asc'];
 
-export default function ArchiveControls({ filters, onChange, typeOptions, allowPnlSort, dateHint, searchPlaceholder, resultCount, totalCount }: Props) {
+export default function ArchiveControls({ filters, onChange, typeOptions, allowPnlSort, dateHint, searchPlaceholder, resultCount, totalCount, collapsible = false }: Props) {
   const { t } = useTranslation();
   const id = useId();
   const invalidDates = hasInvalidArchiveDateRange(filters);
   const update = (updates: Partial<ArchiveFilters>) => onChange({ ...filters, ...updates });
   const hasFilters = filters.query || filters.type || filters.startDate || filters.endDate || filters.sort !== DEFAULT_ARCHIVE_FILTERS.sort;
-  return (
-    <div className="archive-controls" role="region" aria-label={t('archive_tools')}>
+  const controls = <>
       <label className="archive-search" htmlFor={`${id}-search`}>
         <span>{t('archive_search')}</span>
         <input id={`${id}-search`} type="search" className="form-input" value={filters.query}
@@ -65,6 +65,14 @@ export default function ArchiveControls({ filters, onChange, typeOptions, allowP
         {hasFilters && <button type="button" onClick={() => onChange({ ...DEFAULT_ARCHIVE_FILTERS })}>{t('archive_reset')}</button>}
       </div>
       {resultCount === 0 && !invalidDates && <p className="archive-empty">{t('archive_no_results')}</p>}
-    </div>
-  );
+    </>;
+  if (collapsible) return <details className="archive-controls archive-controls-collapsible">
+    <summary className="archive-controls-summary">
+      <strong>{t('archive_search_filters')}</strong>
+      <span className="archive-controls-summary-count" role="status" aria-live="polite">{t('archive_result_count', { count: resultCount, total: totalCount })}</span>
+      {hasFilters && <small className={invalidDates ? 'archive-date-error' : undefined}>{t(invalidDates ? 'archive_invalid_dates' : 'archive_filters_active')}</small>}
+    </summary>
+    <div className="archive-controls-body">{controls}</div>
+  </details>;
+  return <div className="archive-controls" role="region" aria-label={t('archive_tools')}>{controls}</div>;
 }

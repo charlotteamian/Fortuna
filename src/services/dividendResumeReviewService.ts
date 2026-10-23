@@ -1,5 +1,5 @@
 import { db } from '../db.ts';
-import { buildGrid, type DividendStock } from '../lib/dividendWorkbench.ts';
+import { buildGrid, dateInChina, type DividendStock } from '../lib/dividendWorkbench.ts';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions.ts';
 import { dividendResearchAdvice } from '../lib/dividendResearchAdvice.ts';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch.ts';
@@ -35,13 +35,13 @@ export async function reviewDividendResume(stock: Pick<DividendStock, 'code' | '
   const snapshot = await (options.fetchResearch ?? fetchDividendResearch)([stock], principles, { pricingMethod: method, maxStocks: 1, timeBudgetMs: 60000 });
   const result = snapshot.stocks.find(value => value.code === stock.code);
   if (!result) throw new Error('DIVIDEND_REVIEW_REQUIRED');
-  const advice = dividendResearchAdvice(result, snapshot.indices, principles.notes, saved);
+  const asOf = dateInChina(new Date((options.now ?? Date.now)()));
+  const advice = dividendResearchAdvice(result, snapshot.indices, principles.notes, saved, asOf);
   const operationsPass = result.checks.length > 0 && !advice.failedRules.length && !advice.missingRules.length
     && !advice.additionalRulesUnverified && !advice.pricingPauseReasons.filter(reason => reason !== 'quote_missing').length;
-  const savedBuyPricesMinor = buildGrid(saved, 0, 0, 'buy', result.pricing?.priceDate).map(level => level.priceMinor);
-  const quoteUsable = advice.currentPriceMinor !== undefined && advice.currentPriceMinor > 0 && !advice.pricingPauseReasons.includes('quote_missing');
-  const triggeredBuyLevels = quoteUsable ? savedBuyPricesMinor.flatMap((price, index) => price !== undefined && advice.currentPriceMinor! <= price ? [index + 1] : []) : [];
-  const priceState = !quoteUsable || savedBuyPricesMinor.every(price => price === undefined) ? 'unknown' : triggeredBuyLevels.length ? 'triggered' : 'waiting';
+  const savedBuyPricesMinor = buildGrid(saved, 0, 0, 'buy', asOf).map(level => level.priceMinor);
+  const triggeredBuyLevels = advice.triggeredBuyLevels;
+  const priceState = !advice.quoteUsable || savedBuyPricesMinor.every(price => price === undefined) ? 'unknown' : triggeredBuyLevels.length ? 'triggered' : 'waiting';
   const pricePass = priceState === 'triggered';
   const technicalPass = !advice.technicalMissing && !advice.marketMissing && result.technical?.pacing === 'observe' && advice.marketPacing === 'observe';
   const review: DividendResumeReview = { snapshot: { ...snapshot, principles, pricingMethod: method }, advice, operationsPass, pricePass, technicalPass,

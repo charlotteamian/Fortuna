@@ -121,6 +121,24 @@ test('price status uses the saved grid and safety margin never becomes another b
   const active = await review(); assert.equal(active.proposal, null); assert.equal(active.wasPaused, false);
 });
 
+test('review falls back to a valid saved quote when new financial pricing is absent, preserving separate missing evidence', async () => {
+  const quote = { priceMinor: 1000, date: '2026-10-22 10:00', fetchedAt: now };
+  await db.dividendStocks.update(stock.code, { quote });
+  const data = snapshot(); data.stocks[0].pricing = undefined; data.stocks[0].checks[0].status = 'unknown';
+  const result = await review(data);
+  assert.equal(result.priceState, 'triggered'); assert.deepEqual(result.triggeredBuyLevels, [1]);
+  assert.equal(result.advice.currentPriceDate, quote.date); assert.equal(result.advice.currentPriceMinor, 1000);
+  assert.deepEqual(result.advice.missingRules, ['roe']); assert.equal(result.proposal?.buyPaused, false);
+  assert.equal((await db.dividendStocks.get(stock.code))?.buyPaused, true);
+  for (const updates of [{ quote: undefined }, { quote, quoteFailedAt: now },
+    ...['2026-10-11', '2026-10-23', 'invalid'].map(date => ({ quote: { ...quote, date }, quoteFailedAt: undefined })),
+    { quote: { ...quote, priceMinor: 0 }, quoteFailedAt: undefined }]) {
+    await db.dividendStocks.update(stock.code, { quoteFailedAt: undefined, ...updates });
+    const unavailable = await review(data);
+    assert.equal(unavailable.priceState, 'unknown'); assert.deepEqual(unavailable.triggeredBuyLevels, []);
+  }
+});
+
 test('expired reviews and edits to user principles, pricing assumptions or saved plans require another review', async () => {
   const result = await review();
   await assert.rejects(() => assertDividendResumeReviewCurrent(result, undefined, () => now + DIVIDEND_RESUME_REVIEW_MAX_AGE_MS + 1), /DIVIDEND_REVIEW_STALE/);

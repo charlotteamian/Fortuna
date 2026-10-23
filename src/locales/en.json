@@ -1176,6 +1176,8 @@
   "delete_holding": "Delete holding",
   "delete_product": "Delete product",
   "archive_tools": "Archive Search Tools",
+  "archive_search_filters": "Search & Filters",
+  "archive_filters_active": "Filters active",
   "archive_search": "Search Archive",
   "archive_search_placeholder": "Search name or code",
   "archive_account_search_placeholder": "Search account, institution or product code",
