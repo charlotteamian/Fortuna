@@ -11,7 +11,7 @@ const asOf = '2026-10-21';
 const annuals: DividendPricingAnnual[] = Array.from({length:5},(_,i) => ({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
   epsMicros:1000000,adjustedEpsMicros:1000000,roeBps:1000,dividendMicros:500000,payoutBps:5000,fcfCoverageBps:20000}));
 const history: DividendYieldHistory = {basis:'implemented_cash_ex_date_trailing_year_over_unadjusted_month_close',capitalActionsVerified:true,from:'2016-10-28',through:'2026-09-28',sourceUrls:[],
-  samples:Array.from({length:120},(_,i) => ({date:`${2016+Math.floor((i+9)/12)}-${String((i+9)%12+1).padStart(2,'0')}-28`,yieldBps:500,spreadBps:300}))};
+  samples:Array.from({length:120},(_,i) => ({date:`${2016+Math.floor((i+9)/12)}-${String((i+9)%12+1).padStart(2,'0')}-28`,yieldBps:500,treasuryBps:200,spreadBps:300}))};
 function input() { return {code:'600000',name:'Fixture',financialSector:false,method:defaultDividendPricingMethod(),annuals:structuredClone(annuals),asOf,
   history:structuredClone(history),treasury:{yieldBps:200,asOf,fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'},
   opportunity:{yieldBps:500,asOf,sourceUrl:'https://example.com/comparison',basis:'Dated comparator'},priceMinor:1000,priceDate:asOf,bvpsMicros:20000000}; }
@@ -108,17 +108,113 @@ test('reported 100.21% payout and 126.64% positive cash coverage keep a cash-cap
   v.annuals.forEach(year=>{year.payoutBps=10021;});
   assert.equal(calculateDividendPricing(v).sustainablePayoutBps,10000);
 });
-test('missing or stale current quotes pause buying without erasing an independently calculated valuation', () => {
-  for (const missing of [true,false]) {
-    const v=input();const p=calculateDividendPricing({...v,priceMinor:missing?undefined:v.priceMinor,priceDate:missing?undefined:'2026-01-01'});
+test('missing, invalid and stale quotes preserve valuation without reporting a quote yield or reached prices', () => {
+  const quotes = [
+    { priceMinor:undefined, priceDate:undefined },
+    ...[0,-1,1000.5,Number.MAX_SAFE_INTEGER+1,NaN,Infinity].map(priceMinor=>({priceMinor,priceDate:asOf})),
+    { priceMinor:100, priceDate:'2026-01-01' },
+    { priceMinor:100, priceDate:'2026-10-22' },
+  ];
+  for (const quote of quotes) {
+    const p=calculateDividendPricing({...input(),...quote,currentCashYieldBps:600});
     assert.equal(p.canApply,true);assert.equal(p.theoreticalPriceMinor,1000);assert.equal(p.grid.length,3);
     assert.ok(p.pauseReasons?.includes('quote_missing'));assert.ok(p.grid.every(level=>level.changeFromCurrentBps===undefined));
+    assert.ok(!p.pauseReasons?.includes('implausible_yield'));
+    assert.equal(p.currentSpreadBps,undefined);assert.equal(p.spreadPercentileBps,undefined);
+    assert.deepEqual(dividendPricingMarketComparison(p),{quoteUsable:false,estimateGapBps:undefined,reachedBuyLevels:[],sustainableYieldAtQuoteBps:undefined,largeDiscount:false});
     assert.equal(dividendPricingReadable(p)['Three exact grid prices'][0]['Change from current price percent'],null);
+  }
+});
+test('the unusual quote-yield review starts strictly above 30 percent and remains advisory', () => {
+  const v=input();
+  v.annuals.forEach(year=>Object.assign(year,{epsMicros:1200000,adjustedEpsMicros:1200000,dividendMicros:600000}));
+  for (const [priceMinor,expectedYieldBps,unusual] of [[200,3000,false],[199,3015,true]] as const) {
+    const p=calculateDividendPricing({...v,priceMinor});
+    assert.equal(p.d1Micros,600000);assert.equal(p.canApply,true);
+    assert.equal(p.pauseReasons?.includes('implausible_yield'),unusual);
+    assert.ok(!p.blockers.includes('implausible_yield'));
+    assert.equal(dividendPricingMarketComparison(p).sustainableYieldAtQuoteBps,expectedYieldBps);
   }
 });
 test('spread percentile compares implemented trailing dividends on both sides rather than mixing sustainable D1', () => {
   const v={...input(),currentCashYieldBps:600};const p=calculateDividendPricing(v);
   assert.equal(p.currentSpreadBps,400);assert.equal(p.spreadPercentileBps,10000);
+});
+test('current spread requires a safe nonnegative implemented-cash yield and accepts a reported zero', () => {
+  for (const currentCashYieldBps of [undefined,-1,600.5,Number.MAX_SAFE_INTEGER+1,NaN,Infinity]) {
+    const p=calculateDividendPricing({...input(),currentCashYieldBps});
+    assert.equal(p.currentSpreadBps,undefined);assert.equal(p.spreadPercentileBps,undefined);
+    assert.equal(p.d1Micros,500000);assert.equal(p.theoreticalPriceMinor,1000);
+  }
+  const zero=calculateDividendPricing({...input(),currentCashYieldBps:0});
+  assert.equal(zero.currentSpreadBps,-200);assert.equal(zero.spreadPercentileBps,0);
+});
+test('current spread excludes missing, invalid, stale and future treasury evidence without changing the primary price', () => {
+  const v=input(), currentCashYieldBps=600;
+  const treasuries=[undefined,
+    ...[-1,3000,200.5,NaN,Infinity].map(yieldBps=>({...v.treasury,yieldBps})),
+    {...v.treasury,sourceUrl:''},
+    {...v.treasury,asOf:'2026-10-10'},
+    {...v.treasury,asOf:'2026-10-22'},
+    {...v.treasury,asOf:'2026-02-30'},
+  ];
+  for (const treasury of treasuries) {
+    const p=calculateDividendPricing({...v,treasury,currentCashYieldBps});
+    assert.equal(p.currentSpreadBps,undefined);assert.equal(p.spreadPercentileBps,undefined);
+    assert.equal(p.d1Micros,500000);assert.equal(p.theoreticalPriceMinor,1000);
+  }
+  const boundary=calculateDividendPricing({...v,priceDate:'2026-10-11',treasury:{...v.treasury,asOf:'2026-10-11'},currentCashYieldBps});
+  assert.equal(boundary.currentSpreadBps,400);assert.equal(boundary.spreadPercentileBps,10000);
+});
+test('unusable historical coverage preserves a valid current spread but cannot report a spread percentile', () => {
+  const histories=[undefined,
+    {...structuredClone(history),capitalActionsVerified:false},
+    {...structuredClone(history),cashDistributionsComplete:false},
+    {...structuredClone(history),through:'2026-01-28'},
+    {...structuredClone(history),samples:history.samples.slice(-59)},
+  ];
+  for (const history of histories) {
+    const p=calculateDividendPricing({...input(),history,currentCashYieldBps:600});
+    assert.equal(p.historyCoverage?.usable,false);assert.equal(p.currentSpreadBps,400);
+    assert.equal(p.spreadPercentileBps,undefined);
+    assert.equal(p.d1Micros,500000);assert.equal(p.theoreticalPriceMinor,1000);
+  }
+});
+test('spread percentiles give each valid completed month one vote and ignore the current month and future observations', () => {
+  const h=structuredClone(history);
+  h.samples=h.samples.slice(-60).map((sample,index)=>({...sample,treasuryBps:index<30?400:0,spreadBps:index<30?100:500}));
+  h.samples.push(...Array.from({length:10},()=>({...h.samples[0]})),
+    {date:'2026-10-01',yieldBps:500,treasuryBps:400,spreadBps:100},
+    {date:'2027-01-28',yieldBps:500,treasuryBps:400,spreadBps:100});
+  const p=calculateDividendPricing({...input(),history:h,currentCashYieldBps:600});
+  assert.equal(p.historyCoverage?.usable,true);assert.equal(p.historyCoverage?.sampleCount,60);
+  assert.equal(p.currentSpreadBps,400);assert.equal(p.spreadPercentileBps,5000);
+  assert.equal(p.d1Micros,500000);assert.equal(p.theoreticalPriceMinor,1000);
+});
+test('fewer than 60 consistent treasury-backed spread months cannot be filled by invalid, duplicated, current or future rows', () => {
+  const badSpreads=[
+    {spreadBps:undefined}, {treasuryBps:undefined}, {spreadBps:300.5}, {spreadBps:NaN}, {spreadBps:Infinity},
+    {spreadBps:Number.MAX_SAFE_INTEGER+1}, {spreadBps:301},
+    {treasuryBps:-1,spreadBps:501}, {treasuryBps:3000,spreadBps:-2500},
+    {treasuryBps:200.5,spreadBps:299.5}, {treasuryBps:NaN}, {treasuryBps:Infinity},
+  ];
+  for (const invalid of badSpreads) {
+    const h=structuredClone(history);h.samples=h.samples.slice(-60);
+    Object.assign(h.samples[0],invalid);
+    h.samples.push({...h.samples[1]},
+      {date:'2026-10-01',yieldBps:500,treasuryBps:200,spreadBps:300},
+      {date:'2027-01-28',yieldBps:500,treasuryBps:200,spreadBps:300});
+    const p=calculateDividendPricing({...input(),history:h,currentCashYieldBps:600});
+    assert.equal(p.historyCoverage?.usable,true);assert.equal(p.historyCoverage?.sampleCount,60);
+    assert.equal(p.currentSpreadBps,400);assert.equal(p.spreadPercentileBps,undefined);
+    assert.equal(p.d1Micros,500000);assert.equal(p.theoreticalPriceMinor,1000);
+  }
+});
+test('a consistent negative historical spread remains a usable signed observation', () => {
+  const h=structuredClone(history);
+  h.samples=h.samples.slice(-60).map(sample=>({...sample,treasuryBps:600,spreadBps:-100}));
+  const p=calculateDividendPricing({...input(),history:h,currentCashYieldBps:100});
+  assert.equal(p.currentSpreadBps,-100);assert.equal(p.spreadPercentileBps,10000);
 });
 test('anchor disagreement chooses the highest required cash yield and keeps the conflict visible as a review', () => {
   const v=input();v.opportunity.yieldBps=700;let p=calculateDividendPricing(v);
@@ -127,6 +223,35 @@ test('anchor disagreement chooses the highest required cash yield and keeps the 
   assert.equal(p.anchorPriceMinor,714);assert.equal(p.canApply,true);assert.equal(p.grid.length,3);
   v.opportunity.yieldBps=1000;p=calculateDividendPricing(v);
   assert.equal(p.theoreticalPriceMinor,500);assert.deepEqual(p.grid.map(g=>g.priceMinor),[475,425,375]);
+});
+test('three verified anchors use the median at exactly 100 bps of disagreement and the highest at 101 bps', () => {
+  const v=input();v.opportunity.yieldBps=600;
+  let p=calculateDividendPricing(v);
+  assert.equal(p.anchors.rangeBps,100);assert.equal(p.anchors.medianBps,500);
+  assert.equal(p.anchors.selectedBps,500);assert.equal(p.anchors.selection,'median');
+  assert.equal(p.theoreticalPriceMinor,1000);assert.ok(!p.warnings.includes('anchors_conflict'));
+  v.opportunity.yieldBps=601;p=calculateDividendPricing(v);
+  assert.equal(p.anchors.rangeBps,101);assert.equal(p.anchors.medianBps,500);
+  assert.equal(p.anchors.selectedBps,601);assert.equal(p.anchors.selection,'highest_available');
+  assert.equal(p.theoreticalPriceMinor,831);assert.ok(p.warnings.includes('anchors_conflict'));
+});
+test('a low verified anchor preserves the documented sell-yield ratios without an invented minimum', () => {
+  const v=input();
+  const p=calculateDividendPricing({...v,treasury:undefined,history:undefined,opportunity:{...v.opportunity,yieldBps:10}});
+  assert.equal(p.anchors.selectedBps,10);assert.equal(p.theoreticalPriceMinor,50000);
+  const plan=dividendPricingPlan(p);
+  assert.ok(plan);
+  assert.deepEqual(plan.sellLevels.map(level=>level.yieldBps),[9,8,7,6]);
+  assert.deepEqual(plan.sellLevels.map(level=>level.priceMinor),[55555,62500,71428,83333]);
+  assert.deepEqual(plan.sellLevels.map(level=>level.portionBps),[2500,2500,2500,2500]);
+});
+test('extremely low anchors whose rounded sell yields merge cannot create a price plan', () => {
+  const v=input();
+  for (const yieldBps of [1,7]) {
+    const p=calculateDividendPricing({...v,treasury:undefined,history:undefined,opportunity:{...v.opportunity,yieldBps}});
+    assert.equal(p.canApply,true);assert.equal(p.anchors.selectedBps,yieldBps);
+    assert.equal(dividendPricingPlan(p),null);
+  }
 });
 test('unverified capital adjustments exclude the history anchor without cancelling the conservative grid', () => {
   const v=input();v.history.capitalActionsVerified=false;const p=calculateDividendPricing(v);
@@ -253,6 +378,16 @@ test('public source fixture verifies financial/cash fields, treasury units and u
   const b=XLSX.read(readFileSync(new URL('./fixtures/dividend-index-000922-2026-10-21.xls',import.meta.url)),{type:'buffer'});
   const o=parseDividendOpportunityRows(XLSX.utils.sheet_to_json(b.Sheets[b.SheetNames[0]],{header:1}),asOf);
   assert.equal(o.yieldBps,409);assert.equal(o.asOf,'2026-10-20');
+});
+test('treasury parsing ignores future observations before selecting the latest known yield', () => {
+  const future={SOLAR_DATE:'2026-10-22',EMM00166466:25};
+  const p=parseDividendTreasury({success:true,result:{data:[future,
+    {SOLAR_DATE:'2026-10-19',EMM00166466:1.8},
+    {SOLAR_DATE:asOf,EMM00166466:2},
+    {SOLAR_DATE:'2026-10-20',EMM00166466:1.9}]}},asOf,123);
+  assert.equal(p.yieldBps,200);assert.equal(p.asOf,asOf);assert.equal(p.fetchedAt,123);
+  assert.deepEqual(p.history,[{date:'2026-10-19',yieldBps:180},{date:'2026-10-20',yieldBps:190},{date:asOf,yieldBps:200}]);
+  assert.throws(()=>parseDividendTreasury({success:true,result:{data:[future]}},asOf),/TREASURY_SOURCE_INVALID/);
 });
 test('captured CATL evidence includes a verified zero and omitted special cash without weakening the five-year requirement', () => {
   const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-2026-10-23.json',import.meta.url),'utf8'));

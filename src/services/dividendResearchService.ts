@@ -147,6 +147,14 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
   if (monthly.source) monthly.source.asOf = monthly.data!.at(-1)?.date;
   if (cash.source) cash.source.asOf = String((cash.data as {result:{data:Record<string,unknown>[]}}).result.data[0]?.REPORT_DATE ?? '').slice(0,10) || undefined;
   const unadjusted = monthly.data?.at(-1);
+  const quoteAgeDays = unadjusted ? (Date.parse(asOf) - Date.parse(unadjusted.date)) / 86400000 : Infinity;
+  const currentCashHistory = unadjusted && Number.isSafeInteger(unadjusted.priceMinor) && unadjusted.priceMinor > 0
+    && quoteAgeDays >= 0 && quoteAgeDays <= 10 && distributions.data
+    ? dividendPricingYieldHistory([unadjusted], distributions.data.pricingRaw, stock.code, treasury) : undefined;
+  // Match historical yields to this quote's date and post-bonus share basis.
+  // A single current observation does not need the historical anchor's 60 months.
+  const currentCashYieldBps = currentCashHistory?.capitalActionsVerified && currentCashHistory.cashDistributionsComplete !== false
+    ? currentCashHistory.samples[0]?.yieldBps : undefined;
   let pricing;
   if (financial.data && distributions.data) {
     const industry=(cash.data as {result?:{data?:Record<string,unknown>[]}} | undefined)?.result?.data?.[0]?.INDUSTRY_NAME;
@@ -158,12 +166,12 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
       annuals:dividendPricingAnnuals(financial.data.pricingRaw,cash.data,distributions.data.pricingRaw,stock.code,asOf), treasury,
       history:monthly.data ? dividendPricingYieldHistory(monthly.data.filter(p => p.date.slice(0,7) < asOf.slice(0,7)),distributions.data.pricingRaw,stock.code,treasury) : undefined,
       opportunity, priceMinor:unadjusted?.priceMinor,priceDate:unadjusted?.date,bvpsMicros:bvps,asOf,
-      currentCashYieldBps:unadjusted ? Math.round(distributions.data.dpsMicros/unadjusted.priceMinor) : undefined,
+      currentCashYieldBps,
       sourceUrls:[dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthly.source?.url ?? monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
   }
   return evaluateDividendResearch({ code: stock.code, name: financial.data?.name || stock.name, pricing,
     technical: technical.data, financial: financial.data, distributions: distributions.data,
-    yieldBps: unadjusted && distributions.data ? Math.round(distributions.data.dpsMicros / unadjusted.priceMinor) : undefined,
+    yieldBps: currentCashYieldBps,
     checks: [], status: 'unknown', sources: [technical.source, financial.source, distributions.source, cash.source, monthly.source].filter((value): value is DividendResearchSource => !!value),
     issues: [technical.issue, financial.issue, distributions.issue, cash.issue, monthly.issue].filter((value): value is DividendResearchIssue => !!value),
   }, principles);

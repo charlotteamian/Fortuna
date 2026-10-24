@@ -2,6 +2,7 @@ import { parseTencentDividendTrend } from './dividendTrend.ts';
 import { dateInChina, mainlandCode, trailingYearStart } from './dividendWorkbench.ts';
 import { dividendPricingReadable, type DividendPricingResult, type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from './dividendPricing.ts';
 import { reviewDividendFinancialSector, type DividendFinancialSectorReview } from './dividendFinancialSector.ts';
+import { latestCompletedDividendYear } from './dividendPeriod.ts';
 export type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 
 /** Editable screening starting points, not a promise of safety or future income. Percentages use basis points. */
@@ -217,8 +218,7 @@ export function parseDividendDistributionResearch(raw: unknown, code: string, as
     annualDpsMicros[year] = (annualDpsMicros[year] ?? 0) + dps;
     if (exDate > windowStart) dpsMicros += dps;
   }
-  // The preceding fiscal year may still be waiting for its annual distribution before August.
-  const latestCompletedYear = Number(asOf.slice(0, 4)) - (Number(asOf.slice(5, 7)) >= 8 ? 1 : 2);
+  const latestCompletedYear = latestCompletedDividendYear(asOf);
   let consecutiveYears = 0;
   for (let year = latestCompletedYear; year > latestCompletedYear - 10; year--) {
     if (!(annualDpsMicros[String(year)] > 0)) break;
@@ -358,7 +358,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
       } : null,
       'Recent eight reported periods': stock.financial?.periods.slice(0, 8).map(period) ?? [],
       'Trailing implemented cash dividend yield percent, using the dated daily close': stock.technical?.currentUsable === false ? null : percent(stock.yieldBps),
-      'Trailing implemented dividend per share in CNY': amount(stock.distributions?.dpsMicros, 1e6),
+      'Trailing reported cash per share in CNY, before bonus-share conversion': amount(stock.distributions?.dpsMicros, 1e6),
       'Completed fiscal-year distributions per share in CNY': stock.distributions ? Object.fromEntries(Object.entries(stock.distributions.annualDpsMicros).filter(([year]) => Number(year) >= stock.distributions!.latestCompletedYear - 4).map(([year, dps]) => [year, dps / 1e6])) : null,
       'Fiscal years counted through': stock.distributions?.latestCompletedYear ?? null,
       'Configured principle checks': stock.checks.map(check => ({

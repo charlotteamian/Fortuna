@@ -201,7 +201,7 @@ export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaT
     if (dpsMicros === undefined) { result.incompleteReportDates.push(item.reportDate); continue; }
     events.set(`${item.reportDate}:${expectedExDate}`, { reportDate: item.reportDate, dpsMicros, basis: previousAmount ? 'historical' : 'announced',
       basisDate: previousAmount?.basisDate ?? item.announcedAt, basisReportDate: previousAmount?.basisReportDate,
-      amountUnannounced: item.dpsMicros === undefined || undefined,
+      amountUnannounced: item.dpsMicros === undefined ? true : undefined,
       stage: item.stage, expectedExDate, expectedPaymentDate: item.paymentDate, dateEstimated: !item.exDate,
       recordDate: item.recordDate, sourceUrl: previousAmount?.sourceUrl ?? item.sourceUrl });
   }

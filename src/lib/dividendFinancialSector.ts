@@ -76,6 +76,8 @@ export function reviewDividendFinancialSector(available: Record<string, unknown>
   const supplement = PING_AN_H1_2026;
   // The issuer's group report explicitly says no integrated risk rating has yet
   // been conducted for insurance groups. Do not substitute a subsidiary rating.
+  // This extract was verified against the feed's 198.10% representation of the
+  // report's 198.14%. A changed value keeps the explicit missing-evidence state.
   if (code === '601318' && sector === 'insurance' && asOf >= supplement.publishedAt
     && String(available[0].REPORT_DATE).slice(0,10) === supplement.reportDate
     && Date.parse(asOf) - Date.parse(supplement.reportDate) <= 230 * 86400000

@@ -324,3 +324,66 @@ test('genuinely short listing history keeps the actual current price and explain
     assert.ok(stock.sources.some(source=>source.url.includes('month,,,320,')));
   } finally { globalThis.fetch=originalFetch; }
 });
+
+test('current research yields use verified trailing cash on the dated quote share basis, independently of long history coverage', async context => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T08:00:00Z') });
+  const originalFetch = globalThis.fetch;
+  const cashRows = [
+    { ...dividendRow('2023-12-31', '2024-06-01', 1), NOTICE_DATE: '2024-05-20', BONUS_RATIO: 0, IT_RATIO: 0 },
+    { ...dividendRow('2025-12-31', '2026-06-01', 10), NOTICE_DATE: '2026-05-20', BONUS_RATIO: 10, IT_RATIO: 0 },
+  ];
+  async function check(options: { code?: string; quoteDate?: string; quotePrice?: string; rows?: Record<string, unknown>[] } = {}) {
+    const code = options.code ?? '600036', symbol = `${code.startsWith('6') ? 'sh' : 'sz'}${code}`;
+    globalThis.fetch = async input => {
+      const url = String(input);
+      if (url.includes(',month,')) return Response.json({ code: 0, data: { [symbol]: {
+        month: [[options.quoteDate ?? '2026-10-23', '10', options.quotePrice ?? '10', '10', '10']],
+      } } });
+      if (url.includes('RPT_F10_FINANCE_MAINFINADATA')) return Response.json(envelope([financialRow({ SECURITY_CODE: code })]));
+      if (url.includes('RPT_SHAREBONUS_DET')) return Response.json(envelope((options.rows ?? cashRows).map(row => ({ ...row, SECURITY_CODE: code }))));
+      throw new TypeError('fixture feed intentionally unavailable');
+    };
+    const result = await fetchDividendResearch([{ code, name: 'Cash basis fixture' }], principles);
+    return result.stocks[0];
+  }
+  try {
+    const verified = await check();
+    assert.equal(verified.yieldBps, 500, 'ten yuan per ten pre-bonus shares becomes 0.5 yuan per current share');
+    assert.equal(verified.pricing?.currentCashYieldBps, 500);
+    assert.equal(verified.pricing?.historyCoverage?.usable, false, 'no 60-month gate applies to this current cash observation');
+    assert.equal(verified.distributions?.dpsMicros, 1000000, 'raw distribution display retains its report-share basis');
+    assert.equal(verified.distributions?.annualDpsMicros['2025'], 1000000, 'fiscal-year payout evidence stays unchanged');
+    assert.equal(verified.checks.find(item => item.rule === 'yield')?.value, 500);
+
+    const afterQuote = await check({ rows: [...cashRows,
+      { ...dividendRow('2026-06-30', '2026-10-24', 20), NOTICE_DATE: '2026-10-20', BONUS_RATIO: 0, IT_RATIO: 0 },
+    ] });
+    assert.equal(afterQuote.distributions?.dpsMicros, 3000000);
+    assert.equal(afterQuote.yieldBps, 500, 'implemented cash after the quote date cannot enter that quote yield');
+    assert.equal(afterQuote.pricing?.currentCashYieldBps, 500);
+
+    const missingActions = cashRows.map(row => ({ ...row } as Record<string, unknown>));
+    delete missingActions[1].BONUS_RATIO;
+    const unverified = await check({ rows: missingActions });
+    assert.equal(unverified.yieldBps, undefined);
+    assert.equal(unverified.pricing?.currentCashYieldBps, undefined);
+    assert.equal(unverified.checks.find(item => item.rule === 'yield')?.status, 'unknown');
+
+    const contradicted = await check({ code: '300750' });
+    assert.equal(contradicted.yieldBps, undefined, 'a feed omitting verified issuer cash cannot establish a current yield');
+    assert.equal(contradicted.pricing?.currentCashYieldBps, undefined);
+
+    const lastUsableDay = await check({ quoteDate: '2026-10-14' });
+    assert.equal(lastUsableDay.yieldBps, 500);
+    for (const options of [{ quoteDate: '2026-10-13' }, { quoteDate: '2026-10-25' }, { quotePrice: '0' }]) {
+      const unavailable = await check(options);
+      assert.equal(unavailable.yieldBps, undefined);
+      assert.equal(unavailable.pricing?.currentCashYieldBps, undefined);
+      assert.equal(unavailable.checks.find(item => item.rule === 'yield')?.status, 'unknown');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    context.mock.timers.reset();
+  }
+});

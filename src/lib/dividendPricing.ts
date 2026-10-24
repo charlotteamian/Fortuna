@@ -1,7 +1,8 @@
 import type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { dividendAnnualCashEvidence, dividendAnnualReportEvidence, type DividendAnnualReportEvidence } from './dividendAnnualReportEvidence.ts';
+import { latestCompletedDividendYear } from './dividendPeriod.ts';
 /** Changes to inputs, evidence or arithmetic must retire older cached drafts. */
-export const DIVIDEND_PRICING_CALCULATION_VERSION = 2;
+export const DIVIDEND_PRICING_CALCULATION_VERSION = 3;
 export type DividendPricingRiskClass = 'bondlike' | 'bank' | 'cyclical' | 'other';
 export interface DividendPricingStockOverride {
   riskClass?: DividendPricingRiskClass;
@@ -128,6 +129,7 @@ export interface DividendPricingResult {
   currentPriceMinor?: number;
   priceDate?: string;
   normalizationEvidence?: { source: string; asOf: string };
+  /** Implemented trailing cash on the quote's share basis, not sustainable D1. */
   currentCashYieldBps?: number;
   financialReview?: DividendFinancialSectorReview;
 }
@@ -140,6 +142,7 @@ export interface DividendPricingInput {
   annuals: DividendPricingAnnual[];
   priceMinor?: number;
   priceDate?: string;
+  /** Implemented trailing cash on the quote's share basis, not sustainable D1. */
   currentCashYieldBps?: number;
   bvpsMicros?: number;
   asOf: string;
@@ -216,7 +219,7 @@ export function dividendPricingAnnuals(financialRaw: unknown, cashRaw: unknown |
   const financial = knownRows(financialRaw, code, asOf);
   const cash = cashRaw ? knownRows(cashRaw, code, asOf) : [];
   const distributions = rows(distributionRaw, code);
-  const lastYear = Number(asOf.slice(0,4)) - (Number(asOf.slice(5,7)) >= 8 ? 1 : 2);
+  const lastYear = latestCompletedDividendYear(asOf);
   return Array.from({ length: 5 }, (_, index) => {
     const year = lastYear - index, reportDate = `${year}-12-31`;
     const f = financial.filter(r => date(r.REPORT_DATE) === reportDate).sort((a,b) => String(b.NOTICE_DATE).localeCompare(String(a.NOTICE_DATE)))[0];
@@ -229,6 +232,7 @@ export function dividendPricingAnnuals(financialRaw: unknown, cashRaw: unknown |
       if (!events.has(key) || String(r.NOTICE_DATE) > String(events.get(key)!.NOTICE_DATE)) events.set(key, r);
     }
     const ds = [...events.values()];
+    // The source is CNY per ten shares: /10 * 1,000,000 gives per-share micros.
     const amounts = ds.map(r => scaled(r.PRETAX_BONUS_RMB, 100000));
     const sourceDividendMicros = ds.length && amounts.every(v => v !== undefined && v >= 0) ? amounts.reduce<number>((s,v) => s + v!, 0) : undefined;
     const cashAmounts = ds.map(r => { const shares = numeric(r.TOTAL_SHARES), dps = scaled(r.PRETAX_BONUS_RMB, 100000); return shares && dps !== undefined ? Math.round(shares * dps / 10000) : undefined; });
@@ -432,7 +436,9 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const gordonYieldBps = method.requiredReturnBps - method.growthBps;
   const gordonUsable = method.growthBps < method.requiredReturnBps - 200;
   pause(!gordonUsable, 'growth_return_conflict');
-  const quoteUsable = Number.isSafeInteger(input.priceMinor) && input.priceMinor! > 0 && age(input.priceDate) <= 10;
+  const currentPrice = typeof input.priceMinor === 'number' && Number.isSafeInteger(input.priceMinor) && input.priceMinor > 0
+    && age(input.priceDate) <= 10 ? input.priceMinor : undefined;
+  const quoteUsable = currentPrice !== undefined;
   pause(!quoteUsable, 'quote_missing');
   const roes = recent.flatMap(y => y.roeBps === undefined ? [] : [y.roeBps]);
   const meanRoeBps = roes.length === 3 ? Math.round(roes.reduce((s,v) => s+v,0)/3) : undefined;
@@ -446,16 +452,26 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   // The user selects the three observable yield anchors as the primary method.
   // Gordon and PB remain independent comparisons, never an implicit price cap.
   const candidatePriceMinor = anchorPriceMinor;
-  pause(quoteUsable && !!d1Micros && d1Micros/input.priceMinor! > 3000, 'implausible_yield');
+  pause(currentPrice !== undefined && d1Micros !== undefined && d1Micros/currentPrice > 3000, 'implausible_yield');
   block(candidatePriceMinor !== undefined && candidatePriceMinor < 10, 'implausible_yield');
   const canApply = !blockers.length && !!candidatePriceMinor && !!d1Micros;
   const theoreticalPriceMinor = canApply ? candidatePriceMinor : undefined;
   const marginPriceMinor = theoreticalPriceMinor ? Math.floor(theoreticalPriceMinor*(1-method.safetyMarginBps/10000)) : undefined;
   const grid: DividendPricingGrid[] = canApply ? ([9500,8500,7500] as const).map((discountBps,index) => { const priceMinor = Math.floor(theoreticalPriceMinor! * discountBps / 10000); return { discountBps, priceMinor,
-    yieldBps: Math.round(d1Micros!/priceMinor), changeFromCurrentBps: quoteUsable ? Math.round((priceMinor/input.priceMinor!-1)*10000) : undefined, cumulativePortionBps: [3333,6666,10000][index], meetsSafetyMargin: priceMinor <= marginPriceMinor! }; }) : [];
+    yieldBps: Math.round(d1Micros!/priceMinor), changeFromCurrentBps: currentPrice !== undefined ? Math.round((priceMinor/currentPrice-1)*10000) : undefined, cumulativePortionBps: [3333,6666,10000][index], meetsSafetyMargin: priceMinor <= marginPriceMinor! }; }) : [];
   // Match the historical spread numerator: implemented trailing cash, not D1.
-  const currentSpreadBps = input.currentCashYieldBps !== undefined && treasury ? input.currentCashYieldBps-treasury.yieldBps : undefined;
-  const spreads = history?.samples.flatMap(s => s.spreadBps === undefined ? [] : [s.spreadBps]) ?? [];
+  const currentSpreadBps = quoteUsable && treasuryUsable && Number.isSafeInteger(input.currentCashYieldBps)
+    && input.currentCashYieldBps! >= 0 ? input.currentCashYieldBps! - treasury!.yieldBps : undefined;
+  // A current percentile needs the same verified, distinct completed months as
+  // the history anchor. Never revive stale data through this auxiliary display.
+  const spreadMonths = new Map((history?.samples ?? []).filter(sample => date(sample.date)
+    && sample.date.slice(0,7) < asOf.slice(0,7)).sort((a,b) => a.date.localeCompare(b.date))
+    .map(sample => [sample.date.slice(0,7), sample]));
+  const spreads = historyCoverage.usable ? [...spreadMonths.values()].flatMap(sample =>
+    Number.isSafeInteger(sample.yieldBps) && sample.yieldBps > 0 && sample.yieldBps < 3000
+      && Number.isSafeInteger(sample.treasuryBps) && sample.treasuryBps! >= 0 && sample.treasuryBps! < 3000
+      && Number.isSafeInteger(sample.spreadBps) && sample.spreadBps === sample.yieldBps - sample.treasuryBps!
+      ? [sample.spreadBps] : []) : [];
   const spreadPercentileBps = currentSpreadBps !== undefined && spreads.length >= 60 ? Math.round(spreads.filter(v => v <= currentSpreadBps).length / spreads.length * 10000) : undefined;
   return { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], pauseReasons: [...new Set(pauseReasons)], warnings: [...new Set(warnings)], annuals,
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
