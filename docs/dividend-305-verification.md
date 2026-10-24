@@ -12,4 +12,9 @@
 
 ## 发布验证
 
-Android正式签名、GitHub工作流、APK包身份／摘要／资源匹配、应用内更新识别、模拟器升级及实际设备覆盖结果在同目录 `dividend-305/` 单独记录。实体手机未测试；模拟器单个合成账户保留不等于完整真实账本验证。
+- [Android正式签名构建](https://github.com/charlotteamian/Fortuna/actions/runs/40059025525)与[iOS构建](https://github.com/charlotteamian/Fortuna/actions/runs/40059023032)均成功，发布源提交为 `197aa647a1d3b4d66396e283a610292a517001ed`。
+- [正式发布3.0.5](https://github.com/charlotteamian/Fortuna/releases/tag/v3.0.5)包含 `Fortuna-3.0.5-release.apk`；包名 `com.fortuna.wealthtracker`、versionCode34、debuggable=false，签名证书与既定身份一致。
+- APK SHA-256：`94bfed58142f23bd1b32a992624c96bdc79b9d9b8c600af9f5f2081a4e10fa4d`，与GitHub摘要匹配。47个同步资源全部一致（45个网页资源及2个Capacitor桥接文件）。
+- 原3.0.4更新解析器与当前源码相同；使用真实发布响应，3.0.4可识别3.0.5，3.0.5不重复提示更新。发布页及下载地址均返回HTTP200。
+- 模拟器使用正式APK以覆盖方式从3.0.4/code33升至3.0.5/code34，冷启动通过；同一既有合成账户、机构、USD及精确余额1,234.56均保留。未清除数据、未卸载、未创建替代账本。
+- 详细结果见 `dividend-305/` 内的本地、CI、签名、更新及模拟器验证记录。实体手机未测试；模拟器单个合成账户保留不等于完整真实账本验证。

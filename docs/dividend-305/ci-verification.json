@@ -1,0 +1,19 @@
+{
+  "commit": "197aa647a1d3b4d66396e283a610292a517001ed",
+  "runs": [
+    {
+      "platform": "android",
+      "runId": 40059025525,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/charlotteamian/Fortuna/actions/runs/40059025525"
+    },
+    {
+      "platform": "ios",
+      "runId": 40059023032,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/charlotteamian/Fortuna/actions/runs/40059023032"
+    }
+  ]
+}
