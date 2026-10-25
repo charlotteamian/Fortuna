@@ -118,7 +118,7 @@ test('unclaimed value falls back to the broader allocation owner', () => {
   assert.equal(resolved.unallocatedValue, 0);
 });
 
-test('parsePlannedPurchases extracts discrete target items from various delimiters', () => {
+test('purchase plans start on new lines while punctuation stays inside each plan', () => {
   assert.deepEqual(parsePlannedPurchases(undefined), []);
   assert.deepEqual(parsePlannedPurchases(''), []);
   assert.deepEqual(parsePlannedPurchases('   \n  '), []);
@@ -128,6 +128,10 @@ test('parsePlannedPurchases extracts discrete target items from various delimite
   );
   assert.deepEqual(
     parsePlannedPurchases('黄金ETF; 银行定期；中短债基金, 美元定存、海外REITs'),
-    ['黄金ETF', '银行定期', '中短债基金', '美元定存', '海外REITs'],
+    ['黄金ETF; 银行定期；中短债基金, 美元定存、海外REITs'],
+  );
+  assert.deepEqual(
+    parsePlannedPurchases('  平安银行，等股息率达标；分批买入。\r\n\r\n沪深300 ETF、黄金，分别观察。  \r招商银行, review; do not rush.\u2028VOO: monthly.\u2029'),
+    ['平安银行，等股息率达标；分批买入。', '沪深300 ETF、黄金，分别观察。', '招商银行, review; do not rush.', 'VOO: monthly.'],
   );
 });

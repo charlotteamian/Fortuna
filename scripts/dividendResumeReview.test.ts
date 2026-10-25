@@ -1,4 +1,4 @@
-import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
+import { calculateDividendPricing } from '../src/lib/dividendPricing.ts';
 import 'fake-indexeddb/auto';
 import test, { after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,11 +33,14 @@ const stock: DividendStock = { code: '600036', name: '招商银行', group: 'cor
 const technical: DividendTechnicalResearch = { asOf: '2026-10-22', fetchedAt: now, priceBasis: 'qfq', currentUsable: true,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2, state: 'rising', pacing: 'observe' };
-const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, riskClass: 'bank', blockers: [], pauseReasons: [], warnings: [], annuals: [],
-  normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: { selectedBps: 413 }, d1Micros: 1980400, gordonYieldBps: 800,
-  grid: [4555, 4075, 3596].map((priceMinor, index) => ({ discountBps: [9500, 8500, 7500][index] as 9500 | 8500 | 7500, priceMinor,
-    yieldBps: Math.round(1980400 / priceMinor), cumulativePortionBps: [3333, 6666, 10000][index], meetsSafetyMargin: index > 0 })),
-  sourceUrls: [], currentPriceMinor: 1000, priceDate: '2026-10-22', marginPriceMinor: 1100 };
+const pricing: DividendPricingResult = calculateDividendPricing({code:stock.code,name:stock.name,financialSector:true,
+  method:defaultDividendPricingMethod(),asOf:'2026-10-22',priceMinor:1000,priceDate:'2026-10-22',
+  annuals:Array.from({length:5},(_,index)=>({year:2025-index,reportDate:`${2025-index}-12-31`,noticeDate:`${2026-index}-03-20`,
+    epsMicros:4000000,adjustedEpsMicros:4000000,dividendMicros:1980400,payoutBps:4951,roeBps:1200})),
+  financialReview:{sector:'bank',status:'pass',asOf:'2026-06-30',metrics:[],missing:[],sourceUrl:'https://example.com/bank-review',policySourceUrls:[],basis:'dividend_screen'},
+  trailingDividend:{dpsMicros:1980400,asOf:'2026-10-22',windowStart:'2025-10-22',capitalActionsVerified:true,cashDistributionsComplete:true,
+    sourceUrls:['https://example.com/implemented-dividends']}});
+
 function snapshot(): DividendResearchSnapshot {
   return { generatedAt: now, principles: defaultDividendSelectionPrinciples(), pricingMethod: defaultDividendPricingMethod(),
     stocks: [{ code: stock.code, name: stock.name, technical: structuredClone(technical), pricing: structuredClone(pricing),
@@ -54,19 +57,19 @@ beforeEach(async () => {
 });
 after(() => db.close());
 
-test('a complete replacement uses one sustainable dividend, three buys and four increasing non-crossing sells', () => {
+test('a complete replacement uses one implemented TTM dividend and four fixed-yield levels on each side', () => {
   const plan = dividendPricingPlan(pricing)!;
   assert.ok(plan);
-  assert.deepEqual(plan.buyLevels.map(level => level.priceMinor), [4555, 4075, 3596]);
+  assert.deepEqual(plan.buyLevels.map(level => level.priceMinor), [3600, 3444, 3300, 3046]);
   assert.equal(plan.buyLevels.reduce((sum, level) => sum + level.portionBps, 0), 10000);
-  assert.deepEqual(plan.sellLevels.map(level => level.yieldBps), [371, 330, 289, 247]);
-  assert.deepEqual(plan.sellLevels.map(level => level.priceMinor), [5338, 6001, 6852, 8017]);
+  assert.deepEqual(plan.sellLevels.map(level => level.yieldBps), [480, 450, 420, 400]);
+  assert.deepEqual(plan.sellLevels.map(level => level.priceMinor), [4125, 4400, 4715, 4951]);
   assert.ok(plan.sellLevels.every((level, index) => level.portionBps === 2500 && Number.isSafeInteger(level.priceMinor)
     && level.priceMinor! > Math.max(...plan.buyLevels.map(row => row.priceMinor!)) && (!index || level.priceMinor! > plan.sellLevels[index - 1].priceMinor!)));
   assert.equal(dividendPricingPlan({ ...pricing, d1Micros: undefined }), null);
   assert.equal(dividendPricingPlan({ ...pricing, anchors: {} }), null);
   assert.equal(dividendPricingPlan({ ...pricing, canApply: false }), null);
-  assert.equal(dividendPricingPlan({ ...pricing, anchors: { selectedBps: 1 } }), null, 'rounding cannot produce duplicate sell levels');
+  assert.equal(dividendPricingPlan({ ...pricing, anchors: { selectedBps: 1 } }), null, 'a caller cannot substitute a different reference yield');
 });
 
 test('fresh review uses saved user assumptions and only a later confirmed preview resumes the unchanged plan', async () => {

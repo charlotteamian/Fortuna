@@ -1,0 +1,16 @@
+{
+  "verifiedAt": "2026-10-25T14:09:08.236785+00:00",
+  "version": "4.0.0",
+  "androidVersionCode": 35,
+  "iosBuildNumber": 35,
+  "tests": 472,
+  "testsPassed": 472,
+  "lint": "passed",
+  "webBuild": "passed",
+  "androidCapacitorSync": "passed",
+  "iosCapacitorSync": "passed",
+  "iosResourceVerification": "45 current assets",
+  "browserValidation": "docs/dividend-classic/browser-validation.json",
+  "physicalDeviceTested": false,
+  "emulatorCoverage": "Emulator attempted, but ADB authorization unavailable; no device install/update claim."
+}

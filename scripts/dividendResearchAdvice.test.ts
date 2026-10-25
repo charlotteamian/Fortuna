@@ -10,10 +10,13 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-21', fetchedAt: 1,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2, state: 'rising', pacing: 'observe' };
 const market: DividendIndexResearch[] = [{ code: 'sh000300', name: 'CSI 300', technical, sources: [], issues: [] }];
-const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
-  normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: {}, gordonYieldBps: 800,
-  grid: [1200, 1100, 1000].map((priceMinor, index) => ({ priceMinor, discountBps: [9500, 8500, 7500][index] as 9500 | 8500 | 7500,
-    yieldBps: 500, cumulativePortionBps: [3333, 6666, 10000][index], meetsSafetyMargin: index > 1 })),
+const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis: 'classic_ttm', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
+  trailingDividend: { dpsMicros:660000, asOf:'2026-10-21', windowStart:'2025-10-21', capitalActionsVerified:true, cashDistributionsComplete:true,
+    quoteComparisonSafeFrom:'2026-10-21', sourceUrls:['https://example.com/implemented-cash'] },
+  d1Micros:660000, theoreticalPriceMinor:1320, normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0,
+  anchors: { selectedBps:500, selection:'fixed_classic' }, gordonYieldBps: 800,
+  grid: [550,575,600,650].map((yieldBps, index) => ({ priceMinor:Math.floor(660000/yieldBps), discountBps:Math.round(500/yieldBps*10000),
+    yieldBps, cumulativePortionBps:(index+1)*2500, meetsSafetyMargin:true })),
   sourceUrls: [], currentPriceMinor: 1150, priceDate: '2026-10-21', marginPriceMinor: 1050 };
 const stock: DividendStockResearch = { code: '000333', name: 'Fixture', technical, pricing, checks: [{ rule: 'roe', status: 'pass' }], status: 'pass', sources: [], issues: [] };
 const dividendResearchAdvice = (value: DividendStockResearch, indices: DividendIndexResearch[], notes?: string, savedStock?: DividendStock) =>
@@ -24,7 +27,7 @@ test('the first reached grid is actionable even above the separate safety-margin
   assert.equal(advice.decision, 'eligible');
   assert.equal(advice.firstBuyPriceMinor, 1200);
   assert.deepEqual(advice.triggeredBuyLevels, [1]);
-  assert.equal(dividendResearchAdvice({ ...stock, pricing: { ...pricing, currentPriceMinor: 1000 } }, market).triggeredBuyLevels.length, 3);
+  assert.equal(dividendResearchAdvice({ ...stock, pricing: { ...pricing, currentPriceMinor: 1000 } }, market).triggeredBuyLevels.length, 4);
   assert.equal(dividendResearchAdvice({ ...stock, pricing: { ...pricing, currentPriceMinor: 1201 } }, market).decision, 'wait_price');
 });
 

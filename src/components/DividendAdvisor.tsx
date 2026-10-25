@@ -14,6 +14,8 @@ import type { DividendResearchSnapshot } from '../lib/dividendResearch';
 import { prepareDividendDiscussionResearch } from '../services/dividendAdvisorDiscussionService';
 import { addPortableSnapshotBackgroundListener } from '../native/portableSnapshot';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
+import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
+import { validateDividendPricingProposal, type DividendPriceProposalContext } from '../services/dividendAdvisorActionsService';
 import './DividendAdvisor.css';
 
 interface ReaderHistoryState { fortunaDividendReader?: boolean; dividendReaderPreviousHash?: string }
@@ -45,6 +47,9 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
   const controller = useRef<AbortController | null>(null);
   const originScroll = useRef<{ element: Element; top: number } | null>(null);
   const entryRef = useRef<HTMLElement>(null);
+  // Evidence belongs to the exact answer that produced a draft. It is kept in
+  // memory only; opening a historical chat requires a new pricing check.
+  const priceContexts = useRef(new WeakMap<DividendPlanProposal, DividendPriceProposalContext>());
 
   useEffect(() => {
     let active = true;
@@ -210,6 +215,10 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       if (!currentRequest()) return;
       const answer = await askDividendAdvisorWithActions(saved, context, prompt, previousMessages, { language: i18n.language, signal: requestController.signal });
       if (currentRequest()) {
+        for (const action of answer.actions) {
+          const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
+          if (pricing) priceContexts.current.set(action, { pricing: structuredClone(pricing), method: context.research?.pricingMethod && structuredClone(context.research.pricingMethod), generatedAt: context.research!.generatedAt });
+        }
         const nextMessages: DividendAdvisorMessage[] = [...submittedMessages, { role: 'assistant', content: answer.answer, actions: answer.actions,
           pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }];
         setSnapshot(context);
@@ -248,7 +257,9 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       onDeleteConversation={id => void changeConversation(() => deleteDividendAdvisorConversation(id))}
       onRetrySave={pendingSave ? () => void changeConversation(loadDividendAdvisorHistory) : undefined}
       initialPanel={initialPanel} planManagement={planManagement}
-      renderActions={message => message.actions?.length ? <DividendAdvisorPlanActions proposals={message.actions} initiallyExpanded disabled={busy || historyBusy} onUpdated={onUpdated} /> : null}
+      renderActions={message => message.actions?.length ? <>{message.actions.map(action => <DividendAdvisorPlanActions key={action.id} proposals={[action]} initiallyExpanded disabled={busy || historyBusy} onUpdated={onUpdated}
+        beforePreview={() => validateDividendPricingProposal(action, priceContexts.current.get(action))}
+        beforeApply={() => validateDividendPricingProposal(action, priceContexts.current.get(action))} />)}</> : null}
       workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
         onDiscuss={(stock, research) => { showChat(); void ask(t('div_ai_discuss_stock_question', { name: stock.name, code: stock.code }), { ...research, stocks: [stock] }); }} />}
       onClear={() => void changeConversation(createDividendAdvisorConversation)} />}

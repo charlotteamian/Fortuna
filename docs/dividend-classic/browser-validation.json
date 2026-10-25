@@ -1,0 +1,66 @@
+{
+  "environment": "Isolated browser, synthetic ledger and archived Ping An source fixture",
+  "checks": [
+    {
+      "name": "pricing card shows exact TTM, four buys, four sells and neutral reference",
+      "passed": true
+    },
+    {
+      "name": "pricing-390-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "pricing-390-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "pricing-320-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "pricing-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "preview shows all eight 25% rows and does not mutate saved grid, holdings or pause",
+      "passed": true
+    },
+    {
+      "name": "preview-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "confirmation writes both classic sides while preserving holdings, allocation and manual pause",
+      "passed": true
+    },
+    {
+      "name": "method-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "classic method editor has fixed yields and a holding-period selector without legacy anchor inputs",
+      "passed": true
+    },
+    {
+      "name": "plan-lines-320: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "stock plan notes split only at line breaks and preserve punctuation through editing and saving",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "screenshots": [
+    "pricing-390-1.png",
+    "pricing-390-1.3.png",
+    "pricing-320-1.png",
+    "pricing-320-1.3.png",
+    "preview-320-1.3.png",
+    "method-320-1.3.png",
+    "plan-lines-320.png"
+  ],
+  "limitations": [
+    "No live quote or physical-device verification; saved-plan changes occur only in this isolated browser."
+  ]
+}

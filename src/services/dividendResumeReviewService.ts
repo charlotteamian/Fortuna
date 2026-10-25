@@ -27,7 +27,7 @@ export async function reviewDividendResume(stock: Pick<DividendStock, 'code' | '
   const [principles, method] = await Promise.all([loadDividendSelectionPrinciples(), loadDividendPricingMethod()]);
   const proposal: DividendPlanProposal = { id: `resume-${stock.code}`, code: stock.code, buyPaused: false,
     reason: 'Fresh financial, price and technical evidence reviewed; resuming the saved grid is the user’s decision after reading the alerts.' };
-  const { saved, before } = await db.transaction('r', db.dividendStocks, async () => {
+  const { saved, before } = await db.transaction('r', db.dividendStocks, db.settings, async () => {
     const saved = await db.dividendStocks.get(stock.code);
     if (!saved) throw new Error('DIVIDEND_STOCK_MISSING');
     return { saved, before: await previewDividendPlanChange(proposal) };

@@ -153,11 +153,11 @@ export function remainingTargetPercent(
   return Math.max(0, finiteOrZero(limitPercent) - sumTargetPercents(targets, excludeId));
 }
 
-/** Parses user purchase notes into discrete target items (splitting on newlines, semicolons, commas, or enumeration marks). */
+/** One line is one plan. Punctuation belongs to the user's sentence. */
 export function parsePlannedPurchases(text?: string): string[] {
   if (!text) return [];
   return text
-    .split(/[\n\r;；,，、]+/)
+    .split(/[\n\r\u2028\u2029]+/)
     .map(item => item.trim())
     .filter(Boolean);
 }

@@ -387,3 +387,38 @@ test('current research yields use verified trailing cash on the dated quote shar
     context.mock.timers.reset();
   }
 });
+
+test('classic pricing survives failed financial and market feeds but never substitutes a missing cash feed', async context => {
+  const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T08:00:00Z') });
+  const originalFetch = globalThis.fetch;
+  const cash = envelope([
+    { ...dividendRow('2023-12-31', '2024-06-01', 1), NOTICE_DATE: '2024-05-20', BONUS_RATIO: 0, IT_RATIO: 0 },
+    { ...dividendRow('2025-12-31', '2026-06-01', 6.09), NOTICE_DATE: '2026-05-20', BONUS_RATIO: 0, IT_RATIO: 0 },
+  ]);
+  let cashAvailable = true;
+  globalThis.fetch = async input => {
+    if (cashAvailable && String(input).includes('RPT_SHAREBONUS_DET')) return Response.json(cash);
+    throw new TypeError('fixture feed intentionally unavailable');
+  };
+  try {
+    const ready = (await fetchDividendResearch([{ code: '600036', name: '招商银行' }], principles)).stocks[0];
+    assert.equal(ready.financial, undefined);
+    assert.equal(ready.pricing?.canApply, true);
+    assert.equal(ready.pricing?.d1Micros, 609000);
+    assert.equal(ready.pricing?.theoreticalPriceMinor, 1218);
+    assert.deepEqual(ready.pricing?.grid.map(level => level.priceMinor), [1107,1059,1015,936]);
+    assert.equal(ready.pricing?.grid[0].changeFromCurrentBps, undefined);
+    assert.ok(ready.issues.some(issue => issue.kind === 'financial'));
+    assert.ok(ready.pricing?.pauseReasons?.includes('financial_sector_review'));
+    cashAvailable = false;
+    const missing = (await fetchDividendResearch([{ code: '600036', name: '招商银行' }], principles)).stocks[0];
+    assert.equal(missing.pricing?.canApply, false);
+    assert.ok(missing.pricing?.blockers.includes('trailing_dividend_missing'));
+    assert.deepEqual(missing.pricing?.grid, []);
+    assert.ok(missing.issues.some(issue => issue.kind === 'dividend' && issue.reason === 'request_failed'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    context.mock.timers.reset();
+  }
+});

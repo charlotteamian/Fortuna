@@ -20,6 +20,8 @@ const ruleTopic: Record<DividendResearchRule, string> = {
 const pricingTopic: Record<DividendPricingBlocker, string> = {
   annual_eps_missing: 'earnings', non_positive_earnings: 'earnings', cyclical_normalisation_required: 'earnings',
   annual_payout_missing: 'payout', payout_above_100: 'payout',
+  trailing_dividend_missing: 'trailing_dividend', trailing_dividend_invalid: 'trailing_dividend', trailing_dividend_stale: 'trailing_dividend',
+  trailing_dividend_zero: 'trailing_dividend', cash_distributions_incomplete: 'trailing_dividend',
   fcf_missing: 'cashflow', fcf_below_150: 'cashflow', fcf_non_positive: 'cashflow', fcf_dividend_capped: 'cashflow',
   financial_sector_review: 'financial_sector', treasury_missing: 'treasury', treasury_stale: 'treasury',
   yield_history_missing: 'yield_history', capital_actions_unverified: 'yield_history', opportunity_cost_missing: 'opportunity', opportunity_cost_stale: 'opportunity',

@@ -2,7 +2,6 @@ import Dexie, { type Table } from 'dexie';
 import type { DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
 import { isDividendPlanProposal, parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
 import type { GridLevel } from '../lib/dividendWorkbench.ts';
-import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing.ts';
 
 export interface DividendAdvisorConversation {
   id: string;
@@ -26,9 +25,9 @@ export function recoverDividendAdvisorHistory(value: DividendAdvisorHistoryState
     if (message.role !== 'assistant') return message;
     const parsed = parseDividendAdvisorActions(message.content, allowedCodes);
     const actions = (message.actions ?? []).filter(action => isDividendPlanProposal(action) && allowed.has(action.code)).flatMap(action => {
-      if ((!action.buyLevels && !action.sellLevels) || message.pricingCalculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION) return [action];
-      // Old numerical drafts have no current calculation evidence. Preserve an
-      // explicit pause/resume request, but require new research for new prices.
+      if (!action.buyLevels && !action.sellLevels) return [action];
+      // A calculation version alone cannot prove the cash window, tax setting
+      // or saved plan is still current. Historical prices stay readable only.
       return action.buyPaused === undefined ? [] : [{ id: action.id, code: action.code, reason: action.reason, buyPaused: action.buyPaused }];
     });
     const seen = new Set(actions.map(action => action.code));

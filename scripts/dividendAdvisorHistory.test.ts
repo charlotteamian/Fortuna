@@ -99,6 +99,6 @@ test('local history archives visits, isolates delayed saves, and preserves all t
   assert.equal(restoredMixed.active?.messages[0].content, raw, 'user-provided JSON stays untouched');
   assert.deepEqual(restoredMixed.active?.messages[1].actions, [mixed.active.messages[1].actions![0]], 'legacy numerical actions cannot bypass updated pricing by reopening a chat');
   const current = { ...mixed, active: { ...mixed.active, messages: [{ ...mixed.active.messages[1], pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }] } };
-  assert.deepEqual(recoverDividendAdvisorHistory(current, ['000333', '601398']).active?.messages[0].actions, mixed.active.messages[1].actions, 'current-version verified drafts remain available');
+  assert.deepEqual(recoverDividendAdvisorHistory(current, ['000333', '601398']).active?.messages[0].actions, [mixed.active.messages[1].actions![0]], 'a calculation version cannot revive a historical cash-price draft without current evidence');
   assert.equal(restoredMixed.active?.messages[2].content, mixed.active.messages[2].content);
 });

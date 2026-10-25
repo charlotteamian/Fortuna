@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
+import { parsePlannedPurchases } from '../src/lib/allocationPlan.ts';
 
 // The app uses bundler-style extensionless imports and JSON modules. Teach the
 // native Node test runner just enough of Vite's resolution rules for this unit.
@@ -253,6 +254,24 @@ test('old plans without purchase notes remain readable and gain notes without lo
   assert.equal(after.items[0].currentValue, 240000);
   assert.deepEqual(after.items[0].categories, ['现金']);
   assert.equal(after.items[0].plannedPurchases, 'Future deposit');
+});
+
+test('stock-plan sentences keep punctuation through editing and backup restore, with only new lines separating plans', async () => {
+  const oldText = '平安银行，等待股息率达标；先观察，不急着买。';
+  const id = await createPlanItem({ name: '股票计划', categories: ['股票/ETF'], targetPercent: 20, plannedPurchases: oldText });
+  const existing = (await getPlanStatus()).items.find(item => item.id === id)!;
+  assert.equal(existing.plannedPurchases, oldText, 'reading an existing plan never rewrites its notes');
+  assert.deepEqual(parsePlannedPurchases(existing.plannedPurchases), [oldText]);
+  const updatedText = `${oldText}\n招商银行、沪深300 ETF，分别观察。\nVOO, buy monthly; review fees.`;
+  await updatePlanItem(id, { plannedPurchases: updatedText });
+  const backup = await exportToExcel();
+  await updatePlanItem(id, { plannedPurchases: 'temporary change' });
+  assert.equal(await importFromExcel(backup), true);
+  const restored = (await getPlanStatus()).items.find(item => item.id === id)!;
+  assert.equal(restored.plannedPurchases, updatedText);
+  assert.deepEqual(parsePlannedPurchases(restored.plannedPurchases), [oldText, '招商银行、沪深300 ETF，分别观察。', 'VOO, buy monthly; review fees.']);
+  assert.equal(restored.targetPercent, 20);
+  assert.deepEqual(restored.categories, ['股票/ETF']);
 });
 
 test('initial plan keeps fractional allocations and rejects a duplicate retry', async () => {

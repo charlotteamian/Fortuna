@@ -22,6 +22,7 @@ const save = (value: DividendResearchSnapshot) => saveDividendResearchCache({ sn
 
 test('an upgrade retires persisted pricing arithmetic without deleting evidence or changing the saved stock context', async () => {
   const pricing=calculateDividendPricing({code:'600036',name:'招商银行',financialSector:true,method:defaultDividendPricingMethod(),asOf:'2026-10-23',
+    trailingDividend:{dpsMicros:500000,asOf:'2026-10-23',windowStart:'2025-10-23',capitalActionsVerified:true,cashDistributionsComplete:true,sourceUrls:['https://example.com/dividend']},
     annuals:Array.from({length:5},(_,i)=>({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
       adjustedEpsMicros:1000000,dividendMicros:500000,payoutBps:5000})),
     treasury:{yieldBps:200,asOf:'2026-10-23',fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'}});

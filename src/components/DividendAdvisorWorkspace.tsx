@@ -72,7 +72,7 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
         {check.period && <p>{t('div_ai_research_period', { period: check.period })}</p>}
         {check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
       </li>)}</ul></details>
-      {stock.pricing && <DividendPricingCard code={stock.code} pricing={stock.pricing} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />}
+      {stock.pricing && <DividendPricingCard code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />}
       <details className="div-ai-evidence-section"><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
       {stock.financial && <details className="div-ai-evidence-section"><summary>{t('div_ai_research_financial')}</summary><p className="div-ai-muted">{stock.financial.sector}</p>
         <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}>

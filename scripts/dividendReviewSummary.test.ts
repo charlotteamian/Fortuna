@@ -10,7 +10,7 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-23', fetchedAt: 1,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2,
   state: 'rising', pacing: 'observe' };
-const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
+const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis:'classic_ttm', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
   normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: {}, gordonYieldBps: 800,
   grid: [{ priceMinor: 1200, discountBps: 9500, yieldBps: 500, cumulativePortionBps: 3333, meetsSafetyMargin: false }],
   sourceUrls: [], currentPriceMinor: 1000, priceDate: '2026-10-23' };
@@ -31,7 +31,7 @@ function cashAnnuals(basis: 'cash' | 'coverage'): DividendPricingAnnual[] {
 }
 function priceCashEvidence(annuals: DividendPricingAnnual[]) {
   return calculateDividendPricing({ code: '000333', name: 'Fixture', financialSector: false,
-    method: defaultDividendPricingMethod(), annuals, asOf: '2026-10-23', priceMinor: 1000, priceDate: '2026-10-23',
+    method: defaultDividendPricingMethod(), annuals, trailingDividend: { dpsMicros:500000, asOf:'2026-10-23', windowStart:'2025-10-23', capitalActionsVerified:true, cashDistributionsComplete:true, sourceUrls:['https://example.com/dividend'] }, asOf: '2026-10-23', priceMinor: 1000, priceDate: '2026-10-23',
     treasury: { yieldBps: 200, asOf: '2026-10-23', fetchedAt: 1, sourceUrl: 'https://example.com/treasury', history: [] } });
 }
 
@@ -91,14 +91,15 @@ test('a fully evidenced nonpositive cash year keeps its derived pricing gap with
     if (basis === 'cash') annuals[0].operatingCashMinor = 1000;
     else annuals[0].fcfCoverageBps = 0;
     const calculated = priceCashEvidence(annuals);
-    assert.ok(calculated.blockers.includes('fcf_non_positive'), basis);
-    assert.ok(calculated.blockers.includes('fcf_missing'), 'the calculator gap is reproduced before summary grouping');
+    assert.ok(calculated.pauseReasons?.includes('fcf_non_positive'), basis);
+    assert.equal(calculated.canApply, true, 'a historical cash-flow risk does not replace verified TTM');
+    assert.ok(calculated.pauseReasons?.includes('fcf_missing'), 'the reference calculation gap is reproduced before summary grouping');
     const summary = summarize(research([], calculated));
     assert.deepEqual(summary.risks.find(item => item.topic === 'cashflow')?.pricingIssues,
       ['fcf_non_positive', 'fcf_missing'], basis);
     assert.equal(summary.risks.find(item => item.topic === 'cashflow')?.factKey, 'div_v4_fact_fcf_non_positive', basis);
     assert.equal(summary.missing.some(item => item.topic === 'cashflow'), false, basis);
-    assert.ok(calculated.blockers.includes('fcf_missing'), 'grouping preserves the original pricing evidence');
+    assert.ok(calculated.pauseReasons?.includes('fcf_missing'), 'grouping preserves the original reference evidence');
   }
 });
 
@@ -213,4 +214,14 @@ test('technical risks and unavailable evidence are visible once without changing
   assert.equal(summary.risks.find(item => item.topic === 'stock_trend')?.factKey, 'div_v4_fact_stock_falling');
   assert.equal(summary.risks.find(item => item.topic === 'market_trend')?.factKey, 'div_v4_fact_market_accelerating');
   assert.deepEqual(summary.missing.map(item => item.topic), ['market_trend', 'additional_rules']);
+});
+
+
+test('missing trailing cash evidence stays distinct from verified zero cash', () => {
+  const missing = summarize(research([], { status:'blocked', canApply:false, grid:[], blockers:['trailing_dividend_missing','cash_distributions_incomplete'] }));
+  assert.deepEqual(missing.missing.find(item => item.topic === 'trailing_dividend')?.pricingIssues, ['trailing_dividend_missing','cash_distributions_incomplete']);
+  assert.equal(missing.risks.some(item => item.topic === 'trailing_dividend'), false);
+  const zero = summarize(research([], { status:'blocked', canApply:false, grid:[], blockers:['trailing_dividend_zero'] }));
+  assert.deepEqual(zero.risks.find(item => item.topic === 'trailing_dividend')?.pricingIssues, ['trailing_dividend_zero']);
+  assert.equal(zero.missing.some(item => item.topic === 'trailing_dividend'), false);
 });

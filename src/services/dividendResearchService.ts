@@ -8,7 +8,7 @@ import {
   type DividendResearchSource, type DividendSelectionPrinciples, type DividendStockResearch,
 } from '../lib/dividendResearch';
 import { calculateDividendPricing, defaultDividendPricingMethod, isDividendPricingMethod, parseDividendTreasury, dividendPricingAnnuals,
-  dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingHistoryCoverage, parseDividendOpportunityRows, DIVIDEND_OPPORTUNITY_URL,
+  dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingTrailingDividend, dividendPricingHistoryCoverage, parseDividendOpportunityRows, DIVIDEND_OPPORTUNITY_URL,
   type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from '../lib/dividendPricing';
 import { dateInChina } from '../lib/dividendWorkbench';
 
@@ -155,20 +155,22 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
   // A single current observation does not need the historical anchor's 60 months.
   const currentCashYieldBps = currentCashHistory?.capitalActionsVerified && currentCashHistory.cashDistributionsComplete !== false
     ? currentCashHistory.samples[0]?.yieldBps : undefined;
-  let pricing;
-  if (financial.data && distributions.data) {
+  // Cash-grid readiness is independent of the financial and comparison feeds.
+  // Even a failed distribution download gets an explicit missing-TTM result.
+  const pricing = (() => {
     const industry=(cash.data as {result?:{data?:Record<string,unknown>[]}} | undefined)?.result?.data?.[0]?.INDUSTRY_NAME;
-    if (typeof industry==='string' && industry.trim()) financial.data.sector=industry;
-    const raw = financial.data.pricingRaw as {result:{data:Record<string,unknown>[]}};
-    const last = raw.result.data.filter(r => String(r.REPORT_DATE).slice(0,10) <= asOf && String(r.NOTICE_DATE).slice(0,10) <= asOf).sort((a,b)=>String(b.REPORT_DATE).localeCompare(String(a.REPORT_DATE)))[0];
+    if (financial.data && typeof industry==='string' && industry.trim()) financial.data.sector=industry;
+    const raw = financial.data?.pricingRaw as {result?:{data?:Record<string,unknown>[]}} | undefined;
+    const last = (raw?.result?.data ?? []).filter(r => String(r.REPORT_DATE).slice(0,10) <= asOf && String(r.NOTICE_DATE).slice(0,10) <= asOf).sort((a,b)=>String(b.REPORT_DATE).localeCompare(String(a.REPORT_DATE)))[0];
     const bvps = typeof last?.BPS === 'number' && last.BPS > 0 ? Math.round(last.BPS*1e6) : undefined;
-    pricing = calculateDividendPricing({code:stock.code,name:stock.name,financialSector:financial.data.financialSector,sector:financial.data.sector, financialReview:financial.data.sectorReview, method,
-      annuals:dividendPricingAnnuals(financial.data.pricingRaw,cash.data,distributions.data.pricingRaw,stock.code,asOf), treasury,
-      history:monthly.data ? dividendPricingYieldHistory(monthly.data.filter(p => p.date.slice(0,7) < asOf.slice(0,7)),distributions.data.pricingRaw,stock.code,treasury) : undefined,
+    return calculateDividendPricing({code:stock.code,name:stock.name,financialSector:financial.data?.financialSector ?? /银行|保险|证券/.test(stock.name),sector:financial.data?.sector, financialReview:financial.data?.sectorReview, method,
+      annuals:financial.data && distributions.data ? dividendPricingAnnuals(financial.data.pricingRaw,cash.data,distributions.data.pricingRaw,stock.code,asOf) : [], treasury,
+      trailingDividend:distributions.data ? dividendPricingTrailingDividend(distributions.data.pricingRaw,stock.code,asOf) : undefined,
+      history:monthly.data && distributions.data ? dividendPricingYieldHistory(monthly.data.filter(p => p.date.slice(0,7) < asOf.slice(0,7)),distributions.data.pricingRaw,stock.code,treasury) : undefined,
       opportunity, priceMinor:unadjusted?.priceMinor,priceDate:unadjusted?.date,bvpsMicros:bvps,asOf,
       currentCashYieldBps,
       sourceUrls:[dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthly.source?.url ?? monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
-  }
+  })();
   return evaluateDividendResearch({ code: stock.code, name: financial.data?.name || stock.name, pricing,
     technical: technical.data, financial: financial.data, distributions: distributions.data,
     yieldBps: currentCashYieldBps,

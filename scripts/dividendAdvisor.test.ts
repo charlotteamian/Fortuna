@@ -1,4 +1,4 @@
-import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
+import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
 import 'fake-indexeddb/auto';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,6 +29,7 @@ registerHooks({
 const { db, initializeSettings, exportData, exportToExcel, importData } = await import('../src/db.ts');
 const { buildPortableSnapshot } = await import('../src/lib/portableSnapshot.ts');
 const now = new Date('2026-10-16T03:00:00Z').getTime();
+const trailingDividend = (dpsMicros=500000) => ({ dpsMicros,asOf:'2026-10-16',windowStart:'2025-10-16',capitalActionsVerified:true,cashDistributionsComplete:true,sourceUrls:['https://example.com/implemented-dividends'] });
 const stock: DividendStock = {
   code: '601398', name: 'Fixture bank', group: 'core', weightBps: 5000, shareMode: 'linked', manualShares: 0, lotSize: 100,
   quote: { priceMinor: 500, date: '2026-10-15 15:00', fetchedAt: now - 3600_000 },
@@ -150,11 +151,12 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
       generatedAt: now, principles: defaultDividendSelectionPrinciples(), indices: [],
       stocks: [{ code: stock.code, name: stock.name, checks: [], status: 'unknown', sources: [], issues: [],
         pricing: { status: 'blocked', canApply: false, grid: [], anchors: {}, annuals: [], blockers: [], warnings: [], normalizationBasis: 'missing', riskClass: 'other', taxBps: 0, gordonYieldBps: 800, sourceUrls: [] } as DividendPricingResult }] } }, now);
-  const levels = [{ yieldBps: 500, portionBps: 3333, priceMinor: 400 }, { yieldBps: 600, portionBps: 3333, priceMinor: 350 }, { yieldBps: 700, portionBps: 3334, priceMinor: 300 }];
+  const verifiedPricing=calculateDividendPricing({code:stock.code,name:stock.name,financialSector:true,method:defaultDividendPricingMethod(),annuals:[],asOf:'2026-10-16',trailingDividend:trailingDividend(200000)});
+  const levels=verifiedPricing.grid.map(level=>({yieldBps:level.yieldBps,portionBps:2500,priceMinor:level.priceMinor}));
   const run = (buyLevels = levels) => askDividendAdvisorWithActions(config(), data, '复核定价', [], { transport: async () => ({ status: 200,
     data: response('openai', `资料检查。\n\`\`\`fortuna-actions\n${JSON.stringify([{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true, buyLevels }])}\n\`\`\``) }) });
   assert.deepEqual((await run()).actions, []);
-  data.research!.stocks[0].pricing = { ...data.research!.stocks[0].pricing!, calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, status: 'ready', canApply: true, grid: levels, d1Micros: 200000, anchors: { selectedBps: 500 } } as unknown as DividendPricingResult;
+  data.research!.stocks[0].pricing = verifiedPricing;
   assert.deepEqual((await run()).actions[0].buyLevels, levels);
   assert.equal((await run([{ ...levels[0], priceMinor: 401 }, ...levels.slice(1)])).actions.length, 0);
   assert.equal((await run(levels.map((level, index) => ({ ...level, portionBps: index === 0 ? 9000 : 500 })))).actions.length, 0);
@@ -169,7 +171,7 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
 test('regeneration supplies a verified ladder without changing manual pause state, even during accelerating declines', async () => {
   const { calculateDividendPricing, defaultDividendPricingMethod } = await import('../src/lib/dividendPricing.ts');
   const pricing = calculateDividendPricing({ code: stock.code, name: stock.name, financialSector: false,
-    method: defaultDividendPricingMethod(), asOf: '2026-10-16', priceMinor: 1000, priceDate: '2026-10-16',
+    method: defaultDividendPricingMethod(), asOf: '2026-10-16', priceMinor: 1000, priceDate: '2026-10-16',trailingDividend:trailingDividend(),
     treasury: { yieldBps: 200, asOf: '2026-10-16', fetchedAt: now, history: [], sourceUrl: 'https://example.com/treasury' },
     annuals: Array.from({ length: 5 }, (_, index) => ({ year: 2025 - index, reportDate: `${2025 - index}-12-31`, noticeDate: `${2026 - index}-03-20`,
       epsMicros: 1000000, adjustedEpsMicros: 1000000, dividendMicros: 500000, payoutBps: 5000, fcfCoverageBps: 20000 })) });
@@ -188,16 +190,16 @@ test('regeneration supplies a verified ladder without changing manual pause stat
   assert.deepEqual(midea.buyLevels?.map(level => level.priceMinor), pricing.grid.map(level => level.priceMinor));
   assert.equal(midea.buyPaused, undefined);
   assert.equal(result.actions.find(action => action.code === stock.code)?.buyLevels, undefined);
-  assert.match(result.answer, /三锚估值/);
+  assert.match(result.answer, /5%|5％|经典/);
   assert.deepEqual(data.stockPlan, before, 'draft generation cannot write or mutate the saved plan');
   const riskOnly=await run('不要计算美的集团价格，只复核风险');
   assert.equal(riskOnly.actions.length,0);
-  assert.match(riskOnly.answer,/下跌加速/);assert.match(riskOnly.answer,/已复核估值和走势/);assert.doesNotMatch(riskOnly.answer,/新三档/);
+  assert.match(riskOnly.answer,/下跌加速/);assert.match(riskOnly.answer,/已复核估值和走势/);assert.doesNotMatch(riskOnly.answer,/新四档/);
   data.research!.stocks.forEach(row => { row.technical!.state = 'rising'; row.technical!.pacing = 'observe'; });
   assert.equal((await run('什么是股息率？')).actions.length, 0);
   const all = await run('重新生成网格计划');
   assert.equal(all.actions.length, 2);
-  assert.ok(all.actions.every(action => action.buyLevels?.length === 3 && action.sellLevels?.length === 4 && action.buyPaused === undefined));
+  assert.ok(all.actions.every(action => action.buyLevels?.length === 4 && action.sellLevels?.length === 4 && action.buyPaused === undefined));
   const pausedByUser = await run('重新生成美的集团网格并暂停加仓');
   assert.equal(pausedByUser.actions[0].buyPaused, true, 'an explicit user pause request remains actionable after repricing');
   data.stockPlan.stocks[0].code = '601288'; data.stockPlan.stocks[0].name = '农业银行';
@@ -218,7 +220,7 @@ test('regeneration supplies a verified ladder without changing manual pause stat
   assert.equal(crossing.actions[0].sellLevels?.length, 4);
   assert.ok(crossing.actions[0].sellLevels!.every(level => level.priceMinor! > Math.max(...pricing.grid.map(row => row.priceMinor))));
   assert.match(crossing.answer, /卖出四档/);
-  assert.ok(crossing.answer.includes(`三锚估值${(pricing.theoreticalPriceMinor!/100).toFixed(2)}元`));
+  assert.ok(crossing.answer.includes(`${(pricing.theoreticalPriceMinor!/100).toFixed(2)}元`));
   assert.ok(crossing.answer.includes(pricing.grid.map(level=>(level.priceMinor/100).toFixed(2)).join('／')));
   assert.match(crossing.answer,/同时替换两侧/);
   data.stockPlan.stocks[1].sellGrid = [];
@@ -227,14 +229,14 @@ test('regeneration supplies a verified ladder without changing manual pause stat
   const merged = await askDividendAdvisorWithActions(config(), data, '复核', [], { transport: async () => ({ status: 200,
     data: response('openai', `\`\`\`fortuna-actions\n${JSON.stringify([modelDraft])}\n\`\`\``) }) });
   const { isDividendPlanProposal } = await import('../src/lib/dividendAdvisorActions.ts');
-  assert.equal(merged.actions[0].buyLevels?.length, 3);
+  assert.equal(merged.actions[0].buyLevels?.length, 4);
   assert.equal(isDividendPlanProposal(merged.actions[0]), true);
 });
 
-test('pricing questions produce a cash-supported draft without automatic pauses despite payout warnings', async () => {
+test('pricing questions produce an implemented-TTM draft without automatic pauses despite payout warnings', async () => {
   const { calculateDividendPricing, defaultDividendPricingMethod } = await import('../src/lib/dividendPricing.ts');
   const pricing=calculateDividendPricing({code:stock.code,name:stock.name,financialSector:false,method:defaultDividendPricingMethod(),
-    asOf:'2026-10-16',priceMinor:1000,priceDate:'2026-10-16',
+    asOf:'2026-10-16',priceMinor:1000,priceDate:'2026-10-16',trailingDividend:trailingDividend(),
     treasury:{yieldBps:200,asOf:'2026-10-16',fetchedAt:now,history:[],sourceUrl:'https://example.com/treasury'},
     annuals:Array.from({length:5},(_,i)=>({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
       epsMicros:1000000,adjustedEpsMicros:1000000,dividendMicros:500000,payoutBps:i===0?10021:5000,fcfCoverageBps:i===0?12664:20000}))});
@@ -245,7 +247,7 @@ test('pricing questions produce a cash-supported draft without automatic pauses 
     data:response('openai','payout_above_100 和 fcf_below_150，所以无法生成价格。')})});
   assert.equal(result.actions.length,1);assert.equal(result.actions[0].buyPaused,undefined);
   assert.deepEqual(result.actions[0].buyLevels?.map(level=>level.priceMinor),pricing.grid.map(level=>level.priceMinor));
-  assert.match(result.answer,/三锚估值8.44元/);assert.match(result.answer,/风险提示/);
+  assert.match(result.answer,/10.00元/);assert.match(result.answer,/风险提示/);
   assert.doesNotMatch(result.answer,/payout_above_100|fcf_below_150|无法生成价格/);
   assert.doesNotMatch(result.actions[0].reason,/payout_above_100|fcf_below_150/);
   const resume=await askDividendAdvisorWithActions(config(),data,'复核',[],{language:'zh',transport:async()=>({status:200,
@@ -253,7 +255,7 @@ test('pricing questions produce a cash-supported draft without automatic pauses 
   assert.deepEqual(resume.actions,[]);assert.doesNotMatch(resume.answer,/payout_above_100/);
   const fabricated=await askDividendAdvisorWithActions(config(),data,'复核',[],{transport:async()=>({status:200,
     data:response('openai',`\`\`\`fortuna-actions\n${JSON.stringify([{id:'bad-grid-resume',code:stock.code,reason:'resume',buyPaused:false,
-      buyLevels:pricing.grid.map((level,i)=>({priceMinor:level.priceMinor+100,yieldBps:level.yieldBps,portionBps:i===2?3334:3333}))}])}\n\`\`\``)})});
+      buyLevels:pricing.grid.map(level=>({priceMinor:level.priceMinor+100,yieldBps:level.yieldBps,portionBps:2500}))}])}\n\`\`\``)})});
   assert.deepEqual(fabricated.actions,[]);
 });
 
@@ -267,17 +269,20 @@ for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${proto
   assert.deepEqual(advisory.actions, [], 'a provider cannot create an unsolicited pause action');
 });
 
-test('the method prompt distinguishes single-period dividends, holding-year events and sustainable valuation D1', () => {
+test('the method prompt separates announcement and forecast amounts from implemented TTM pricing', () => {
   const prompt = dividendAdvisorSystemPrompt('zh');
   assert.match(prompt, /latest announced reporting period only/);
   assert.match(prompt, /upcoming announcements replace their corresponding historical seasonal estimate/);
   assert.match(prompt, /exact prior-year same-reporting-period implemented amount as a labelled estimate/);
   assert.match(prompt, /Never double an interim amount/);
-  assert.match(prompt, /Do not multiply D1 by growth again/);
   assert.match(prompt, /Do not append generic investment-risk statements/);
-  assert.match(prompt, /Anchor disagreement is not a veto/);
-  assert.match(prompt, /highest available valid yield/);
-  assert.match(prompt, /Never offer a separate manual anchor price/);
+  assert.match(prompt, /fixed buy yields of 5\.5%, 5\.75%, 6% and 6\.5%/);
+  assert.match(prompt, /fixed sell yields of 4\.8%, 4\.5%, 4\.2% and 4%/);
+  assert.match(prompt, /four levels allocates or sells 25%/);
+  assert.match(prompt, /Do not additionally subtract each cash dividend from every level/);
+  assert.match(prompt, /neutral reference line.*not intrinsic fair value/);
+  assert.match(prompt, /EXACT four calculated explicit priceMinor\/yieldBps pairs with portionBps 2500 each/);
+  assert.doesNotMatch(prompt, /highest available valid yield|EXACTLY THREE buy/);
 });
 
 for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} sends text, current snapshot and bounded conversation with the proper authentication`, async () => {

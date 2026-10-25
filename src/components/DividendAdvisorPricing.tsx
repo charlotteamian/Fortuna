@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { dividendPricingMarketComparison, invalidateOutdatedDividendPricing, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendPricingRiskClass, type DividendPricingStockOverride, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
+import { dividendPricingMarketComparison, invalidateOutdatedDividendPricing, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
 import { dividendPricingPlan } from '../lib/dividendPricingPlan';
+import { validateDividendPricingProposal } from '../services/dividendAdvisorActionsService';
 import './DividendReviewAlerts.css';
 
-const FIELD_KEYS = ['requiredReturnBps', 'growthBps', 'safetyMarginBps', 'historicalPercentileBps', 'opportunityCostBps'] as const;
-const RISK_CLASSES = ['bondlike', 'bank', 'cyclical', 'other'] as const;
 const GAP_HELP: Record<DividendPricingBlocker, string> = {
+  trailing_dividend_missing: 'dividend', trailing_dividend_invalid: 'dividend', trailing_dividend_stale: 'dividend',
+  trailing_dividend_zero: 'dividend', cash_distributions_incomplete: 'dividend',
   annual_eps_missing: 'financials', annual_payout_missing: 'financials', non_positive_earnings: 'risk',
   payout_above_100: 'risk', fcf_missing: 'cashflow', fcf_below_150: 'cashflow', fcf_non_positive: 'cashflow', fcf_dividend_capped: 'cashflow', financial_sector_review: 'sector',
   treasury_missing: 'macro', treasury_stale: 'macro', yield_history_missing: 'history', capital_actions_unverified: 'history',
@@ -64,102 +65,49 @@ function PricingGap({ blocker, code }: { blocker: DividendPricingBlocker; code: 
     <a href={url} target="_blank" rel="noopener noreferrer">{t(kind === 'opportunity' ? 'div_v2_pricing_open_csi' : kind === 'macro' ? 'div_v2_pricing_open_treasury' : kind === 'normalisation' || kind === 'sector' || kind === 'cashflow' ? 'div_ai_open_company_reports' : 'div_ai_open_financial_source')}</a></li>;
 }
 
-export function DividendPricingEditor({ method, opportunity, stocks = [], disabled, onSave }: { method: DividendPricingMethod; opportunity?: DividendOpportunityResearch; stocks?: Pick<DividendStock, 'code' | 'name'>[]; disabled: boolean; onSave: (value: DividendPricingMethod) => Promise<void> }) {
+export function DividendPricingEditor({ method, disabled, onSave }: { method: DividendPricingMethod; opportunity?: DividendOpportunityResearch; stocks?: Pick<DividendStock, 'code' | 'name'>[]; disabled: boolean; onSave: (value: DividendPricingMethod) => Promise<void> }) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries([
-    ...FIELD_KEYS.map(key => [key, method[key] === undefined ? '' : String(method[key]! / 100)]),
-    ...RISK_CLASSES.map(key => [`risk_${key}`, String(method.riskPremiumBps[key] / 100)]),
-  ]));
   const [holdingPeriod, setHoldingPeriod] = useState(method.holdingPeriod);
-  const [opportunityMode, setOpportunityMode] = useState<'auto' | 'manual'>(method.opportunityCostBps === undefined ? 'auto' : 'manual');
-  const [opportunityDate, setOpportunityDate] = useState(method.opportunityCostAsOf ?? '');
-  const [opportunitySource, setOpportunitySource] = useState(method.opportunityCostSource ?? '');
-  const [overrides, setOverrides] = useState(method.stockOverrides);
-  const [stockCode, setStockCode] = useState('');
   const [error, setError] = useState('');
-  const codeValid = /^\d{6}$/.test(stockCode);
-  const override = codeValid ? overrides[stockCode] ?? {} : {};
-  const knownStocks = new Map(stocks.map(stock => [stock.code, stock.name]));
-  const selectedName = knownStocks.get(stockCode);
-  const patchOverride = (patch: Partial<DividendPricingStockOverride>) => {
-    if (!codeValid) return;
-    const editedCode = stockCode;
-    setOverrides(current => {
-      const next = { ...current };
-      const value = Object.fromEntries(Object.entries({ ...current[editedCode], ...patch }).filter(([, field]) => field !== undefined));
-      if (Object.keys(value).length) next[editedCode] = value;
-      else delete next[editedCode];
-      return next;
-    });
-  };
-  const save = async (nextOverrides = overrides) => {
-    const value = {
-      requiredReturnBps: Math.round(Number(draft.requiredReturnBps) * 100), growthBps: Math.round(Number(draft.growthBps) * 100),
-      safetyMarginBps: Math.round(Number(draft.safetyMarginBps) * 100), historicalPercentileBps: Math.round(Number(draft.historicalPercentileBps) * 100),
-      holdingPeriod, riskPremiumBps: Object.fromEntries(RISK_CLASSES.map(key => [key, Math.round(Number(draft[`risk_${key}`]) * 100)])),
-      ...(opportunityMode === 'auto' ? {} : { opportunityCostBps: Math.round(Number(draft.opportunityCostBps) * 100), opportunityCostAsOf: opportunityDate, opportunityCostSource: opportunitySource.trim() }),
-      stockOverrides: nextOverrides,
-    };
-    if (opportunityMode === 'manual' && (!draft.opportunityCostBps?.trim() || !opportunityDate || !opportunitySource.trim())) { setError(t('div_v2_pricing_manual_evidence_required')); return; }
-    if (Object.values(nextOverrides).some(item => item.normalizedEpsMicros !== undefined && (!item.normalizationAsOf || !item.normalizationSource?.trim()))) { setError(t('div_v2_pricing_normalisation_evidence_required')); return; }
-    if (FIELD_KEYS.filter(key => key !== 'opportunityCostBps').some(key => !draft[key]?.trim()) || RISK_CLASSES.some(key => !draft[`risk_${key}`]?.trim()) || !isDividendPricingMethod(value)) { setError(t('div_v2_pricing_invalid')); return; }
-    setError(''); await onSave(value);
-  };
-  const removeOverride = async () => {
-    const nextOverrides = { ...overrides };
-    delete nextOverrides[stockCode];
-    setOverrides(nextOverrides);
-    await save(nextOverrides);
+  const save = async () => {
+    const value = { ...method, strategy: 'classic_ttm' as const, holdingPeriod };
+    if (!isDividendPricingMethod(value)) { setError(t('div_classic_invalid')); return; }
+    setError('');
+    await onSave(value);
   };
   return <form className="div-ai-pricing-editor" onSubmit={event => { event.preventDefault(); void save(); }}>
-    <p className="div-ai-muted">{t('div_v2_pricing_intro')}</p><p className="div-ai-auto-summary">{t('div_v2_pricing_auto_summary')}</p><div className="div-ai-principles-form">
-      {FIELD_KEYS.filter(key => key !== 'opportunityCostBps').map(key => <label key={key}><span>{t(`div_v2_pricing_${key}`)}</span><input className="form-input" type="number" step=".01" value={draft[key] ?? ''} disabled={disabled} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} /><small>{t(`div_v2_pricing_help_${key}`)}</small></label>)}
-      <label><span>{t('div_v2_pricing_holding_period')}</span><select className="form-input" value={holdingPeriod} disabled={disabled} onChange={event => setHoldingPeriod(event.target.value as DividendPricingMethod['holdingPeriod'])}>
-        {(['over_year', 'month_to_year', 'up_to_month'] as const).map(value => <option key={value} value={value}>{t(`div_v2_holding_${value}`)}</option>)}
-      </select></label>
+    <p>{t('div_classic_intro')}</p>
+    <div className="div-ai-auto-summary"><strong>{t('div_classic_fixed_title')}</strong>
+      <p>{t('div_classic_buy_yields')}</p><p>{t('div_classic_sell_yields')}</p>
+      <p>{t('div_classic_neutral_help')}</p><p>{t('div_classic_allocation')}</p>
     </div>
-    <details className="div-method"><summary>{t('div_v2_pricing_anchors')} · {t(opportunityMode === 'auto' ? 'div_v2_pricing_auto_mode' : 'div_v2_pricing_manual_mode')}</summary><p className="div-ai-muted">{t('div_v2_pricing_auto_opportunity')}</p><div className="div-ai-principles-form">
-      {RISK_CLASSES.map(key => <label key={key}><span>{t('div_v2_pricing_risk_premium', { kind: t(`div_v2_risk_${key}`) })}</span><input className="form-input" type="number" step=".01" value={draft[`risk_${key}`] ?? ''} disabled={disabled} onChange={event => setDraft(current => ({ ...current, [`risk_${key}`]: event.target.value }))} /></label>)}
-      <p className="div-ai-principles-notes div-ai-muted">{t('div_v2_pricing_risk_premium_help')}</p>
-      <label className="div-ai-principles-notes"><span>{t('div_v2_pricing_opportunity_method')}</span><select className="form-input" value={opportunityMode} disabled={disabled} onChange={event => setOpportunityMode(event.target.value as 'auto' | 'manual')}>
-        <option value="auto">{t('div_v2_pricing_auto_mode')}</option><option value="manual">{t('div_v2_pricing_manual_mode')}</option></select></label>
-      {opportunityMode === 'auto' && <div className="div-ai-principles-notes div-ai-auto-summary"><strong>{t('div_v2_pricing_auto_no_entry')}</strong>
-        <p>{opportunity ? t('div_v2_pricing_opportunity_evidence', { yield: `${(opportunity.yieldBps / 100).toFixed(2)}%`, date: opportunity.asOf }) : t('div_v2_pricing_auto_on_review')}</p>
-        <a href="https://www.csindex.com.cn/#/indices/family/detail?indexCode=000922" target="_blank" rel="noopener noreferrer">{t('div_v2_pricing_open_csi')}</a></div>}
-      {opportunityMode === 'manual' && <><label><span>{t('div_v2_pricing_opportunityCostBps')}</span><input className="form-input" type="number" min=".01" step=".01" value={draft.opportunityCostBps ?? ''} disabled={disabled} required onChange={event => setDraft(current => ({ ...current, opportunityCostBps: event.target.value }))} placeholder={t('div_v2_pricing_opportunity_value_placeholder')} /></label>
-        <label><span>{t('div_v2_pricing_evidence_date')}</span><input className="form-input" type="date" value={opportunityDate} disabled={disabled} required onChange={event => setOpportunityDate(event.target.value)} /><small>{t('div_v2_pricing_date_help')}</small></label>
-        <label className="div-ai-principles-notes"><span>{t('div_v2_pricing_opportunity_source')}</span><textarea className="form-input" rows={3} maxLength={2000} value={opportunitySource} disabled={disabled} required onChange={event => setOpportunitySource(event.target.value)} placeholder={t('div_v2_pricing_opportunity_source_placeholder')} /><small>{t('div_v2_pricing_manual_opportunity_help')}</small></label></>}
-    </div></details>
-    <details className="div-method"><summary>{t('div_v2_pricing_stock_assumptions')} · {t('div_v2_pricing_optional_override')}</summary><p className="div-ai-muted">{t('div_v2_pricing_stock_auto_help')}</p>
-      <p className="div-ai-auto-summary">{t('div_v2_pricing_stock_independent')}</p>
-      {stocks.length > 0 && <label className="div-ai-pricing-code"><span>{t('div_v2_pricing_select_stock')}</span><select className="form-input" value={knownStocks.has(stockCode) ? stockCode : ''} disabled={disabled} onChange={event => setStockCode(event.target.value)}>
-        <option value="">{t('div_v2_pricing_select_stock_placeholder')}</option>{stocks.map(stock => <option key={stock.code} value={stock.code}>{stock.name} · {stock.code}</option>)}
-      </select></label>}
-      <label className="div-ai-pricing-code"><span>{t(stocks.length > 0 ? 'div_v2_pricing_manual_code' : 'div_code')}</span><input className="form-input" inputMode="numeric" maxLength={6} value={stockCode} disabled={disabled} placeholder={t('div_v2_pricing_code_placeholder')} onChange={event => setStockCode(event.target.value.replace(/\D/g, ''))} /></label>
-      {Object.keys(overrides).length > 0 && <div className="div-ai-override-list"><strong>{t('div_v2_pricing_configured_stocks', { count: Object.keys(overrides).length })}</strong>{Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right)).map(([code, item]) => <div className="div-ai-override-item" key={code}>
-        <button type="button" className="div-advisor-text-button" aria-pressed={code === stockCode} disabled={disabled} onClick={() => setStockCode(code)}>{knownStocks.get(code) ?? code}{knownStocks.has(code) && ` · ${code}`}</button>
-        <span>{t('div_v2_pricing_stock_override_summary', { risk: t(item.riskClass ? `div_v2_risk_${item.riskClass}` : 'div_auto'), eps: item.normalizedEpsMicros === undefined ? t('div_auto') : (item.normalizedEpsMicros / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }) })}</span>
-      </div>)}</div>}
-      {codeValid && <><h4>{t('div_v2_pricing_editing_stock', { stock: selectedName ? `${selectedName} · ${stockCode}` : stockCode })}</h4><div className="div-ai-principles-form div-ai-stock-override-fields"><label><span>{t('div_v2_pricing_risk_class')}</span><select className="form-input" value={override.riskClass ?? ''} disabled={disabled} onChange={event => patchOverride({ riskClass: event.target.value ? event.target.value as DividendPricingRiskClass : undefined })}>
-        <option value="">{t('div_auto')}</option>{RISK_CLASSES.map(key => <option key={key} value={key}>{t(`div_v2_risk_${key}`)}</option>)}</select></label>
-        <label><span>{t('div_v2_pricing_normalised_eps')}</span><input className="form-input" type="number" min=".000001" step=".000001" value={override.normalizedEpsMicros === undefined ? '' : override.normalizedEpsMicros / 1e6} disabled={disabled} placeholder={t('div_v2_pricing_eps_placeholder')} onChange={event => patchOverride(event.target.value === '' ? { normalizedEpsMicros: undefined, normalizationAsOf: undefined, normalizationSource: undefined } : { normalizedEpsMicros: Math.round(Number(event.target.value) * 1e6) })} /><small>{t('div_v2_pricing_eps_help')}</small></label>
-        <label><span>{t('div_v2_pricing_evidence_date')}</span><input className="form-input" type="date" value={override.normalizationAsOf ?? ''} disabled={disabled} required={override.normalizedEpsMicros !== undefined} onChange={event => patchOverride({ normalizationAsOf: event.target.value || undefined })} /><small>{t('div_v2_pricing_date_help')}</small></label>
-        <label className="div-ai-principles-notes"><span>{t('div_v2_pricing_normalisation_source')}</span><textarea className="form-input" rows={3} maxLength={2000} value={override.normalizationSource ?? ''} disabled={disabled} required={override.normalizedEpsMicros !== undefined} placeholder={t('div_v2_pricing_eps_source_placeholder')} onChange={event => patchOverride({ normalizationSource: event.target.value || undefined })} /><small>{t('div_v2_pricing_normalisation_find_help')}</small><a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a></label>
-      </div><div className="div-actions"><button type="submit" className="btn btn-secondary" disabled={disabled}>{t('div_v2_pricing_save_stock')}</button>
-        {Object.hasOwn(overrides, stockCode) && <button type="button" className="div-advisor-text-button" disabled={disabled} onClick={() => void removeOverride()}>{t('div_v2_pricing_remove_stock')}</button>}</div><p className="div-ai-muted">{t('div_v2_pricing_stock_save_help')}</p></>}
-    </details>
-    {error && <p className="div-warning" role="alert">{error}</p>}<button type="submit" className="btn btn-primary" disabled={disabled}>{t('div_v2_pricing_save')}</button>
+    <div className="div-ai-principles-form"><label><span>{t('div_v2_pricing_holding_period')}</span>
+      <select className="form-input" value={holdingPeriod} disabled={disabled} onChange={event => setHoldingPeriod(event.target.value as DividendPricingMethod['holdingPeriod'])}>
+        {(['over_year', 'month_to_year', 'up_to_month'] as const).map(value => <option key={value} value={value}>{t(`div_v2_holding_${value}`)}</option>)}
+      </select><small>{t('div_classic_tax_help')}</small>
+    </label></div>
+    <p className="div-ai-muted">{t('div_classic_refresh_help')}</p>
+    {error && <p className="div-warning" role="alert">{error}</p>}
+    <button type="submit" className="btn btn-primary" disabled={disabled}>{t('div_v2_pricing_save')}</button>
   </form>;
 }
 
-export function DividendPricingCard({ code, pricing, disabled, onUpdated }: { code: string; pricing: DividendPricingResult; disabled: boolean; onUpdated: () => Promise<unknown> }) {
+export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown> }) {
   const { t } = useTranslation();
-  pricing = invalidateOutdatedDividendPricing(pricing);
-  const yuan = (value?: number, scale = 100) => value === undefined ? '—' : `¥${(value / scale).toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
+  const pricing = invalidateOutdatedDividendPricing(sourcePricing);
+  const yuan = (value?: number, scale = 100) => value === undefined ? '—' : `¥${(value / scale).toLocaleString(undefined, { maximumFractionDigits: scale === 1e6 ? 6 : 2 })}`;
   const pct = (value?: number) => value === undefined ? '—' : `${(value / 100).toFixed(2)}%`;
-  const historyCoverage = pricing.historyCoverage;
   const comparison = dividendPricingMarketComparison(pricing);
   const plan = dividendPricingPlan(pricing);
+  const trailing = pricing.trailingDividend;
+  const trailingAmountVerified = !!trailing && Number.isSafeInteger(trailing.dpsMicros) && trailing.dpsMicros >= 0
+    && trailing.capitalActionsVerified && trailing.cashDistributionsComplete && !pricing.blockers.includes('trailing_dividend_invalid');
+  const dividendSources = Array.isArray(trailing?.sourceUrls) ? trailing.sourceUrls.filter(url => typeof url === 'string' && url.trim()) : [];
+  const advisory = [...new Set([...(pricing.pauseReasons ?? []), ...(pricing.warnings ?? [])])].filter(issue => !pricing.blockers.includes(issue));
+  const riskKeys = new Set<DividendPricingBlocker>(['non_positive_earnings', 'payout_above_100', 'fcf_below_150', 'fcf_non_positive', 'fcf_dividend_capped', 'anchors_conflict', 'growth_return_conflict', 'implausible_yield']);
+  const isRisk = (issue: DividendPricingBlocker) => issue === 'financial_sector_review' ? pricing.financialReview?.status === 'risk' : riskKeys.has(issue);
+  const risks = advisory.filter(isRisk);
+  const missing = advisory.filter(issue => !isRisk(issue));
   const proposal: DividendPlanProposal | null = plan ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: yuan(pricing.d1Micros, 1e6), price: yuan(pricing.theoreticalPriceMinor) }),
     ...plan,
@@ -167,59 +115,43 @@ export function DividendPricingCard({ code, pricing, disabled, onUpdated }: { co
   if (pricing.blockers.includes('pricing_calculation_stale')) return <div className="div-ai-pricing-card div-ai-pricing-model-alert">
     <strong>{t('div_v2_pricing_model_stale_title')}</strong><p>{t('div_v2_pricing_model_stale')}</p>
   </div>;
-  return <details className="div-ai-pricing-card" open><summary>{t('div_v2_pricing_chain')} · {t(pricing.canApply ? 'div_v2_pricing_ready' : 'div_v2_pricing_gaps')}</summary>
-    {pricing.canApply && <div className="div-ai-pricing-model-summary"><p>{t('div_v2_pricing_model_formula', { d1: yuan(pricing.d1Micros, 1e6), anchor: pct(pricing.anchors.selectedBps), estimate: yuan(pricing.theoreticalPriceMinor) })}</p>
-      {comparison.quoteUsable && <p>{t('div_v2_pricing_model_quote', { price: yuan(pricing.currentPriceMinor), date: pricing.priceDate, yield: pct(comparison.sustainableYieldAtQuoteBps), gap: `${comparison.estimateGapBps! >= 0 ? '+' : ''}${pct(comparison.estimateGapBps)}` })}</p>}
+  return <details className="div-ai-pricing-card" open><summary>{t('div_classic_title')} · {t(pricing.canApply ? 'div_v2_pricing_ready' : 'div_v2_pricing_gaps')}</summary>
+    <div className="div-ai-pricing-model-summary">
+      {trailing && !pricing.blockers.includes('trailing_dividend_invalid') && <p>{t('div_classic_window', { from: trailing.windowStart, through: trailing.asOf })}</p>}
+      <dl className="div-ai-metrics"><div><dt>{t('div_classic_gross_dividend')}</dt><dd>{yuan(trailingAmountVerified ? trailing!.dpsMicros : undefined, 1e6)}</dd></div>
+        <div><dt>{t('div_classic_net_dividend')}</dt><dd>{yuan(pricing.d1Micros, 1e6)}</dd></div></dl>
+      <p>{t('div_classic_dividend_basis', { tax: pct(pricing.taxBps) })}</p>
+      {comparison.quoteUsable && <p>{t('div_classic_quote', { price: yuan(pricing.currentPriceMinor), date: pricing.priceDate, grossYield: pct(pricing.currentCashYieldBps) })}</p>}
       {comparison.reachedBuyLevels.length > 0 && <p className="div-ai-pricing-model-alert">{t('div_v2_pricing_model_reached', { levels: comparison.reachedBuyLevels.join('、') })}</p>}
-      {comparison.largeDiscount && <p className="div-ai-pricing-model-alert">{t('div_v2_pricing_model_large_discount')}</p>}
-    </div>}
-    {pricing.grid.length > 0 && <div className="div-ai-pricing-grid">{pricing.grid.map((grid, index) => <div key={grid.discountBps}><span>{t('div_v2_pricing_grid_level', { level: index + 1 })}</span><strong>{yuan(grid.priceMinor)}</strong><small>{t('div_v2_pricing_grid_metrics', { yield: pct(grid.yieldBps), gap: pct(grid.changeFromCurrentBps), portion: pct(grid.cumulativePortionBps) })}</small><small>{t(grid.meetsSafetyMargin ? 'div_v2_pricing_margin_met' : 'div_v2_pricing_margin_not_met')}</small></div>)}</div>}
-    {plan && <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_sell_title')}</h4><p>{t('div_v2_pricing_sell_method', { d1: yuan(pricing.d1Micros, 1e6), anchor: pct(pricing.anchors.selectedBps) })}</p>
-      <div className="div-ai-pricing-grid">{plan.sellLevels.map((level, index) => <div key={index}><span>{t('div_v2_pricing_sell_level', { level: index + 1 })}</span><strong>{yuan(level.priceMinor)}</strong><small>{t('div_v2_pricing_sell_metrics', { yield: pct(level.yieldBps), portion: (index + 1) * 25 })}</small></div>)}</div>
-    </div>}
-    <details className="div-ai-pricing-calculation"><summary>{t('div_v2_pricing_model_evidence')}</summary>
-    <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_numerator')}</h4><p>{t('div_v2_pricing_d1_chain', { eps: yuan(pricing.normalizedEpsMicros, 1e6), payout: pct(pricing.sustainablePayoutBps), earnings: yuan(pricing.earningsDividendMicros, 1e6) })}</p>
-      <p>{pricing.fcfDividendCapMicros === undefined ? t('div_v2_pricing_tax_chain', { tax: pct(pricing.taxBps) })
-        : t('div_v2_pricing_fcf_chain', { earnings: yuan(pricing.earningsDividendMicros, 1e6), cap: yuan(pricing.fcfDividendCapMicros, 1e6), tax: pct(pricing.taxBps) })}</p>
-      <strong>D₁ {yuan(pricing.d1Micros, 1e6)}</strong>
-      <details><summary>{t('div_v2_pricing_payout_evidence')}</summary>
-        <p>{t('div_v2_pricing_payout_method')}</p>
-        <div className="div-ai-annual-evidence">{pricing.annuals.slice(0,5).map(year => <div className="div-ai-annual-record" key={year.year}>
-          <div className="div-ai-annual-head"><strong>{year.year}</strong><strong>{pct(year.payoutBps)}</strong></div>
-          <small>{t(year.reportEvidence?.basis === 'reported_no_dividend' ? 'div_v2_pricing_payout_zero'
-            : year.reportEvidence ? 'div_v2_pricing_payout_report' : year.payoutBasis === 'reported_cash_over_profit'
-              ? 'div_v2_pricing_payout_source_cash' : year.payoutBps === undefined ? 'div_v2_pricing_payout_missing' : 'div_v2_pricing_payout_source_eps')}</small>
-          {year.reportEvidence && <><p className="div-ai-evidence-date">{t('div_v2_pricing_payout_verified', { date:year.reportEvidence.publishedAt, verified:year.reportEvidence.verifiedAt })}</p>
-            <div className="div-ai-evidence-links">{year.reportEvidence.sources.map((source,index) => <a key={source.url} href={`${source.url}#page=${source.pdfPages[0]}`} target="_blank" rel="noopener noreferrer">{t('div_v2_pricing_payout_source', { index:index+1 })}</a>)}</div></>}
-        </div>)}</div>
-      </details>
-      {pricing.fcfCapApplied && <p>{t('div_v2_pricing_gap_fcf_dividend_capped')}</p>}
-      {!!pricing.fcfEvidence?.length && <details><summary>{t('div_v2_pricing_fcf_evidence')}</summary><ul>{pricing.fcfEvidence.map(year => <li key={year.year}>
-        {t('div_v2_pricing_fcf_year', { year: year.year, cash: yuan(year.fcfPerShareMicros, 1e6), cap: yuan(year.dividendCapMicros, 1e6) })}
-        <small> · {t(`div_v2_pricing_fcf_basis_${year.basis}`)}</small>
-      </li>)}</ul></details>}
-      <p>{t(`div_v2_pricing_normalization_${pricing.normalizationBasis}`)}</p>
-      {pricing.normalizationEvidence && <p>{t('div_v2_pricing_manual_normalization_evidence', { date: pricing.normalizationEvidence.asOf })} · {pricing.normalizationEvidence.source}</p>}
     </div>
-    <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_denominator')}</h4><dl className="div-ai-pricing-anchors"><div><dt>{t('div_v2_anchor_a')}</dt><dd>{pct(pricing.anchors.riskFreePlusPremiumBps)}</dd></div><div><dt>{t('div_v2_anchor_b')}</dt><dd>{pct(pricing.anchors.historicalPercentileBps)}</dd></div><div><dt>{t('div_v2_anchor_c')}</dt><dd>{pct(pricing.anchors.opportunityCostBps)}</dd></div></dl>
-      {pricing.history && <p>{t('div_v2_pricing_history_evidence', { count: pricing.history.samples.length, years: ((Date.parse(pricing.history.through) - Date.parse(pricing.history.from)) / (365.25 * 86400000)).toFixed(1), from: pricing.history.from, through: pricing.history.through })}</p>}
-      {historyCoverage && !historyCoverage.usable && <div className="div-ai-auto-summary"><p>{t('div_v2_history_coverage', { count: historyCoverage.sampleCount, required: historyCoverage.requiredSamples, years: historyCoverage.spanYears.toFixed(1), requiredYears: historyCoverage.requiredSpanYears, date: historyCoverage.through ?? '—' })}</p>
-        <ul>{historyCoverage.reasons.map(reason => <li key={reason}>{t(`div_v2_history_${reason}`, { count: historyCoverage.requiredSamples, years: historyCoverage.requiredSpanYears, days: historyCoverage.maxAgeDays })}</li>)}</ul></div>}
-      <p>{t('div_v2_pricing_final_yield', { value: pct(pricing.anchors.selectedBps) })}</p>
-      <p className="div-ai-muted">{t(pricing.anchors.selection === 'median' ? 'div_v2_pricing_anchor_median'
-        : pricing.anchors.selection === 'highest_available' ? 'div_v2_pricing_anchor_highest' : 'div_v2_pricing_anchor_unavailable')}</p></div>
-    <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_price')}</h4><dl className="div-ai-metrics"><div><dt>{t('div_v2_theoretical_price')}</dt><dd>{yuan(pricing.theoreticalPriceMinor)}</dd></div><div><dt>{t('div_v2_margin_price')}</dt><dd>{yuan(pricing.marginPriceMinor)}</dd></div></dl><p className="div-ai-muted">{t('div_v2_pricing_conservative_rule')}</p></div>
-    <details className="div-ai-pricing-validation"><summary>{t('div_v2_pricing_cross_checks')}</summary><dl className="div-ai-metrics"><div><dt>{t('div_v2_pricing_current_pb')}</dt><dd>{pricing.currentPbBps === undefined ? '—' : (pricing.currentPbBps / 10000).toFixed(2)}</dd></div><div><dt>{t('div_v2_pricing_pb_yield')}</dt><dd>{pct(pricing.pbImpliedYieldBps)}</dd></div><div><dt>{t('div_v2_pricing_reasonable_pb')}</dt><dd>{pricing.reasonablePbBps === undefined ? '—' : (pricing.reasonablePbBps / 10000).toFixed(2)}</dd></div><div><dt>{t('div_v2_pricing_spread_percentile')}</dt><dd>{pct(pricing.spreadPercentileBps)}</dd></div></dl>
-      <dl className="div-ai-metrics"><div><dt>{t('div_v2_gordon_price')}</dt><dd>{yuan(pricing.gordonPriceMinor)}</dd></div><div><dt>{t('div_v2_pricing_pb_price')}</dt><dd>{yuan(pricing.pbBridgePriceMinor)}</dd></div></dl>
-      <p className="div-ai-muted">{t('div_v2_pricing_quote_basis', {price:yuan(pricing.currentPriceMinor),date:pricing.priceDate ?? '—'})}</p>
-      {pricing.opportunity && <p className="div-ai-muted" style={{overflowWrap:'anywhere'}}>{t('div_v2_pricing_opportunity_evidence', {yield:pct(pricing.opportunity.yieldBps),date:pricing.opportunity.asOf})} · {pricing.opportunity.sourceUrl.startsWith('https://') ? <a href={pricing.opportunity.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_v2_opportunity_reference')}</a> : pricing.opportunity.sourceUrl}</p>}
+    {pricing.grid.length > 0 && <div className="div-ai-pricing-step"><h4>{t('div_classic_buy_title')}</h4>
+      <p>{t('div_classic_price_rule')}</p><div className="div-ai-pricing-grid">{pricing.grid.map((grid, index) => <div key={grid.yieldBps}>
+        <span>{t('div_classic_buy_level', { level: index + 1 })}</span><strong>{yuan(grid.priceMinor)}</strong>
+        <small>{t('div_classic_buy_metrics', { yield: pct(grid.yieldBps), portion: pct(grid.cumulativePortionBps) })}</small>
+        {grid.changeFromCurrentBps !== undefined && <small>{t('div_classic_price_gap', { gap: pct(grid.changeFromCurrentBps) })}</small>}
+      </div>)}</div>
+    </div>}
+    {pricing.theoreticalPriceMinor !== undefined && <div className="div-ai-auto-summary"><strong>{t('div_classic_neutral', { price: yuan(pricing.theoreticalPriceMinor) })}</strong><p>{t('div_classic_neutral_help')}</p></div>}
+    {plan && <div className="div-ai-pricing-step"><h4>{t('div_v2_pricing_sell_title')}</h4><p>{t('div_v2_pricing_sell_method', { d1: yuan(pricing.d1Micros, 1e6) })}</p>
+      <div className="div-ai-pricing-grid">{plan.sellLevels.map((level, index) => <div key={level.yieldBps}><span>{t('div_v2_pricing_sell_level', { level: index + 1 })}</span><strong>{yuan(level.priceMinor)}</strong><small>{t('div_classic_sell_metrics', { yield: pct(level.yieldBps), portion: (index + 1) * 25 })}</small></div>)}</div>
+    </div>}
+    <p className="div-ai-muted">{t('div_classic_update_rule')}</p>
+    {risks.length > 0 && <details className="div-ai-pricing-gap-list" open><summary>{t('div_classic_risks')}</summary><p className="div-ai-muted">{t('div_v2_pricing_pause_independent')}</p><ul>{risks.map(issue => <PricingGap key={issue} blocker={issue} code={code} />)}</ul></details>}
+    {missing.length > 0 && <details className="div-ai-pricing-gap-list"><summary>{t('div_classic_missing')}</summary><p className="div-ai-muted">{t('div_classic_missing_help')}</p><ul>{missing.map(issue => <PricingGap key={issue} blocker={issue} code={code} />)}</ul></details>}
+    {pricing.blockers.length > 0 && <details className="div-ai-pricing-gap-list" open><summary>{t('div_classic_blocked')}</summary><ul>{pricing.blockers.map(blocker => <PricingGap key={blocker} blocker={blocker} code={code} />)}</ul></details>}
+    <details className="div-ai-pricing-calculation"><summary>{t('div_classic_evidence')}</summary>
+      <p>{t('div_classic_evidence_help')}</p>
+      {dividendSources.length > 0 && <div className="div-ai-help-links">{dividendSources.map((url, index) => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{t('div_classic_source', { index: index + 1 })}</a>)}</div>}
+      <dl className="div-ai-metrics"><div><dt>{t('div_v2_pricing_current_pb')}</dt><dd>{pricing.currentPbBps === undefined ? '—' : (pricing.currentPbBps / 10000).toFixed(2)}</dd></div>
+        <div><dt>{t('div_classic_roe')}</dt><dd>{pct(pricing.meanRoeBps)}</dd></div>
+        <div><dt>{t('div_classic_spread')}</dt><dd>{pct(pricing.currentSpreadBps)}</dd></div>
+        <div><dt>{t('div_v2_pricing_spread_percentile')}</dt><dd>{pct(pricing.spreadPercentileBps)}</dd></div></dl>
       {pricing.treasury && <p className="div-ai-muted">{t('div_v2_pricing_treasury_date', { yield: pct(pricing.treasury.yieldBps), date: pricing.treasury.asOf })}</p>}
+      {pricing.opportunity && <p className="div-ai-muted" style={{ overflowWrap: 'anywhere' }}>{t('div_v2_pricing_opportunity_evidence', { yield: pct(pricing.opportunity.yieldBps), date: pricing.opportunity.asOf })} · {pricing.opportunity.sourceUrl.startsWith('https://') ? <a href={pricing.opportunity.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_v2_opportunity_reference')}</a> : pricing.opportunity.sourceUrl}</p>}
       {pricing.history && <p className="div-ai-muted">{t('div_v2_pricing_history_dates', { from: pricing.history.from, through: pricing.history.through })}</p>}
     </details>
-    </details>
-    {!!pricing.pauseReasons?.length && <details className="div-ai-pricing-gap-list"><summary>{t('div_v2_pricing_pause_reasons')}</summary><p className="div-ai-muted">{t('div_v2_pricing_pause_independent')}</p><ul>{pricing.pauseReasons.map(reason => <PricingGap key={reason} blocker={reason} code={code} />)}</ul></details>}
-    {pricing.blockers.length > 0 && <details className="div-ai-pricing-gap-list" open><summary>{t('div_v2_pricing_gaps')}</summary><ul>{pricing.blockers.map(blocker => <PricingGap key={blocker} blocker={blocker} code={code} />)}</ul></details>}
-    {pricing.warnings?.length > 0 && <details className="div-ai-pricing-gap-list" open={pricing.fcfCapApplied || pricing.warnings.includes('anchors_conflict')}><summary>{t('div_v2_pricing_reviews')}</summary><ul>{pricing.warnings.map(warning => <li key={warning}>{t(`div_v2_pricing_gap_${warning}`)}</li>)}</ul></details>}
-    {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} initiallyExpanded previewLabel={t('div_v2_pricing_preview')} />}
+    {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} initiallyExpanded previewLabel={t('div_v2_pricing_preview')}
+      beforePreview={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })}
+      beforeApply={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })} />}
   </details>;
 }

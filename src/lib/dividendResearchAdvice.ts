@@ -27,7 +27,7 @@ export interface DividendResearchAdvice {
 export function dividendPricingIssueIsRisk(issue: DividendPricingBlocker, stock: DividendStockResearch): boolean {
   if (issue === 'financial_sector_review') return stock.financial?.sectorReview?.status === 'risk' || stock.pricing?.financialReview?.status === 'risk';
   return ['non_positive_earnings', 'payout_above_100', 'fcf_below_150', 'fcf_non_positive', 'fcf_dividend_capped',
-    'anchors_conflict', 'growth_return_conflict', 'implausible_yield'].includes(issue);
+    'anchors_conflict', 'growth_return_conflict', 'implausible_yield', 'trailing_dividend_zero'].includes(issue);
 }
 
 /** A deterministic, evidence-bound conclusion is available without configuring an AI model. */
