@@ -12,5 +12,6 @@
   "iosResourceVerification": "45 current assets",
   "browserValidation": "docs/dividend-classic/browser-validation.json",
   "physicalDeviceTested": false,
-  "emulatorCoverage": "Emulator attempted, but ADB authorization unavailable; no device install/update claim."
+  "emulatorCoverage": "Emulator attempted, but ADB authorization unavailable; no device install/update claim.",
+  "sourceCommit": "22d8489"
 }
