@@ -4,14 +4,15 @@ import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestRepo
 import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
+import DividendFundHomePlan from '../components/DividendFundHomePlan';
 import DividendAdvisor from '../components/DividendAdvisor';
 import DividendHomePlan from '../components/DividendHomePlan';
 import DividendPlanGrid from '../components/DividendPlanGrid';
 import { saveDividendStrategy } from '../services/dividendFundService';
 import type { DividendStrategy } from '../lib/dividendFundPlan';
-import { dividendFundPriceMicros } from '../lib/dividendFundPlan';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
+import { loadDividendDailyAdvicePlanKey } from '../services/dividendDailyAdviceScopeService';
 import './DividendPage.css';
 
 type Workbench = Awaited<ReturnType<typeof loadDividendWorkbench>>;
@@ -21,6 +22,7 @@ export default function DividendPage() {
   const { t } = useTranslation();
   const [amountVisible, setAmountVisible] = useState(true);
   const [data, setData] = useState<Workbench | null>(null);
+  const [dailyPlanKey, setDailyPlanKey] = useState('');
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [strategySaving, setStrategySaving] = useState(false);
@@ -51,8 +53,10 @@ export default function DividendPage() {
   const load = useCallback(async () => {
     const id = ++loadId.current;
     const next = await loadDividendWorkbench();
+    const planKey = await loadDividendDailyAdvicePlanKey(next);
     if (alive.current && id === loadId.current) {
       setData(next);
+      setDailyPlanKey(planKey);
       if (!collapseLoaded.current) {
         collapseLoaded.current = true; collapseState.current = next.collapsedCodes; setCollapsedCodes(next.collapsedCodes);
       }
@@ -122,8 +126,13 @@ export default function DividendPage() {
     catch { setError(t('div_save_error')); }
     finally { setGroupSaving(false); }
   };
-  const openStockPlan = (code: string) => {
+  const openStockPlan = async (code: string) => {
+    if (data.strategy !== 'stocks') await changeStrategy('stocks');
     setManagerSearch(''); setFocusedPlanCode(code); setOpenPlanRequest(value => value + 1);
+  };
+  const openFundPlan = async () => {
+    if (data.strategy !== 'funds') await changeStrategy('funds');
+    setFocusedPlanCode(''); setOpenPlanRequest(value => value + 1);
   };
   const toggleStock = (code: string) => {
     const collapsed = !collapseState.current.includes(code);
@@ -198,15 +207,15 @@ export default function DividendPage() {
       setAllocationResult(action === 'redistributed' && before.some(stock => stock.weightBps > 0) ? { before, after: next.stocks } : null);
       setError(''); setMessage(t(action === 'redistributed' ? 'div_deleted_redistributed' : action === 'deleted' ? 'div_deleted_unallocated' : 'div_saved'));
     }} />}
-    <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><small className="div-active-strategy">{t(`div_strategy_${data.strategy}`)}</small></div>
+    <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><small className="div-active-strategy">{t('div_home_all_plans')}</small></div>
       <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button></div>
-    <section className="div-strategy" aria-label={t('div_strategy')}>{strategySelector}</section>
-    <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} openPlanRequest={openPlanRequest} />
+    <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} planKey={dailyPlanKey} openPlanRequest={openPlanRequest} />
     <section className="div-quote-status" aria-label={t('div_auto_quotes')}><div role="status"><strong>{t(quotes.refreshing ? 'div_quotes_updating' : 'div_auto_quotes')}</strong>
       {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) })}</small>}
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
     </div><button className="btn btn-secondary" disabled={quotes.refreshing || Boolean(progress) || !quoteTargets} onClick={() => void quotes.refresh(true)}>{t('div_refresh_quotes')}</button></section>
-    {data.strategy === 'funds' ? <div className="div-stock-list">{data.fundPlan.funds.map(fund => <article className="div-stock" key={fund.id}><div className="div-stock-heading"><div><h2>{fund.name}</h2><small>{fund.code}</small></div></div><div className="div-metrics"><div><span>{t('df_exchange_price')}</span><strong>{dividendFundPriceMicros(fund) === undefined ? '—' : `¥${numeric(dividendFundPriceMicros(fund)! / 1e6, 6)}`}</strong></div><div><span>{t('df_weight')}</span><strong>{numeric(fund.weightBps / 100)}%</strong></div></div></article>)}</div> : <>
+    <DividendFundHomePlan plan={data.fundPlan} amountVisible={amountVisible} asOf={today} onEdit={() => void openFundPlan()} />
+    <section className="div-stock-home" aria-labelledby="div-stock-home-title"><div className="div-section-heading"><h2 id="div-stock-home-title">{t('div_home_stock_plans')}</h2><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan('')}>{t('div_manage_stocks')}</button></div>
       <section className="div-hero div-forecast-hero"><div className="div-estimate"><span>{t('div_v2_holding_forecast')}</span><strong>{held.length > covered.length ? '—' : money(forecastTotal)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}</small></div><p className="div-muted">{t('div_v2_forecast_basis')}</p></section>
       <div className="div-actions div-toolbar"><button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh(data.stocks.map(stock => stock.code))}>{progress ? t('div_refresh_progress', progress) : t('div_v2_refresh_disclosures')}</button></div>
       {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
@@ -223,9 +232,9 @@ export default function DividendPage() {
               {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
               {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</span></span>
           </button>
+          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
+            onEdit={() => void openStockPlan(stock.code)} /> : <div className="div-unfunded-home"><span>{t('div_check_unfunded')}</span><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan(stock.code)}>{t('div_home_edit_plan')}</button></div>}
           <div id={`div-stock-body-${stock.code}`} hidden={!expanded}>
-          {fundedCodes.has(stock.code) && <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
-            onEdit={() => openStockPlan(stock.code)} />}
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>
             {shares > 0 && <div><span>{t('div_v2_holding_amount', { shares: quantity(shares) })}</span><strong>{forecast.amountMinor === undefined ? '—' : money(forecast.amountMinor)}</strong></div>}</div>
           {!latest && <button className="div-advisor-text-button" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_v2_refresh_disclosures')}</button>}
@@ -249,7 +258,7 @@ export default function DividendPage() {
           </div>
         </article>;
       })}</div>{!displayed.length && <p className="div-notice">{t('div_empty')}</p>}
-    </>}
+    </section>
   </div>;
 }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultDividendFundPlan, dividendFundAllocation, dividendFundEntry, isDividendFund, isDividendFundPlan, type DividendFund } from '../src/lib/dividendFundPlan.ts';
+import { buildDividendFundHomePlan, defaultDividendFundPlan, dividendFundAllocation, dividendFundEntry, isDividendFund, isDividendFundPlan, type DividendFund } from '../src/lib/dividendFundPlan.ts';
 import { dateInChina } from '../src/lib/dividendWorkbench.ts';
 
 const fund = (id: string, weightBps: number, extra: Partial<DividendFund> = {}): DividendFund => ({ id, name: `Planned fund ${id}`, indexKind: 'low_volatility', weightBps, ...extra });
@@ -98,4 +98,83 @@ test('fund validation accepts name-only plans and rejects duplicate, overallocat
     fund('a', 0, { reference: { asOf: '2099-01-01', indexYieldBps: 500 } }),
     fund('a', 0, { reference: { asOf: dateInChina(), priceMicros: 0 } }),
   ]) assert.equal(isDividendFund(invalid), false);
+});
+
+test('home shows saved entry thresholds and independently checks a swing exit using current observations', () => {
+  const today = '2026-10-28';
+  const current = fund('a', 6000, {
+    code: '512890', reference: { highMicros: 1000000, indexYieldBps: 500, asOf: today },
+    quote: { priceMicros: 900000, date: `${today} 15:00`, fetchedAt: 10 },
+  });
+  const plan = { ...defaultDividendFundPlan(), mode: 'swing' as const, budgetMinor: 1000000, funds: [current] };
+  const before = structuredClone(plan);
+  const entry = buildDividendFundHomePlan(plan, current, today);
+  assert.equal(entry.targetAmountMinor, 600000);
+  assert.equal(entry.priceMicros, 900000);
+  assert.equal(entry.entry.targetPriceMicros, 900000);
+  assert.equal(entry.entry.status, 'met');
+  assert.equal(entry.exitPriceMicros, 1000000);
+  assert.equal(entry.exitState, 'waiting');
+
+  const atHigh = buildDividendFundHomePlan(plan, { ...current, quote: { ...current.quote!, priceMicros: 1000000 } }, today);
+  assert.equal(atHigh.entry.status, 'wait');
+  assert.equal(atHigh.exitState, 'triggered');
+  assert.equal(buildDividendFundHomePlan(plan, { ...current, quote: { ...current.quote!, priceMicros: 999999 } }, today).exitState, 'waiting');
+  assert.equal(buildDividendFundHomePlan(plan, { ...current, quote: { ...current.quote!, priceMicros: 1000001 } }, today).exitState, 'triggered');
+  assert.deepEqual(plan, before, 'rendering a home plan must not rewrite references, allocations or quotes');
+});
+
+test('home never claims a swing exit from a failed, missing or prior-day quote', () => {
+  const today = '2026-10-28';
+  const current = fund('a', 10000, {
+    code: '512890', reference: { highMicros: 1000000, priceMicros: 1200000, indexYieldBps: 500, asOf: today },
+    quote: { priceMicros: 1100000, date: `${today} 15:00`, fetchedAt: 10 },
+  });
+  const plan = { ...defaultDividendFundPlan(), mode: 'swing' as const, funds: [current] };
+  assert.equal(buildDividendFundHomePlan(plan, current, today).exitState, 'triggered');
+  for (const unavailable of [
+    { ...current, quoteFailedAt: 11 },
+    { ...current, quote: { ...current.quote!, date: '2026-10-27 15:00' } },
+    { ...current, quote: undefined, reference: { ...current.reference!, priceMicros: undefined } },
+    { ...current, quote: undefined, reference: { ...current.reference!, asOf: '2026-10-27' } },
+  ]) assert.equal(buildDividendFundHomePlan(plan, unavailable, today).exitState, 'quote_missing');
+  assert.equal(buildDividendFundHomePlan(plan, { ...current, quote: undefined }, today).exitState, 'triggered', 'a dated current manual price remains an explicit observation');
+  assert.equal(buildDividendFundHomePlan(plan, { ...current, reference: { ...current.reference!, highMicros: undefined } }, today).exitState, 'high_missing');
+});
+
+test('home entry and exit retain different evidence requirements instead of treating every missing input as a block', () => {
+  const today = '2026-10-28';
+  const current = fund('a', 10000, {
+    code: '512890', reference: { highMicros: 1000000, indexYieldBps: 500, asOf: '2026-10-27' },
+    quote: { priceMicros: 900000, date: `${today} 15:00`, fetchedAt: 10 },
+  });
+  const plan = { ...defaultDividendFundPlan(), mode: 'swing' as const, funds: [current] };
+  assert.equal(buildDividendFundHomePlan(plan, current, today).entry.status, 'update');
+  assert.equal(buildDividendFundHomePlan({ ...plan, entryRule: 'either' }, current, today).entry.status, 'met');
+  const freshYieldStalePrice = { ...current, reference: { ...current.reference!, asOf: today }, quote: { ...current.quote!, date: '2026-10-27 15:00' } };
+  const result = buildDividendFundHomePlan({ ...plan, entryRule: 'either' }, freshYieldStalePrice, today);
+  assert.equal(result.entry.status, 'met', 'current index yield can settle an either rule');
+  assert.equal(result.exitState, 'quote_missing', 'the same current index yield does not establish the exit price');
+  const failed = buildDividendFundHomePlan(plan, { ...current, quoteFailedAt: 11 }, today);
+  assert.equal(failed.entry.status, 'update');
+  assert.ok(failed.entry.issues.includes('quote_refresh_failed'));
+});
+
+test('home respects hold and rebalance modes, exact sleeve budgets and unset budgets', () => {
+  const today = '2026-10-28';
+  const first = fund('a', 6000, { reference: { priceMicros: 1200000, highMicros: 1000000, indexYieldBps: 600, asOf: today } });
+  const second = fund('b', 4000);
+  const plan = { ...defaultDividendFundPlan(), budgetMinor: 10001, funds: [first, second] };
+  for (const mode of ['hold', 'rebalance'] as const) {
+    const result = buildDividendFundHomePlan({ ...plan, mode }, first, today);
+    assert.equal(result.exitState, mode);
+    assert.equal(result.exitPriceMicros, undefined, 'returning above a reference high does not add a sell rule to hold or rebalance');
+  }
+  const rebalance = { ...plan, mode: 'rebalance' as const };
+  const amounts = rebalance.funds.map(value => buildDividendFundHomePlan(rebalance, value, today).targetAmountMinor!);
+  assert.deepEqual(amounts, [4201, 2800]);
+  assert.equal(amounts.reduce((sum, value) => sum + value, 0) + dividendFundAllocation(rebalance).bondBudgetMinor, 10001);
+  assert.equal(dividendFundAllocation(rebalance).bondBudgetMinor, 3000);
+  assert.equal(buildDividendFundHomePlan({ ...plan, budgetMinor: undefined }, first, today).targetAmountMinor, undefined);
+  assert.equal(buildDividendFundHomePlan({ ...plan, budgetMinor: 0 }, first, today).targetAmountMinor, 0);
 });

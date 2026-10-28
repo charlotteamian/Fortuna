@@ -233,3 +233,38 @@
 
 .div-ai-research-card > header .div-ai-research-toggle { min-height: 32px; padding: 5px 9px; font-size: 11px; }
 .div-ai-stock-checked { margin: 0 15px 10px; font-size: 11px; }
+
+.div-check-price { margin: 0 15px 14px; padding: 10px 12px; border-radius: 9px; background: var(--bg-secondary); }
+.div-check-grid { margin: 0 15px 16px; }
+.div-check-grid h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+.div-check-grid > .div-ai-muted { margin: 5px 0 10px; font-size: .72rem; }
+.div-check-grid-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.div-check-grid-table th, .div-check-grid-table td { padding: 9px 6px; border-bottom: 1px solid var(--border); text-align: right; }
+.div-check-grid-table th:first-child { width: 18%; padding-left: 0; text-align: left; font-weight: 400; }
+.div-check-grid-table thead th { color: var(--text-muted); font-size: .75rem; font-weight: 400; }
+.div-check-grid-table tbody th { font-size: .8rem; color: var(--text-secondary); }
+.div-check-grid-table strong { display: block; font-size: .95rem; font-weight: 550; overflow-wrap: anywhere; }
+.div-check-grid-table small { display: block; margin-top: 3px; color: var(--text-muted); font-size: .7rem; }
+.div-check-grid .div-ai-plan-actions { margin: 12px 0 0; }
+.div-check-grid .div-ai-plan-action > button { width: 100%; min-height: 44px; font-size: .8rem; white-space: normal; }
+.div-check-counts { display: block; padding-left: 15px; color: var(--text-muted); font-size: .72rem; font-weight: 400; }
+.div-ai-research-card-body h4 { margin: 0 0 8px; font-size: .85rem; line-height: 1.6; font-weight: 600; }
+.div-ai-research-card-body > section { padding-top: 14px; border-top: 1px solid var(--border); }
+.div-ai-research-card-body > .div-ai-financial-review { margin: 0; }
+.div-ai-research-card-body .div-review-soft-note { margin: 0; color: var(--text-muted); font-size: .7rem; line-height: 1.7; }
+.div-ai-evidence-section > section { margin-top: 16px; }
+.div-ai-grid-side > h4 > span { color: var(--text-muted); font-size: .7rem; font-weight: 400; }
+.div-ai-pricing-evidence .div-ai-metrics dd { overflow-wrap: anywhere; }
+
+.div-daily-advice { grid-column: 1 / -1; min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.div-daily-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.div-daily-heading > div { flex: 1 1 180px; min-width: 0; }
+.div-daily-heading h3 { margin: 0; font-size: .9rem; font-weight: 600; }
+.div-daily-heading .div-ai-muted { margin: 4px 0 0; font-size: .73rem; }
+.div-daily-heading > button { min-height: 42px; padding: 9px 12px; font-size: .8rem; white-space: normal; }
+.div-daily-progress, .div-daily-result-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 10px; font-size: .75rem; }
+.div-daily-progress { color: var(--asset-color); }
+.div-daily-result { min-width: 0; margin-top: 12px; padding: 12px; background: var(--bg-card); border-radius: 9px; }
+.div-daily-result-heading { margin-bottom: 10px; color: var(--text-muted); }
+.div-daily-result .div-advisor-markdown { font-size: .85rem; line-height: 1.8; }
+.div-daily-result .div-advisor-markdown h1, .div-daily-result .div-advisor-markdown h2, .div-daily-result .div-advisor-markdown h3 { font-size: .95rem; }

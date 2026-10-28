@@ -8,6 +8,7 @@ import { prepareDividendAdvisorContext } from '../services/dividendAdvisorContex
 import DividendAdvisorReader from './DividendAdvisorReader';
 import DividendAdvisorWorkspace from './DividendAdvisorWorkspace';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
+import DividendDailyAdvice from './DividendDailyAdvice';
 import { archiveDividendAdvisorConversation, createDividendAdvisorConversation, deleteDividendAdvisorConversation, loadDividendAdvisorHistory,
   recoverDividendAdvisorHistory, resumeDividendAdvisorConversation, saveDividendAdvisorConversation, type DividendAdvisorHistoryState } from '../services/dividendAdvisorHistoryService';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch';
@@ -24,7 +25,7 @@ async function restoreHistory(value: DividendAdvisorHistoryState) {
   return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
 }
 
-export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, openPlanRequest = 0 }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; openPlanRequest?: number }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, openPlanRequest = 0 }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; openPlanRequest?: number }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
   const [snapshot, setSnapshot] = useState<DividendAdvisorContext | null>(null);
   const [error, setError] = useState('');
   const [readerOpen, setReaderOpen] = useState(() => window.location.hash === DIVIDEND_ADVISOR_READER_HASH);
-  const [initialPanel, setInitialPanel] = useState<'chat' | 'plan'>('chat');
+  const [initialPanel, setInitialPanel] = useState<'chat' | 'plan' | 'research'>('chat');
   const mounted = useRef(false);
   const session = useRef({ generation: 0, open: window.location.hash === DIVIDEND_ADVISOR_READER_HASH, conversationId: undefined as string | undefined });
   const lock = useRef(false);
@@ -78,7 +79,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     return () => { active = false; };
   }, [t]);
 
-  const openReader = useCallback((panel: 'chat' | 'plan' = 'chat') => {
+  const openReader = useCallback((panel: 'chat' | 'plan' | 'research' = 'chat') => {
     setInitialPanel(panel);
     if (window.location.hash !== DIVIDEND_ADVISOR_READER_HASH) {
       const scroller = entryRef.current?.closest('.app-content');
@@ -243,9 +244,10 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     <section className="div-advisor div-home-advisor" aria-labelledby="div-ai-title" ref={entryRef}>
       <div className="div-advisor-heading"><span className="div-advisor-badge" aria-hidden="true">AI</span><div><h2 id="div-ai-title">{t('div_ai_title')}</h2></div></div>
       <div className="div-advisor-entry-actions"><button className="div-advisor-text-button" disabled={loading} onClick={() => openReader()}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
-        {planManagement && <button type="button" className="div-advisor-text-button" onClick={() => openReader('plan')}>{t('div_ai_tab_plan')} <span aria-hidden="true">↗</span></button>}
+        <button type="button" className="div-advisor-text-button" onClick={() => openReader('research')}>{t('div_ai_tab_research')} <span aria-hidden="true">↗</span></button>
         {!saved && !loading && <button type="button" className="div-advisor-text-button" onClick={openSettings}>{t('div_ai_go_settings')}</button>}
       </div>
+      <DividendDailyAdvice config={saved} disabled={loading || busy || historyBusy || readerOpen} amountVisible={amountVisible} planKey={planKey} onUpdated={onUpdated} onOpenSettings={openSettings} />
       {busy && !readerOpen && <p className="div-advisor-status" role="status">{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>}
       {error && !readerOpen && <p className="div-warning" role="alert">{error}</p>}
     </section>

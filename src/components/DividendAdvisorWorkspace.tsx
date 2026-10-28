@@ -9,7 +9,7 @@ import { addDividendResearchCandidate, loadDividendSelectionPrinciples, previewD
   removeDividendRiskStocks, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } from '../services/dividendAdvisorActionsService';
 import type { DividendPricingMethod } from '../lib/dividendPricing';
 import type { DividendStock } from '../lib/dividendWorkbench';
-import { DividendFinancialReviewCard, DividendPricingCard, DividendPricingEditor } from './DividendAdvisorPricing';
+import { DividendFinancialReviewCard, DividendPricingCard, DividendPricingEditor, DividendPricingEvidence } from './DividendAdvisorPricing';
 import { dividendResearchAdvice } from '../lib/dividendResearchAdvice';
 import { DividendCandidateError, resolveDividendCandidates } from '../services/dividendCandidateService';
 import { dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache, saveDividendResearchCache, saveDividendResearchCollapse, type SavedDividendResearch } from '../services/dividendResearchCacheService';
@@ -42,57 +42,55 @@ function TechnicalPosition({ technical }: { technical?: DividendTechnicalResearc
   </div>;
 }
 
-function StockConclusion({ stock, snapshot, savedStock }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot; savedStock?: DividendStock }) {
-  const { t } = useTranslation();
-  const advice = dividendResearchAdvice(stock, snapshot.indices, snapshot.principles.notes, savedStock);
-  return <div className={`div-ai-conclusion div-review-overview ${advice.decision}`}>
-    <DividendReviewPrice currentPriceMinor={advice.currentPriceMinor} firstBuyPriceMinor={advice.firstBuyPriceMinor} priceDate={advice.currentPriceDate}
-      triggeredBuyLevels={advice.triggeredBuyLevels} priceState={advice.decision === 'eligible' ? 'triggered' : advice.decision === 'wait_price' ? 'waiting' : 'unknown'} saved={!!savedStock} />
-    <DividendReviewSummary summary={dividendReviewSummary(stock, advice)} />
-    <p className="div-review-soft-note">{t('div_v4_soft_note')}</p>
-  </div>;
-}
-
 function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, collapsed, onToggle, onAdd, onDiscuss, onUpdated, onResearchUpdated }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot; savedStock?: DividendStock; canAdd: boolean; busy: boolean; outdated: boolean; collapsed: boolean; onToggle: () => void; onAdd: () => void; onDiscuss: () => void; onUpdated: () => Promise<unknown>; onResearchUpdated: (snapshot: DividendResearchSnapshot) => Promise<void> }) {
   const { t, i18n } = useTranslation();
+  const advice = dividendResearchAdvice(stock, snapshot.indices, snapshot.principles.notes, savedStock);
+  const summary = dividendReviewSummary(stock, advice);
   return <article className={`div-ai-research-card ${stock.status}`}><header><span><strong>{stock.name}</strong><small>{stock.code}</small></span>
     <span className={`div-ai-status ${stock.status}`}>{t(`div_ai_research_${stock.status}`)}</span>
     <button type="button" className="btn btn-secondary div-ai-research-toggle" disabled={busy} aria-expanded={!collapsed} aria-controls={`div-ai-stock-${stock.code}`} onClick={onToggle}>{t(collapsed ? 'div_ai_research_expand' : 'div_ai_research_collapse')}</button></header>
     <div id={`div-ai-stock-${stock.code}`} hidden={collapsed}>
-    {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
-    <StockConclusion stock={stock} snapshot={snapshot} savedStock={savedStock} />
-    <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
-    {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button></div>}
-    {!canAdd && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
-    <details className="div-ai-research-details"><summary>{t('div_ai_research_details')}</summary>
-    <div className="div-ai-research-card-body">{stock.financial?.sectorReview && <DividendFinancialReviewCard code={stock.code} review={stock.financial.sectorReview} />}<details><summary>{t('div_ai_research_rules')}</summary>
-      <ul className="div-ai-checks">{stock.checks.map(check => <li key={check.rule}><div><strong>{t(`div_ai_rule_label_${check.rule}`)}</strong>
-        <span className={`div-ai-status ${check.status}`}>{t(`div_ai_research_${check.status}`)}</span></div>
-        {check.value !== undefined && check.threshold !== undefined && <p>{t('div_ai_research_value', { value: check.rule === 'dividendYears' ? check.value : `${check.value / 100}%`, threshold: check.rule === 'dividendYears' ? check.threshold : `${check.threshold / 100}%` })}</p>}
-        {check.period && <p>{t('div_ai_research_period', { period: check.period })}</p>}
-        {check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
-      </li>)}</ul></details>
-      {stock.pricing && <DividendPricingCard code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />}
-      <details className="div-ai-evidence-section"><summary>{t('div_ai_research_technical')}</summary><TechnicalPosition technical={stock.technical} /></details>
-      {stock.financial && <details className="div-ai-evidence-section"><summary>{t('div_ai_research_financial')}</summary><p className="div-ai-muted">{stock.financial.sector}</p>
-        <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}>
-          <strong>{period.reportDate}</strong><p>{t('div_ai_financial_period', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`, roe: period.roeBps === undefined ? '—' : `${period.roeBps / 100}%` })}</p>
-          {period.noticeDate && <small>{t('div_ai_financial_published', { date: period.noticeDate })}</small>}
-        </li>)}</ul></details>}
-      <details className="div-ai-evidence-section"><summary>{t('div_ai_research_sources')}</summary><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
-        <a href={source.url} target="_blank" rel="noopener noreferrer">{source.provider} · {t(`div_ai_source_${source.kind}`)}</a><small>{source.asOf ?? new Date(source.fetchedAt).toLocaleDateString()}</small>
-      </li>)}</ul>{stock.issues.length > 0 && <ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>
-        {issue.attempts !== undefined && <span>{t('div_ai_issue_attempts', { count: issue.attempts })}</span>}
-        {issue.detail && <code>{issue.detail}</code>}
-        <p>{t(`div_ai_issue_help_${issue.kind}`)}</p>
-        {issue.url?.startsWith('https://') && <a href={issue.url} target="_blank" rel="noopener noreferrer">{t('div_ai_issue_open_failed_source')}</a>}
-      </li>)}</ul>}</details>
-      {(stock.status === 'unknown' || stock.issues.length > 0) && <div className="div-ai-evidence-help"><strong>{t('div_ai_evidence_help_title')}</strong><p>{t('div_ai_evidence_help_detail')}</p><div className="div-ai-help-links">
-        <a href={`https://data.eastmoney.com/stockdata/${stock.code}.html`} target="_blank" rel="noopener noreferrer">{t('div_ai_open_financial_source')}</a>
-        <a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>
-      </div></div>}
-      <div className="div-actions"><button type="button" className="btn btn-primary" disabled={busy} onClick={onDiscuss}>{t('div_ai_discuss_stock')}</button></div>
-    </div></details></div></article>;
+      {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
+      <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
+      <div className="div-check-price"><DividendReviewPrice currentPriceMinor={advice.currentPriceMinor} firstBuyPriceMinor={advice.firstBuyPriceMinor} priceDate={advice.currentPriceDate}
+        triggeredBuyLevels={advice.triggeredBuyLevels} priceState={advice.decision === 'eligible' ? 'triggered' : advice.decision === 'wait_price' ? 'waiting' : 'unknown'} saved={!!savedStock} /></div>
+      {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button><span className="div-ai-muted">{t('div_check_join_to_save')}</span></div>}
+      {stock.pricing ? <DividendPricingCard key={snapshot.generatedAt} code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />
+        : <p className="div-ai-stock-checked div-ai-muted">{t('div_check_grid_missing')}</p>}
+      <details className="div-ai-research-details"><summary>{t('div_check_evidence')}<span className="div-check-counts">{t('div_v4_risk_count', { count: summary.risks.length })} · {t('div_v4_missing_count', { count: summary.missing.length })}</span></summary>
+        <div className="div-ai-research-card-body">
+          <DividendReviewSummary summary={summary} /><p className="div-review-soft-note">{t('div_v4_soft_note')}</p>
+          <section><h4>{t('div_ai_research_rules')}</h4><ul className="div-ai-checks">{stock.checks.map(check => <li key={check.rule}><div><strong>{t(`div_ai_rule_label_${check.rule}`)}</strong>
+            <span className={`div-ai-status ${check.status}`}>{t(`div_ai_research_${check.status}`)}</span></div>
+            {check.value !== undefined && check.threshold !== undefined && <p>{t('div_ai_research_value', { value: check.rule === 'dividendYears' ? check.value : `${check.value / 100}%`, threshold: check.rule === 'dividendYears' ? check.threshold : `${check.threshold / 100}%` })}</p>}
+            {check.period && <p>{t('div_ai_research_period', { period: check.period })}</p>}{check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
+          </li>)}</ul>{!stock.checks.length && <p className="div-ai-muted">{t('div_v4_review_empty')}</p>}</section>
+          {stock.financial?.sectorReview && <DividendFinancialReviewCard code={stock.code} review={stock.financial.sectorReview} />}
+          {stock.pricing && <DividendPricingEvidence code={stock.code} pricing={stock.pricing} />}
+          <section className="div-ai-evidence-section"><h4>{t('div_ai_research_technical')}</h4><TechnicalPosition technical={stock.technical} />
+            {snapshot.indices.filter(index => index.code !== 'sz399006').map(index => <section key={index.code}><h4>{index.name}</h4><TechnicalPosition technical={index.technical} /></section>)}
+          </section>
+          {stock.financial && <section className="div-ai-evidence-section"><h4>{t('div_ai_research_financial')}</h4><p className="div-ai-muted">{stock.financial.sector}</p>
+            <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}><strong>{period.reportDate}</strong>
+              <p>{t('div_ai_financial_period', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`, roe: period.roeBps === undefined ? '—' : `${period.roeBps / 100}%` })}</p>
+              {period.noticeDate && <small>{t('div_ai_financial_published', { date: period.noticeDate })}</small>}
+            </li>)}</ul></section>}
+          <section className="div-ai-evidence-section"><h4>{t('div_ai_research_sources')}</h4><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
+            <a href={source.url} target="_blank" rel="noopener noreferrer">{source.provider} · {t(`div_ai_source_${source.kind}`)}</a><small>{source.asOf ?? new Date(source.fetchedAt).toLocaleDateString()}</small>
+          </li>)}</ul>{stock.issues.length > 0 && <ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>
+            {issue.attempts !== undefined && <span>{t('div_ai_issue_attempts', { count: issue.attempts })}</span>}{issue.detail && <code>{issue.detail}</code>}
+            <p>{t(`div_ai_issue_help_${issue.kind}`)}</p>{issue.url?.startsWith('https://') && <a href={issue.url} target="_blank" rel="noopener noreferrer">{t('div_ai_issue_open_failed_source')}</a>}
+          </li>)}</ul>}</section>
+          <p className="div-ai-muted">{t('div_v2_review_evidence_scope')}</p>
+          {(stock.status === 'unknown' || stock.issues.length > 0) && <div className="div-ai-evidence-help"><strong>{t('div_ai_evidence_help_title')}</strong><p>{t('div_ai_evidence_help_detail')}</p><div className="div-ai-help-links">
+            <a href={`https://data.eastmoney.com/stockdata/${stock.code}.html`} target="_blank" rel="noopener noreferrer">{t('div_ai_open_financial_source')}</a><a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>
+          </div></div>}
+          {savedStock?.buyPaused && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
+          <div className="div-actions"><button type="button" className="btn btn-primary" disabled={busy} onClick={onDiscuss}>{t('div_ai_discuss_stock')}</button></div>
+        </div>
+      </details>
+    </div>
+  </article>;
 }
 
 export default function DividendAdvisorWorkspace({ activePanel, amountVisible, onUpdated, onDiscuss, disabled = false }: { activePanel: Panel; amountVisible: boolean; onUpdated: () => Promise<unknown>; disabled?: boolean;
@@ -216,7 +214,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
         })} />
       </details>}</section>}
     {activePanel === 'research' && <section><h2 className="div-ai-panel-title">{t('div_ai_tab_research')}</h2><p className="div-ai-muted">{t('div_ai_research_intro')}</p>
-      <button type="button" className="btn btn-primary" disabled={!ready || busy} onClick={() => research('plan')}>{t('div_ai_check_plan')}</button>
+      <button type="button" className="btn btn-primary" disabled={!ready || busy} onClick={() => research('plan')}>{t(savedResearch?.scope === 'plan' ? 'div_ai_refresh_plan' : 'div_ai_check_plan')}</button>
       <details className="div-ai-candidate-search"><summary>{t('div_ai_screen_candidates')}</summary><label htmlFor="div-ai-candidates">{t('div_ai_candidate_codes')}</label>
         <textarea className="form-input" id="div-ai-candidates" value={codes} rows={2} maxLength={400} disabled={busy}
           placeholder={t('div_ai_candidate_placeholder')} onChange={event => setCodes(event.target.value)} />
@@ -228,7 +226,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
         <p className="div-ai-muted">{t(savedResearch?.scope === 'candidates' ? 'div_ai_research_candidate_results' : 'div_ai_research_plan_results')}</p>
         {restored && <p className="div-ai-muted">{t('div_ai_research_restored')}</p>}
         {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
-        <button type="button" className="btn btn-secondary" disabled={!ready || busy} onClick={() => research(savedResearch!.scope, true)}>{t(savedResearch?.scope === 'candidates' ? 'div_ai_refresh_candidates' : 'div_ai_refresh_plan')}</button>
+        {savedResearch?.scope === 'candidates' && <button type="button" className="btn btn-secondary" disabled={!ready || busy} onClick={() => research('candidates', true)}>{t('div_ai_refresh_candidates')}</button>}
         {!visibleStocks.length && <p className="div-ai-muted">{t('div_ai_research_no_stocks')}</p>}
         {visibleStocks.map(stock => {
           const stockSnapshot = dividendResearchSnapshotForStock(savedResearch!, stock.code);

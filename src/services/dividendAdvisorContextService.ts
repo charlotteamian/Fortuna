@@ -8,6 +8,7 @@ import { refreshDividendMarketQuotes } from './dividendQuoteService';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { loadDividendSelectionPrinciples, loadDividendPricingMethod } from './dividendAdvisorActionsService';
 import { fetchDividendResearch } from './dividendResearchService';
+import type { DividendFund } from '../lib/dividendFundPlan';
 
 /** Refresh on each explicit question. Off-exchange NAV/high/index-yield remain dated manual inputs. */
 export async function prepareDividendAdvisorContext(onProgress: (done: number, total: number) => void) {
@@ -35,7 +36,15 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
   };
   const [, , research] = await Promise.all([refreshDividendMarketQuotes(), updateDividends(), researchTask]);
   const data = await loadDividendWorkbench();
-  const codes = new Set(data.fundPlan.funds.flatMap(fund => fund.code ? [fund.code] : []));
+  const fundPositions = await loadDividendFundPositions(data.fundPlan.funds);
+  return buildDividendAdvisorContext({ ...data, fundPositions, research,
+    dividendRefreshDeferredCodes: prioritized.filter(stock => !attempted.has(stock.code)).map(stock => stock.code) });
+}
+
+/** The same eligible fund ledger positions back the AI context and saved-advice freshness. */
+export async function loadDividendFundPositions(funds: DividendFund[]) {
+  const today = dateInChina();
+  const codes = new Set(funds.flatMap(fund => fund.code ? [fund.code] : []));
   const fundPositions = new Map<string, number>();
   if (codes.size) {
     const [accounts, holdings, txns] = await Promise.all([db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray()]);
@@ -50,6 +59,5 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
       fundPositions.set(code, (fundPositions.get(code) ?? 0) + position.shares);
     }
   }
-  return buildDividendAdvisorContext({ ...data, fundPositions, research,
-    dividendRefreshDeferredCodes: prioritized.filter(stock => !attempted.has(stock.code)).map(stock => stock.code) });
+  return fundPositions;
 }

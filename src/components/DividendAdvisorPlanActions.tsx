@@ -17,17 +17,17 @@ function Levels({ levels, side }: { levels: GridLevel[]; side: 'buy' | 'sell' })
   </table>;
 }
 
-function PreviewLevels({ value, proposal }: { value: Preview['after']; proposal: DividendPlanProposal }) {
+function PreviewLevels({ value }: { value: Preview['after'] }) {
   const { t } = useTranslation();
   return <><p className={`div-ai-status ${value.buyPaused ? 'risk' : ''}`}>{t(value.buyPaused ? 'div_ai_buy_paused' : 'div_ai_buy_active')}</p>
-    {(['buy', 'sell'] as const).map(side => <details key={side} className={`div-ai-grid-side ${side}`} open={Boolean(side === 'buy' ? proposal.buyLevels : proposal.sellLevels)}>
-      <summary>{t(`div_ai_plan_${side}`)}<span>{t('div_ai_grid_level_count', { count: value[`${side}Levels`].length })}</span></summary>
+    {(['buy', 'sell'] as const).map(side => <section key={side} className={`div-ai-grid-side ${side}`}>
+      <h4>{t(`div_ai_plan_${side}`)} <span>{t('div_ai_grid_level_count', { count: value[`${side}Levels`].length })}</span></h4>
       <Levels levels={value[`${side}Levels`]} side={side} />
-    </details>)}
+    </section>)}
   </>;
 }
 
-export default function DividendAdvisorPlanActions({ proposals, disabled, onUpdated, initiallyExpanded = false, previewLabel, beforePreview, beforeApply }: { proposals: DividendPlanProposal[]; disabled: boolean; onUpdated: () => Promise<unknown>; initiallyExpanded?: boolean; previewLabel?: string; beforePreview?: () => Promise<void>; beforeApply?: () => Promise<void> }) {
+export default function DividendAdvisorPlanActions({ proposals, disabled, onUpdated, initiallyExpanded = false, embedded = false, previewLabel, beforePreview, beforeApply }: { proposals: DividendPlanProposal[]; disabled: boolean; onUpdated: () => Promise<unknown>; initiallyExpanded?: boolean; embedded?: boolean; previewLabel?: string; beforePreview?: () => Promise<void>; beforeApply?: () => Promise<void> }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<{ proposal: DividendPlanProposal; value: Preview } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,16 +45,18 @@ export default function DividendAdvisorPlanActions({ proposals, disabled, onUpda
       : cause instanceof Error && cause.message === 'DIVIDEND_GRID_SIDES_CROSS' ? 'div_v2_grid_sides_cross' : 'div_ai_action_error')); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <div className="div-ai-plan-actions">{proposals.map(proposal => <details key={proposal.id} className="div-ai-plan-action" open={initiallyExpanded}><summary>{t('div_ai_plan_proposal')} · {proposal.code}</summary>
-    <p>{proposal.reason}</p><button type="button" className="btn btn-secondary" disabled={disabled || busy} onClick={() => void execute(async () => {
+  const Container = embedded ? 'section' : 'details';
+  return <div className="div-ai-plan-actions">{proposals.map(proposal => <Container key={proposal.id} className="div-ai-plan-action" {...(embedded ? {} : { open: initiallyExpanded })}>
+    {!embedded && <><summary>{t('div_ai_plan_proposal')} · {proposal.code}</summary><p>{proposal.reason}</p></>}
+    <button type="button" className="btn btn-secondary" disabled={disabled || busy} onClick={() => void execute(async () => {
       await beforePreview?.(); const value = await previewDividendPlanChange(proposal); setPreview({ proposal, value });
     })}>{previewLabel ?? t('div_ai_plan_preview')}</button>
     {preview?.proposal.id === proposal.id && <div className="div-ai-confirm"><strong>{preview.value.name} · {preview.value.code}</strong>
-      <div className="div-ai-grid-comparison"><section className="div-ai-grid-proposed"><h3>{t('div_ai_plan_after')}</h3><PreviewLevels value={preview.value.after} proposal={proposal} /></section>
-        <details className="div-ai-grid-current"><summary>{t('div_ai_plan_before')}</summary><PreviewLevels value={preview.value.before} proposal={proposal} /></details></div>
+      <div className="div-ai-grid-comparison"><section className="div-ai-grid-proposed"><h3>{t('div_ai_plan_after')}</h3><PreviewLevels value={preview.value.after} /></section>
+        <details className="div-ai-grid-current"><summary>{t('div_ai_plan_before')}</summary><PreviewLevels value={preview.value.before} /></details></div>
       <p className="div-ai-muted">{t('div_ai_plan_preview_hint')}</p><div className="div-actions"><button type="button" className="btn btn-primary" disabled={disabled || busy} onClick={() => void execute(async () => {
         await beforeApply?.(); await applyDividendPlanChange(proposal, preview.value.fingerprint); setPreview(null); await onUpdated(); setNotice(t('div_ai_plan_applied'));
       })}>{t('div_ai_plan_confirm')}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setPreview(null)}>{t('cancel')}</button></div>
     </div>}
-  </details>)}{error && <p className="div-warning" role="alert">{error}</p>}{notice && <p className="div-advisor-status" role="status">{notice}</p>}</div>;
+  </Container>)}{error && <p className="div-warning" role="alert">{error}</p>}{notice && <p className="div-advisor-status" role="status">{notice}</p>}</div>;
 }

@@ -120,3 +120,15 @@ export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, to
     : issues.some(issue => ['price_prior_date', 'quote_refresh_failed', 'index_yield_prior_date'].includes(issue)) ? 'update' : 'incomplete';
   return { drawdownBps, targetPriceMicros, status, issues };
 }
+
+/** Home and management share the same saved entry rules and dated observations. */
+export function buildDividendFundHomePlan(plan: DividendFundPlan, fund: DividendFund, today = dateInChina()) {
+  const entry = dividendFundEntry(plan, fund, today);
+  const priceMicros = dividendFundPriceMicros(fund);
+  const highMicros = fund.reference?.highMicros;
+  const quoteUsable = priceMicros !== undefined && (fund.quote?.date.slice(0, 10) ?? fund.reference?.asOf) === today && fund.quoteFailedAt === undefined;
+  const exitState = plan.mode !== 'swing' ? plan.mode : highMicros === undefined ? 'high_missing'
+    : !quoteUsable ? 'quote_missing' : priceMicros! >= highMicros ? 'triggered' : 'waiting';
+  return { entry, priceMicros, targetAmountMinor: plan.budgetMinor === undefined ? undefined : dividendFundAllocation(plan).amounts.get(fund.id) ?? 0,
+    exitPriceMicros: plan.mode === 'swing' ? highMicros : undefined, exitState };
+}

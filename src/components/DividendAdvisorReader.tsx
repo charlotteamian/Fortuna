@@ -31,7 +31,7 @@ interface Props {
   onRetrySave?: () => void;
   renderActions?: (message: DividendAdvisorMessage, index: number) => ReactNode;
   workspacePanel?: (tab: 'chat' | 'research' | 'principles', showChat: () => void) => ReactNode;
-  initialPanel?: 'chat' | 'plan';
+  initialPanel?: 'chat' | 'plan' | 'research';
   planManagement?: ReactNode;
 }
 

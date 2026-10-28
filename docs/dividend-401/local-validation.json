@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-10-28T12:33:32.796626+00:00",
+  "version": "4.0.1",
+  "androidVersionCode": 36,
+  "iosBuildNumber": 36,
+  "tests": {
+    "passed": 480,
+    "failed": 0
+  },
+  "lint": true,
+  "build": true,
+  "diffCheck": true,
+  "capacitorAndroidSynced": true,
+  "capacitorIosSynced": true,
+  "iosWebResourcesMatched": 45,
+  "browserChecks": 29,
+  "physicalDeviceTested": false,
+  "emulatorTested": false,
+  "liveModelTested": false
+}

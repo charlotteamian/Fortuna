@@ -50,7 +50,7 @@
 .div-method { margin: 1rem 0; padding: .8rem; background: var(--bg-secondary); border-radius: 10px; font-size: .8rem; line-height: 1.65; }
 .div-method summary, .div-details > summary { cursor: pointer; color: var(--asset-color); font-weight: 600; min-height: 30px; padding: .25rem 0; }
 .div-method p { margin: .6rem 0; }
-.div-filters { display: flex; gap: .4rem; overflow-x: auto; margin: .75rem 0 1rem; padding-bottom: .2rem; }
+.div-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: .75rem 0 1rem; padding-bottom: .2rem; }
 .div-filters button { flex-shrink: 0; background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 999px; padding: .45rem .85rem; }
 .div-filters button.selected { color: var(--asset-color); border-color: var(--asset-color); background: var(--asset-dim); }
 .div-stock-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1rem; align-items: start; }
@@ -149,6 +149,19 @@
 .div-home-advisor .div-advisor-badge { flex-basis: 26px; width: 26px; height: 26px; border-radius: 8px; font-size: .65rem; }
 .div-home-advisor .div-advisor-entry-actions { flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: .2rem .6rem; }
 .div-home-advisor .div-advisor-entry-actions > button { display: inline-flex; align-items: center; justify-content: space-between; gap: .3rem; min-height: 38px; padding: .25rem .15rem; font-size: .75rem; }
+.div-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin: 1.25rem 0 .5rem; }
+.div-section-heading h2 { margin: 0; font-size: 1rem; }
+.div-fund-home-summary { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: .8rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.7; }
+.div-fund-home-summary strong { color: var(--text-primary); font-weight: 550; }
+.div-fund-home-card h3 { margin: 0 0 .2rem; font-size: 1rem; overflow-wrap: anywhere; }
+.div-fund-home-card .div-stock-heading { align-items: flex-start; flex-wrap: wrap; }
+.div-fund-home-card .div-grid-trigger-status { white-space: normal; font-size: .72rem; }
+.div-fund-home-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; margin: .9rem 0; }
+.div-fund-home-metrics dt { font-size: .72rem; line-height: 1.6; color: var(--text-muted); }
+.div-fund-home-metrics dd { margin: .25rem 0 0; font-size: 1.05rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.div-fund-exit { font-size: .78rem; line-height: 1.8; color: var(--text-secondary); }
+.div-unfunded-home { display: flex; align-items: center; justify-content: space-between; gap: .6rem; font-size: .75rem; line-height: 1.7; color: var(--text-muted); }
+.div-unfunded-home button { flex-shrink: 0; }
 .div-forecast-hero { padding: .9rem 1rem; }
 .div-forecast-hero > .div-muted { margin-bottom: 0; font-size: .72rem; }
 .div-stock-reading .div-key-metrics { gap: .75rem; }
