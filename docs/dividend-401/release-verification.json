@@ -1,0 +1,19 @@
+{
+  "verifiedAt": "2026-10-29T13:34:20.931388+00:00",
+  "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v4.0.1",
+  "tag": "v4.0.1",
+  "commit": "90385fc2632d47b72fbd0e31f0d64ccaa90dc6bd",
+  "asset": "Fortuna-4.0.1-release.apk",
+  "sha256": "c17258cf4399e99e5a31182132160bd17b1b930b45dbe9147b192976c9696452",
+  "githubDigestMatches": true,
+  "package": "com.fortuna.wealthtracker",
+  "versionName": "4.0.1",
+  "versionCode": 36,
+  "debuggable": false,
+  "certificateSha256": "b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c",
+  "pinnedCertificateMatches": true,
+  "webBuildResourcesMatched": 45,
+  "capacitorBridgeResourcesMatched": 2,
+  "physicalDeviceTested": false,
+  "emulatorTested": false
+}
