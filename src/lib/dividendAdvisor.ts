@@ -1,9 +1,23 @@
-import { DIVIDEND_PRICING_CALCULATION_VERSION } from './dividendPricing.ts';
-import { reviewDividendGrid } from './dividendGridProvenance.ts';
-import { buildGrid, dateInChina, effectiveDps, latestReportDividend, forecastHoldingYearDividends, gridAnnualDps, stockBudgetMinor, type DividendStock, type LinkedDividendPosition } from './dividendWorkbench.ts';
-import { dividendFundAllocation, dividendFundEntry, type DividendFundPlan, type DividendStrategy } from './dividendFundPlan.ts';
+import { dateInChina, effectiveDps, latestReportDividend, forecastHoldingYearDividends, gridAnnualDps, stockBudgetMinor, type DividendStock, type LinkedDividendPosition } from './dividendWorkbench.ts';
+import { dividendFundAllocation, type DividendFundPlan, type DividendStrategy } from './dividendFundPlan.ts';
 import { dividendResearchReadableSnapshot, type DividendResearchSnapshot } from './dividendResearch.ts';
 import type { DividendPlanProposal } from './dividendAdvisorActions.ts';
+import { dividendCheckSummary, dividendFundCheckSummary, type DividendCheckSummary, type DividendStockCheckSummary, type DividendFundCheckSummary } from './dividendCheckSummary.ts';
+import { dividendCheckReasonText } from './dividendCheckExplanation.ts';
+
+function readableCheck(summary: DividendCheckSummary) {
+  return { 'Eligibility': summary.eligibility.status, 'Grid origin': summary.grid.origin, 'Grid evidence state': summary.grid.status,
+    'Today observed buy price event': summary.trigger.buy, 'Today observed sell price event': summary.trigger.sell,
+    'New buying conditions': summary.actionCheck.buy.status, 'Selling conditions': summary.actionCheck.sell.status,
+    'Buy constraints': summary.actionCheck.buy.reasons.map(reason => dividendCheckReasonText(reason, 'en')),
+    'Sell constraints': summary.actionCheck.sell.reasons.map(reason => dividendCheckReasonText(reason, 'en')),
+    'Current quote source time': summary.freshness.quoteSourceAt ?? null,
+    'Research generated': summary.freshness.researchGeneratedAt ? new Date(summary.freshness.researchGeneratedAt).toISOString() : null,
+    'Original document verification dates': summary.freshness.evidenceVerifiedDates,
+    'Last available observation, not a current trigger': summary.trigger.lastAvailable ? {
+      'Source time': summary.trigger.lastAvailable.date, 'Buy event': summary.trigger.lastAvailable.buy, 'Sell event': summary.trigger.lastAvailable.sell } : null,
+  };
+}
 
 export interface DividendAdvisorMessage { role: 'user' | 'assistant'; content: string; actions?: DividendPlanProposal[]; pricingCalculationVersion?: number }
 export interface DividendAdvisorInput {
@@ -16,6 +30,7 @@ export interface DividendAdvisorInput {
   fundPositions?: Map<string, number>;
   dividendRefreshDeferredCodes?: string[];
   research?: DividendResearchSnapshot;
+  checkSummaries?: { stocks: Record<string, DividendStockCheckSummary>; funds: Record<string, DividendFundCheckSummary> };
 }
 
 /** Only dividend-plan data crosses the API boundary; no account names, IDs or other assets. */
@@ -31,12 +46,18 @@ export function buildDividendAdvisorContext(input: DividendAdvisorInput, now = D
   const stocks = input.stocks.map(stock => {
     const shares = stock.shareMode === 'manual' ? stock.manualShares : input.positions.get(stock.code)?.shares ?? 0;
     const budgetMinor = stockBudgetMinor(input.budgetMinor, stock.weightBps);
+    const research = input.research?.stocks.find(row => row.code === stock.code);
+    const check = input.checkSummaries?.stocks[stock.code] ?? dividendCheckSummary({ stock, research,
+      indices: input.research?.indices, pricingMethod: input.research?.pricingMethod, principles: input.research?.principles,
+      researchGeneratedAt: input.research?.generatedAt, totalBudgetMinor: input.budgetConfigured ? input.budgetMinor : undefined,
+      shares, asOf: today, now });
     return {
       code: stock.code, name: stock.name, group: stock.group, weightBps: stock.weightBps,
       budgetMinor, shares, shareSource: stock.shareMode, lotSize: stock.lotSize, note: stock.note,
       buyPaused: stock.buyPaused ?? false,
       gridProvenance: stock.gridProvenance,
-      gridReview: reviewDividendGrid(stock, input.research?.stocks.find(row => row.code === stock.code)?.pricing?.dividendBase, { asOf: today, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches' }),
+      gridReview: { ...check.gridReview, basisState: check.grid.status, currentBasisVerified: check.grid.status === 'verified' },
+      checkSummary: check,
       quote: stock.quote ?? null, quoteState: quoteState(stock.quote, stock.quoteFailedAt),
       dpsMicros: effectiveDps(stock) ?? null,
       dpsSource: 'latest-announced-report',
@@ -50,18 +71,22 @@ export function buildDividendAdvisorContext(input: DividendAdvisorInput, now = D
       historicalPayments: stock.dividend?.payments ?? [],
       pendingDividend: stock.dividend?.pending ?? null,
       financial: stock.dividend?.financial ?? null,
-      buyGrid: buildGrid(stock, budgetMinor, shares, 'buy', today),
-      sellGrid: buildGrid(stock, budgetMinor, shares, 'sell', today),
+      buyGrid: check.displayPlan.buy,
+      sellGrid: check.displayPlan.sell,
     };
   });
-  const funds = input.fundPlan.funds.map(fund => ({
+  const funds = input.fundPlan.funds.map(fund => {
+    const summary = input.checkSummaries?.funds[fund.id] ?? dividendFundCheckSummary({ plan: input.fundPlan, fund,
+      shares: fund.code ? input.fundPositions?.get(fund.code) : undefined, asOf: today, now });
+    return ({
     code: fund.code ?? null, name: fund.name, indexKind: fund.indexKind, weightBps: fund.weightBps,
     budgetMinor: allocation.amounts.get(fund.id) ?? 0, note: fund.note,
     recordedShares: fund.code ? input.fundPositions?.get(fund.code) ?? 0 : null,
     quote: fund.quote ?? null, quoteState: quoteState(fund.quote, fund.quoteFailedAt),
     manualReference: fund.reference ?? null,
-    ruleCheck: dividendFundEntry(input.fundPlan, fund, today),
-  }));
+    ruleCheck: summary.fundPlan.entry,
+    checkSummary: { ...summary, id: fund.code ?? fund.name },
+  }); });
   return {
     generatedAt: new Date(now).toISOString(), dateInChina: today, activeStrategy: input.strategy,
     units: { moneyMinor: 'CNY cents', priceMicros: 'CNY per share/unit × 1,000,000', priceMinor: 'CNY per share × 100', weightBps: '100 basis points = 1%', yieldBps: '100 basis points = 1%' },
@@ -111,6 +136,7 @@ export function dividendAdvisorReadableSnapshot(context: DividendAdvisorContext)
       'Holding source': stock.shareSource === 'manual' ? 'Manually entered' : 'Linked asset records',
       'Trading lot in shares': stock.lotSize, 'Personal note': stock.note ?? null,
       'Additional buying paused by user': stock.buyPaused,
+      'Authoritative rule checks': readableCheck(stock.checkSummary),
       'Saved grid basis state': { verified: 'Current base verified', saved_unverified: 'Saved grid only; current dividend base unverified', unavailable: 'No saved explicit grid; unable to judge' }[stock.gridReview.basisState],
       'Saved grid origin': stock.gridProvenance ? { generated: new Date(stock.gridProvenance.generatedAt).toISOString(), 'Pretax CNY per share': stock.gridProvenance.grossDpsMicros / 1e6, 'Tax percent': stock.gridProvenance.taxBps / 100, 'Parameter version': stock.gridProvenance.parameterVersion } : null,
       'Saved grid needs regeneration review': stock.gridReview.stale,
@@ -119,8 +145,7 @@ export function dividendAdvisorReadableSnapshot(context: DividendAdvisorContext)
       'Market price': quote(stock.quote, price(stock.quote?.priceMinor, 100), stock.quoteState.refreshFailed),
       'Cash dividend in CNY per share': price(stock.dpsMicros, 1e6),
       'Cash dividend basis': 'Latest announced reporting period only; not annualised and not a trailing twelve-month sum',
-      'Annual dividend assumption for saved yield grids in CNY per share': price(stock.annualGridDpsMicros, 1e6),
-      'Saved yield-grid annual dividend source': stock.annualGridDpsSource === 'manual-undated' ? 'Undated manual full-year assumption, separate from the latest report' : 'Complete next holding-year forecast',
+      'Forecast or manual annual assumption, not a grid-pricing input, in CNY per share': price(stock.annualGridDpsMicros, 1e6),
       'Latest reporting-period distribution': stock.latestReportDividend ? {
         'Reporting period': stock.latestReportDividend.reportDate,
         'Publication date': stock.latestReportDividend.announcedAt,
@@ -166,7 +191,7 @@ export function dividendAdvisorReadableSnapshot(context: DividendAdvisorContext)
         'Reporting period': stock.financial.reportDate, 'Book value in CNY per share': price(stock.financial.bvpsMicros, 1e6),
         'Profit growth percent': stock.financial.profitGrowthPercent ?? null,
       } : null,
-      'Saved yield-grid basis': 'Complete next holding-year dividend forecast, or an explicit manual annual assumption; never the latest single interim report. Explicit saved prices remain explicit.',
+      'Saved grid pricing source': 'Only explicit saved prices or the current verified v5 proposal. Forecasts and manual annual assumptions cannot create executable levels.',
       'Buy plan, cumulative holding targets': stock.buyGrid.map(level => ({
         'Cash dividend yield percent': price(level.displayYieldBps, 100),
         'Price in CNY': price(level.priceMinor, 100),
@@ -205,6 +230,7 @@ export function dividendAdvisorReadableSnapshot(context: DividendAdvisorContext)
     'Unallocated in CNY': context.fundPlan.unallocatedMinor / 100,
     'Funds': context.fundPlan.funds.map(fund => ({
       'Name': fund.name, 'Code': fund.code,
+      'Authoritative rule checks': readableCheck(fund.checkSummary),
       'Planned weight within fund sleeve percent': fund.weightBps / 100,
       'Planned budget in CNY': fund.budgetMinor / 100,
       'Recorded holding in units': fund.recordedShares,
@@ -213,7 +239,7 @@ export function dividendAdvisorReadableSnapshot(context: DividendAdvisorContext)
       'Manually entered reference observations': fund.manualReference ? {
         'Recorded date': fund.manualReference.asOf,
         'Source': fund.manualReference.source ?? null,
-        'Fallback price in CNY, used only when there is no exchange quote': price(fund.manualReference.priceMicros, 1e6),
+        'Manual reference price in CNY, never proof of an applicable market quote': price(fund.manualReference.priceMicros, 1e6),
         'Fixed reference high in CNY, not invalid merely because its date is earlier': price(fund.manualReference.highMicros, 1e6),
         'Underlying index dividend yield percent, not fund cash distribution yield': price(fund.manualReference.indexYieldBps, 100),
       } : null,
@@ -251,7 +277,7 @@ Write for the person managing their savings, not for a developer. Never expose i
 Prioritise the active plan and the specific question. Do not discuss gaps, old dates or empty holdings in the alternative saved plan unless the user asks about that plan or a comparison. Stock and fund budgets are independent alternatives: do not add them into total wealth or assume both are funded. Fund weights are within its sleeve; rebalancing reserves 30% for bonds. Zero recorded shares means no recorded holding, not proof of no actual holding. Stock manual shares override linked shares. A hidden stock group is preserved planning data, not an instruction to buy it.
 For operational questions, start with a one-sentence conclusion about the saved plan, then give the two or three most useful reasons and a concrete next check. You cannot place orders or change the plan directly. You may propose a concrete grid change for the user's preview and confirmation. Buy/sell grids are cumulative targets, NOT incremental orders; compare with current recorded shares before suggesting quantities. Respect lot sizes, budgets, missing cash, fees and liquidity limits. Never treat a reached grid price as a confirmed execution. If the quote refresh failed or the price is missing, do not assert a current trading trigger. An earlier quote date may be a closed-market last quote: give its exact source date only when relevant, without guessing the latest trading day. Never call cached/manual/undated data real time.
 A reference high is a historical comparison point: an earlier recorded date alone does NOT make that high invalid. A fresh exchange price can be compared with the saved high, but does not verify that the saved high is still the appropriate high or uses the same price basis. The underlying index dividend yield and a fallback manual current price are dated observations; refresh does not download or redate them. If one is needed to decide the rule, say exactly what to check in the fund editor and which date it was recorded on. Do not tell the user to refresh exchange prices again to update an index yield or historical high. Under both/either logic, a sufficient current condition may settle the rule without the other observation; do not demand irrelevant missing inputs. Do not describe dated fund inputs as defects in the active stock strategy.
-The main dividend-page per-share amount is the latest announced reporting period only. An interim amount is not a full-year amount and must not be annualised or replaced with a trailing sum. The next holding-year forecast is a separate event calculation: upcoming announcements replace their corresponding historical seasonal estimate only when an amount is disclosed. When a current announcement has no amount, use the supplied exact prior-year same-reporting-period implemented amount as a labelled estimate; state the original reporting period and that the current amount is undisclosed. Never double an interim amount to fill a missing later distribution, substitute an older or different reporting period, or call the estimate an announced amount. If no matching prior-year amount is supplied, keep the total unknown and explain the specific gap. Explicit cancellation/non-distribution blocks this fallback. An event already ex-dividend cannot be received by a new holding today. Unknown payment dates remain unknown; do not call an estimated ex-date an official payment date. A missing future announcement amount alone does not invalidate an otherwise verified recent-batch grid or prevent a concrete plan preview. This forecast is distinct from verified recent batches used in pricing. Manually entered per-share dividends remain undated assumptions. Proposals are not implemented payments. A partial-period yield is not an annual yield, and a cash dividend is not total return.
+The attached Authoritative rule checks are computed by the application. Keep eligibility, observed price events and action constraints separate. Unknown evidence is not safety. Only a current source timestamp compatible with the dividend/share basis can establish a today price event; it never proves a tradable session. A manual pause, failed rules or required missing evidence forbids an unconditional new-buy recommendation. Historical/manual fund reference prices are not exchange quotes. Explain these checks; never override them with prose. The main dividend-page per-share amount is the latest announced reporting period only. An interim amount is not a full-year amount and must not be annualised or replaced with a trailing sum. The next holding-year forecast is a separate event calculation: upcoming announcements replace their corresponding historical seasonal estimate only when an amount is disclosed. When a current announcement has no amount, use the supplied exact prior-year same-reporting-period implemented amount as a labelled estimate; state the original reporting period and that the current amount is undisclosed. Never double an interim amount to fill a missing later distribution, substitute an older or different reporting period, or call the estimate an announced amount. If no matching prior-year amount is supplied, keep the total unknown and explain the specific gap. Explicit cancellation/non-distribution blocks this fallback. An event already ex-dividend cannot be received by a new holding today. Unknown payment dates remain unknown; do not call an estimated ex-date an official payment date. A missing future announcement amount alone does not invalidate an otherwise verified recent-batch grid or prevent a concrete plan preview. This forecast is distinct from verified recent batches used in pricing. Manually entered per-share dividends remain undated assumptions. Proposals are not implemented payments. A partial-period yield is not an annual yield, and a cash dividend is not total return.
 Use a short answer with descriptive Markdown headings only when useful, short paragraphs, and simple bullets. Use bold sparingly for the conclusion or a key number. For one stock's pricing, include the verified recent-batch dividend, selected periods and tax → fixed cash yields → four buy and four sell prices, the technical/index timing assessment and the material pass/warn/missing checks; explain any blocked link instead of completing it with a guess. For several stocks a concise comparison table is allowed. Do not expose raw JSON or code blocks except the optional machine draft below. Do not append generic investment-risk statements, legal boilerplate, responsibility disclaimers or a concluding warning paragraph. Specific evidence gaps and stock risks belong beside the affected conclusion. For plan analysis mention the relevant price date naturally, not a snapshot audit. Normally use at most 600 Chinese characters or 350 English words; expand when the requested multi-stock or pricing analysis needs the full calculation chain. For simple concepts answer directly without a full report.
 OPTIONAL MACHINE DRAFT: When recommending an actionable change to an EXISTING stock plan, append one fenced block labelled fortuna-actions containing a JSON array (at most 10). The readable answer must explain the reason and review condition. Schema: [{"id":"short-unique-id","code":"six-digit-existing-code","reason":"concise reason and review condition in the answer language","buyPaused":true}]. Only propose buyPaused true when the user explicitly asks to pause buying. Never infer a pause from financial risks, missing evidence or technical trends. A resume action is handled by the fresh Stock Checks review with separate risk and missing-evidence lists, explicit user acknowledgement, preview and confirmation; passing every advisory check or the safety-margin price is not required. For price drafts omit buyPaused so the saved manual status is preserved. Only when the attached deterministic pricing is ready and can be applied, buyLevels may contain its EXACT four calculated explicit priceMinor/yieldBps pairs with portionBps 2500 each. priceMinor is integer CNY cents and the other values are integer hundredths of a percent. Never recalculate, round differently or invent another ladder. The app completes every verified price draft with the four deterministic sell levels described above; do not retain a stale sell ladder or fabricate sellLevels. Both replacement sides use the same verified recent-batch dividend and the fixed yields above. All buy prices must remain below all replacement sell prices; the confirmation preview shows both sides. Never change budget, holding quantities, weights, other stock fields or invent codes. Omit a price draft only when deterministic pricing is blocked or a coherent complete replacement cannot be calculated. When the user requests a new plan and deterministic pricing is ready, provide its concrete four buy and four sell levels with concise separate alerts; preserve the current manual buying status when saving the replacement. This is the sole permitted code block, consumed by the app and hidden from normal reading; never show its field names in the readable answer.`;
 }

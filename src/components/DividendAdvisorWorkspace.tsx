@@ -18,6 +18,10 @@ import DividendAdvisorResumeReview from './DividendAdvisorResumeReview';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendReviewSummary } from '../lib/dividendReviewSummary';
 import DividendReviewSummary, { DividendReviewPrice } from './DividendReviewSummary';
+import { dividendCheckSummary, type DividendStockCheckSummary } from '../lib/dividendCheckSummary';
+import { loadDividendCheckSummaries } from '../services/dividendCheckSummaryService';
+import { loadDividendWorkbench } from '../services/dividendService';
+import DividendCheckStatus from './DividendCheckStatus';
 
 type Panel = 'chat' | 'research' | 'principles';
 type RemovalPreview = Awaited<ReturnType<typeof previewDividendRiskRemoval>>;
@@ -43,21 +47,25 @@ function TechnicalPosition({ technical }: { technical?: DividendTechnicalResearc
   </div>;
 }
 
-function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, collapsed, onToggle, onAdd, onDiscuss, onUpdated, onResearchUpdated }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot; savedStock?: DividendStock; canAdd: boolean; busy: boolean; outdated: boolean; collapsed: boolean; onToggle: () => void; onAdd: () => void; onDiscuss: () => void; onUpdated: () => Promise<unknown>; onResearchUpdated: (snapshot: DividendResearchSnapshot) => Promise<void> }) {
+function StockResearch({ stock, snapshot, savedStock, check: loadedCheck, canAdd, busy, outdated, collapsed, onToggle, onAdd, onDiscuss, onUpdated, onResearchUpdated }: { stock: DividendStockResearch; snapshot: DividendResearchSnapshot; savedStock?: DividendStock; check?: DividendStockCheckSummary; canAdd: boolean; busy: boolean; outdated: boolean; collapsed: boolean; onToggle: () => void; onAdd: () => void; onDiscuss: () => void; onUpdated: () => Promise<unknown>; onResearchUpdated: (snapshot: DividendResearchSnapshot) => Promise<void> }) {
   const { t, i18n } = useTranslation();
   const advice = dividendResearchAdvice(stock, snapshot.indices, snapshot.principles.notes, savedStock);
   const summary = dividendReviewSummary(stock, advice);
+  const check = loadedCheck ?? dividendCheckSummary({ stock: savedStock ?? { code: stock.code, name: stock.name, group: 'watch', weightBps: 0, shareMode: 'manual', manualShares: 0, lotSize: 100 },
+    research: stock, indices: snapshot.indices, principles: snapshot.principles, pricingMethod: snapshot.pricingMethod,
+    basis: { asOf: dateInChina(), verified: false, evidenceStatus: 'missing', evidenceIssues: ['DIVIDEND_LEDGER_MISSING'] }, researchGeneratedAt: snapshot.generatedAt });
   return <article className={`div-ai-research-card ${stock.status}`}><header><span><strong>{stock.name}</strong><small>{stock.code}</small></span>
-    <span className={`div-ai-status ${stock.status}`}>{t(`div_ai_research_${stock.status}`)}</span>
+    <span className={`div-ai-status ${check.eligibility.status === 'fail' ? 'risk' : check.eligibility.status}`}>{t(`div_check_eligibility_${check.eligibility.status}`)}</span>
     <button type="button" className="btn btn-secondary div-ai-research-toggle" disabled={busy} aria-expanded={!collapsed} aria-controls={`div-ai-stock-${stock.code}`} onClick={onToggle}>{t(collapsed ? 'div_ai_research_expand' : 'div_ai_research_collapse')}</button></header>
     <div id={`div-ai-stock-${stock.code}`} hidden={collapsed}>
       {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
       <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
-      <div className="div-check-price"><DividendReviewPrice currentPriceMinor={advice.currentPriceMinor} firstBuyPriceMinor={advice.firstBuyPriceMinor} priceDate={advice.currentPriceDate}
-        triggeredBuyLevels={advice.triggeredBuyLevels} priceState={advice.decision === 'eligible' ? 'triggered' : advice.decision === 'wait_price' ? 'waiting' : 'unknown'} saved={!!savedStock} basisState={advice.basisState} /></div>
-      {savedStock && <DividendGridOrigin stock={savedStock} basis={stock.pricing?.dividendBase} asOf={dateInChina()} taxBps={stock.pricing?.taxBps} />}
+      <DividendCheckStatus summary={check} />
+      <div className="div-check-price"><DividendReviewPrice currentPriceMinor={check.trigger.quote.priceMinor} firstBuyPriceMinor={check.grid.buyLevels[0]?.priceMinor} priceDate={check.trigger.quote.date}
+        triggeredBuyLevels={check.trigger.buyLevels} priceState={check.trigger.buy === 'not_triggered' ? 'waiting' : check.trigger.buy} saved={check.grid.origin === 'saved'} basisState={check.grid.status} /></div>
+      {savedStock && <DividendGridOrigin stock={savedStock} asOf={dateInChina()} check={check} />}
       {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button><span className="div-ai-muted">{t('div_check_join_to_save')}</span></div>}
-      {stock.pricing ? <DividendPricingCard key={snapshot.generatedAt} code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />
+      {stock.pricing ? <DividendPricingCard key={snapshot.generatedAt} check={check} code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />
         : <p className="div-ai-stock-checked div-ai-muted">{t('div_check_grid_missing')}</p>}
       <details className="div-ai-research-details"><summary>{t('div_check_evidence')}<span className="div-check-counts">{t('div_v4_risk_count', { count: summary.risks.length })} · {t('div_v4_missing_count', { count: summary.missing.length })}</span></summary>
         <div className="div-ai-research-card-body">
@@ -114,12 +122,24 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
   const snapshot = savedResearch?.snapshot ?? null;
   const [codes, setCodes] = useState('');
   const [configuredStocks, setConfiguredStocks] = useState<DividendStock[]>([]);
+  const [checkSummaries, setCheckSummaries] = useState<Record<string, DividendStockCheckSummary>>({});
   const [removal, setRemoval] = useState<RemovalPreview | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [restored, setRestored] = useState(false);
   const mounted = useRef(false);
   const lock = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    setCheckSummaries({});
+    void loadDividendWorkbench().then(async workbench => {
+      const candidates: DividendStock[] = (savedResearch?.snapshot.stocks ?? []).filter(row => !workbench.stocks.some(stock => stock.code === row.code))
+        .map(row => ({ code: row.code, name: row.name, group: 'watch', weightBps: 0, shareMode: 'manual', manualShares: 0, lotSize: 100 }));
+      return loadDividendCheckSummaries({ ...workbench, stocks: [...workbench.stocks, ...candidates] }, { researchCache: savedResearch ?? undefined });
+    }).then(value => { if (active) setCheckSummaries(value.stocks); }).catch(() => { if (active) setError(t('div_ai_error_storage')); });
+    return () => { active = false; };
+  }, [savedResearch, configuredStocks, pricingMethod, principles, t]);
 
   useEffect(() => {
     const subscription = liveQuery(() => db.dividendStocks.toArray()).subscribe({
@@ -237,7 +257,7 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
         {!visibleStocks.length && <p className="div-ai-muted">{t('div_ai_research_no_stocks')}</p>}
         {visibleStocks.map(stock => {
           const stockSnapshot = dividendResearchSnapshotForStock(savedResearch!, stock.code);
-          return <StockResearch key={stock.code} stock={stock} snapshot={stockSnapshot} onUpdated={notifyUpdated} onResearchUpdated={onResearchUpdated} savedStock={configuredStocks.find(current => current.code === stock.code)} canAdd={!configuredStocks.some(current => current.code === stock.code)} busy={busy} outdated={isOutdated(stockSnapshot)} collapsed={savedResearch?.collapsedCodes?.includes(stock.code) ?? false} onToggle={() => toggleStock(stock.code)} onDiscuss={() => onDiscuss(stock, stockSnapshot)} onAdd={() => void run(async () => {
+          return <StockResearch key={stock.code} check={checkSummaries[stock.code]} stock={stock} snapshot={stockSnapshot} onUpdated={notifyUpdated} onResearchUpdated={onResearchUpdated} savedStock={configuredStocks.find(current => current.code === stock.code)} canAdd={!configuredStocks.some(current => current.code === stock.code)} busy={busy} outdated={isOutdated(stockSnapshot)} collapsed={savedResearch?.collapsedCodes?.includes(stock.code) ?? false} onToggle={() => toggleStock(stock.code)} onDiscuss={() => onDiscuss(stock, stockSnapshot)} onAdd={() => void run(async () => {
           await addDividendResearchCandidate(stock.code, stock.name); await notifyUpdated();
           if (mounted.current) setNotice(t('div_ai_added_watch'));
         })} />; })}

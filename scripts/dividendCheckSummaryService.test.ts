@@ -50,6 +50,22 @@ beforeEach(async () => {
 });
 after(() => { db.close(); ledgerStore.close(); cacheStore.close(); closeDividendLedgerEvidence(); closeDividendResearchCache(); });
 
+test('saved advice scope changes for meaningful quote evidence but not a repeated download timestamp', async () => {
+  const { loadDividendDailyAdvicePlanKey } = await import('../src/services/dividendDailyAdviceScopeService.ts');
+  await ledgerStore.table('ledgers').put(pingAnOfficialLedger(asOf));
+  const data = await workbench();
+  const keyFor = async (quote: NonNullable<DividendStock['quote']>) => {
+    const input = { ...data, stocks: data.stocks.map(stock => ({ ...stock, quote })) };
+    const checks = await loadDividendCheckSummaries(input, { asOf, now });
+    return loadDividendDailyAdvicePlanKey(input, checks);
+  };
+  const quote = { priceMinor: 800, date: `${asOf} 10:00`, fetchedAt: now };
+  const first = await keyFor(quote);
+  assert.equal(await keyFor({ ...quote, fetchedAt: now + 1000 }), first);
+  assert.notEqual(await keyFor({ ...quote, priceMinor: 1100 }), first);
+  assert.notEqual(await keyFor({ ...quote, date: '2026-10-29 15:00' }), first);
+});
+
 test('summary reads preserve the complete exported ledger and original source verification dates byte for byte', async t => {
   t.mock.method(Date, 'now', () => now);
   const ledger = pingAnOfficialLedger(asOf); await ledgerStore.table('ledgers').put(ledger);

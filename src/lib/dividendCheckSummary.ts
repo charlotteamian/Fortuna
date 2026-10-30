@@ -1,4 +1,4 @@
-import { buildDividendHomePlan, dateInChina, type DividendStock, type GridLevel } from './dividendWorkbench.ts';
+import { buildDividendHomePlan, dateInChina, quoteSymbol, type DividendStock, type GridLevel } from './dividendWorkbench.ts';
 import { buildDividendFundHomePlan, type DividendFund, type DividendFundPlan } from './dividendFundPlan.ts';
 import { isDividendGridProvenance, reviewDividendGrid, type DividendGridBasisCheck } from './dividendGridProvenance.ts';
 import { DIVIDEND_PRICING_CALCULATION_VERSION, type DividendPricingMethod } from './dividendPricing.ts';
@@ -44,6 +44,7 @@ interface DividendCheckSummaryBase {
 }
 export interface DividendStockCheckSummary extends DividendCheckSummaryBase {
   kind: 'stock'; code: string; displayPlan: ReturnType<typeof buildDividendHomePlan>; gridReview: ReturnType<typeof reviewDividendGrid>;
+  currentPlan: ReturnType<typeof dividendPricingPlan>;
 }
 export interface DividendFundCheckSummary extends DividendCheckSummaryBase {
   kind: 'fund'; fundPlan: ReturnType<typeof buildDividendFundHomePlan>;
@@ -79,7 +80,11 @@ export function dividendCheckSummary(input: {
   const research = safeResearch && input.principles ? evaluateDividendResearch(safeResearch, input.principles, now) : safeResearch;
   const pricing = research?.pricing, basis = input.basis ?? pricing?.dividendBase;
   const ledger = input.ledger ?? pricing?.ledger;
-  const evidence = input.basis?.evidenceStatus && input.basis.evidenceStatus !== 'current'
+  const cachedEvidence = pricing?.ledger ? dividendEvidenceStatus(pricing.ledger, asOf) : undefined;
+  const cachedFailureIsCurrent = cachedEvidence && !cachedEvidence.usable && pricing?.ledger?.asOf === asOf;
+  const cashFetchFailed = research?.issues.some(issue => issue.kind === 'dividend' && ['request_failed', 'invalid_data', 'deferred'].includes(issue.reason));
+  const evidence = cashFetchFailed ? { status: 'failed' as const, usable: false, reasons: ['DIVIDEND_SOURCE_REFRESH_FAILED'] }
+    : cachedFailureIsCurrent ? cachedEvidence : input.basis?.evidenceStatus && input.basis.evidenceStatus !== 'current'
     ? { status: input.basis.evidenceStatus, usable: false, reasons: input.basis.evidenceIssues ?? [] }
     : ledger ? dividendEvidenceStatus(ledger, asOf) : input.basis?.evidenceStatus
       ? { status: input.basis.evidenceStatus, usable: input.basis.evidenceStatus === 'current', reasons: input.basis.evidenceIssues ?? [] } : undefined;
@@ -91,7 +96,8 @@ export function dividendCheckSummary(input: {
   const basisMatches = !input.basis || !pricing?.dividendBase || input.basis.dpsMicros === pricing.dividendBase.dpsMicros
     && input.basis.asOf === pricing.dividendBase.asOf && input.basis.verified === pricing.dividendBase.verified
     && (!input.basis.selectedBatchIds || JSON.stringify(input.basis.selectedBatchIds) === JSON.stringify(pricing.dividendBase.selectedBatchIds));
-  const currentPlan = pricing && pricing.dividendBase?.asOf === asOf && basisMatches && (!evidence || evidence.usable) ? dividendPricingPlan(pricing) : null;
+  const currentPlan = pricing && pricing.dividendBase?.asOf === asOf && basisMatches && (!evidence || evidence.usable)
+    && (taxBps === undefined || pricing.taxBps === taxBps) ? dividendPricingPlan(pricing) : null;
   const buyLevels = hasSaved ? savedBuy : currentPlan?.buyLevels.map(level => ({ ...level })) ?? [];
   const sellLevels = hasSaved ? savedSell : currentPlan?.sellLevels.map(level => ({ ...level })) ?? [];
   const tierIndices = (levels: GridLevel[] | undefined) => (levels ?? []).flatMap((level, index) => Number.isSafeInteger(level.priceMinor) && level.priceMinor! > 0 ? [index + 1] : []);
@@ -109,7 +115,8 @@ export function dividendCheckSummary(input: {
   // A failed primary quote may not be revived through a secondary research feed.
   const selectedQuote = stock.quote ?? researchQuote;
   const comparisonQuote = input.comparisonQuote ?? (stock.quote ? researchQuote : undefined);
-  const quote = dividendQuoteUsability({ quote: selectedQuote, comparisonQuote, failedAt: stock.quoteFailedAt,
+  const researchQuoteFailed = !stock.quote && [...pricing?.pauseReasons ?? [], ...pricing?.warnings ?? []].includes('quote_missing');
+  const quote = dividendQuoteUsability({ quote: selectedQuote, comparisonQuote, failedAt: stock.quoteFailedAt ?? (researchQuoteFailed ? now : undefined),
     latestExDate: basis?.latestExDate, asOf, now, quoteSession: input.quoteSession });
   const sanitizedStock: DividendStock = { ...stock, buyLevels, sellLevels, manualDpsMicros: undefined,
     quote: selectedQuote?.priceMinor !== undefined ? { priceMinor: selectedQuote.priceMinor, date: selectedQuote.date, fetchedAt: selectedQuote.fetchedAt ?? 0 } : undefined };
@@ -119,10 +126,13 @@ export function dividendCheckSummary(input: {
   const historicalSell = priceState(sellLevels, quote.historicalUsable ? quote.priceMinor : undefined, 'sell', sellTierIndices);
   const buy = quote.status === 'current' && !(partialBuy && historicalBuy.state === 'not_triggered') ? historicalBuy.state : 'unknown';
   const sell = quote.status === 'current' && !(partialSell && historicalSell.state === 'not_triggered') ? historicalSell.state : 'unknown';
+  const savedCumulative = (side: 'buy' | 'sell', index: number, fallback: number) => hasSaved
+    ? (stock[side === 'buy' ? 'buyLevels' : 'sellLevels'] ?? []).slice(0, (side === 'buy' ? buyTierIndices : sellTierIndices)[index])
+      .reduce((sum, level) => sum + level.portionBps, 0) : fallback;
   const displayPlan: ReturnType<typeof buildDividendHomePlan> = { ...rawDisplayPlan,
     quoteUsable: quote.status === 'current',
-    buy: rawDisplayPlan.buy.map(row => ({ ...row, targetShares: partialBuy ? undefined : row.targetShares, priceTouched: quote.status === 'current' && row.priceTouched, touched: quote.status === 'current' && row.touched })),
-    sell: rawDisplayPlan.sell.map(row => ({ ...row, sellShares: partialSell ? undefined : row.sellShares, priceTouched: quote.status === 'current' && row.priceTouched, touched: quote.status === 'current' && row.touched })),
+    buy: rawDisplayPlan.buy.map((row, index) => ({ ...row, cumulative: savedCumulative('buy', index, row.cumulative), targetShares: partialBuy ? undefined : row.targetShares, priceTouched: quote.status === 'current' && row.priceTouched, touched: quote.status === 'current' && row.touched })),
+    sell: rawDisplayPlan.sell.map((row, index) => ({ ...row, cumulative: savedCumulative('sell', index, row.cumulative), sellShares: partialSell ? undefined : row.sellShares, priceTouched: quote.status === 'current' && row.priceTouched, touched: quote.status === 'current' && row.touched })),
     buyState: stock.buyPaused ? 'paused' : partialBuy ? 'price_missing' : quote.status !== 'current' ? 'quote_missing' : rawDisplayPlan.buyState,
     sellState: shares <= 0 ? 'no_holding' : partialSell ? 'price_missing' : quote.status !== 'current' ? 'quote_missing' : rawDisplayPlan.sellState,
     additionalBuyShares: quote.status === 'current' && !partialBuy ? rawDisplayPlan.additionalBuyShares : 0,
@@ -135,10 +145,25 @@ export function dividendCheckSummary(input: {
   const selectedEvents = ledgerEvents.filter(event => selectedIds.includes(event.batchId));
   const evidenceVerifiedDates = distinct(selectedEvents.flatMap(event => Array.isArray(event.sources) ? event.sources.flatMap(source => typeof source?.verifiedAt === 'string' ? [source.verifiedAt] : []) : [])).sort();
   const risk: DividendCheckSummaryBase['risk'] = { blocking: [], attention: [], evidenceInsufficient: [] };
+  const informational = new Set(['stock_trend', 'market_trend', 'yield_history', 'treasury_missing', 'treasury_stale',
+    'opportunity_cost_missing', 'opportunity_cost_stale', 'yield_history_missing', 'capital_actions_unverified', 'roe_bps_missing']);
   const add = (group: keyof typeof risk, reason: string, impact: DividendCheckRisk['impact'] = 'new_buy', period?: string) => {
     if (risk[group].some(item => item.reason === reason)) return;
-    risk[group].push({ id: reason, reason, sources: [...sources], reportPeriod: period, verifiedAt: evidenceVerifiedDates.at(-1),
-      impact, autoRepair: group === 'evidenceInsufficient' && /missing|failed|stale|unverified|incomplete/.test(reason), unresolvedAction: /failed|missing|stale|incomplete/.test(reason) ? 'retry' : 'review' });
+    const lower = reason.toLowerCase(), financial = reason.startsWith('rule_') && !['rule_yield', 'rule_dividendYears'].includes(reason)
+      || /financial|earnings|roe|fcf|payout|cashflow/.test(lower);
+    const quoteIssue = lower.startsWith('quote_');
+    const cashEvidence = !financial && !quoteIssue && /dividend|ledger|announcement|source_|capital|crosscheck|base_changed|ex_dividend/.test(lower);
+    const itemSources = financial ? research?.sources.filter(source => source.kind === 'financial').map(source => source.url) ?? []
+      : quoteIssue ? stock.quote ? [`https://qt.gtimg.cn/q=${quoteSymbol(stock.code)}`] : research?.sources.filter(source => source.kind === 'technical').map(source => source.url) ?? []
+        : cashEvidence ? basis?.sourceUrls ?? [] : sources;
+    const financialPeriod = research?.financial?.periods?.find(row => row.reportDate === period);
+    const repairable = /missing|failed|stale|unverified|incomplete|cninfo|partial/.test(lower);
+    risk[group].push({ id: reason, reason, sources: distinct(itemSources), reportPeriod: period,
+      publishedAt: financialPeriod?.noticeDate,
+      // Cash-announcement verification does not verify a financial report or an
+      // earnings cross-check. Missing dates remain absent rather than relabelled.
+      verifiedAt: cashEvidence && !lower.includes('crosscheck') ? evidenceVerifiedDates.at(-1) : undefined,
+      impact: informational.has(reason) ? 'information' : impact, autoRepair: group === 'evidenceInsufficient' && repairable, unresolvedAction: repairable ? 'retry' : 'review' });
   };
   const checks = research?.checks.map(check => ({ ...check })) ?? [];
   const failed = checks.filter(check => check.status === 'risk'), missing = checks.filter(check => check.status === 'unknown');
@@ -170,7 +195,7 @@ export function dividendCheckSummary(input: {
   if (ledgerEvents.some(event => event.period === 'special' && event.implemented && (!event.exDate || event.exDate <= asOf))) add('evidenceInsufficient', 'special_dividend_review');
   if (hasSaved && (!input.savedEvidenceSnapshot?.sourceUrls.length || !input.savedEvidenceSnapshot.selectedBatchIds.length)) add('evidenceInsufficient', 'saved_evidence_snapshot_missing');
   const buyConstraints = distinct([...gridReasons, ...(gridStatus !== 'verified' ? ['grid_not_verified'] : []),
-    ...risk.blocking.map(item => item.reason), ...risk.evidenceInsufficient.filter(item => !item.reason.startsWith('quote_')).map(item => item.reason),
+    ...risk.blocking.map(item => item.reason), ...risk.evidenceInsufficient.filter(item => item.impact !== 'information' && !item.reason.startsWith('quote_')).map(item => item.reason),
     ...(eligibility.status !== 'pass' ? [`eligibility_${eligibility.status}`] : []), ...(!quote.sessionConfirmed ? ['execution_session_unverified'] : []),
     ...(!hasSaved && currentPlan ? ['current_grid_not_saved'] : [])]);
   const buyAction = stock.buyPaused ? action('blocked', ['manual_pause']) : gridStatus === 'unavailable' || quote.status !== 'current' ? action('unknown', [...gridReasons, ...quote.reasons])
@@ -198,7 +223,7 @@ export function dividendCheckSummary(input: {
     freshness: { generatedAt: now, asOf, researchGeneratedAt: input.researchGeneratedAt, quoteSourceAt: quote.date, quoteFetchedAt: quote.fetchedAt,
       reportPeriod: research?.financial?.latest?.reportDate, noticeDate: research?.financial?.latest?.noticeDate,
       verifiedAt: evidenceVerifiedDates.at(-1), evidenceVerifiedDates, sources: [...sources], evidenceStatus: evidence?.status, semanticFingerprint: '' },
-    displayPlan, gridReview,
+    displayPlan, gridReview, currentPlan,
   };
   summary.freshness.semanticFingerprint = fingerprint(summary);
   return summary;

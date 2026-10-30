@@ -1,7 +1,7 @@
 import { dividendBatchZh, dividendBatchEn } from '../src/i18n/dividendBatchTranslations.ts';
 import { dividendLedgerV5Zh, dividendLedgerV5En } from '../src/i18n/dividendLedgerV5Translations.ts';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
 import { createElement } from 'react';
@@ -12,9 +12,18 @@ import ts from 'typescript';
 import { defaultDividendStocks } from '../src/lib/dividendWorkbench.ts';
 import { dividendHomeZh, dividendHomeEn } from '../src/i18n/dividendHomeTranslations.ts';
 import { dividendGridZh, dividendGridEn } from '../src/i18n/dividendGridTranslations.ts';
+import { dividendCheckZh, dividendCheckEn } from '../src/i18n/dividendCheckTranslations.ts';
+import { dividendCheckSummary } from '../src/lib/dividendCheckSummary.ts';
 
 registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith('.') && context.parentURL) for (const ext of ['.ts', '.tsx']) {
+      const url = new URL(specifier + ext, context.parentURL); if (existsSync(url)) return { url: url.href, shortCircuit: true };
+    }
+    return nextResolve(specifier, context);
+  },
   load(url, context, nextLoad) {
+    if (url.endsWith('.css')) return { format: 'module', source: '', shortCircuit: true };
     if (url.endsWith('.tsx')) return { format: 'module', shortCircuit: true,
       source: ts.transpileModule(readFileSync(new URL(url), 'utf8'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText };
     return nextLoad(url, context);
@@ -25,21 +34,21 @@ const { default: DividendPlanGrid } = await import('../src/components/DividendPl
 const { buildDividendHomePlan } = await import('../src/lib/dividendWorkbench.ts');
 const i18n = createInstance();
 await i18n.init({ lng: 'zh', fallbackLng: 'en', resources: {
-  zh: { translation: { ...dividendHomeZh, ...dividendGridZh, ...dividendBatchZh, ...dividendLedgerV5Zh, div_stock_budget: '分配总金额', div_touched: '已触及' } },
-  en: { translation: { ...dividendHomeEn, ...dividendGridEn, ...dividendBatchEn, ...dividendLedgerV5En } },
+  zh: { translation: { ...dividendHomeZh, ...dividendGridZh, ...dividendBatchZh, ...dividendLedgerV5Zh, ...dividendCheckZh, div_stock_budget: '分配总金额', div_touched: '已触及' } },
+  en: { translation: { ...dividendHomeEn, ...dividendGridEn, ...dividendBatchEn, ...dividendLedgerV5En, ...dividendCheckEn } },
 }, interpolation: { escapeValue: false } });
 const stock = { ...defaultDividendStocks()[0], weightBps: 10000,
   buyLevels: [{ priceMinor: 1000, yieldBps: 500, portionBps: 5000 }, { priceMinor: 800, yieldBps: 600, portionBps: 5000 }],
   sellLevels: [{ priceMinor: 1200, yieldBps: 400, portionBps: 5000 }, { priceMinor: 1400, yieldBps: 350, portionBps: 5000 }],
-  quote: { priceMinor: 900, date: '2026-10-21', fetchedAt: 1 } };
+  quote: { priceMinor: 900, date: '2026-10-21 10:00', fetchedAt: 1 } };
 const render = (amountVisible = true, totalBudgetMinor: number | undefined = 1000000) => renderToStaticMarkup(createElement(I18nextProvider, { i18n },
   createElement(DividendHomePlan, { stock, totalBudgetMinor, shares: 200, amountVisible, asOf: '2026-10-21', onEdit: () => undefined })));
 
-test('home plan shows all buy and sell levels, budget and actionable quantities without expansion', () => {
+test('home plan retains saved prices and cumulative quantities while separating observed price from permission', () => {
   const html = render();
   assert.match(html, /当前计划/); assert.match(html, /调整计划/);
   for (const price of ['¥10', '¥8', '¥12', '¥14']) assert.ok(html.includes(price), price);
-  assert.match(html, /整手差额 300 股/);
+  assert.doesNotMatch(html, /整手差额 300 股/); assert.match(html, /先复核/);
   assert.match(html, /累计持有 500 股/); assert.match(html, /累计持有 1,100 股/);
   assert.match(html, /累计卖出 100 股/); assert.match(html, /累计卖出 200 股/);
   assert.match(html, /¥10,000/); assert.match(html, /已持仓 200 股/);
@@ -50,7 +59,7 @@ test('home plan shows all buy and sell levels, budget and actionable quantities 
 
 test('plan manager and homepage show the same highest price-triggered tier, including paused plans', () => {
   const paused = { ...stock, buyPaused: true, quote: { ...stock.quote, priceMinor: 800 } };
-  const plan = buildDividendHomePlan(paused, 1000000, 200, '2026-10-21');
+  const plan = dividendCheckSummary({ stock: paused, totalBudgetMinor: 1000000, shares: 200, asOf: '2026-10-21' }).displayPlan;
   const gridHtml = renderToStaticMarkup(createElement(I18nextProvider, { i18n },
     createElement(DividendPlanGrid, { plan, side: 'buy', amountVisible: true })));
   const homeHtml = renderToStaticMarkup(createElement(I18nextProvider, { i18n },
@@ -61,7 +70,7 @@ test('plan manager and homepage show the same highest price-triggered tier, incl
     assert.equal((html.match(/价格已触发/g) ?? []).length, 2);
   }
   assert.match(gridHtml, /div-grid-row-triggered/);
-  assert.match(homeHtml, /加仓已暂停/);
+  assert.match(homeHtml, /手动暂停新增买入/);
 });
 
 test('unusable quotes display refresh status without triggered rows on either surface', () => {
@@ -80,7 +89,7 @@ test('unusable quotes display refresh status without triggered rows on either su
 
 test('home plan respects amount privacy while retaining public price levels', () => {
   const html = render(false);
-  assert.match(html, /已持仓 •••• 股/); assert.match(html, /整手差额 •••• 股/);
+  assert.match(html, /已持仓 •••• 股/); assert.match(html, /累计持有 •••• 股/);
   assert.match(html, /¥10/); assert.doesNotMatch(html, /¥10,000|300 股|500 股|200 股|1,100 股/);
 });
 
@@ -98,7 +107,7 @@ test('the compact grid retains saved target yields rather than recalculating the
 test('home plan shows allocation rather than fabricated zero shares when no budget exists', () => {
   const html = renderToStaticMarkup(createElement(I18nextProvider, { i18n },
     createElement(DividendHomePlan, { stock, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
-  assert.match(html, /尚未设置总预算/); assert.match(html, /累计 50%/);
+  assert.match(html, /尚未设置计划预算/); assert.match(html, /累计 50%/);
   assert.doesNotMatch(html, /累计持有 0 股|可加仓 300 股/);
 });
 

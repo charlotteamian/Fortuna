@@ -1,5 +1,6 @@
 import { db } from '../db.ts';
-import { buildGrid, dateInChina, type DividendStock } from '../lib/dividendWorkbench.ts';
+import { dateInChina, type DividendStock } from '../lib/dividendWorkbench.ts';
+import { dividendCheckSummary } from '../lib/dividendCheckSummary.ts';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions.ts';
 import { dividendResearchAdvice } from '../lib/dividendResearchAdvice.ts';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch.ts';
@@ -36,10 +37,16 @@ export async function reviewDividendResume(stock: Pick<DividendStock, 'code' | '
   const result = snapshot.stocks.find(value => value.code === stock.code);
   if (!result) throw new Error('DIVIDEND_REVIEW_REQUIRED');
   const asOf = dateInChina(new Date((options.now ?? Date.now)()));
-  const advice = dividendResearchAdvice(result, snapshot.indices, principles.notes, saved, asOf);
+  const check = dividendCheckSummary({ stock: saved, research: result, indices: snapshot.indices, pricingMethod: method,
+    researchGeneratedAt: snapshot.generatedAt, asOf, now: (options.now ?? Date.now)() });
+  const legacyAdvice = dividendResearchAdvice(result, snapshot.indices, principles.notes, saved, asOf);
+  const advice: ReturnType<typeof dividendResearchAdvice> = { ...legacyAdvice, basisState: check.grid.status,
+    decision: check.trigger.buy === 'triggered' ? 'eligible' : check.trigger.buy === 'not_triggered' ? 'wait_price' : 'evidence',
+    quoteUsable: check.trigger.quote.status === 'current', currentPriceMinor: check.trigger.quote.priceMinor, currentPriceDate: check.trigger.quote.date,
+    firstBuyPriceMinor: check.grid.buyLevels[0]?.priceMinor, triggeredBuyLevels: check.trigger.buyLevels };
   const operationsPass = result.checks.length > 0 && !advice.failedRules.length && !advice.missingRules.length
     && !advice.additionalRulesUnverified && !advice.pricingPauseReasons.filter(reason => reason !== 'quote_missing').length;
-  const savedBuyPricesMinor = buildGrid(saved, 0, 0, 'buy', asOf).map(level => level.priceMinor);
+  const savedBuyPricesMinor = check.grid.buyLevels.map(level => level.priceMinor);
   const triggeredBuyLevels = advice.triggeredBuyLevels;
   const priceState = !advice.quoteUsable || savedBuyPricesMinor.every(price => price === undefined) ? 'unknown' : triggeredBuyLevels.length ? 'triggered' : 'waiting';
   const pricePass = priceState === 'triggered';

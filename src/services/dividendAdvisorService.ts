@@ -4,8 +4,10 @@ import { holdingRecognitionProviderBody } from '../lib/holdingRecognitionProvide
 import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type DividendAdvisorContext, type DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
 import { parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
-import { dividendPricingIssueText, humanizeDividendPricingIssues } from '../lib/dividendPricing.ts';
+import { dividendPricingIssueText, humanizeDividendPricingIssues, type DividendPricingResult } from '../lib/dividendPricing.ts';
 import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan.ts';
+import { dividendCheckSummaryText } from '../lib/dividendCheckExplanation.ts';
+import { dividendCheckEn, dividendCheckZh } from '../i18n/dividendCheckTranslations.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -150,6 +152,13 @@ export async function askDividendAdvisor(config: DividendAdvisorConfig, context:
 export async function askDividendAdvisorWithActions(...args: Parameters<typeof askDividendAdvisor>) {
   const raw = await askDividendAdvisor(...args);
   const context = args[1];
+  const checkedPricingPlan = (code: string, pricing: DividendPricingResult | undefined) => {
+    const check = context.stockPlan.stocks.find(stock => stock.code === code)?.checkSummary;
+    if (check?.freshness.evidenceStatus && check.freshness.evidenceStatus !== 'current'
+      || check?.grid.reasons.includes('pricing_basis_changed')
+      || check?.grid.reasons.includes('tax_changed') && !check.currentPlan) return null;
+    return pricing ? dividendPricingPlan(pricing) : null;
+  };
   const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
   const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
   const question = args[2];
@@ -168,7 +177,7 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     const action = { ...details, ...(buyPaused === true && explicitPause ? { buyPaused: true } : {}) };
     const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
     if (!action.buyLevels && !action.sellLevels) return action.buyPaused === undefined ? [] : [action];
-    const plan = pricing ? dividendPricingPlan(pricing) : null;
+    const plan = checkedPricingPlan(action.code, pricing);
     const matches = (side: 'buyLevels' | 'sellLevels') => !action[side] || !!plan && action[side].length === plan[side].length
       && action[side].every((level, index) => level.priceMinor === plan[side][index].priceMinor
         && level.yieldBps === plan[side][index].yieldBps && level.portionBps === plan[side][index].portionBps);
@@ -200,7 +209,7 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     const summaries: string[] = [];
     for (const saved of scope.slice(0, 10)) {
       const pricing = context.research?.stocks.find(stock => stock.code === saved.code)?.pricing;
-      const plan = pricing ? dividendPricingPlan(pricing) : null;
+      const plan = checkedPricingPlan(saved.code, pricing);
       if (!pricing || !plan) {
         const gaps = pricing?.blockers.map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')) ?? [];
         summaries.push(chinese ? `${saved.name}：${gaps.length ? gaps.join('；') : '尚无完整定价数据，请先完成该股票研究'}。补齐后才能生成经典股息率网格，已有计划保留。`
@@ -226,13 +235,15 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     if (summaries.length) result.answer = summaries.join('\n\n');
   }
   // Show accelerating declines as context without inventing pause actions.
+  let technicalNotice = '';
   if (context.activeStrategy === 'stocks') {
     const dateCutoff = new Date(Date.parse(context.generatedAt) - 10 * 86400_000).toISOString().slice(0, 10);
     const accelerating = context.research?.stocks.filter(stock => stock.technical?.state === 'accelerating_down'
       && stock.technical.currentUsable && stock.technical.asOf >= dateCutoff && context.stockPlan.stocks.some(saved => saved.code === stock.code && !saved.buyPaused)) ?? [];
-    if (accelerating.length) result.answer = `${chinese
+    if (accelerating.length) { technicalNotice = chinese
       ? `风险提示：${accelerating.map(stock => stock.name).join('、')}的已获取日线显示下跌加速，短期波动风险较高；不自动暂停，仍按价格档位、预算和持仓自主决定。`
-      : `Risk alert: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline and higher short-term volatility. This does not pause the grid; decide using price levels, budget and holdings.`}\n\n${result.answer}`;
+      : `Risk alert: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline and higher short-term volatility. This does not pause the grid; decide using price levels, budget and holdings.`;
+      result.answer = `${technicalNotice}\n\n${result.answer}`; }
   }
   result.actions = result.actions.slice(0, 10);
   result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');
@@ -241,5 +252,31 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     const gridProvenance = pricing && (action.buyLevels || action.sellLevels) ? dividendPricingProvenance(pricing, context.research!.generatedAt) : undefined;
     return { ...action, ...(gridProvenance ? { gridProvenance } : {}), reason: humanizeDividendPricingIssues(action.reason, chinese ? 'zh' : 'en').slice(0, 2000) };
   });
+  // Concrete action answers belong to deterministic checks. A provider's prose
+  // cannot override a pause, failed principle or unknown execution condition.
+  // Verified repricing and explicit pause drafts retain their separate preview
+  // flow; this guard never changes the price calculation or saved pause state.
+  const allChecks = [...context.stockPlan.stocks.map(stock => stock.checkSummary), ...context.fundPlan.funds.map(fund => fund.checkSummary)];
+  const namedChecks = allChecks.filter(check => question.includes(check.name) || !!check.code && question.includes(check.code));
+  const scope = namedChecks.length ? namedChecks : /股票.*基金|stocks.*funds|全部|所有|both|all/i.test(question) ? allChecks
+    : context.activeStrategy === 'stocks' ? context.stockPlan.stocks.map(stock => stock.checkSummary) : context.fundPlan.funds.map(fund => fund.checkSummary);
+  const actionQuestion = /今日|今天|操作|做什么|买不买|卖不卖|加仓|买入|买进|卖出|调仓|\b(?:today|action|buy|sell|trade|add|purchase)\b/i.test(question);
+  const buyDirective = /(?:立即|直接|现在|今天|今日|建议|应该|应当|可以|请|新增|继续|开始)[^。！？\n]{0,30}(?:买入|加仓|买进|建仓)|\b(?:buy|purchase|add to|increase (?:your |the )?position)\b/i.test(result.answer);
+  const sellDirective = /(?:立即|直接|现在|今天|今日|建议|应该|应当|可以|请)[^。！？\n]{0,30}(?:卖出|减仓|清仓)|\b(?:sell|reduce (?:your |the )?position)\b/i.test(result.answer);
+  const conceptQuestion = /什么是|如何理解|解释.*(?:概念|原理|公式)|\b(?:what is|define)\b|explain.*(?:concept|formula)/i.test(question);
+  // Unknown phrasing is not an execution permission. With unresolved conditions,
+  // non-concept questions use the rule result even if the provider uses slang.
+  const constrainedContext = !conceptQuestion && scope.some(check => check.actionCheck.buy.status !== 'confirmation_candidate'
+    || check.actionCheck.buy.requiresUserConfirmation);
+  const restricted = scope.some(check => (actionQuestion || buyDirective) && (check.actionCheck.buy.status !== 'confirmation_candidate' || check.actionCheck.buy.requiresUserConfirmation)
+    || sellDirective && (check.actionCheck.sell.status !== 'confirmation_candidate' || check.actionCheck.sell.requiresUserConfirmation));
+  if (!regenerate && (constrainedContext || restricted && (actionQuestion || buyDirective || sellDirective))) {
+    const pauseNotice = result.actions.some(action => action.buyPaused === true) ? `${(chinese ? dividendCheckZh : dividendCheckEn).div_check_pause_draft}\n\n` : '';
+    result.answer = `${pauseNotice}${technicalNotice ? `${technicalNotice}\n\n` : ''}${(chinese ? dividendCheckZh : dividendCheckEn).div_check_ai_limited}\n\n${dividendCheckSummaryText(scope, chinese ? 'zh' : 'en')}`;
+  }
+  if (regenerate) {
+    const uncertain = scope.filter(check => check.risk.evidenceInsufficient.some(item => ['crosscheck_missing', 'special_dividend_review', 'saved_evidence_snapshot_missing'].includes(item.reason)));
+    if (uncertain.length) result.answer += `\n\n${(chinese ? dividendCheckZh : dividendCheckEn).div_check_ai_limited}\n${dividendCheckSummaryText(uncertain, chinese ? 'zh' : 'en')}`;
+  }
   return result;
 }

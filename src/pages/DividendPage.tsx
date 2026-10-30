@@ -1,14 +1,16 @@
-import { loadDividendGridBases } from '../services/dividendGridBasisService';
-import type { DividendGridBasisCheck } from '../lib/dividendGridProvenance';
+import { loadDividendCheckSummaries } from '../services/dividendCheckSummaryService';
+import { loadDividendFundPositions } from '../services/dividendAdvisorContextService';
+import { dividendCheckSummary } from '../lib/dividendCheckSummary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
+import { BUY_LEVELS, SELL_LEVELS, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
 import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendFundHomePlan from '../components/DividendFundHomePlan';
 import DividendAdvisor from '../components/DividendAdvisor';
 import DividendHomePlan from '../components/DividendHomePlan';
+import DividendCheckStatus from '../components/DividendCheckStatus';
 import DividendPlanGrid from '../components/DividendPlanGrid';
 import { saveDividendStrategy } from '../services/dividendFundService';
 import type { DividendStrategy } from '../lib/dividendFundPlan';
@@ -25,7 +27,7 @@ export default function DividendPage() {
   const [amountVisible, setAmountVisible] = useState(true);
   const [data, setData] = useState<Workbench | null>(null);
   const [dailyPlanKey, setDailyPlanKey] = useState('');
-  const [gridBases, setGridBases] = useState<Record<string, DividendGridBasisCheck>>({});
+  const [checks, setChecks] = useState<Awaited<ReturnType<typeof loadDividendCheckSummaries>>>({ stocks: {}, funds: {} });
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [strategySaving, setStrategySaving] = useState(false);
@@ -56,9 +58,11 @@ export default function DividendPage() {
   const load = useCallback(async () => {
     const id = ++loadId.current;
     const next = await loadDividendWorkbench();
-    const [planKey, bases] = await Promise.all([loadDividendDailyAdvicePlanKey(next), loadDividendGridBases(next.stocks.map(stock => stock.code), dateInChina())]);
+    const fundPositions = await loadDividendFundPositions(next.fundPlan.funds);
+    const inspection = await loadDividendCheckSummaries(next, { fundPositions });
+    const planKey = await loadDividendDailyAdvicePlanKey(next, inspection);
     if (alive.current && id === loadId.current) {
-      setData(next); setGridBases(bases);
+      setData(next); setChecks(inspection);
       setDailyPlanKey(planKey);
       if (!collapseLoaded.current) {
         collapseLoaded.current = true; collapseState.current = next.collapsedCodes; setCollapsedCodes(next.collapsedCodes);
@@ -177,7 +181,8 @@ export default function DividendPage() {
           <button className="btn btn-secondary" disabled={Boolean(progress)} onClick={() => setImportOpen(true)}>{t('div_import')}</button></div>
         <input aria-label={t('div_search')} placeholder={t('div_search')} value={managerSearch} onChange={event => setManagerSearch(event.target.value)} />
         <div className="div-plan-manager-list">{fundedPlans.map(stock => {
-          const plan = buildDividendHomePlan(stock, data.budgetConfigured ? data.budgetMinor : undefined, sharesFor(stock), today);
+          const check = checks.stocks[stock.code] ?? dividendCheckSummary({ stock, totalBudgetMinor: data.budgetConfigured ? data.budgetMinor : undefined, shares: sharesFor(stock), asOf: today });
+          const plan = check.displayPlan;
           return <details key={stock.code} open={stock.code === focusedPlanCode}
           ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }}>
           <summary><strong>{stock.name}</strong><span>{stock.code} · {t(`div_group_${stock.group}`)}</span>
@@ -186,7 +191,8 @@ export default function DividendPage() {
           <div className="div-budget-line"><span>{t('div_stock_weight')} <strong>{numeric(stock.weightBps / 100)}%</strong></span><span>{t('div_stock_budget')} <strong>{money(stockBudgetMinor(data.budgetMinor, stock.weightBps))}</strong></span></div>
           <button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
           {stock.buyPaused && <p className="div-warning">{t('div_buy_paused_note')}</p>}
-          {(['buy', 'sell'] as const).map(side => <DividendPlanGrid key={side} plan={plan} side={side} amountVisible={amountVisible} />)}
+          <DividendCheckStatus summary={check} />
+          {(['buy', 'sell'] as const).map(side => <DividendPlanGrid key={side} plan={plan} side={side} amountVisible={amountVisible} tierIndices={check.grid[side === 'buy' ? 'buyTierIndices' : 'sellTierIndices']} />)}
         </details>; })}</div>
         {fundedPlans.length === 0 && <p className="div-muted">{t('div_no_funded_plans')}</p>}
         {unfundedPlans.length > 0 && <details className="div-unfunded-stocks" open={unfundedPlans.some(stock => stock.code === focusedPlanCode)}><summary>{t('div_unfunded_stocks', { count: unfundedPlans.length })}</summary>
@@ -217,7 +223,7 @@ export default function DividendPage() {
       {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) })}</small>}
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
     </div><button className="btn btn-secondary" disabled={quotes.refreshing || Boolean(progress) || !quoteTargets} onClick={() => void quotes.refresh(true)}>{t('div_refresh_quotes')}</button></section>
-    <DividendFundHomePlan plan={data.fundPlan} amountVisible={amountVisible} asOf={today} onEdit={() => void openFundPlan()} />
+    <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} asOf={today} onEdit={() => void openFundPlan()} />
     <section className="div-stock-home" aria-labelledby="div-stock-home-title"><div className="div-section-heading"><h2 id="div-stock-home-title">{t('div_home_stock_plans')}</h2><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan('')}>{t('div_manage_stocks')}</button></div>
       <section className="div-hero div-forecast-hero"><div className="div-estimate"><span>{t('div_v2_holding_forecast')}</span><strong>{held.length > covered.length ? '—' : money(forecastTotal)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}</small></div><p className="div-muted">{t('div_v2_forecast_basis')}</p></section>
       <div className="div-actions div-toolbar"><button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh(data.stocks.map(stock => stock.code))}>{progress ? t('div_refresh_progress', progress) : t('div_v2_refresh_disclosures')}</button></div>
@@ -235,8 +241,8 @@ export default function DividendPage() {
               {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
               {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</span></span>
           </button>
-          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan basis={gridBases[stock.code]} stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
-            onEdit={() => void openStockPlan(stock.code)} /> : <div className="div-unfunded-home"><span>{t('div_check_unfunded')}</span><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan(stock.code)}>{t('div_home_edit_plan')}</button></div>}
+          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan check={checks.stocks[stock.code]} stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
+            onEdit={() => void openStockPlan(stock.code)} /> : <div className="div-unfunded-home"><DividendCheckStatus summary={checks.stocks[stock.code] ?? dividendCheckSummary({ stock, shares, asOf: today })} /><span>{t('div_check_unfunded')}</span><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan(stock.code)}>{t('div_home_edit_plan')}</button></div>}
           <div id={`div-stock-body-${stock.code}`} hidden={!expanded}>
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>
             {shares > 0 && <div><span>{t('div_v2_holding_amount', { shares: quantity(shares) })}</span><strong>{forecast.amountMinor === undefined ? '—' : money(forecast.amountMinor)}</strong></div>}</div>

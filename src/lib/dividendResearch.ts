@@ -293,7 +293,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
   const percent = (value: number | undefined) => value === undefined ? null : value / 100;
   const amount = (value: number | undefined, divisor = 100) => value === undefined ? null : value / divisor;
   const state = { rising: 'Rising', range: 'Range-bound or mixed', falling: 'Falling', accelerating_down: 'Accelerating decline' };
-  const pacing = { observe: 'No technical pause inferred; a price threshold alone is not an instruction to add', review_grid: 'Review the grid and wait for stabilisation before adding', pause_add: 'Pause additional buying and review the grid; do not rush to average down' };
+  const pacing = { observe: 'No technical pause inferred; a price threshold alone is not an instruction to add', review_grid: 'Review the falling trend alongside the saved grid; do not infer an automatic pause', pause_add: 'An accelerating decline requires risk review; do not infer a pause or change the saved grid' };
   const technical = (value: DividendTechnicalResearch | undefined) => value ? {
     'Source date': value.asOf,
     'Downloaded at': new Date(value.fetchedAt).toISOString(),
@@ -323,7 +323,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
     'Reported non-positive attributable profit': value.loss,
   } : null;
   const labels: Record<DividendResearchRule, string> = {
-    yield: 'Trailing implemented cash dividend yield', roe: 'Latest completed annual weighted ROE',
+    yield: 'Verified recent-batch implemented cash dividend yield', roe: 'Latest completed annual weighted ROE',
     revenueGrowth: 'Latest cumulative revenue growth year on year', profitGrowth: 'Latest cumulative attributable profit growth year on year',
     debtAsset: 'Liabilities / assets, non-financial companies', cashProfit: 'Operating cash flow / attributable profit proxy, non-financial companies',
     payout: 'Implemented distributions for a fiscal year / matching annual basic EPS',
@@ -345,7 +345,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
     'Pricing method': snapshot.pricingMethod ? { 'Required total return percent': percent(snapshot.pricingMethod.requiredReturnBps), 'Growth percent': percent(snapshot.pricingMethod.growthBps), 'Safety margin percent': percent(snapshot.pricingMethod.safetyMarginBps), 'Historical percentile percent': percent(snapshot.pricingMethod.historicalPercentileBps), 'Selected holding period': snapshot.pricingMethod.holdingPeriod } : null,
     'Evidence scope': 'Structured Tencent daily/monthly prices, Eastmoney financial/cash-flow/distribution/Treasury fields and the explicitly attached official CSI dividend-index yield. No original financial-report text was downloaded live in this request. Any separately verified archival report extract is explicitly labelled with its report period, publication/verification dates and original URL; it is not a live full-report review. No audit opinion, segment notes or live news was downloaded. Do not claim a full annual/quarterly-report interpretation. Financial periods are cumulative year-to-date; compare year-on-year growth, not unmatched quarter amounts. Technical signals concern pacing only and do not establish or invalidate a long-term investment thesis.',
     'Editable screening principles': {
-      'Minimum trailing cash dividend yield percent': percent(p.minYieldBps), 'Minimum annual weighted ROE percent': percent(p.minRoeBps),
+      'Minimum recent-batch cash dividend yield percent': percent(p.minYieldBps), 'Minimum annual weighted ROE percent': percent(p.minRoeBps),
       'Minimum revenue growth year on year percent': percent(p.minRevenueGrowthBps), 'Minimum attributable profit growth year on year percent': percent(p.minProfitGrowthBps),
       'Maximum liabilities / assets for non-financial companies percent': percent(p.maxDebtAssetBps),
       'Minimum operating cash flow / profit proxy for non-financial companies percent': percent(p.minCashProfitBps),

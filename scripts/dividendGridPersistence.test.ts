@@ -70,6 +70,7 @@ beforeEach(async () => {
 });
 after(() => { db.close(); closeDividendResearchCache(); cache.close(); ledgerStore.close(); closeDividendLedgerEvidence(); });
 
+
 test('preview stays read-only and confirmation saves both rounded ladders and deterministic origin without changing the ledger', async () => {
   const { draft, evidence } = pricedDraft(), original = await db.dividendStocks.get('000001');
   const before = await state();
@@ -178,4 +179,16 @@ test('a newer independent ledger retires old UI drafts even when the research ca
   await ledgerStore.table('ledgers').clear();
   await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
   assert.deepEqual(await state(), before, 'all rejected previews preserve saved plans and holdings');
+});
+
+test('a failed same-day official refresh blocks confirmation while preserving the last successful ledger and all plans', async () => {
+  const { researchDividendLedger } = await import('../src/services/dividendLedgerEvidenceService.ts');
+  const raw = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json', import.meta.url), 'utf8')).sources.distribution.data;
+  const ledger = pingAnOfficialLedger(dateInChina());
+  await ledgerStore.table('ledgers').put(ledger);
+  const { draft, evidence } = pricedDraft();
+  const before = await state();
+  await researchDividendLedger(raw, '000001', dateInChina(), { post: async () => { throw new Error('CNINFO_HTTP_503'); } });
+  await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
+  assert.deepEqual(await state(), before); assert.deepEqual(await ledgerStore.table('ledgers').get('000001'), ledger);
 });

@@ -9,6 +9,9 @@ import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { loadDividendSelectionPrinciples, loadDividendPricingMethod } from './dividendAdvisorActionsService';
 import { fetchDividendResearch } from './dividendResearchService';
 import type { DividendFund } from '../lib/dividendFundPlan';
+import { loadDividendCheckSummaries } from './dividendCheckSummaryService';
+import { saveDividendResearchCache, loadDividendResearchCache, dividendResearchScopeStocks } from './dividendResearchCacheService';
+import { loadDividendDailyAdvicePlanKey } from './dividendDailyAdviceScopeService';
 
 /** Refresh on each explicit question. Off-exchange NAV/high/index-yield remain dated manual inputs. */
 export async function prepareDividendAdvisorContext(onProgress: (done: number, total: number) => void) {
@@ -37,8 +40,15 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
   const [, , research] = await Promise.all([refreshDividendMarketQuotes(), updateDividends(), researchTask]);
   const data = await loadDividendWorkbench();
   const fundPositions = await loadDividendFundPositions(data.fundPlan.funds);
-  return buildDividendAdvisorContext({ ...data, fundPositions, research,
-    dividendRefreshDeferredCodes: prioritized.filter(stock => !attempted.has(stock.code)).map(stock => stock.code) });
+  // Reuse the existing research cache so reopening home and Stock Checks sees
+  // the same completed evidence. This never changes saved plans or holdings.
+  const previousResearch = await loadDividendResearchCache().catch(() => null);
+  const researchCache = await saveDividendResearchCache({ snapshot: research, scope: previousResearch?.scope ?? 'plan', candidateInput: previousResearch?.candidateInput ?? '',
+    reviewedCodes: previousResearch?.scope === 'candidates' ? dividendResearchScopeStocks(previousResearch, []).map(stock => stock.code) : data.stocks.map(stock => stock.code) });
+  const checkSummaries = await loadDividendCheckSummaries(data, { researchCache, fundPositions });
+  const inspectionPlanKey = await loadDividendDailyAdvicePlanKey(data, checkSummaries);
+  return { ...buildDividendAdvisorContext({ ...data, fundPositions, research, checkSummaries,
+    dividendRefreshDeferredCodes: prioritized.filter(stock => !attempted.has(stock.code)).map(stock => stock.code) }), inspectionPlanKey };
 }
 
 /** The same eligible fund ledger positions back the AI context and saved-advice freshness. */

@@ -1,13 +1,18 @@
 import { loadDividendWorkbench } from './dividendService';
 import { loadDividendPricingMethod, loadDividendSelectionPrinciples } from './dividendAdvisorActionsService';
 import { loadDividendFundPositions } from './dividendAdvisorContextService';
+import { loadDividendCheckSummaries } from './dividendCheckSummaryService';
 
 /** Exclude market refresh timestamps; include every saved input and recorded holding used for advice. */
-export async function loadDividendDailyAdvicePlanKey(data: Awaited<ReturnType<typeof loadDividendWorkbench>>) {
+export async function loadDividendDailyAdvicePlanKey(data: Awaited<ReturnType<typeof loadDividendWorkbench>>, suppliedChecks?: Awaited<ReturnType<typeof loadDividendCheckSummaries>>) {
   const [principles, pricingMethod, fundPositions] = await Promise.all([
     loadDividendSelectionPrinciples(), loadDividendPricingMethod(), loadDividendFundPositions(data.fundPlan.funds),
   ]);
-  return JSON.stringify({ budget: data.budgetConfigured ? data.budgetMinor : null, principles, pricingMethod,
+  const checks = suppliedChecks ?? await loadDividendCheckSummaries(data, { fundPositions });
+  const semanticInput = JSON.stringify([...Object.entries(checks.stocks), ...Object.entries(checks.funds)]
+    .sort(([a], [b]) => a.localeCompare(b)).map(([id, check]) => [id, check.freshness.semanticFingerprint]));
+  const semanticHash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(semanticInput)))].map(value => value.toString(16).padStart(2, '0')).join('');
+  return JSON.stringify({ budget: data.budgetConfigured ? data.budgetMinor : null, principles, pricingMethod, checkState: semanticHash,
     stocks: data.stocks.map(stock => ({ code: stock.code, name: stock.name, note: stock.note, group: stock.group, weight: stock.weightBps,
       shares: stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0, lotSize: stock.lotSize,
       buyPaused: stock.buyPaused ?? false, buy: stock.buyLevels, sell: stock.sellLevels, dividend: stock.manualDpsMicros })),

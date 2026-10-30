@@ -28,12 +28,20 @@ test('missing research time and a failed current source do not inherit a passing
   const failed = summarize({ basis: { ...pricing.dividendBase!, verified: false, evidenceStatus: 'failed', evidenceIssues: ['ANNOUNCEMENT_REFRESH_FAILED'] } });
   assert.equal(failed.eligibility.status, 'unknown'); assert.equal(failed.grid.status, 'saved_unverified');
   assert.notEqual(failed.actionCheck.buy.status, 'confirmation_candidate');
+  const failedCash = summarize({ research: { ...research, issues: [{ kind: 'dividend', reason: 'request_failed' }] } });
+  assert.equal(failedCash.grid.status, 'saved_unverified'); assert.equal(failedCash.currentPlan, null);
+  assert.equal(failedCash.eligibility.status, 'unknown');
+  const cachedFailed = summarize({ ledger, research: { ...research, pricing: { ...pricing,
+    ledger: { ...ledger, complete: false, issues: ['CNINFO_HTTP_503'] } } } });
+  assert.equal(cachedFailed.grid.status, 'saved_unverified', 'a current cached failure cannot be revived by an older successful persistent ledger after reload');
+  assert.equal(cachedFailed.currentPlan, null);
 });
 
 test('a missing earlier tier keeps original tier numbers and cannot invent cumulative quantities', () => {
   const value = summarize({ stock: { ...stock, buyLevels: [{ yieldBps: 550, portionBps: 2500 }, { yieldBps: 575, portionBps: 7500, priceMinor: 1000 }] } });
   assert.deepEqual(value.grid.buyTierIndices, [2]); assert.deepEqual(value.trigger.buyLevels, [2]);
   assert.equal(value.displayPlan.buyTriggeredLevel, 2); assert.equal(value.displayPlan.buy[0].targetShares, undefined);
+  assert.equal(value.displayPlan.buy[0].cumulative, 10000, 'missing price tiers still retain their saved allocation in the cumulative label');
   assert.equal(value.displayPlan.additionalBuyShares, 0); assert.equal(value.actionCheck.buy.status, 'review');
 });
 
@@ -72,6 +80,8 @@ test('failed eligibility and manual pause preserve the price event without allow
   const result = summarize({ research: failed });
   assert.equal(result.eligibility.status, 'fail'); assert.equal(result.trigger.buy, 'triggered'); assert.equal(result.actionCheck.buy.status, 'review');
   assert.ok(result.actionCheck.buy.reasons.includes('eligibility_fail'));
+  assert.equal(result.risk.attention.find(item => item.reason === 'rule_roe')?.verifiedAt, undefined,
+    'cash-announcement verification must never be attached to an unverified financial rule');
   const paused = summarize({ stock: { ...stock, buyPaused: true }, research: failed });
   assert.equal(paused.trigger.buy, 'triggered'); assert.equal(paused.actionCheck.buy.status, 'blocked'); assert.deepEqual(paused.actionCheck.buy.reasons, ['manual_pause']);
 });

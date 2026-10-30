@@ -9,6 +9,7 @@ import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendP
 import { validateDividendPricingProposal } from '../services/dividendAdvisorActionsService';
 import './DividendReviewAlerts.css';
 import DividendLedgerView from './DividendLedgerView';
+import type { DividendStockCheckSummary } from '../lib/dividendCheckSummary';
 
 const GAP_HELP: Record<DividendPricingBlocker, string> = {
   dividend_ledger_missing: 'dividend', dividend_base_unverified: 'dividend', dividend_base_incomplete: 'dividend',
@@ -100,10 +101,10 @@ export function DividendPricingEditor({ method, disabled, onSave }: { method: Di
   </form>;
 }
 
-export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown> }) {
+export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated, check }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown>; check?: DividendStockCheckSummary }) {
   const { t } = useTranslation();
   const pricing = invalidateOutdatedDividendPricing(sourcePricing);
-  const plan = dividendPricingPlan(pricing);
+  const plan = check ? check.currentPlan : dividendPricingPlan(pricing);
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
   const pct = (value: number) => `${Number((value / 100).toFixed(2))}%`;
   const proposal: DividendPlanProposal | null = plan ? {
@@ -124,6 +125,10 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
             <td>{yuan(grossMinor)}</td><td><strong>{yuan(level.priceMinor)}</strong></td></tr>;
         })}</tbody></table>)}</>}
       {!plan && <p className="div-warning">{t('div_check_grid_unavailable')}{pricing.blockers.map(issue => t(`div_v2_pricing_gap_${issue}`)).join('；')}</p>}
+      {!plan && check?.grid.origin === 'saved' && <><p className="div-warning">{t('div_check_saved_grid_kept')}</p>
+        {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)} · {t('div_check_origin_saved')}</caption>
+          <thead><tr><th>{t('div_grid_level_column')}</th><th>{t('div_grid_target_yield')}</th><th>{t('div_grid_price_short')}</th></tr></thead>
+          <tbody>{check.grid[side === 'buy' ? 'buyLevels' : 'sellLevels'].map((level, index) => <tr key={index}><th>{check.grid[side === 'buy' ? 'buyTierIndices' : 'sellTierIndices'][index]}</th><td>{pct(level.yieldBps)}</td><td>{yuan(level.priceMinor)}</td></tr>)}</tbody></table>)}</>}
       {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} embedded previewLabel={t('div_v2_pricing_preview')}
         beforePreview={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })}
         beforeApply={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })} />}

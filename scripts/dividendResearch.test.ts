@@ -95,7 +95,7 @@ test('readable research converts percentage and money units, preserves URLs, and
   const readable = dividendResearchReadableSnapshot({ generatedAt: now, principles: { ...principles, notes: 'Exclude uncertain governance' }, stocks: [data], indices: [] });
   const text = JSON.stringify(readable);
   assert.doesNotMatch(text, /minYieldBps|epsMicros|lastCloseMinor/);
-  assert.equal(readable['Editable screening principles']['Minimum trailing cash dividend yield percent'], 4);
+  assert.equal(readable['Editable screening principles']['Minimum recent-batch cash dividend yield percent'], 4);
   assert.equal(readable['Editable screening principles']['Additional personal screening criteria automatically verified'], false);
   assert.equal(readable['Stocks actually downloaded or explicitly deferred'][0]['Latest cumulative report']!['Basic earnings per share in CNY'], 2.98);
   assert.ok(text.includes(liveFixtures.bankFinancial.url));
@@ -370,6 +370,8 @@ test('current research yields require verified recent batches on the dated quote
     }
     globalThis.fetch = async input => {
       const url = String(input);
+      if (url.includes('/dividend-cninfo-api/new/information/topSearch/query')) return Response.json([{ code, orgId: 'synthetic-org' }]);
+      if (url.includes('/dividend-cninfo-api/new/hisAnnouncement/query')) return Response.json({ announcements: [], hasMore: false });
       if (url.includes(',month,')) return Response.json({ code: 0, data: { [symbol]: {
         month: [[options.quoteDate ?? '2026-10-23', '10', options.quotePrice ?? '10', '10', '10']],
       } } });
@@ -443,6 +445,8 @@ test('verified recent batches survive failed financial and market feeds but neve
   }
   let cashAvailable = true;
   globalThis.fetch = async input => {
+    if (String(input).includes('/dividend-cninfo-api/new/information/topSearch/query')) return Response.json([{ code: '000001', orgId: 'synthetic-org' }]);
+    if (String(input).includes('/dividend-cninfo-api/new/hisAnnouncement/query')) return Response.json({ announcements: [], hasMore: false });
     if (cashAvailable && String(input).includes('RPT_SHAREBONUS_DET')) return Response.json(cash);
     throw new TypeError('fixture feed intentionally unavailable');
   };

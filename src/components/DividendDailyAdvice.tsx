@@ -37,7 +37,7 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
       setPhase('thinking');
       const result = await askDividendAdvisorWithActions(config, context, t('div_daily_question'), [], { language: i18n.language, signal: request.signal });
       if (!active()) return;
-      const value: Advice = { answer: result.answer, generatedAt: context.generatedAt, language: i18n.language, planKey,
+      const value: Advice = { answer: result.answer, generatedAt: context.generatedAt, language: i18n.language, planKey: context.inspectionPlanKey,
         refreshLimited: Boolean(context.coverage.quoteRefreshFailures || context.coverage.dividendRefreshFailures || context.coverage.missingQuotes
           || context.coverage.priorDateQuotes || context.dividendRefreshDeferredCodes.length) };
       setAdvice(value);

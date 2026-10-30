@@ -1,4 +1,5 @@
-import { loadSavedDividendLedger } from './dividendLedgerEvidenceService.ts';
+import { loadDividendLedgerForCheck } from './dividendLedgerEvidenceService.ts';
+import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 import { dividendLedgerBase } from '../lib/dividendLedger.ts';
 import { db, initializeSettings, updateSettings } from '../db.ts';
 import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, mainlandCode, type DividendStock } from '../lib/dividendWorkbench.ts';
@@ -34,7 +35,7 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
   const cache = await loadDividendResearchCache();
   if (cache) {
     const latest = dividendResearchSnapshotForStock(cache, proposal.code);
-    if (latest.stocks.length && latest.generatedAt > context.generatedAt
+    if (latest.stocks.length && latest.generatedAt >= context.generatedAt
       && (!sameSides(latest.stocks[0].pricing ? dividendPricingPlan(latest.stocks[0].pricing) : null)
         || latest.stocks[0].pricing?.dividendBase?.dpsMicros !== pricing.dividendBase?.dpsMicros
         || latest.stocks[0].pricing?.dividendBase?.asOf !== pricing.dividendBase?.asOf
@@ -43,10 +44,10 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
   }
   // A fresh daily-advice request can update the ledger without replacing the
   // research-card cache. Confirm against this independent latest evidence too.
-  const ledger = await loadSavedDividendLedger(proposal.code);
+  const ledger = await loadDividendLedgerForCheck(proposal.code);
   if (!ledger && pricing?.ledger) throw new Error('DIVIDEND_REVIEW_CHANGED');
   if (ledger) {
-    if (ledger.asOf !== dateInChina()) throw new Error('DIVIDEND_REVIEW_CHANGED');
+    if (!dividendEvidenceStatus(ledger, dateInChina()).usable) throw new Error('DIVIDEND_REVIEW_CHANGED');
     const annual = pricing!.annuals[0];
     const latestBase = dividendLedgerBase(ledger, ledger.asOf, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps });
     if (!latestBase.verified || latestBase.dpsMicros !== pricing!.dividendBase?.dpsMicros

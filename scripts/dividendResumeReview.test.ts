@@ -44,7 +44,7 @@ const pricing: DividendPricingResult = calculateDividendPricing({code:stock.code
 
 function snapshot(): DividendResearchSnapshot {
   return { generatedAt: now, principles: defaultDividendSelectionPrinciples(), pricingMethod: defaultDividendPricingMethod(),
-    stocks: [{ code: stock.code, name: stock.name, technical: structuredClone(technical), pricing: structuredClone(pricing),
+    stocks: [{ code: stock.code, name: stock.name, technical: structuredClone(technical), pricing: { ...structuredClone(pricing), priceDate: '2026-10-22 10:00' },
       checks: [{ rule: 'roe', status: 'pass' }], status: 'pass', sources: [], issues: [] }],
     indices: [{ code: 'sh000001', name: '上证指数', technical: structuredClone(technical), sources: [], issues: [] },
       { code: 'sh000300', name: '沪深300', technical: structuredClone(technical), sources: [], issues: [] }] };
@@ -52,6 +52,16 @@ function snapshot(): DividendResearchSnapshot {
 async function review(data = snapshot()) {
   return reviewDividendResume(stock, { now: () => now, fetchResearch: async () => data });
 }
+
+test('resume inspection does not turn date-only quotes or legacy annual assumptions into today price evidence', async () => {
+  const data = snapshot(); data.stocks[0].pricing!.priceDate = '2026-10-22';
+  assert.equal((await review(data)).priceState, 'unknown');
+  await db.dividendStocks.update(stock.code, { buyLevels: undefined, sellLevels: undefined, manualDpsMicros: 609000 });
+  data.stocks[0].pricing = undefined;
+  const result = await review(data);
+  assert.deepEqual(result.savedBuyPricesMinor, []); assert.equal(result.priceState, 'unknown');
+  assert.equal(result.proposal?.buyPaused, false, 'manual resume still requires the existing explicit confirmation rather than new automatic bans');
+});
 beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
   await initializeSettings(); await db.dividendStocks.put(structuredClone(stock));

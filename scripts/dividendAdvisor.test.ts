@@ -62,6 +62,36 @@ const code = (expected: string) => (cause: unknown) => {
   return true;
 };
 
+test('unsafe model buy prose cannot override paused or failed deterministic action checks', async () => {
+  const data = buildDividendAdvisorContext({ stocks: [{ ...stock, buyPaused: true, quoteFailedAt: undefined,
+    quote: { priceMinor: 900, date: '2026-10-16 10:00', fetchedAt: now },
+    buyLevels: [{ priceMinor: 1000, yieldBps: 550, portionBps: 10000 }], sellLevels: [{ priceMinor: 1200, yieldBps: 450, portionBps: 10000 }] }],
+    strategy: 'stocks', budgetMinor: 1000000, budgetConfigured: true, positions: new Map(), fundPlan: defaultDividendFundPlan(),
+    research: { generatedAt: now, principles: defaultDividendSelectionPrinciples(), stocks: [{ code: stock.code, name: stock.name,
+      checks: [{ rule: 'roe', status: 'risk', value: 500, threshold: 800 }], status: 'risk', sources: [], issues: [] }], indices: [] } }, now);
+  assert.equal(data.stockPlan.stocks[0].checkSummary.trigger.buy, 'triggered');
+  for (const [language, answer] of [['zh', '今天已到价，请立即新增买入100股。'], ['en', 'Buy 100 shares immediately.']] as const) {
+    const result = await askDividendAdvisorWithActions(config(), data, language === 'zh' ? '今天优先做什么？' : 'What should I do today?', [], {
+      language, transport: async () => ({ status: 200, data: response('openai', answer) }),
+    });
+    assert.ok(!result.answer.includes(answer)); assert.deepEqual(result.actions, []);
+    assert.match(result.answer, language === 'zh' ? /手动暂停|受限/ : /paused|Restricted/);
+  }
+  const slang = await askDividendAdvisorWithActions(config(), data, '复核这只标的', [], { language: 'zh', transport: async () => ({ status: 200, data: response('openai', '这只可以上车了。') }) });
+  assert.doesNotMatch(slang.answer, /可以上车/); assert.match(slang.answer, /手动暂停/);
+});
+
+test('model grids share the homepage current-quote gate and never receive implicit seven-tier prices', () => {
+  for (const patch of [{ quote: { priceMinor: 900, date: '2026-10-01 15:00', fetchedAt: now } },
+    { quote: { priceMinor: 900, date: '2026-10-16 10:00', fetchedAt: now }, quoteFailedAt: now }]) {
+    const data = buildDividendAdvisorContext({ stocks: [{ ...stock, ...patch, buyLevels: [{ priceMinor: 1000, yieldBps: 550, portionBps: 10000 }], sellLevels: [{ priceMinor: 1200, yieldBps: 450, portionBps: 10000 }] }],
+      strategy: 'stocks', budgetMinor: 1000000, budgetConfigured: true, positions: new Map(), fundPlan: defaultDividendFundPlan() }, now);
+    assert.equal(data.stockPlan.stocks[0].checkSummary.trigger.buy, 'unknown');
+    assert.ok(data.stockPlan.stocks[0].buyGrid.every(row => !row.touched));
+  }
+  assert.equal(context().stockPlan.stocks[0].buyGrid.length, 0);
+});
+
 test('context excludes private account identities and preserves alternative budgets, dates and actual recorded quantities', () => {
   const data = context();
   assert.doesNotMatch(JSON.stringify(data), /PRIVATE ACCOUNT|PRIVATE HOLDING|PRIVATE FUND/);
@@ -196,7 +226,7 @@ test('regeneration supplies a verified ladder without changing manual pause stat
   assert.deepEqual(data.stockPlan, before, 'draft generation cannot write or mutate the saved plan');
   const riskOnly=await run('不要计算美的集团价格，只复核风险');
   assert.equal(riskOnly.actions.length,0);
-  assert.match(riskOnly.answer,/下跌加速/);assert.match(riskOnly.answer,/已复核估值和走势/);assert.doesNotMatch(riskOnly.answer,/新四档/);
+  assert.match(riskOnly.answer,/下跌加速/);assert.match(riskOnly.answer,/操作建议已按确定性检查限制/);assert.doesNotMatch(riskOnly.answer,/新四档/);
   data.research!.stocks.forEach(row => { row.technical!.state = 'rising'; row.technical!.pacing = 'observe'; });
   assert.equal((await run('什么是股息率？')).actions.length, 0);
   const all = await run('重新生成网格计划');
@@ -213,7 +243,7 @@ test('regeneration supplies a verified ladder without changing manual pause stat
     'Do not calculate 美的集团 price; review risk only',"Don't estimate 美的集团 price; review risk only"]) {
     const review=await run(question);
     assert.equal(review.actions.length,0,question);
-    assert.equal(review.answer,'已复核估值和走势。',question);
+    assert.match(review.answer,/操作建议已按确定性检查限制/,question);
   }
   assert.equal((await run('重新生成中国石油网格计划')).actions.length, 0);
   data.stockPlan.stocks[1].sellGrid = [{ yieldBps: 100, portionBps: 10000, priceMinor: 100 } as typeof data.stockPlan.stocks[1]['sellGrid'][number]];
@@ -271,7 +301,8 @@ for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${proto
   const draft = { id: 'pause_bank_buy', code: stock.code, reason: '等待现金流覆盖改善后复核。', buyPaused: true };
   const result = await askDividendAdvisorWithActions(config(protocol), context(), '暂停现有计划加仓', [], { transport: async () => ({ status: 200,
     data: response(protocol, `建议暂停现有计划加仓。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });
-  assert.deepEqual(result, { answer: '建议暂停现有计划加仓。', actions: [draft] });
+  assert.deepEqual(result.actions, [draft]);
+  assert.match(result.answer, /预览并确认后才会修改计划/);
   const advisory = await askDividendAdvisorWithActions(config(protocol), context(), '复核计划', [], { transport: async () => ({ status: 200,
     data: response(protocol, `现金流风险。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });
   assert.deepEqual(advisory.actions, [], 'a provider cannot create an unsolicited pause action');
