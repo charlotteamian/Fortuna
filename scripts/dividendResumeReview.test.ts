@@ -1,3 +1,4 @@
+import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
 import { calculateDividendPricing } from '../src/lib/dividendPricing.ts';
 import 'fake-indexeddb/auto';
 import test, { after, beforeEach } from 'node:test';
@@ -34,7 +35,7 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-22', fetchedAt: no
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2, state: 'rising', pacing: 'observe' };
 const pricing: DividendPricingResult = calculateDividendPricing({code:stock.code,name:stock.name,financialSector:true,
-  method:defaultDividendPricingMethod(),asOf:'2026-10-22',priceMinor:1000,priceDate:'2026-10-22',
+  method:{...defaultDividendPricingMethod(),holdingPeriod:'over_year'},dividendBase:verifiedDividendBase(1980400,'2026-10-22'),asOf:'2026-10-22',priceMinor:1000,priceDate:'2026-10-22',
   annuals:Array.from({length:5},(_,index)=>({year:2025-index,reportDate:`${2025-index}-12-31`,noticeDate:`${2026-index}-03-20`,
     epsMicros:4000000,adjustedEpsMicros:4000000,dividendMicros:1980400,payoutBps:4951,roeBps:1200})),
   financialReview:{sector:'bank',status:'pass',asOf:'2026-06-30',metrics:[],missing:[],sourceUrl:'https://example.com/bank-review',policySourceUrls:[],basis:'dividend_screen'},
@@ -57,13 +58,13 @@ beforeEach(async () => {
 });
 after(() => db.close());
 
-test('a complete replacement uses one implemented TTM dividend and four fixed-yield levels on each side', () => {
+test('a complete replacement uses one verified recent-batch dividend and four fixed-yield levels on each side', () => {
   const plan = dividendPricingPlan(pricing)!;
   assert.ok(plan);
   assert.deepEqual(plan.buyLevels.map(level => level.priceMinor), [3600, 3444, 3300, 3046]);
   assert.equal(plan.buyLevels.reduce((sum, level) => sum + level.portionBps, 0), 10000);
   assert.deepEqual(plan.sellLevels.map(level => level.yieldBps), [480, 450, 420, 400]);
-  assert.deepEqual(plan.sellLevels.map(level => level.priceMinor), [4125, 4400, 4715, 4951]);
+  assert.deepEqual(plan.sellLevels.map(level => level.priceMinor), [4126, 4401, 4716, 4951]);
   assert.ok(plan.sellLevels.every((level, index) => level.portionBps === 2500 && Number.isSafeInteger(level.priceMinor)
     && level.priceMinor! > Math.max(...plan.buyLevels.map(row => row.priceMinor!)) && (!index || level.priceMinor! > plan.sellLevels[index - 1].priceMinor!)));
   assert.equal(dividendPricingPlan({ ...pricing, d1Micros: undefined }), null);

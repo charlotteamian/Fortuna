@@ -18,6 +18,8 @@ const ruleTopic: Record<DividendResearchRule, string> = {
   reportFreshness: 'report', fcfCoverage: 'cashflow',
 };
 const pricingTopic: Record<DividendPricingBlocker, string> = {
+  dividend_ledger_missing: 'dividend_ledger', dividend_base_unverified: 'dividend_ledger', dividend_base_incomplete: 'dividend_ledger',
+  dividend_source_conflict: 'dividend_ledger', dividend_frequency_unknown: 'dividend_ledger', dividend_crosscheck_mismatch: 'dividend_ledger',
   annual_eps_missing: 'earnings', non_positive_earnings: 'earnings', cyclical_normalisation_required: 'earnings',
   annual_payout_missing: 'payout', payout_above_100: 'payout',
   trailing_dividend_missing: 'trailing_dividend', trailing_dividend_invalid: 'trailing_dividend', trailing_dividend_stale: 'trailing_dividend',

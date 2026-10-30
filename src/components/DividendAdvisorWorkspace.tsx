@@ -1,3 +1,4 @@
+import DividendGridOrigin from './DividendGridOrigin';
 import { useEffect, useRef, useState } from 'react';
 import { liveQuery } from 'dexie';
 import { useTranslation } from 'react-i18next';
@@ -53,7 +54,8 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
       {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
       <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
       <div className="div-check-price"><DividendReviewPrice currentPriceMinor={advice.currentPriceMinor} firstBuyPriceMinor={advice.firstBuyPriceMinor} priceDate={advice.currentPriceDate}
-        triggeredBuyLevels={advice.triggeredBuyLevels} priceState={advice.decision === 'eligible' ? 'triggered' : advice.decision === 'wait_price' ? 'waiting' : 'unknown'} saved={!!savedStock} /></div>
+        triggeredBuyLevels={advice.triggeredBuyLevels} priceState={advice.decision === 'eligible' ? 'triggered' : advice.decision === 'wait_price' ? 'waiting' : 'unknown'} saved={!!savedStock} basisState={advice.basisState} /></div>
+      {savedStock && <DividendGridOrigin stock={savedStock} basis={stock.pricing?.dividendBase} asOf={dateInChina()} taxBps={stock.pricing?.taxBps} />}
       {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button><span className="div-ai-muted">{t('div_check_join_to_save')}</span></div>}
       {stock.pricing ? <DividendPricingCard key={snapshot.generatedAt} code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />
         : <p className="div-ai-stock-checked div-ai-muted">{t('div_check_grid_missing')}</p>}
@@ -71,10 +73,15 @@ function StockResearch({ stock, snapshot, savedStock, canAdd, busy, outdated, co
             {snapshot.indices.filter(index => index.code !== 'sz399006').map(index => <section key={index.code}><h4>{index.name}</h4><TechnicalPosition technical={index.technical} /></section>)}
           </section>
           {stock.financial && <section className="div-ai-evidence-section"><h4>{t('div_ai_research_financial')}</h4><p className="div-ai-muted">{stock.financial.sector}</p>
-            <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => <li key={period.reportDate}><strong>{period.reportDate}</strong>
-              <p>{t('div_ai_financial_period', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`, roe: period.roeBps === undefined ? '—' : `${period.roeBps / 100}%` })}</p>
+            <ul className="div-ai-periods">{stock.financial.periods.slice(0, 4).map(period => {
+              const annual = period.reportDate.endsWith('-12-31');
+              const roe = period.annualizedRoeBps ?? (annual ? period.roeBps : undefined);
+              return <li key={period.reportDate}><strong>{period.reportDate}</strong>
+              <p>{t('div_ai_financial_period_v5', { revenue: period.revenueGrowthBps === undefined ? '—' : `${period.revenueGrowthBps / 100}%`, profit: period.profitGrowthBps === undefined ? '—' : `${period.profitGrowthBps / 100}%`,
+                roe: roe === undefined ? '—' : `${roe / 100}%`, roeLabel: t(annual ? 'div_ai_financial_roe_annual' : period.roeBasis === 'annualised_ytd' && roe !== undefined ? 'div_ai_financial_roe_annualised' : 'div_ai_financial_roe_unverified') })}</p>
+              {!annual && period.roeBasis === 'annualised_ytd' && period.roePeriodMonths && period.roeBps !== undefined && roe !== undefined && <p>{t('div_ai_financial_roe_annualised_help', { months: period.roePeriodMonths, reported: `${period.roeBps / 100}%`, annualised: `${roe / 100}%` })}</p>}
               {period.noticeDate && <small>{t('div_ai_financial_published', { date: period.noticeDate })}</small>}
-            </li>)}</ul></section>}
+            </li>; })}</ul></section>}
           <section className="div-ai-evidence-section"><h4>{t('div_ai_research_sources')}</h4><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
             <a href={source.url} target="_blank" rel="noopener noreferrer">{source.provider} · {t(`div_ai_source_${source.kind}`)}</a><small>{source.asOf ?? new Date(source.fetchedAt).toLocaleDateString()}</small>
           </li>)}</ul>{stock.issues.length > 0 && <ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>

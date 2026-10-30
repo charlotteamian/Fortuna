@@ -1,3 +1,5 @@
+import { loadSavedDividendLedger } from './dividendLedgerEvidenceService.ts';
+import { dividendLedgerBase } from '../lib/dividendLedger.ts';
 import { db, initializeSettings, updateSettings } from '../db.ts';
 import { BUY_LEVELS, SELL_LEVELS, buildGrid, dateInChina, mainlandCode, type DividendStock } from '../lib/dividendWorkbench.ts';
 import { isDividendPlanProposal, type DividendPlanProposal } from '../lib/dividendAdvisorActions.ts';
@@ -5,7 +7,7 @@ import { computeHoldingPosition } from '../lib/holdingPosition.ts';
 import { defaultDividendSelectionPrinciples, isDividendSelectionPrinciples, type DividendSelectionPrinciples } from '../lib/dividendResearch.ts';
 import { requestPortableSnapshot } from './portableSnapshotEvents.ts';
 import { defaultDividendPricingMethod, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult } from '../lib/dividendPricing.ts';
-import { dividendPricingPlan } from '../lib/dividendPricingPlan.ts';
+import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan.ts';
 import { dividendResearchSnapshotForStock, loadDividendResearchCache } from './dividendResearchCacheService.ts';
 
 export interface DividendPriceProposalContext {
@@ -24,7 +26,7 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
     && JSON.stringify(proposal.sellLevels) === JSON.stringify(candidate.sellLevels);
   if (!context || !Number.isSafeInteger(context.generatedAt) || context.generatedAt <= 0 || context.generatedAt > Date.now()
     || !context.method || !isDividendPricingMethod(context.method)
-    || JSON.stringify(context.method) !== JSON.stringify(currentMethod) || pricing?.trailingDividend?.asOf !== dateInChina()
+    || JSON.stringify(context.method) !== JSON.stringify(currentMethod) || pricing?.dividendBase?.asOf !== dateInChina()
     || pricing.taxBps !== (currentMethod.holdingPeriod === 'over_year' ? 0 : currentMethod.holdingPeriod === 'month_to_year' ? 1000 : 2000)
     || !sameSides(plan)) throw new Error('DIVIDEND_REVIEW_CHANGED');
   // A later check may replace the same day's cash evidence. An older answer
@@ -34,16 +36,33 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
     const latest = dividendResearchSnapshotForStock(cache, proposal.code);
     if (latest.stocks.length && latest.generatedAt > context.generatedAt
       && (!sameSides(latest.stocks[0].pricing ? dividendPricingPlan(latest.stocks[0].pricing) : null)
-        || latest.stocks[0].pricing?.trailingDividend?.dpsMicros !== pricing.trailingDividend.dpsMicros
-        || latest.stocks[0].pricing?.trailingDividend?.asOf !== pricing.trailingDividend.asOf
+        || latest.stocks[0].pricing?.dividendBase?.dpsMicros !== pricing.dividendBase?.dpsMicros
+        || latest.stocks[0].pricing?.dividendBase?.asOf !== pricing.dividendBase?.asOf
+        || JSON.stringify(latest.stocks[0].pricing?.dividendBase?.selectedBatchIds) !== JSON.stringify(pricing.dividendBase?.selectedBatchIds)
         || JSON.stringify(latest.pricingMethod) !== JSON.stringify(context.method))) throw new Error('DIVIDEND_REVIEW_CHANGED');
   }
+  // A fresh daily-advice request can update the ledger without replacing the
+  // research-card cache. Confirm against this independent latest evidence too.
+  const ledger = await loadSavedDividendLedger(proposal.code);
+  if (!ledger && pricing?.ledger) throw new Error('DIVIDEND_REVIEW_CHANGED');
+  if (ledger) {
+    if (ledger.asOf !== dateInChina()) throw new Error('DIVIDEND_REVIEW_CHANGED');
+    const annual = pricing!.annuals[0];
+    const latestBase = dividendLedgerBase(ledger, ledger.asOf, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps });
+    if (!latestBase.verified || latestBase.dpsMicros !== pricing!.dividendBase?.dpsMicros
+      || latestBase.latestExDate !== pricing!.dividendBase?.latestExDate
+      || JSON.stringify(latestBase.selectedBatchIds) !== JSON.stringify(pricing!.dividendBase?.selectedBatchIds)) throw new Error('DIVIDEND_REVIEW_CHANGED');
+  }
+  const origin = dividendPricingProvenance(pricing!, context.generatedAt);
+  if (JSON.stringify(proposal.gridProvenance) !== JSON.stringify(origin)) throw new Error('DIVIDEND_REVIEW_CHANGED');
 }
 
 export async function loadDividendPricingMethod(): Promise<DividendPricingMethod> {
   await initializeSettings();
   const settings = await db.settings.get('main');
-  return settings?.dividendPricingMethod ?? defaultDividendPricingMethod();
+  const method = settings?.dividendPricingMethod;
+  return !method ? defaultDividendPricingMethod() : method.strategy === 'recent_batches' ? method
+    : { ...method, strategy: 'recent_batches', holdingPeriod: 'month_to_year' };
 }
 
 export async function saveDividendPricingMethod(method: DividendPricingMethod) {
@@ -70,7 +89,7 @@ function planState(stock: DividendStock) {
 function fingerprint(stock: DividendStock, proposal: DividendPlanProposal, pricingMethod?: DividendPricingMethod) {
   // Bind confirmation to the full draft and every saved input affecting grid targets.
   return JSON.stringify({ code: stock.code, ...planState(stock), weightBps: stock.weightBps, manualDpsMicros: stock.manualDpsMicros,
-    shareMode: stock.shareMode, manualShares: stock.manualShares, lotSize: stock.lotSize, dividend: stock.dividend, proposal,
+    shareMode: stock.shareMode, manualShares: stock.manualShares, lotSize: stock.lotSize, dividend: stock.dividend, gridProvenance: stock.gridProvenance, proposal,
     ...(proposal.buyLevels || proposal.sellLevels ? { pricingMethod, pricingDate: dateInChina() } : {}) });
 }
 export async function previewDividendPlanChange(proposal: DividendPlanProposal) {
@@ -112,6 +131,7 @@ export async function applyDividendPlanChange(proposal: DividendPlanProposal, ex
       ...(proposal.buyPaused === undefined ? {} : { buyPaused: proposal.buyPaused }),
       ...(proposal.buyLevels ? { buyLevels: proposal.buyLevels.map(level => ({ yieldBps: level.yieldBps, portionBps: level.portionBps, ...(level.priceMinor === undefined ? {} : { priceMinor: level.priceMinor }) })) } : {}),
       ...(proposal.sellLevels ? { sellLevels: proposal.sellLevels.map(level => ({ yieldBps: level.yieldBps, portionBps: level.portionBps, ...(level.priceMinor === undefined ? {} : { priceMinor: level.priceMinor }) })) } : {}),
+      ...(proposal.buyLevels || proposal.sellLevels ? { gridProvenance: proposal.gridProvenance ? structuredClone(proposal.gridProvenance) : undefined } : {}),
     });
   });
   requestPortableSnapshot('dividend-ai-grid-confirmed');

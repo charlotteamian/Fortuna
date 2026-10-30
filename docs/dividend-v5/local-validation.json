@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-10-30T00:51:49.375097+00:00",
+  "version": "5.0.0",
+  "androidVersionCode": 37,
+  "iosBuildNumber": 37,
+  "tests": {
+    "passed": 538,
+    "failed": 0
+  },
+  "lint": true,
+  "build": true,
+  "androidSync": true,
+  "iosSync": true,
+  "iosResourceVerification": true,
+  "diffCheck": true,
+  "browser": {
+    "passed": 43,
+    "pageErrors": 0,
+    "widths": [
+      320,
+      390
+    ],
+    "fontScales": [
+      1,
+      1.3
+    ],
+    "realAI": false,
+    "realQuotes": false
+  },
+  "officialEvidence": {
+    "realCNinfoAndPdf": true,
+    "eastmoneyInput": "archived fixture",
+    "pingAnGrossDpsMicros": 609000,
+    "latestTwoPdfDigestsMatchFixtures": true
+  },
+  "device": {
+    "adbDevices": [],
+    "emulatorTested": false,
+    "physicalDeviceTested": false
+  }
+}

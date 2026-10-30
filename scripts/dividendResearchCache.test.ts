@@ -22,12 +22,14 @@ const save = (value: DividendResearchSnapshot) => saveDividendResearchCache({ sn
 
 test('an upgrade retires persisted pricing arithmetic without deleting evidence or changing the saved stock context', async () => {
   const pricing=calculateDividendPricing({code:'600036',name:'招商银行',financialSector:true,method:defaultDividendPricingMethod(),asOf:'2026-10-23',
-    trailingDividend:{dpsMicros:500000,asOf:'2026-10-23',windowStart:'2025-10-23',capitalActionsVerified:true,cashDistributionsComplete:true,sourceUrls:['https://example.com/dividend']},
+    dividendBase:{dpsMicros:500000,asOf:'2026-10-23',frequency:'annual',requiredBatches:1,selectedBatchIds:['600036:2025-12-31:2026-06-25'],latestExDate:'2026-06-25',
+      verified:true,flags:[],sourceUrls:['https://static.cninfo.com.cn/synthetic-implemented-batch.pdf'],reportPeriods:['2025-12-31']},
     annuals:Array.from({length:5},(_,i)=>({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
       adjustedEpsMicros:1000000,dividendMicros:500000,payoutBps:5000})),
     treasury:{yieldBps:200,asOf:'2026-10-23',fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'}});
   assert.ok(dividendPricingPlan(pricing));
-  const historical={...pricing,calculationVersion:undefined};
+  const historical={...pricing,calculationVersion:4,pricingBasis:'classic_ttm' as const,dividendBase:undefined,
+    trailingDividend:{dpsMicros:500000,asOf:'2026-10-23',windowStart:'2025-10-23',capitalActionsVerified:true,cashDistributionsComplete:true,sourceUrls:['https://example.com/dividend']}};
   const old=snapshot(1000,[{...stock('600036'),pricing:historical}]);
   await stored.table('results').put({id:'latest',snapshot:old,scope:'plan',candidateInput:'',collapsedCodes:['600036']});
   const restored=(await loadDividendResearchCache())!, retired=restored.snapshot.stocks[0].pricing!;

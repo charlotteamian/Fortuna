@@ -1,0 +1,610 @@
+{
+  "ledger": {
+    "code": "000001",
+    "asOf": "2026-10-30",
+    "events": [
+      {
+        "id": "000001:2026-06-30:2026-09-24:interim",
+        "batchId": "000001:2026-06-30:2026-09-24:interim",
+        "code": "000001",
+        "reportDate": "2026-06-30",
+        "period": "interim",
+        "announcementDate": "2026-09-17",
+        "recordDate": "2026-09-23",
+        "exDate": "2026-09-24",
+        "cashPer10Micros": 2490000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2026-09-17"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-09-17/1225568476.PDF",
+            "announcementDate": "2026-09-17",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 249000
+      },
+      {
+        "id": "000001:2025-12-31:2026-06-12:annual",
+        "batchId": "000001:2025-12-31:2026-06-12:annual",
+        "code": "000001",
+        "reportDate": "2025-12-31",
+        "period": "annual",
+        "announcementDate": "2026-06-05",
+        "recordDate": "2026-06-11",
+        "exDate": "2026-06-12",
+        "cashPer10Micros": 3600000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2026-06-05"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF",
+            "announcementDate": "2026-06-05",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 360000
+      },
+      {
+        "id": "000001:2025-06-30:2025-10-15:interim",
+        "batchId": "000001:2025-06-30:2025-10-15:interim",
+        "code": "000001",
+        "reportDate": "2025-06-30",
+        "period": "interim",
+        "announcementDate": "2025-09-30",
+        "recordDate": "2025-10-14",
+        "exDate": "2025-10-15",
+        "cashPer10Micros": 2360000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2025-09-30"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2025-09-30/1224693497.PDF",
+            "announcementDate": "2025-09-30",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 236000
+      },
+      {
+        "id": "000001:2024-12-31:2025-06-12:annual",
+        "batchId": "000001:2024-12-31:2025-06-12:annual",
+        "code": "000001",
+        "reportDate": "2024-12-31",
+        "period": "annual",
+        "announcementDate": "2025-06-05",
+        "recordDate": "2025-06-11",
+        "exDate": "2025-06-12",
+        "cashPer10Micros": 3620000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2025-06-05"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2025-06-05/1223765073.PDF",
+            "announcementDate": "2025-06-05",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 362000
+      },
+      {
+        "id": "000001:2024-06-30:2024-10-10:interim",
+        "batchId": "000001:2024-06-30:2024-10-10:interim",
+        "code": "000001",
+        "reportDate": "2024-06-30",
+        "period": "interim",
+        "announcementDate": "2024-09-26",
+        "recordDate": "2024-10-09",
+        "exDate": "2024-10-10",
+        "cashPer10Micros": 2460000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2024-09-26"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2024-09-26/1221290895.PDF",
+            "announcementDate": "2024-09-26",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 246000
+      },
+      {
+        "id": "000001:2023-12-31:2024-06-14:annual",
+        "batchId": "000001:2023-12-31:2024-06-14:annual",
+        "code": "000001",
+        "reportDate": "2023-12-31",
+        "period": "annual",
+        "announcementDate": "2024-06-06",
+        "recordDate": "2024-06-13",
+        "exDate": "2024-06-14",
+        "cashPer10Micros": 7190000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2024-06-06"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2024-06-06/1220273257.PDF",
+            "announcementDate": "2024-06-06",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 719000
+      },
+      {
+        "id": "000001:2022-12-31:2023-06-14:annual",
+        "batchId": "000001:2022-12-31:2023-06-14:annual",
+        "code": "000001",
+        "reportDate": "2022-12-31",
+        "period": "annual",
+        "announcementDate": "2023-06-07",
+        "recordDate": "2023-06-13",
+        "exDate": "2023-06-14",
+        "cashPer10Micros": 2850000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2023-06-07"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2023-06-07/1217003232.PDF",
+            "announcementDate": "2023-06-07",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 285000
+      },
+      {
+        "id": "000001:2021-12-31:2022-07-22:annual",
+        "batchId": "000001:2021-12-31:2022-07-22:annual",
+        "code": "000001",
+        "reportDate": "2021-12-31",
+        "period": "annual",
+        "announcementDate": "2022-07-15",
+        "recordDate": "2022-07-21",
+        "exDate": "2022-07-22",
+        "cashPer10Micros": 2280000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2022-07-15"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2022-07-15/1214044313.PDF",
+            "announcementDate": "2022-07-15",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 228000
+      },
+      {
+        "id": "000001:2020-12-31:2021-05-14:annual",
+        "batchId": "000001:2020-12-31:2021-05-14:annual",
+        "code": "000001",
+        "reportDate": "2020-12-31",
+        "period": "annual",
+        "announcementDate": "2021-05-07",
+        "recordDate": "2021-05-13",
+        "exDate": "2021-05-14",
+        "cashPer10Micros": 1800000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2021-05-07"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2021-05-07/1209935489.PDF",
+            "announcementDate": "2021-05-07",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 180000
+      },
+      {
+        "id": "000001:2019-12-31:2020-05-28:annual",
+        "batchId": "000001:2019-12-31:2020-05-28:annual",
+        "code": "000001",
+        "reportDate": "2019-12-31",
+        "period": "annual",
+        "announcementDate": "2020-05-22",
+        "recordDate": "2020-05-27",
+        "exDate": "2020-05-28",
+        "cashPer10Micros": 2180000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2020-05-22"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2020-05-22/1207843688.PDF",
+            "announcementDate": "2020-05-22",
+            "verifiedAt": "2026-10-30"
+          }
+        ],
+        "issues": [],
+        "normalizedDpsMicros": 218000
+      },
+      {
+        "id": "000001:2018-12-31:2019-06-26:annual",
+        "batchId": "000001:2018-12-31:2019-06-26:annual",
+        "code": "000001",
+        "reportDate": "2018-12-31",
+        "period": "annual",
+        "announcementDate": "2019-06-20",
+        "exDate": "2019-06-26",
+        "cashPer10Micros": 1450000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "unverified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2019-06-20"
+          }
+        ],
+        "issues": [
+          "EVENT_FIELDS_INCOMPLETE"
+        ]
+      },
+      {
+        "id": "000001:2017-12-31:2018-07-12:annual",
+        "batchId": "000001:2017-12-31:2018-07-12:annual",
+        "code": "000001",
+        "reportDate": "2017-12-31",
+        "period": "annual",
+        "announcementDate": "2018-07-06",
+        "exDate": "2018-07-12",
+        "cashPer10Micros": 1360000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "unverified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2018-07-06"
+          }
+        ],
+        "issues": [
+          "EVENT_FIELDS_INCOMPLETE"
+        ]
+      },
+      {
+        "id": "000001:2016-12-31:2017-07-21:annual",
+        "batchId": "000001:2016-12-31:2017-07-21:annual",
+        "code": "000001",
+        "reportDate": "2016-12-31",
+        "period": "annual",
+        "announcementDate": "2017-07-17",
+        "exDate": "2017-07-21",
+        "cashPer10Micros": 1580000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "shareFactor": 1,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "unverified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2017-07-17"
+          }
+        ],
+        "issues": [
+          "EVENT_FIELDS_INCOMPLETE"
+        ]
+      },
+      {
+        "id": "000001:2015-12-31:2016-06-16:annual",
+        "batchId": "000001:2015-12-31:2016-06-16:annual",
+        "code": "000001",
+        "reportDate": "2015-12-31",
+        "period": "annual",
+        "announcementDate": "2016-06-08",
+        "exDate": "2016-06-16",
+        "cashPer10Micros": 1530000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 2000,
+        "shareFactor": 1.2,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "unverified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2016-06-08"
+          }
+        ],
+        "issues": [
+          "EVENT_FIELDS_INCOMPLETE"
+        ]
+      },
+      {
+        "id": "000001:2014-12-31:2015-04-13:annual",
+        "batchId": "000001:2014-12-31:2015-04-13:annual",
+        "code": "000001",
+        "reportDate": "2014-12-31",
+        "period": "annual",
+        "announcementDate": "2015-04-07",
+        "exDate": "2015-04-13",
+        "cashPer10Micros": 1740000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 2000,
+        "shareFactor": 1.2,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "unverified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2015-04-07"
+          }
+        ],
+        "issues": [
+          "EVENT_FIELDS_INCOMPLETE"
+        ]
+      },
+      {
+        "id": "000001:2013-12-31:2014-06-12:annual",
+        "batchId": "000001:2013-12-31:2014-06-12:annual",
+        "code": "000001",
+        "reportDate": "2013-12-31",
+        "period": "annual",
+        "announcementDate": "2014-06-06",
+        "exDate": "2014-06-12",
+        "cashPer10Micros": 1600000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 2000,
+        "shareFactor": 1.2,
+        "implemented": true,
+        "proposal": false,
+        "stage": "implemented",
+        "verification": "unverified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2014-06-06"
+          }
+        ],
+        "issues": [
+          "EVENT_FIELDS_INCOMPLETE"
+        ]
+      }
+    ],
+    "complete": true,
+    "issues": [
+      "ANNOUNCEMENT_FIELDS_UNVERIFIED"
+    ],
+    "sourceUrls": [
+      "https://data.eastmoney.com/yjfp/detail/000001.html",
+      "https://static.cninfo.com.cn/finalpage/2026-09-17/1225568476.PDF",
+      "https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF",
+      "https://static.cninfo.com.cn/finalpage/2025-09-30/1224693497.PDF",
+      "https://static.cninfo.com.cn/finalpage/2025-06-05/1223765073.PDF",
+      "https://static.cninfo.com.cn/finalpage/2024-09-26/1221290895.PDF",
+      "https://static.cninfo.com.cn/finalpage/2024-06-06/1220273257.PDF",
+      "https://static.cninfo.com.cn/finalpage/2023-06-07/1217003232.PDF",
+      "https://static.cninfo.com.cn/finalpage/2022-07-15/1214044313.PDF",
+      "https://static.cninfo.com.cn/finalpage/2021-05-07/1209935489.PDF",
+      "https://static.cninfo.com.cn/finalpage/2020-05-22/1207843688.PDF"
+    ]
+  },
+  "base": {
+    "dpsMicros": 609000,
+    "asOf": "2026-10-30",
+    "frequency": "semiannual",
+    "requiredBatches": 2,
+    "selectedBatchIds": [
+      "000001:2026-06-30:2026-09-24:interim",
+      "000001:2025-12-31:2026-06-12:annual"
+    ],
+    "latestExDate": "2026-09-24",
+    "verified": true,
+    "flags": [
+      "CROSSCHECK_MISSING"
+    ],
+    "sourceUrls": [
+      "https://data.eastmoney.com/yjfp/detail/000001.html",
+      "https://static.cninfo.com.cn/finalpage/2026-09-17/1225568476.PDF",
+      "https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF"
+    ],
+    "reportPeriods": [
+      "2026-06-30",
+      "2025-12-31"
+    ]
+  },
+  "firstPassIssues": [
+    "ANNOUNCEMENT_VERIFICATION_PARTIAL",
+    "ANNOUNCEMENT_FIELDS_UNVERIFIED"
+  ],
+  "verifiedDocuments": [
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2020-05-22/1207843688.PDF",
+      "sha256": "2356763604f1132d70d0185b666d6f1469ce1870e761195b8afbe2d8a9884bb4",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2021-05-07/1209935489.PDF",
+      "sha256": "b7efd21738331f5346dc10db92d7d637408dd268377be9d3218ca370fa79b9a1",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2022-07-15/1214044313.PDF",
+      "sha256": "3a5cbed3dfc822d6bee0f2b57dbc0da9662dce0670b92d0f6edad095d6c6de57",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2023-06-07/1217003232.PDF",
+      "sha256": "e6b7902470024ccb095fe6748fd63bdbc357bf2ae2e391462d056ff9a46b1f3a",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2024-06-06/1220273257.PDF",
+      "sha256": "0d76cfd6706c8e6faa674ca37e3544605d72a41ee41a8c1fc0ea884158377cb0",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2024-09-26/1221290895.PDF",
+      "sha256": "5686c6d7233f3f94e9be9dfd26bde79b7babe5a7205650599a4a6fc48d9fad91",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2025-06-05/1223765073.PDF",
+      "sha256": "8bf97bef99283c2095f82cb20f55487c7bd1830de471d6f5446ecd2cc6b4bc29",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2025-09-30/1224693497.PDF",
+      "sha256": "97e7ef8fcfa0be1acf203c0409242cff48fbe0d8b58dbbb9c4adfe0ae15a82de",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF",
+      "sha256": "8e9d5facebfd8c46e049f0e6b0839e2be31ef292a5e3db903591fc08be9af5b8",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    },
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2026-09-17/1225568476.PDF",
+      "sha256": "cf4f9d00ef78fcdc70d69a124709973e78913fc477d87094afb8c0cac3b33457",
+      "checkedAt": "2026-10-30",
+      "verifiedAt": "2026-10-30"
+    }
+  ],
+  "immutableVerifiedDocuments": true,
+  "errors": [],
+  "environment": "Isolated browser, real CNinfo announcement/PDF requests, archived Eastmoney fixture"
+}

@@ -1,3 +1,4 @@
+import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +11,8 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-21', fetchedAt: 1,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2, state: 'rising', pacing: 'observe' };
 const market: DividendIndexResearch[] = [{ code: 'sh000300', name: 'CSI 300', technical, sources: [], issues: [] }];
-const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis: 'classic_ttm', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
+const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis: 'recent_batches', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
+  dividendBase: verifiedDividendBase(660000, '2026-10-21'),
   trailingDividend: { dpsMicros:660000, asOf:'2026-10-21', windowStart:'2025-10-21', capitalActionsVerified:true, cashDistributionsComplete:true,
     quoteComparisonSafeFrom:'2026-10-21', sourceUrls:['https://example.com/implemented-cash'] },
   d1Micros:660000, theoreticalPriceMinor:1320, normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0,
@@ -97,4 +99,23 @@ test('newer valid quote wins without reviving stale, future or failed quote obse
     const unavailable = dividendResearchAdvice({ ...stock, pricing: { ...pricing, priceDate } }, market);
     assert.equal(unavailable.quoteUsable, false); assert.equal(unavailable.decision, 'evidence');
   }
+});
+
+
+test('a configured candidate without an explicit old grid cannot reuse a pre-ex-date saved quote against the new share basis', () => {
+  const saved: DividendStock = { code: stock.code, name: stock.name, group: 'watch', weightBps: 0, shareMode: 'manual', manualShares: 0, lotSize: 100,
+    quote: { priceMinor: 1000, date: '2026-10-20 15:00', fetchedAt: 1 } };
+  const afterEx: DividendStockResearch = { ...stock, pricing: { ...pricing, dividendBase: { ...pricing.dividendBase!, latestExDate: '2026-10-21' },
+    currentPriceMinor: 1000, priceDate: '2026-10-20', pauseReasons: ['quote_missing'] } };
+  const oldQuote = dividendResearchAdvice(afterEx, market, undefined, saved);
+  assert.equal(oldQuote.decision, 'evidence'); assert.equal(oldQuote.quoteUsable, false); assert.deepEqual(oldQuote.triggeredBuyLevels, []);
+  const currentQuote = dividendResearchAdvice(afterEx, market, undefined, { ...saved, quote: { ...saved.quote!, date: '2026-10-21 10:00' } });
+  assert.equal(currentQuote.decision, 'eligible'); assert.equal(currentQuote.quoteUsable, true); assert.ok(currentQuote.triggeredBuyLevels.length > 0);
+  const explicitOldGrid = dividendResearchAdvice(afterEx, market, undefined, { ...saved, buyLevels: [{ yieldBps: 500, portionBps: 10000, priceMinor: 1200 }] });
+  assert.equal(explicitOldGrid.decision, 'eligible'); assert.equal(explicitOldGrid.basisState, 'saved_unverified');
+});
+
+test('candidate quote-basis validation does not rely on a producer attaching a quote_missing warning', () => {
+  const result = dividendResearchAdvice({ ...stock, pricing: { ...pricing, dividendBase: { ...pricing.dividendBase!, latestExDate: '2026-10-21' }, priceDate: '2026-10-20', pauseReasons: [] } }, market);
+  assert.equal(result.quoteUsable, false); assert.equal(result.decision, 'evidence'); assert.deepEqual(result.triggeredBuyLevels, []);
 });

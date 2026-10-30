@@ -8,12 +8,16 @@ import { dividendGridEn, dividendGridZh } from './i18n/dividendGridTranslations'
 import { dividendReviewEn, dividendReviewZh } from './i18n/dividendReviewTranslations';
 import { dividendSimplifiedEn, dividendSimplifiedZh } from './i18n/dividendSimplifiedTranslations';
 
+import { dividendFinancialV5En, dividendFinancialV5Zh } from './i18n/dividendFinancialV5Translations';
+import { dividendLedgerV5En, dividendLedgerV5Zh } from './i18n/dividendLedgerV5Translations';
+import { dividendBatchEn, dividendBatchZh } from './i18n/dividendBatchTranslations';
+
 i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: { ...en, ...dividendAiWorkspaceEn, ...dividendHomeEn, ...dividendGridEn, ...dividendReviewEn, ...dividendSimplifiedEn } },
-      zh: { translation: { ...zh, ...dividendAiWorkspaceZh, ...dividendHomeZh, ...dividendGridZh, ...dividendReviewZh, ...dividendSimplifiedZh } }
+      en: { translation: { ...en, ...dividendAiWorkspaceEn, ...dividendHomeEn, ...dividendGridEn, ...dividendReviewEn, ...dividendSimplifiedEn, ...dividendFinancialV5En, ...dividendLedgerV5En, ...dividendBatchEn } },
+      zh: { translation: { ...zh, ...dividendAiWorkspaceZh, ...dividendHomeZh, ...dividendGridZh, ...dividendReviewZh, ...dividendSimplifiedZh, ...dividendFinancialV5Zh, ...dividendLedgerV5Zh, ...dividendBatchZh } }
     },
     lng: 'zh', // Will be overridden by settings
     fallbackLng: 'en',

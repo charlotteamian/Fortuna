@@ -9,7 +9,8 @@ import type { DividendStock, GridLevel } from '../src/lib/dividendWorkbench.ts';
 import type { DividendPlanProposal } from '../src/lib/dividendAdvisorActions.ts';
 import type { DividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
 import { calculateDividendPricing, defaultDividendPricingMethod, type DividendPricingMethod } from '../src/lib/dividendPricing.ts';
-import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
+import { dividendPricingPlan, dividendPricingProvenance } from '../src/lib/dividendPricingPlan.ts';
+import type { DividendLedgerBase } from '../src/lib/dividendLedger.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -41,6 +42,11 @@ function proposal(updates: Partial<DividendPlanProposal> = {}): DividendPlanProp
   return { id: 'review-1', code: '601398', reason: 'Observe the downtrend and lower the planned price levels.',
     buyLevels: [{ yieldBps: 650, portionBps: 3000, priceMinor: 450 }, { yieldBps: 750, portionBps: 4000, priceMinor: 400 }],
     ...updates };
+}
+function verifiedDividendBase(dpsMicros = 609000, asOf = '2026-10-25'): DividendLedgerBase {
+  return { dpsMicros, asOf, frequency: 'semiannual', requiredBatches: 2,
+    selectedBatchIds: ['601398:2025-12-31:2026-05-25', '601398:2025-06-30:2025-10-24'], latestExDate: '2026-05-25',
+    verified: true, flags: [], sourceUrls: ['https://static.cninfo.com.cn/synthetic-implemented-batches.pdf'], reportPeriods: ['2025-12-31', '2025-06-30'] };
 }
 function account(id: string, updates: Partial<Account> = {}): Account {
   return { id, name: id, category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, cashBalance: 12345,
@@ -255,7 +261,7 @@ test('numerical confirmation rejects a changed pricing method or a new calendar 
   try {
     const draft = proposal();
     const preview = await previewDividendPlanChange(draft);
-    await saveDividendPricingMethod({ ...defaultDividendPricingMethod(), holdingPeriod:'month_to_year' });
+    await saveDividendPricingMethod({ ...defaultDividendPricingMethod(), holdingPeriod:'over_year' });
     const changed = await state();
     await assert.rejects(applyDividendPlanChange(draft, preview.fingerprint), /DIVIDEND_PLAN_CHANGED/);
     assert.deepEqual(await state(), changed);
@@ -270,9 +276,9 @@ test('current numerical UI drafts require exact paired prices, today cash eviden
   context.mock.timers.enable({ apis:['Date'], now:new Date('2026-10-25T08:00:00Z') });
   const method = defaultDividendPricingMethod();
   const pricing = calculateDividendPricing({ code:'601398', name:'工商银行', financialSector:true, method, annuals:[], asOf:'2026-10-25',
-    trailingDividend:{ dpsMicros:609000, asOf:'2026-10-25', windowStart:'2025-10-25', capitalActionsVerified:true, cashDistributionsComplete:true, sourceUrls:['https://example.com/cash'] } });
-  const draft = proposal(dividendPricingPlan(pricing)!);
+    dividendBase: verifiedDividendBase() });
   const evidence = { pricing, method, generatedAt:Date.now() };
+  const draft = proposal({ ...dividendPricingPlan(pricing)!, gridProvenance: dividendPricingProvenance(pricing, evidence.generatedAt) });
   try {
     await saveDividendPricingMethod(method);
     const before = await state();
@@ -281,21 +287,23 @@ test('current numerical UI drafts require exact paired prices, today cash eviden
     await assert.rejects(validateDividendPricingProposal({ ...draft, sellLevels:undefined }, evidence), /DIVIDEND_REVIEW_CHANGED/);
     await assert.rejects(validateDividendPricingProposal(proposal(), evidence), /DIVIDEND_REVIEW_CHANGED/);
     await assert.rejects(validateDividendPricingProposal(draft, { ...evidence, method:undefined }), /DIVIDEND_REVIEW_CHANGED/);
-    await assert.rejects(validateDividendPricingProposal(draft, { ...evidence, pricing:{ ...pricing, trailingDividend:{ ...pricing.trailingDividend!, asOf:'2026-10-24' } } }), /DIVIDEND_REVIEW_CHANGED/);
+    await assert.rejects(validateDividendPricingProposal(draft, { ...evidence, pricing:{ ...pricing, dividendBase:{ ...pricing.dividendBase!, asOf:'2026-10-24' } } }), /DIVIDEND_REVIEW_CHANGED/);
+    await assert.rejects(validateDividendPricingProposal({ ...draft, gridProvenance: undefined }, evidence), /DIVIDEND_REVIEW_CHANGED/);
     assert.deepEqual(await state(), before, 'validation cannot mutate a saved plan or holding');
-    await saveDividendPricingMethod({ ...method, holdingPeriod:'month_to_year' });
+    await saveDividendPricingMethod({ ...method, holdingPeriod:'over_year' });
     await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
     await saveDividendPricingMethod(method);
     await validateDividendPricingProposal(draft, evidence);
     context.mock.timers.tick(1000);
     const newerPricing = calculateDividendPricing({ code:'601398', name:'工商银行', financialSector:true, method, annuals:[], asOf:'2026-10-25',
-      trailingDividend:{ ...pricing.trailingDividend!, dpsMicros:500000 } });
+      dividendBase: verifiedDividendBase(500000) });
     await saveDividendResearchCache({ scope:'plan', candidateInput:'', snapshot:{ generatedAt:Date.now(), principles:defaultDividendSelectionPrinciples(), pricingMethod:method,
       indices:[], stocks:[{ code:'601398', name:'工商银行', pricing:newerPricing, checks:[], status:'unknown', sources:[], issues:[] }] } });
     await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/, 'a later same-day cash check retires the older answer');
-    await validateDividendPricingProposal(proposal(dividendPricingPlan(newerPricing)!), { pricing:newerPricing, method, generatedAt:Date.now() });
+    const newerDraft = proposal({ ...dividendPricingPlan(newerPricing)!, gridProvenance: dividendPricingProvenance(newerPricing, Date.now()) });
+    await validateDividendPricingProposal(newerDraft, { pricing:newerPricing, method, generatedAt:Date.now() });
     context.mock.timers.tick(86400000);
-    await assert.rejects(validateDividendPricingProposal(proposal(dividendPricingPlan(newerPricing)!), { pricing:newerPricing, method, generatedAt:Date.now() }), /DIVIDEND_REVIEW_CHANGED/);
+    await assert.rejects(validateDividendPricingProposal(newerDraft, { pricing:newerPricing, method, generatedAt:Date.now() }), /DIVIDEND_REVIEW_CHANGED/);
   } finally { context.mock.timers.reset(); }
 });
 

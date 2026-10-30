@@ -1,4 +1,5 @@
 import { isDividendStock, mainlandCode, type DividendStock, type GridLevel } from './dividendWorkbench.ts';
+import { isDividendGridProvenance, type DividendGridProvenance } from './dividendGridProvenance.ts';
 
 export interface DividendPlanProposal {
   id: string;
@@ -7,6 +8,7 @@ export interface DividendPlanProposal {
   buyLevels?: GridLevel[];
   sellLevels?: GridLevel[];
   buyPaused?: boolean;
+  gridProvenance?: DividendGridProvenance;
 }
 
 /** Model output is a draft. Only these grid fields may cross into a confirmed write. */
@@ -16,6 +18,7 @@ export function isDividendPlanProposal(value: unknown): value is DividendPlanPro
   if (typeof p.id !== 'string' || !p.id.trim() || p.id.length > 100 || typeof p.code !== 'string' || mainlandCode(p.code) !== p.code
     || typeof p.reason !== 'string' || !p.reason.trim() || p.reason.length > 2000
     || (p.buyPaused !== undefined && typeof p.buyPaused !== 'boolean') || (!p.buyLevels && !p.sellLevels && p.buyPaused === undefined)) return false;
+  if (p.gridProvenance !== undefined && (!isDividendGridProvenance(p.gridProvenance) || !p.buyLevels || !p.sellLevels)) return false;
   const stock: DividendStock = { code: p.code, name: 'Draft', group: 'watch', weightBps: 0, shareMode: 'linked', manualShares: 0, lotSize: 100,
     buyLevels: p.buyLevels, sellLevels: p.sellLevels };
   for (const levels of [p.buyLevels, p.sellLevels]) {

@@ -1,7 +1,7 @@
 import { parseTencentDividendTrend } from './dividendTrend.ts';
 import { dateInChina, mainlandCode, trailingYearStart } from './dividendWorkbench.ts';
 import { dividendPricingReadable, type DividendPricingResult, type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from './dividendPricing.ts';
-import { reviewDividendFinancialSector, type DividendFinancialSectorReview } from './dividendFinancialSector.ts';
+import { reviewDividendFinancialSector, type DividendBankReportEvidence, type DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
 export type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 
@@ -68,6 +68,10 @@ export interface DividendFinancialPeriod {
   revenueGrowthBps?: number;
   profitGrowthBps?: number;
   roeBps?: number;
+  /** Original cumulative ROE stays above; only this explicitly labelled value is annualised. */
+  annualizedRoeBps?: number;
+  roeBasis?: 'annual' | 'annualised_ytd';
+  roePeriodMonths?: 3 | 6 | 9 | 12;
   debtAssetBps?: number;
   cashProfitBps?: number;
   epsMicros?: number;
@@ -96,6 +100,7 @@ export interface DividendStockResearch {
   financial?: DividendFinancialResearch;
   distributions?: DividendDistributionResearch;
   yieldBps?: number;
+  yieldReportPeriods?: string[];
   checks: DividendResearchCheck[];
   status: DividendResearchStatus;
   sources: DividendResearchSource[];
@@ -120,7 +125,7 @@ export interface DividendResearchSnapshot {
 }
 
 export function defaultDividendSelectionPrinciples(): DividendSelectionPrinciples {
-  return { minYieldBps: 400, minRoeBps: 800, minRevenueGrowthBps: -1000, minProfitGrowthBps: -1000,
+  return { minYieldBps: 400, minRoeBps: 800, minRevenueGrowthBps: 0, minProfitGrowthBps: 0,
     maxDebtAssetBps: 7000, minCashProfitBps: 8000, minFcfCoverageBps: 15000, maxPayoutBps: 10000, minDividendYears: 5, notes: '' };
 }
 export function isDividendSelectionPrinciples(raw: unknown): raw is DividendSelectionPrinciples {
@@ -175,7 +180,7 @@ export function parseDividendTechnicalResearch(raw: unknown, code: string, symbo
     state, pacing: accelerating ? 'pause_add' : falling ? 'review_grid' : 'observe' };
 }
 
-export function parseDividendFinancialResearch(raw: unknown, code: string, asOf = dateInChina()): DividendFinancialResearch {
+export function parseDividendFinancialResearch(raw: unknown, code: string, asOf = dateInChina(), bankEvidence: DividendBankReportEvidence[] = []): DividendFinancialResearch {
   const payload = raw as { success?: boolean; result?: { data?: Record<string, unknown>[] } };
   if (!payload?.success || !Array.isArray(payload.result?.data) || !payload.result.data.length) throw new Error('FINANCIAL_SOURCE_INVALID');
   if (payload.result.data.some(row => row.SECURITY_CODE !== code)) throw new Error('FINANCIAL_SYMBOL_MISMATCH');
@@ -187,16 +192,22 @@ export function parseDividendFinancialResearch(raw: unknown, code: string, asOf 
   const periods = available.map(row => {
     const profit = number(row.PARENTNETPROFIT), cash = number(row.NETCASH_OPERATE_PK), eps = number(row.EPSJB);
     const bps = (key: string) => { const value = number(row[key]); return value === undefined ? undefined : Math.round(value * 100); };
+    const reportDate = validDate(row.REPORT_DATE)!;
+    const month = Number(reportDate.slice(5, 7));
+    const roePeriodMonths = [3, 6, 9, 12].includes(month) ? month as 3 | 6 | 9 | 12 : undefined;
+    const reportedRoe = number(row.ROEJQ);
     return { reportDate: validDate(row.REPORT_DATE)!, noticeDate: validDate(row.NOTICE_DATE),
       revenueGrowthBps: bps('TOTALOPERATEREVETZ'), profitGrowthBps: bps('PARENTNETPROFITTZ'),
-      roeBps: bps('ROEJQ'), debtAssetBps: bps('ZCFZL'),
+      roeBps: bps('ROEJQ'), annualizedRoeBps: reportedRoe === undefined || roePeriodMonths === undefined ? undefined : Math.round(reportedRoe * 100 * 12 / roePeriodMonths),
+      roeBasis: roePeriodMonths === undefined ? undefined : roePeriodMonths === 12 ? 'annual' as const : 'annualised_ytd' as const,
+      roePeriodMonths, debtAssetBps: bps('ZCFZL'),
       cashProfitBps: cash !== undefined && profit !== undefined && profit > 0 ? Math.round(cash / profit * 10000) : undefined,
       epsMicros: eps === undefined ? undefined : Math.round(eps * 1e6), loss: profit !== undefined && profit <= 0 };
   });
   const sector = String(available[0].ORG_TYPE ?? '');
   return { name: String(available[0].SECURITY_NAME_ABBR ?? code), sector,
     financialSector: /银行|保险|证券|金融|信托|多元金融/.test(sector), periods, latest: periods[0],
-    annual: periods.find(period => period.reportDate.endsWith('-12-31')), sectorReview: reviewDividendFinancialSector(available, code, asOf) };
+    annual: periods.find(period => period.reportDate.endsWith('-12-31')), sectorReview: reviewDividendFinancialSector(available, code, asOf, bankEvidence) };
 }
 
 export function parseDividendDistributionResearch(raw: unknown, code: string, asOf = dateInChina()): DividendDistributionResearch {
@@ -241,7 +252,7 @@ export function evaluateDividendResearch(stock: DividendStockResearch, principle
       status: stale || value === undefined ? 'unknown' : (minimum ? value >= threshold : value <= threshold) ? 'pass' : 'risk',
       ...(stale ? { reason: 'stale' as const } : value === undefined ? { reason: 'missing' as const } : {}) });
   };
-  check('yield', stock.yieldBps, principles.minYieldBps, true, stock.technical?.asOf ?? stock.distributions?.asOf, stock.technical?.currentUsable === false);
+  check('yield', stock.yieldBps, principles.minYieldBps, true, stock.yieldReportPeriods?.join('、'), stock.technical?.currentUsable === false);
   check('roe', annual?.roeBps, principles.minRoeBps, true, annual?.reportDate, staleAnnual);
   check('revenueGrowth', latest?.revenueGrowthBps, principles.minRevenueGrowthBps, true, latest?.reportDate, staleLatest);
   check('profitGrowth', latest?.profitGrowthBps, principles.minProfitGrowthBps, true, latest?.reportDate, staleLatest);
@@ -302,7 +313,10 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
     'Report period end': value.reportDate, 'Publication date': value.noticeDate ?? null,
     'Revenue growth year on year percent': percent(value.revenueGrowthBps),
     'Attributable profit growth year on year percent': percent(value.profitGrowthBps),
-    'Weighted ROE for the reported period percent, not annualised': percent(value.roeBps),
+    'Reported cumulative weighted ROE percent': percent(value.roeBps),
+    'Comparable annual ROE or annualised cumulative ROE percent': percent(value.annualizedRoeBps ?? (value.reportDate.endsWith('-12-31') ? value.roeBps : undefined)),
+    'ROE comparison basis': value.roeBasis === 'annualised_ytd' ? `Reported cumulative ${value.roePeriodMonths}-month ROE × 12 / ${value.roePeriodMonths}; a mechanical annualisation, not a full-year forecast`
+      : value.reportDate.endsWith('-12-31') ? 'Completed annual weighted ROE; no annualisation' : 'Annualised comparison not verified',
     'Liabilities / assets percent': percent(value.debtAssetBps),
     'Consolidated operating cash flow / attributable profit percent, a proxy': percent(value.cashProfitBps),
     'Basic earnings per share in CNY': amount(value.epsMicros, 1e6),
@@ -351,13 +365,21 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
         'Industry': stock.financial.sectorReview.sector, 'Numeric review result': stock.financial.sectorReview.status,
         'Review period': stock.financial.sectorReview.asOf, 'Missing specific fields': stock.financial.sectorReview.missing,
         'Metric readings': stock.financial.sectorReview.metrics.map(m => ({ name:m.key, 'Value percent':percent(m.valueBps),
-          'Threshold percent':percent(m.thresholdBps), comparison:m.direction, result:m.status, period:m.reportDate, 'Year-on-year change in percentage points':percent(m.changeBps) })),
+          'Threshold percent':percent(m.thresholdBps), comparison:m.direction, result:m.status, period:m.reportDate, 'Year-on-year change in percentage points':percent(m.changeBps),
+          'Comparison report period': m.comparisonReportDate ?? null,
+          'Comparison method': m.basis === 'previous_year_same_period' ? 'Compare with the same reporting period one year earlier; no universal industry threshold is implied'
+            : m.basis === 'overdue_90_days_to_npl' ? 'Loans overdue more than 90 days / non-performing loans, both from the same verified report. Total overdue loans are not used.'
+              : m.basis === 'retained_roe_vs_rwa' ? 'Completed annual weighted ROE × (1 − matching annual payout ratio), compared with actual risk-weighted-asset growth over that same year. This is an approximation of internally generated capital, not a regulatory capital forecast.' : null,
+          'Verified original-report sources': m.sourceUrls ?? [],
+          'Capital calculation inputs': m.capitalInputs ? { 'Annual ROE percent': percent(m.capitalInputs.roeBps), 'Matching annual payout percent': percent(m.capitalInputs.payoutBps),
+            'Risk-weighted-asset growth percent': percent(m.capitalInputs.rwaGrowthBps), 'Prior annual report': m.capitalInputs.priorReportDate } : null })),
         'Evidence':stock.financial.sectorReview.sourceUrl, 'Regulatory references':stock.financial.sectorReview.policySourceUrls,
         'Separately verified archival report extract, not a live PDF download': stock.financial.sectorReview.reportSupplement ?? null,
         'Scope':'A numeric dividend screen, not a complete regulatory compliance opinion. Banks use policy buffers; insurer core solvency and risk rating cannot be inferred from comprehensive solvency.',
       } : null,
       'Recent eight reported periods': stock.financial?.periods.slice(0, 8).map(period) ?? [],
-      'Trailing implemented cash dividend yield percent, using the dated daily close': stock.technical?.currentUsable === false ? null : percent(stock.yieldBps),
+      'Verified recent-batch cash dividend yield percent, using the dated unadjusted close': stock.technical?.currentUsable === false ? null : percent(stock.yieldBps),
+      'Dividend reporting periods for the cash yield': stock.yieldReportPeriods ?? null,
       'Trailing reported cash per share in CNY, before bonus-share conversion': amount(stock.distributions?.dpsMicros, 1e6),
       'Completed fiscal-year distributions per share in CNY': stock.distributions ? Object.fromEntries(Object.entries(stock.distributions.annualDpsMicros).filter(([year]) => Number(year) >= stock.distributions!.latestCompletedYear - 4).map(([year, dps]) => [year, dps / 1e6])) : null,
       'Fiscal years counted through': stock.distributions?.latestCompletedYear ?? null,

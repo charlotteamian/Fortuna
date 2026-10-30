@@ -4,16 +4,17 @@ import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
 import { dividendAnnualReportEvidence } from '../src/lib/dividendAnnualReportEvidence.ts';
 import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
+import { buildDividendLedger } from '../src/lib/dividendLedger.ts';
+import { pingAnOfficialLedger, verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
 import { DIVIDEND_PRICING_CALCULATION_VERSION, calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingTrailingDividend, dividendPricingHistoryCoverage, dividendPricingMarketComparison, invalidateOutdatedDividendPricing,
   parseDividendTreasury, parseDividendOpportunityRows, dividendPricingReadable, type DividendYieldHistory, type DividendPricingAnnual } from '../src/lib/dividendPricing.ts';
 
 const asOf = '2026-10-21';
-function trailingDividend(dpsMicros=500000, date=asOf) { return { dpsMicros, asOf:date, windowStart:`${Number(date.slice(0,4))-1}${date.slice(4)}`, capitalActionsVerified:true, cashDistributionsComplete:true, sourceUrls:['https://example.com/implemented-dividends'] }; }
 const annuals: DividendPricingAnnual[] = Array.from({length:5},(_,i) => ({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
   epsMicros:1000000,adjustedEpsMicros:1000000,roeBps:1000,dividendMicros:500000,payoutBps:5000,fcfCoverageBps:20000}));
 const history: DividendYieldHistory = {basis:'implemented_cash_ex_date_trailing_year_over_unadjusted_month_close',capitalActionsVerified:true,from:'2016-10-28',through:'2026-09-28',sourceUrls:[],
   samples:Array.from({length:120},(_,i) => ({date:`${2016+Math.floor((i+9)/12)}-${String((i+9)%12+1).padStart(2,'0')}-28`,yieldBps:500,treasuryBps:200,spreadBps:300}))};
-function input() { return {code:'600000',name:'Fixture',financialSector:false,method:defaultDividendPricingMethod(),annuals:structuredClone(annuals),asOf,trailingDividend:trailingDividend(),
+function input() { return {code:'600000',name:'Fixture',financialSector:false,method:{...defaultDividendPricingMethod(),holdingPeriod:'over_year' as const},annuals:structuredClone(annuals),asOf,dividendBase:verifiedDividendBase(500000,asOf),
   history:structuredClone(history),treasury:{yieldBps:200,asOf,fetchedAt:1,history:[],sourceUrl:'https://example.com/treasury'},
   opportunity:{yieldBps:500,asOf,sourceUrl:'https://example.com/comparison',basis:'Dated comparator'},priceMinor:1000,priceDate:asOf,bvpsMicros:20000000}; }
 
@@ -42,8 +43,8 @@ test('captured Ping An Bank exact implemented cash produces the fixed-yield ladd
   const opportunity=parseDividendOpportunityRows(f.sources.opportunity.data,f.asOf);
   const years=dividendPricingAnnuals(f.sources.financial.data,undefined,f.sources.distribution.data,'000001',f.asOf);
   const p=calculateDividendPricing({code:'000001',name:'平安银行',financialSector:true,asOf:f.asOf,
-    method:defaultDividendPricingMethod(),annuals:years,treasury,opportunity,
-    trailingDividend:dividendPricingTrailingDividend(f.sources.distribution.data,'000001',f.asOf),
+    method:{...defaultDividendPricingMethod(),holdingPeriod:'over_year'},annuals:years,treasury,opportunity,
+    ledger:pingAnOfficialLedger(f.asOf),
     history:dividendPricingYieldHistory(prices.filter(price=>price.date.slice(0,7)<'2026-10'),f.sources.distribution.data,'000001',treasury),
     priceMinor:quote.priceMinor,priceDate:quote.date});
   assert.deepEqual(years.map(year=>[year.year,year.payoutBps]),[[2025,2713],[2024,2651],[2023,3004],[2022,1215],[2021,1218]]);
@@ -53,10 +54,10 @@ test('captured Ping An Bank exact implemented cash produces the fixed-yield ladd
   assert.deepEqual(p.grid.map(level=>level.priceMinor),[1107,1059,1015,936]);
   assert.deepEqual(dividendPricingMarketComparison(p),{quoteUsable:true,estimateGapBps:875,reachedBuyLevels:[],sustainableYieldAtQuoteBps:544,largeDiscount:false});
   const plan=dividendPricingPlan(p)!;assert.equal(plan.buyLevels.length,4);
-  assert.deepEqual(plan.sellLevels.map(level=>level.priceMinor),[1268,1353,1450,1522]);
+  assert.deepEqual(plan.sellLevels.map(level=>level.priceMinor),[1269,1354,1450,1523]);
 });
 
-test('CATL cash omissions remain an explicit TTM blocker instead of substituting an EPS-based dividend', () => {
+test('CATL cash omissions and unverified event sources cannot be replaced with an EPS-based recent-batch dividend', () => {
   const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-2026-10-23.json',import.meta.url),'utf8'));
   const market=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-market-2026-10-23.json',import.meta.url),'utf8'));
   const macro=JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json',import.meta.url),'utf8'));
@@ -68,16 +69,16 @@ test('CATL cash omissions remain an explicit TTM blocker instead of substituting
   const trailingDividend=dividendPricingTrailingDividend(f.sources.distribution.data,'300750',asOf);
   assert.equal(trailingDividend?.cashDistributionsComplete,false);
   const p=calculateDividendPricing({code:'300750',name:'宁德时代',financialSector:false,asOf,method:defaultDividendPricingMethod(),
-    trailingDividend,annuals:dividendPricingAnnuals(f.sources.financial.data,f.sources.cash.data,f.sources.distribution.data,'300750',asOf),
+    trailingDividend,ledger:buildDividendLedger(f.sources.distribution.data,'300750',asOf),annuals:dividendPricingAnnuals(f.sources.financial.data,f.sources.cash.data,f.sources.distribution.data,'300750',asOf),
     treasury,opportunity,history,priceMinor:quote.priceMinor,priceDate:quote.date});
   assert.equal(p.anchors.historicalPercentileBps,undefined);
   assert.equal(p.earningsDividendMicros,5898867);assert.equal(p.canApply,false);
-  assert.ok(p.blockers.includes('cash_distributions_incomplete'));
+  assert.ok(p.blockers.includes('dividend_base_unverified'));
   assert.equal(p.d1Micros,undefined);assert.equal(p.theoreticalPriceMinor,undefined);assert.deepEqual(p.grid,[]);
   assert.deepEqual(dividendPricingMarketComparison(p).reachedBuyLevels,[]);assert.equal(dividendPricingPlan(p),null);
 });
 
-test('independent arithmetic uses exact TTM and four fixed yields while earnings, Gordon and PB remain comparisons', () => {
+test('independent arithmetic uses verified recent-batch cash and four fixed yields while earnings, Gordon and PB remain comparisons', () => {
   const p=calculateDividendPricing(input());
   assert.equal(p.canApply,true);assert.equal(p.d1Micros,500000);assert.equal(p.anchors.medianBps,500);
   assert.equal(p.gordonPriceMinor,625);assert.equal(p.anchorPriceMinor,1000);assert.equal(p.pbBridgePriceMinor,2000);
@@ -101,7 +102,7 @@ test('lower Gordon and PB comparisons do not cap the fixed-yield ladder', () => 
   assert.deepEqual(p.grid.map(level=>level.priceMinor),[909,869,833,769]);
 });
 
-test('reported 100.21% payout and 126.64% coverage remain visible without replacing implemented TTM cash', () => {
+test('reported 100.21% payout and 126.64% coverage remain visible without replacing verified recent-batch cash', () => {
   // Controlled reproduction of the screenshot's checks, not current company data.
   const v=input();v.annuals[0].payoutBps=10021;v.annuals[0].fcfCoverageBps=12664;
   const p=calculateDividendPricing(v);
@@ -135,7 +136,7 @@ test('missing, invalid and stale quotes preserve valuation without reporting a q
   }
 });
 test('the unusual quote-yield review starts strictly above 30 percent and remains advisory', () => {
-  const v=input();v.trailingDividend.dpsMicros=600000;
+  const v=input();v.dividendBase.dpsMicros=600000;
   v.annuals.forEach(year=>Object.assign(year,{epsMicros:1200000,adjustedEpsMicros:1200000,dividendMicros:600000}));
   for (const [priceMinor,expectedYieldBps,unusual] of [[200,3000,false],[199,3015,true]] as const) {
     const p=calculateDividendPricing({...v,priceMinor});
@@ -250,7 +251,7 @@ test('a low comparison yield cannot manufacture extremely high selling prices', 
   assert.equal(p.anchors.opportunityCostBps,10);assert.equal(p.anchors.selectedBps,500);assert.equal(p.theoreticalPriceMinor,1000);
   const plan=dividendPricingPlan(p);assert.ok(plan);
   assert.deepEqual(plan.sellLevels.map(level=>level.yieldBps),[480,450,420,400]);
-  assert.deepEqual(plan.sellLevels.map(level=>level.priceMinor),[1041,1111,1190,1250]);
+  assert.deepEqual(plan.sellLevels.map(level=>level.priceMinor),[1042,1112,1191,1250]);
   assert.deepEqual(plan.sellLevels.map(level=>level.portionBps),[2500,2500,2500,2500]);
 });
 
@@ -277,7 +278,7 @@ test('partial auxiliary anchors stay visible but cannot replace the fixed refere
   assert.equal(p.anchors.selectedBps,500);assert.equal(p.anchors.selection,'fixed_classic');assert.equal(p.theoreticalPriceMinor,1000);
 });
 
-test('stale comparisons retain their source dates and review warnings without blocking verified TTM prices', () => {
+test('stale comparisons retain their source dates and review warnings without blocking verified recent-batch cash prices', () => {
   const v=input();v.treasury.asOf='2026-09-01';v.opportunity.asOf='2026-09-01';v.opportunity.yieldBps=1500;
   let p=calculateDividendPricing(v);
   assert.equal(p.canApply,true);assert.equal(p.anchors.riskFreePlusPremiumBps,undefined);assert.equal(p.anchors.opportunityCostBps,undefined);
@@ -317,9 +318,9 @@ test('eligibility checks remain advisory while preserving the calculated fixed-y
   assert.ok(calculateDividendPricing({...reviewedBank,financialReview:{...reviewedBank.financialReview,status:'risk'}}).pauseReasons?.includes('financial_sector_review'));
   const g=input();g.method.growthBps=300;g.method.requiredReturnBps=500;assert.ok(calculateDividendPricing(g).pauseReasons?.includes('growth_return_conflict'));
 });
-test('synthetic Midea cash-flow stress preserves its diagnostic ceiling without overwriting implemented TTM cash', () => {
+test('synthetic Midea cash-flow stress preserves its diagnostic ceiling without overwriting verified recent-batch cash', () => {
   // Controlled inputs reproduce the reported concern, not current Midea data.
-  const v={...input(),code:'000333',name:'美的集团',priceMinor:8600,bvpsMicros:30000000,trailingDividend:trailingDividend(3000000)};
+  const v={...input(),code:'000333',name:'美的集团',priceMinor:8600,bvpsMicros:30000000,dividendBase:verifiedDividendBase(3000000,asOf)};
   v.annuals.forEach((year,index)=>Object.assign(year,{epsMicros:5000000,adjustedEpsMicros:5000000,payoutBps:6000,
     dividendMicros:3000000,roeBps:1500,totalShares:100,operatingCashMinor:([47000,62000,59000][index] ?? 65000),
     capitalExpenditureMinor:20000,dividendCashMinor:30000,fcfCoverageBps:([9000,14000,13000][index] ?? 15000)}));
@@ -343,7 +344,7 @@ test('documented dividend coverage remains a diagnostic fallback while reported 
   assert.equal(p.fcfDividendCapMicros,300000);assert.equal(p.d1Micros,500000);assert.equal(p.fcfEvidence?.[0].basis,'reported_cash_flow_per_share');
 });
 
-test('missing earnings and nonpositive industrial cash support stay explicit as reviews without replacing verified TTM', () => {
+test('missing earnings and nonpositive industrial cash support stay explicit as reviews without replacing verified recent-batch cash', () => {
   for(const coverage of [undefined,0,-1000]) {
     const v=input();v.annuals[0].fcfCoverageBps=coverage;
     const p=calculateDividendPricing(v);
@@ -361,7 +362,7 @@ test('missing earnings and nonpositive industrial cash support stay explicit as 
 });
 
 test('synthetic Agricultural Bank keeps comparison disagreement separate from fixed prices and skips industrial FCF rules', () => {
-  const v={...input(),code:'601288',name:'农业银行',financialSector:true,priceMinor:600,bvpsMicros:8000000,trailingDividend:trailingDividend(195000),
+  const v={...input(),code:'601288',name:'农业银行',financialSector:true,priceMinor:600,bvpsMicros:8000000,dividendBase:verifiedDividendBase(195000,asOf),
     financialReview:{sector:'bank' as const,status:'pass' as const,asOf:'2026-06-30',metrics:[],missing:[],sourceUrl:'https://example.com/bank-review',policySourceUrls:[],basis:'dividend_screen' as const}};
   v.annuals.forEach(year=>Object.assign(year,{epsMicros:650000,adjustedEpsMicros:650000,payoutBps:3000,dividendMicros:195000,roeBps:1200,fcfCoverageBps:-5000}));
   v.history.samples.forEach(sample=>{sample.yieldBps=900;});v.opportunity.yieldBps=409;v.treasury.yieldBps=164;
@@ -413,7 +414,7 @@ test('captured CATL evidence includes a verified zero and omitted special cash w
   assert.equal(years[3].payoutBasis,'reported_cash_over_profit');
   // 2022's raw pre-capitalisation DPS / restated EPS would incorrectly be 44.21%.
   assert.equal(Math.round(years[3].dividendMicros!/years[3].epsMicros!*10000),4421);
-  const p=calculateDividendPricing({...input(),code:'300750',name:'宁德时代',annuals:years,asOf:'2026-10-23',trailingDividend:trailingDividend(500000,'2026-10-23')});
+  const p=calculateDividendPricing({...input(),code:'300750',name:'宁德时代',annuals:years,asOf:'2026-10-23',dividendBase:verifiedDividendBase(500000,'2026-10-23')});
   assert.equal(p.normalizedEpsMicros,11797733);assert.equal(p.sustainablePayoutBps,5000);
   assert.equal(p.earningsDividendMicros,5898867);assert.equal(p.fcfDividendCapMicros,8529361);
   assert.equal(p.d1Micros,500000);assert.equal(p.canApply,true);

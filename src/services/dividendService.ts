@@ -44,6 +44,9 @@ export async function saveDividendStock(stock: DividendStock) {
   await db.transaction('rw', db.dividendStocks, async () => {
     const current = await db.dividendStocks.get(stock.code);
     const saved = { ...stock };
+    if (current && JSON.stringify(stock.buyLevels) === JSON.stringify(current.buyLevels)
+      && JSON.stringify(stock.sellLevels) === JSON.stringify(current.sellLevels) && current.gridProvenance) saved.gridProvenance = current.gridProvenance;
+    else delete saved.gridProvenance;
     for (const key of ['quote', 'quoteFailedAt', 'dividend', 'dividendFailedAt', 'trend', 'trendFailedAt'] as const) {
       if (current && Object.hasOwn(current, key)) Object.assign(saved, { [key]: current[key] });
     }

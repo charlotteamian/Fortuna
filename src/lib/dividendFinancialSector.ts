@@ -2,11 +2,30 @@
 export interface DividendFinancialSectorMetric {
   key: string;
   valueBps?: number;
-  thresholdBps: number;
+  thresholdBps?: number;
   direction: 'minimum' | 'maximum';
   status: 'pass' | 'risk' | 'unknown';
   reportDate: string;
   changeBps?: number;
+  comparisonReportDate?: string;
+  basis?: 'previous_year_same_period' | 'overdue_90_days_to_npl' | 'retained_roe_vs_rwa';
+  sourceUrls?: string[];
+  capitalInputs?: { roeBps: number; payoutBps: number; rwaGrowthBps: number; priorReportDate: string };
+}
+
+/** Normalised original-report observations. Provider totals are not substitutes for these fields. */
+export interface DividendBankReportEvidence {
+  code: string;
+  reportDate: string;
+  publishedAt: string;
+  verifiedAt: string;
+  sourceUrls: string[];
+  verified: boolean;
+  specialMentionLoansBps?: number;
+  overdue90DaysLoansMinor?: number;
+  nonPerformingLoansMinor?: number;
+  riskWeightedAssetsMinor?: number;
+  payoutBps?: number;
 }
 export interface DividendFinancialSectorReview {
   sector: 'bank' | 'insurance' | 'securities' | 'other_financial';
@@ -44,7 +63,8 @@ function numeric(value: unknown) {
 }
 
 /** Rows must already have passed security-code and publication-date validation. */
-export function reviewDividendFinancialSector(available: Record<string, unknown>[], code: string, asOf: string): DividendFinancialSectorReview | undefined {
+export function reviewDividendFinancialSector(available: Record<string, unknown>[], code: string, asOf: string,
+  bankEvidence: DividendBankReportEvidence[] = []): DividendFinancialSectorReview | undefined {
   const kind = String(available[0]?.ORG_TYPE ?? '');
   if (!/银行|保险|证券|金融|信托/.test(kind)) return undefined;
   const sector = /银行/.test(kind) ? 'bank' : /保险/.test(kind) ? 'insurance' : /证券/.test(kind) ? 'securities' : 'other_financial';
@@ -69,6 +89,70 @@ export function reviewDividendFinancialSector(available: Record<string, unknown>
       changeBps: valueBps !== undefined && priorValue !== undefined ? valueBps - priorValue : undefined,
       status: valueBps === undefined ? 'unknown' : (direction === 'minimum' ? valueBps >= thresholdBps : valueBps <= thresholdBps) ? 'pass' : 'risk' };
   });
+  if (sector === 'bank') {
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+      && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+    const evidence = bankEvidence.filter(row => row && row.code === code && row.verified === true
+      && validDate(row.reportDate) && validDate(row.publishedAt) && validDate(row.verifiedAt) && row.reportDate <= row.publishedAt
+      && row.publishedAt <= asOf && row.publishedAt <= row.verifiedAt && row.verifiedAt <= asOf
+      && Array.isArray(row.sourceUrls) && row.sourceUrls.length > 0 && row.sourceUrls.every(url => /^https:\/\//.test(url)));
+    const valid = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
+    const observed = (period: string, key: keyof DividendBankReportEvidence) => {
+      const maximum = key === 'specialMentionLoansBps' ? 10000 : key === 'payoutBps' ? 50000 : Number.MAX_SAFE_INTEGER;
+      const rows = evidence.filter(row => row.reportDate === period && valid(row[key]) && (row[key] as number) <= maximum);
+      const values = [...new Set(rows.map(row => row[key] as number))];
+      return { value: values.length === 1 ? values[0] : undefined,
+        sources: [...new Set(rows.flatMap(row => row.sourceUrls))], conflict: values.length > 1 };
+    };
+    const append = (metric: DividendFinancialSectorMetric) => {
+      metrics.push(metric);
+      if (metric.status === 'unknown') missing.push(metric.key);
+    };
+    const latestPeriod = String(available[0].REPORT_DATE).slice(0, 10);
+    const latestPrior = `${Number(latestPeriod.slice(0, 4)) - 1}${latestPeriod.slice(4)}`;
+    const latestStale = Date.parse(asOf) - Date.parse(latestPeriod) > 230 * 86400000;
+    const special = observed(latestPeriod, 'specialMentionLoansBps'), priorSpecial = observed(latestPrior, 'specialMentionLoansBps');
+    const specialValue = latestStale ? undefined : special.value;
+    append({ key: 'specialMentionLoans', valueBps: specialValue, thresholdBps: priorSpecial.value, direction: 'maximum', reportDate: latestPeriod,
+      comparisonReportDate: latestPrior, basis: 'previous_year_same_period', sourceUrls: [...new Set([...special.sources, ...priorSpecial.sources])],
+      changeBps: specialValue !== undefined && priorSpecial.value !== undefined ? specialValue - priorSpecial.value : undefined,
+      status: specialValue === undefined || priorSpecial.value === undefined ? 'unknown' : specialValue <= priorSpecial.value ? 'pass' : 'risk' });
+    const overdue = observed(latestPeriod, 'overdue90DaysLoansMinor'), nonPerforming = observed(latestPeriod, 'nonPerformingLoansMinor');
+    const deviation = !latestStale && overdue.value !== undefined && nonPerforming.value !== undefined && nonPerforming.value > 0
+      ? Number((BigInt(overdue.value) * 10000n + BigInt(nonPerforming.value) / 2n) / BigInt(nonPerforming.value)) : undefined;
+    append({ key: 'overdue90DaysDeviation', valueBps: deviation, thresholdBps: 10000, direction: 'maximum', reportDate: latestPeriod,
+      basis: 'overdue_90_days_to_npl', sourceUrls: [...new Set([...overdue.sources, ...nonPerforming.sources])],
+      status: deviation === undefined ? 'unknown' : deviation <= 10000 ? 'pass' : 'risk' });
+    const marginRow = available.find(row => numeric(row.NET_INTEREST_MARGIN) !== undefined);
+    const marginPeriod = String(marginRow?.REPORT_DATE ?? available[0].REPORT_DATE).slice(0, 10);
+    const marginPriorPeriod = `${Number(marginPeriod.slice(0, 4)) - 1}${marginPeriod.slice(4)}`;
+    const marginStale = Date.parse(asOf) - Date.parse(marginPeriod) > 230 * 86400000;
+    const margin = marginStale ? undefined : numeric(marginRow?.NET_INTEREST_MARGIN);
+    const priorMargin = numeric(available.find(row => String(row.REPORT_DATE).slice(0, 10) === marginPriorPeriod)?.NET_INTEREST_MARGIN);
+    append({ key: 'netInterestMargin', valueBps: margin, thresholdBps: priorMargin, direction: 'minimum', reportDate: marginPeriod,
+      comparisonReportDate: marginPriorPeriod, basis: 'previous_year_same_period',
+      changeBps: margin !== undefined && priorMargin !== undefined ? margin - priorMargin : undefined,
+      status: margin === undefined || priorMargin === undefined ? 'unknown' : margin >= priorMargin ? 'pass' : 'risk' });
+    const annual = available.find(row => String(row.REPORT_DATE).slice(0, 10).endsWith('-12-31'));
+    const annualPeriod = String(annual?.REPORT_DATE ?? '').slice(0, 10);
+    const annualPriorPeriod = annualPeriod ? `${Number(annualPeriod.slice(0, 4)) - 1}${annualPeriod.slice(4)}` : '';
+    const annualRoe = numeric(annual?.ROEJQ), payout = observed(annualPeriod, 'payoutBps');
+    const rwa = observed(annualPeriod, 'riskWeightedAssetsMinor'), priorRwa = observed(annualPriorPeriod, 'riskWeightedAssetsMinor');
+    const annualCutoff = new Date(`${asOf}T00:00:00Z`); annualCutoff.setUTCMonth(annualCutoff.getUTCMonth() - 15);
+    const capitalCurrent = annualPeriod >= annualCutoff.toISOString().slice(0, 10);
+    const capitalComplete = capitalCurrent && annualRoe !== undefined && Number.isSafeInteger(annualRoe) && payout.value !== undefined
+      && rwa.value !== undefined && priorRwa.value !== undefined && priorRwa.value > 0;
+    const retention = capitalComplete ? Math.round(annualRoe! * (10000 - payout.value!) / 10000) : undefined;
+    const rwaGrowth = capitalComplete ? Math.round((rwa.value! - priorRwa.value!) / priorRwa.value! * 10000) : undefined;
+    const capitalSufficient = capitalComplete && BigInt(annualRoe!) * BigInt(10000 - payout.value!) * BigInt(priorRwa.value!)
+      >= BigInt(rwa.value! - priorRwa.value!) * 100000000n;
+    append({ key: 'internalCapitalCapacity', valueBps: retention, thresholdBps: rwaGrowth, direction: 'minimum', reportDate: annualPeriod || latestPeriod,
+      comparisonReportDate: annualPriorPeriod || undefined, basis: 'retained_roe_vs_rwa',
+      sourceUrls: [...new Set([...payout.sources, ...rwa.sources, ...priorRwa.sources])],
+      capitalInputs: capitalComplete ? { roeBps: annualRoe!, payoutBps: payout.value!, rwaGrowthBps: rwaGrowth!, priorReportDate: annualPriorPeriod } : undefined,
+      status: retention === undefined || rwaGrowth === undefined ? 'unknown' : capitalSufficient ? 'pass' : 'risk' });
+    if ([special, priorSpecial, overdue, nonPerforming, payout, rwa, priorRwa].some(value => value.conflict)) missing.push('bankReportConflict');
+  }
   // The structured source exposes only comprehensive solvency. Never infer core capital or the risk rating from it.
   if (sector === 'insurance') missing.push('coreSolvency', 'insuranceRiskRating');
   if (sector === 'other_financial') missing.push('financialSectorEvidence');

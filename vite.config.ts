@@ -22,6 +22,8 @@ export default defineConfig({
       '/dividend-schedule-api': { target: 'https://emweb.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-schedule-api/, '') },
       '/dividend-index-api': { target: 'https://oss-ch.csindex.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-index-api/, '') },
       '/dividend-search-api': { target: 'https://searchapi.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-search-api/, '') },
+      '/dividend-cninfo-api': { target: 'https://www.cninfo.com.cn', changeOrigin: true, headers: { Referer: 'https://www.cninfo.com.cn/', Origin: 'https://www.cninfo.com.cn', 'X-Requested-With': 'XMLHttpRequest' }, rewrite: p => p.replace(/^\/dividend-cninfo-api/, '') },
+      '/dividend-document-api': { target: 'https://static.cninfo.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-document-api/, '') },
       '/qt-api': { target: 'https://qt.gtimg.cn', changeOrigin: true, rewrite: p => p.replace(/^\/qt-api/, '') },
       '/fund-api': { target: 'https://fundgz.1234567.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/fund-api/, '') },
       // Sina needs a Referer header or it 403s; add it server-side (the browser can't set it).

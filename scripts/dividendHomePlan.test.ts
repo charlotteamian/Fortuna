@@ -1,3 +1,5 @@
+import { dividendBatchZh, dividendBatchEn } from '../src/i18n/dividendBatchTranslations.ts';
+import { dividendLedgerV5Zh, dividendLedgerV5En } from '../src/i18n/dividendLedgerV5Translations.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
@@ -23,8 +25,8 @@ const { default: DividendPlanGrid } = await import('../src/components/DividendPl
 const { buildDividendHomePlan } = await import('../src/lib/dividendWorkbench.ts');
 const i18n = createInstance();
 await i18n.init({ lng: 'zh', fallbackLng: 'en', resources: {
-  zh: { translation: { ...dividendHomeZh, ...dividendGridZh, div_stock_budget: '分配总金额', div_touched: '已触及' } },
-  en: { translation: { ...dividendHomeEn, ...dividendGridEn } },
+  zh: { translation: { ...dividendHomeZh, ...dividendGridZh, ...dividendBatchZh, ...dividendLedgerV5Zh, div_stock_budget: '分配总金额', div_touched: '已触及' } },
+  en: { translation: { ...dividendHomeEn, ...dividendGridEn, ...dividendBatchEn, ...dividendLedgerV5En } },
 }, interpolation: { escapeValue: false } });
 const stock = { ...defaultDividendStocks()[0], weightBps: 10000,
   buyLevels: [{ priceMinor: 1000, yieldBps: 500, portionBps: 5000 }, { priceMinor: 800, yieldBps: 600, portionBps: 5000 }],
@@ -41,7 +43,7 @@ test('home plan shows all buy and sell levels, budget and actionable quantities 
   assert.match(html, /累计持有 500 股/); assert.match(html, /累计持有 1,100 股/);
   assert.match(html, /累计卖出 100 股/); assert.match(html, /累计卖出 200 股/);
   assert.match(html, /¥10,000/); assert.match(html, /已持仓 200 股/);
-  assert.match(html, /已触发第 1 档/); assert.match(html, /价格已触发/);
+  assert.match(html, /按已保存网格：触发第 1 档（基数未核对）/); assert.match(html, /价格已触发/);
   assert.match(html, /第 2 档/);
   assert.match(html, /<details class="div-home-plan-note"><summary>股数计算说明/);
 });
@@ -53,8 +55,9 @@ test('plan manager and homepage show the same highest price-triggered tier, incl
     createElement(DividendPlanGrid, { plan, side: 'buy', amountVisible: true })));
   const homeHtml = renderToStaticMarkup(createElement(I18nextProvider, { i18n },
     createElement(DividendHomePlan, { stock: paused, totalBudgetMinor: 1000000, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
+  assert.match(gridHtml, /已触发第 2 档/);
+  assert.match(homeHtml, /按已保存网格：触发第 2 档（基数未核对）/);
   for (const html of [gridHtml, homeHtml]) {
-    assert.match(html, /已触发第 2 档/);
     assert.equal((html.match(/价格已触发/g) ?? []).length, 2);
   }
   assert.match(gridHtml, /div-grid-row-triggered/);
@@ -68,8 +71,9 @@ test('unusable quotes display refresh status without triggered rows on either su
     createElement(DividendPlanGrid, { plan, side: 'buy', amountVisible: true })));
   const homeHtml = renderToStaticMarkup(createElement(I18nextProvider, { i18n },
     createElement(DividendHomePlan, { stock: stale, totalBudgetMinor: 1000000, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
+  assert.match(gridHtml, /报价待更新/);
+  assert.match(homeHtml, /行情或档价待核实/);
   for (const html of [gridHtml, homeHtml]) {
-    assert.match(html, /报价待更新/);
     assert.doesNotMatch(html, /已触发第|价格已触发|div-grid-row-triggered/);
   }
 });
@@ -96,4 +100,20 @@ test('home plan shows allocation rather than fabricated zero shares when no budg
     createElement(DividendHomePlan, { stock, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
   assert.match(html, /尚未设置总预算/); assert.match(html, /累计 50%/);
   assert.doesNotMatch(html, /累计持有 0 股|可加仓 300 股/);
+});
+
+
+test('home distinguishes verified, provisional, unavailable and stale saved bases without changing prices', () => {
+  const generatedAt = Date.parse('2026-10-20T01:00:00Z');
+  const originStock = { ...stock, gridProvenance: { generatedAt, grossDpsMicros: 600000, taxBps: 1000 as const, parameterVersion: 5, basisKind: 'recent_batches' as const } };
+  const renderBasis = (value: typeof stock, basis?: { asOf: string; dpsMicros?: number; latestExDate?: string; verified: boolean }) => renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(DividendHomePlan, { stock: value, basis, totalBudgetMinor: 1000000, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
+  const verified = { asOf: '2026-10-21', dpsMicros: 600000, latestExDate: '2026-09-10', verified: true };
+  assert.match(renderBasis(originStock, verified), /已触发第 1 档/);
+  assert.doesNotMatch(renderBasis(originStock, verified), /基数未核对/);
+  assert.match(renderBasis(originStock, { ...verified, verified: false }), /按已保存网格：触发第 1 档（基数未核对）/);
+  assert.match(renderBasis(originStock, { ...verified, asOf: '2026-10-20' }), /基数未核对/);
+  assert.match(renderBasis({ ...stock, buyLevels: [], sellLevels: [] }), /无法判断/);
+  assert.match(renderBasis(originStock, { ...verified, dpsMicros: 700000 }), /已保存网格基数过期/);
+  assert.match(renderBasis(originStock, { ...verified, latestExDate: '2026-10-21' }), /生成后发生过除息/);
+  assert.deepEqual(originStock.buyLevels, stock.buyLevels);
 });

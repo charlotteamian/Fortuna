@@ -1,3 +1,5 @@
+import 'fake-indexeddb/auto';
+import Dexie from 'dexie';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -148,16 +150,20 @@ test('banks replace industrial leverage/cashflow thresholds with actual speciali
   const result = evaluateDividendResearch(research({ financial }), principles, now);
   assert.ok(!result.checks.some(item => ['debtAsset', 'cashProfit', 'fcfCoverage'].includes(item.rule)));
   assert.equal(result.checks.find(item => item.rule === 'financialSector')?.status, 'unknown');
-  assert.deepEqual(financial.sectorReview?.missing, ['capitalAdequacy', 'coreTier1', 'nonPerformingLoan', 'provisionCoverage']);
+  assert.deepEqual(financial.sectorReview?.missing, ['capitalAdequacy', 'coreTier1', 'nonPerformingLoan', 'provisionCoverage',
+    'specialMentionLoans', 'overdue90DaysDeviation', 'netInterestMargin', 'internalCapitalCapacity']);
 });
 
 test('captured industry fields and explicitly verified insurer-group report extract produce dated specialist conclusions', () => {
   const fixtures = JSON.parse(readFileSync(new URL('./fixtures/dividend-financial-sector-2026-10-21.json', import.meta.url), 'utf8')).sources;
   const bank = parseDividendFinancialResearch(fixtures['601398'].data, '601398', '2026-10-21').sectorReview!;
-  assert.equal(bank.status, 'pass');
+  assert.equal(bank.status, 'risk');
   assert.equal(bank.basis, 'dividend_screen');
   assert.equal(bank.metrics.find(m => m.key === 'coreTier1')?.valueBps, 1321);
   assert.equal(bank.metrics.find(m => m.key === 'provisionCoverage')?.valueBps, 21758);
+  assert.equal(bank.metrics.find(m => m.key === 'netInterestMargin')?.valueBps, 129);
+  assert.equal(bank.metrics.find(m => m.key === 'netInterestMargin')?.thresholdBps, 130);
+  assert.deepEqual(bank.missing, ['specialMentionLoans', 'overdue90DaysDeviation', 'internalCapitalCapacity']);
   const insurer = parseDividendFinancialResearch(fixtures['601318'].data, '601318', '2026-10-21').sectorReview!;
   assert.equal(insurer.status, 'pass');
   assert.equal(insurer.metrics[0].valueBps, 19814);
@@ -242,10 +248,15 @@ test('a failed Tencent primary recovers daily and monthly evidence through its v
     const result = await fetchDividendResearch([{ code:'600036', name:'招商银行' }], principles);
     const stock = result.stocks[0];
     assert.ok(stock.technical?.currentUsable);
-    assert.ok(stock.pricing?.history && stock.pricing.history.samples.length >= 60);
-    assert.equal(stock.pricing.history.capitalActionsVerified, false, 'mixed-symbol fixture cannot verify capital adjustments');
+    assert.equal(stock.pricing?.history?.priceSampleCount, 119, 'the recovered price months remain available even without verified cash evidence');
+    assert.equal(stock.pricing?.history?.priceFrom, '2016-11-30');
+    assert.equal(stock.pricing?.history?.priceThrough, '2026-09-30');
+    assert.deepEqual(stock.pricing?.history?.samples, [], 'a public price proxy does not verify the distribution ledger');
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount, 0);
+    assert.equal(stock.pricing?.historyCoverage?.usable, false);
+    assert.ok(stock.pricing?.history?.ledgerIssues?.includes('INCOMPLETE'), 'this legacy cash fixture lacks announcement and record dates, so no batch can be selected');
     assert.equal(stock.pricing.anchors.historicalPercentileBps, undefined);
-    assert.ok(stock.pricing.warnings.includes('capital_actions_unverified'));
+    assert.ok(stock.pricing?.dividendBase?.flags.includes('INCOMPLETE'));
     assert.ok(stock.sources.filter(source => source.kind === 'technical').every(source => source.url.startsWith('https://proxy.finance.qq.com/')));
     assert.ok(result.indices.every(index => index.technical?.currentUsable));
     assert.ok(!stock.issues.some(issue => issue.kind === 'technical'));
@@ -267,7 +278,7 @@ test('both Tencent hosts failing retain the HTTP status, original request URL an
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('a syntactically valid short monthly response retries an expanded history and restores the historical anchor', async () => {
+test('a short monthly response retries expanded prices without manufacturing verified dividend-yield months', async () => {
   const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
   const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-history-cmb-2026-10-22.json',import.meta.url),'utf8'));
   const originalFetch=globalThis.fetch, monthlyRequests:string[]=[];
@@ -291,8 +302,14 @@ test('a syntactically valid short monthly response retries an expanded history a
     const result=await fetchDividendResearch([{code:'600036',name:'招商银行'}],principles);
     const stock=result.stocks[0];
     assert.equal(monthlyRequests.length,2);assert.match(monthlyRequests[1],/dividend-tencent-api.*month,,,320,/);
-    assert.equal(stock.pricing?.historyCoverage?.sampleCount,118);assert.equal(stock.pricing?.historyCoverage?.usable,true);
-    assert.equal(stock.pricing?.anchors.historicalPercentileBps,489);
+    assert.equal(stock.pricing?.history?.priceSampleCount,119);
+    assert.equal(stock.pricing?.history?.priceFrom,'2016-11-30');
+    assert.equal(stock.pricing?.history?.priceThrough,'2026-09-30');
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount,0);
+    assert.equal(stock.pricing?.historyCoverage?.usable,false);
+    assert.ok(stock.pricing?.historyCoverage?.reasons.includes('announcement_unverified'));
+    assert.equal(stock.pricing?.historyCoverage?.from,undefined,'the price start is not the start of verified dividend coverage');
+    assert.equal(stock.pricing?.anchors.historicalPercentileBps,undefined);
     assert.ok(!stock.issues.some(issue=>issue.kind==='technical'));
     assert.ok(stock.sources.some(source=>source.url.includes('month,,,320,')));
   } finally { globalThis.fetch=originalFetch; }
@@ -316,8 +333,11 @@ test('genuinely short listing history keeps the actual current price and explain
   try {
     const result=await fetchDividendResearch([{code:'600036',name:'招商银行'}],principles);
     const stock=result.stocks[0];
-    assert.equal(stock.pricing?.historyCoverage?.sampleCount,47);assert.equal(stock.pricing?.anchors.historicalPercentileBps,undefined);
+    assert.equal(stock.pricing?.history?.priceSampleCount,47);
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount,0,'short price history and missing official cash evidence are separate gaps');
+    assert.equal(stock.pricing?.anchors.historicalPercentileBps,undefined);
     assert.ok(stock.pricing?.historyCoverage?.reasons.includes('samples_insufficient'));
+    assert.ok(stock.pricing?.historyCoverage?.reasons.includes('announcement_unverified'));
     assert.equal(stock.pricing?.currentPriceMinor,4179);
     const issue=stock.issues.find(issue=>issue.url?.includes(',month,'));
     assert.equal(issue?.attempts,2);assert.match(issue?.detail??'',/PRICE_HISTORY_INCOMPLETE:47\/60/);
@@ -325,16 +345,29 @@ test('genuinely short listing history keeps the actual current price and explain
   } finally { globalThis.fetch=originalFetch; }
 });
 
-test('current research yields use verified trailing cash on the dated quote share basis, independently of long history coverage', async context => {
+test('current research yields require verified recent batches on the dated quote share basis, independently of historical coverage', async context => {
   const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
   context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T08:00:00Z') });
   const originalFetch = globalThis.fetch;
+  const cache = new Dexie('FortunaDividendLedger'); cache.version(1).stores({ documents: 'url', ledgers: 'code' });
   const cashRows = [
     { ...dividendRow('2023-12-31', '2024-06-01', 1), NOTICE_DATE: '2024-05-20', BONUS_RATIO: 0, IT_RATIO: 0 },
     { ...dividendRow('2025-12-31', '2026-06-01', 10), NOTICE_DATE: '2026-05-20', BONUS_RATIO: 10, IT_RATIO: 0 },
   ];
-  async function check(options: { code?: string; quoteDate?: string; quotePrice?: string; rows?: Record<string, unknown>[] } = {}) {
+  async function check(options: { code?: string; quoteDate?: string; quotePrice?: string; rows?: Record<string, unknown>[];
+    officialRows?: Record<string, unknown>[] } = {}) {
     const code = options.code ?? '600036', symbol = `${code.startsWith('6') ? 'sh' : 'sz'}${code}`;
+    await cache.table('documents').clear();
+    // Controlled arithmetic evidence, deliberately distinct from the captured real-announcement fixtures below.
+    for (const row of options.officialRows ?? options.rows ?? cashRows) {
+      const reportDate = String(row.REPORT_DATE), announcementDate = String(row.NOTICE_DATE), exDate = String(row.EX_DIVIDEND_DATE);
+      const sourceUrl = `https://static.cninfo.com.cn/finalpage/${announcementDate}/synthetic-${code}-${reportDate}.PDF`;
+      const event = { code, reportDate, period: reportDate.endsWith('-06-30') ? 'interim' : 'annual', announcementDate,
+        recordDate: new Date(Date.parse(exDate) - 86400000).toISOString().slice(0, 10), exDate,
+        cashPer10Micros: Number(row.PRETAX_BONUS_RMB) * 1000000, bonusPer10Bps: Number(row.BONUS_RATIO) * 1000,
+        transferPer10Bps: Number(row.IT_RATIO) * 1000, sourceUrl, verifiedAt: '2026-10-24' };
+      await cache.table('documents').put({ url: sourceUrl, sha256: 'synthetic-cash-basis-evidence', checkedAt: '2026-10-24', event });
+    }
     globalThis.fetch = async input => {
       const url = String(input);
       if (url.includes(',month,')) return Response.json({ code: 0, data: { [symbol]: {
@@ -355,6 +388,7 @@ test('current research yields use verified trailing cash on the dated quote shar
     assert.equal(verified.distributions?.dpsMicros, 1000000, 'raw distribution display retains its report-share basis');
     assert.equal(verified.distributions?.annualDpsMicros['2025'], 1000000, 'fiscal-year payout evidence stays unchanged');
     assert.equal(verified.checks.find(item => item.rule === 'yield')?.value, 500);
+    assert.equal(verified.checks.find(item => item.rule === 'yield')?.period, '2025-12-31', 'cash-yield report period names the selected batch, not today');
 
     const afterQuote = await check({ rows: [...cashRows,
       { ...dividendRow('2026-06-30', '2026-10-24', 20), NOTICE_DATE: '2026-10-20', BONUS_RATIO: 0, IT_RATIO: 0 },
@@ -365,14 +399,20 @@ test('current research yields use verified trailing cash on the dated quote shar
 
     const missingActions = cashRows.map(row => ({ ...row } as Record<string, unknown>));
     delete missingActions[1].BONUS_RATIO;
-    const unverified = await check({ rows: missingActions });
+    const unverified = await check({ rows: missingActions, officialRows: [] });
     assert.equal(unverified.yieldBps, undefined);
     assert.equal(unverified.pricing?.currentCashYieldBps, undefined);
     assert.equal(unverified.checks.find(item => item.rule === 'yield')?.status, 'unknown');
 
-    const contradicted = await check({ code: '300750' });
-    assert.equal(contradicted.yieldBps, undefined, 'a feed omitting verified issuer cash cannot establish a current yield');
+    const officialRepair = await check({ rows: missingActions, officialRows: cashRows });
+    assert.equal(officialRepair.yieldBps, 500, 'explicit official capital-action evidence can repair a missing provider field');
+    const providerOnly = await check({ officialRows: [] });
+    assert.equal(providerOnly.yieldBps, undefined, 'a complete provider row alone does not verify an official distribution');
+
+    const contradicted = await check({ officialRows: cashRows.map((row, index) => index === 1 ? { ...row, PRETAX_BONUS_RMB: 20 } : row) });
+    assert.equal(contradicted.yieldBps, undefined, 'conflicting provider and official cash cannot establish a current yield');
     assert.equal(contradicted.pricing?.currentCashYieldBps, undefined);
+    assert.ok(contradicted.pricing?.dividendBase?.flags.includes('SOURCE_CONFLICT'));
 
     const lastUsableDay = await check({ quoteDate: '2026-10-14' });
     assert.equal(lastUsableDay.yieldBps, 500);
@@ -383,42 +423,47 @@ test('current research yields use verified trailing cash on the dated quote shar
       assert.equal(unavailable.checks.find(item => item.rule === 'yield')?.status, 'unknown');
     }
   } finally {
-    globalThis.fetch = originalFetch;
+    cache.close(); globalThis.fetch = originalFetch;
     context.mock.timers.reset();
   }
 });
 
-test('classic pricing survives failed financial and market feeds but never substitutes a missing cash feed', async context => {
+test('verified recent batches survive failed financial and market feeds but never substitute a missing cash feed', async context => {
   const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
-  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T08:00:00Z') });
+  const { parseDividendOfficialAnnouncementText } = await import('../src/lib/dividendLedger.ts');
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-29T08:00:00Z') });
   const originalFetch = globalThis.fetch;
-  const cash = envelope([
-    { ...dividendRow('2023-12-31', '2024-06-01', 1), NOTICE_DATE: '2024-05-20', BONUS_RATIO: 0, IT_RATIO: 0 },
-    { ...dividendRow('2025-12-31', '2026-06-01', 6.09), NOTICE_DATE: '2026-05-20', BONUS_RATIO: 0, IT_RATIO: 0 },
-  ]);
+  const cache = new Dexie('FortunaDividendLedger'); cache.version(1).stores({ documents: 'url', ledgers: 'code' });
+  const cash = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json', import.meta.url), 'utf8')).sources.distribution.data;
+  for (const name of ['pingan-2025-final', 'pingan-2026-interim']) {
+    const fixture = JSON.parse(readFileSync(new URL(`./fixtures/dividend-official/${name}.json`, import.meta.url), 'utf8'));
+    const event = parseDividendOfficialAnnouncementText(fixture.text, fixture);
+    assert.ok(event);
+    await cache.table('documents').put({ url: fixture.sourceUrl, sha256: fixture.pdfSha256, checkedAt: '2026-10-29', event });
+  }
   let cashAvailable = true;
   globalThis.fetch = async input => {
     if (cashAvailable && String(input).includes('RPT_SHAREBONUS_DET')) return Response.json(cash);
     throw new TypeError('fixture feed intentionally unavailable');
   };
   try {
-    const ready = (await fetchDividendResearch([{ code: '600036', name: '招商银行' }], principles)).stocks[0];
+    const ready = (await fetchDividendResearch([{ code: '000001', name: '平安银行' }], principles)).stocks[0];
     assert.equal(ready.financial, undefined);
     assert.equal(ready.pricing?.canApply, true);
-    assert.equal(ready.pricing?.d1Micros, 609000);
-    assert.equal(ready.pricing?.theoreticalPriceMinor, 1218);
-    assert.deepEqual(ready.pricing?.grid.map(level => level.priceMinor), [1107,1059,1015,936]);
+    assert.equal(ready.pricing?.dividendBase?.dpsMicros, 609000);
+    assert.equal(ready.pricing?.d1Micros, 548100);
+    assert.equal(ready.pricing?.theoreticalPriceMinor, 1096);
+    assert.deepEqual(ready.pricing?.grid.map(level => level.priceMinor), [996,953,913,843]);
     assert.equal(ready.pricing?.grid[0].changeFromCurrentBps, undefined);
     assert.ok(ready.issues.some(issue => issue.kind === 'financial'));
     assert.ok(ready.pricing?.pauseReasons?.includes('financial_sector_review'));
     cashAvailable = false;
-    const missing = (await fetchDividendResearch([{ code: '600036', name: '招商银行' }], principles)).stocks[0];
+    const missing = (await fetchDividendResearch([{ code: '000001', name: '平安银行' }], principles)).stocks[0];
     assert.equal(missing.pricing?.canApply, false);
-    assert.ok(missing.pricing?.blockers.includes('trailing_dividend_missing'));
+    assert.ok(missing.pricing?.blockers.includes('dividend_ledger_missing'));
     assert.deepEqual(missing.pricing?.grid, []);
     assert.ok(missing.issues.some(issue => issue.kind === 'dividend' && issue.reason === 'request_failed'));
   } finally {
-    globalThis.fetch = originalFetch;
-    context.mock.timers.reset();
+    cache.close(); globalThis.fetch = originalFetch; context.mock.timers.reset();
   }
 });

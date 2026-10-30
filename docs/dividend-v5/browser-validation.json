@@ -1,0 +1,200 @@
+{
+  "environment": "Isolated Chrome; synthetic asset/fund ledger, real archived CNinfo implementation texts parsed into the dividend ledger, mocked quotes/research/model transport",
+  "checks": [
+    {
+      "name": "a saved grid without generation evidence is explicitly qualified as base unchecked on the homepage",
+      "passed": true
+    },
+    {
+      "name": "home shows stock and both fund plans together, target amounts and independent entry/sell triggers",
+      "passed": true
+    },
+    {
+      "name": "collapsing dividend detail leaves the stock execution plan visible",
+      "passed": true
+    },
+    {
+      "name": "fund-390-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "fund-390-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "fund-320-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "fund-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "one-click daily advice refreshes context and answers inline with both plans without opening chat",
+      "passed": true
+    },
+    {
+      "name": "daily-390-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "daily-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "failed regeneration keeps the last completed recommendation",
+      "passed": true
+    },
+    {
+      "name": "cancelled generation cannot replace the last completed answer",
+      "passed": true
+    },
+    {
+      "name": "daily answer survives reload in Dexie",
+      "passed": true
+    },
+    {
+      "name": "stock holdings changes flag the saved answer as outdated",
+      "passed": true
+    },
+    {
+      "name": "fund ledger trades also invalidate the saved recommendation",
+      "passed": true
+    },
+    {
+      "name": "advice scope tracks tax and principles, ignores quote-download time and excludes archived fund positions",
+      "passed": true
+    },
+    {
+      "name": "prior-date advice keeps its original date and asks for a fresh result",
+      "passed": true
+    },
+    {
+      "name": "hiding amounts hides daily advice",
+      "passed": true
+    },
+    {
+      "name": "generated plan shows separate pretax and 10%-tax prices, four buy floors and four sell ceilings",
+      "passed": true
+    },
+    {
+      "name": "home opens Stock Checks directly; generated grid and the sole price preview are visible above a single evidence disclosure",
+      "passed": true
+    },
+    {
+      "name": "checks-390-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "checks-390-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "checks-320-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "checks-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "preview includes all eight replacement levels and does not write the plan",
+      "passed": true
+    },
+    {
+      "name": "preview-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "confirmation writes both verified sides while retaining holdings, weight and manual pause",
+      "passed": true
+    },
+    {
+      "name": "confirmed grid records exact generation time, pretax batch base, selected tax and parameter version",
+      "passed": true
+    },
+    {
+      "name": "evidence-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "all supporting evidence is available after one expansion with no nested evidence menus",
+      "passed": true
+    },
+    {
+      "name": "single evidence disclosure shows official ledger dates, excludes a pending proposal and distinguishes 119 price months from 1 announcement-verified yield month",
+      "passed": true
+    },
+    {
+      "name": "ledger-390-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "ledger-390-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "ledger-320-1: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "ledger-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "restoring a paused grid requires displayed fresh evidence, acknowledgement, preview and confirmation and keeps both price ladders",
+      "passed": true
+    },
+    {
+      "name": "chat retains the original quick question for next steps",
+      "passed": true
+    },
+    {
+      "name": "pricing editor explains recent implemented batches, defaults to 10% and offers all three holding-period tax options without a trailing-window description",
+      "passed": true
+    },
+    {
+      "name": "method-320-1.3: no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "base change over 10% and post-generation ex-date warn without replacing saved prices",
+      "passed": true
+    },
+    {
+      "name": "a quote above every saved sell level raises a market-range alert",
+      "passed": true
+    },
+    {
+      "name": "conflicting base with saved explicit prices keeps qualified old-grid judgement and blocks a new numerical preview",
+      "passed": true
+    },
+    {
+      "name": "conflicting base without a saved price grid displays unable to judge on home and Stock Checks",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "screenshots": [
+    "fund-390-1.png",
+    "fund-390-1.3.png",
+    "fund-320-1.png",
+    "fund-320-1.3.png",
+    "daily-390-1.3.png",
+    "daily-320-1.3.png",
+    "checks-390-1.png",
+    "checks-390-1.3.png",
+    "checks-320-1.png",
+    "checks-320-1.3.png",
+    "preview-320-1.3.png",
+    "evidence-320-1.3.png",
+    "ledger-390-1.png",
+    "ledger-390-1.3.png",
+    "ledger-320-1.png",
+    "ledger-320-1.3.png",
+    "method-320-1.3.png"
+  ],
+  "limitations": [
+    "No real provider request or physical-device installation is represented."
+  ]
+}

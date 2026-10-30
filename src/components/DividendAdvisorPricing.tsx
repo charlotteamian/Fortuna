@@ -5,11 +5,14 @@ import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
-import { dividendPricingPlan } from '../lib/dividendPricingPlan';
+import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan';
 import { validateDividendPricingProposal } from '../services/dividendAdvisorActionsService';
 import './DividendReviewAlerts.css';
+import DividendLedgerView from './DividendLedgerView';
 
 const GAP_HELP: Record<DividendPricingBlocker, string> = {
+  dividend_ledger_missing: 'dividend', dividend_base_unverified: 'dividend', dividend_base_incomplete: 'dividend',
+  dividend_source_conflict: 'dividend', dividend_frequency_unknown: 'dividend', dividend_crosscheck_mismatch: 'dividend',
   trailing_dividend_missing: 'dividend', trailing_dividend_invalid: 'dividend', trailing_dividend_stale: 'dividend',
   trailing_dividend_zero: 'dividend', cash_distributions_incomplete: 'dividend',
   annual_eps_missing: 'financials', annual_payout_missing: 'financials', non_positive_earnings: 'risk',
@@ -36,11 +39,16 @@ export function DividendFinancialReviewCard({ review, code }: { review: Dividend
     {([{ status: 'risk', metrics: risks }, { status: 'unknown', metrics: missing }, { status: 'pass', metrics: passed }] as const).filter(group => group.metrics.length > 0).map(group => <section key={group.status} className={group.status === 'pass' ? '' : `div-review-alert ${group.status}`}>
       <strong>{t(group.status === 'risk' ? 'div_v3_review_risks' : group.status === 'unknown' ? 'div_v3_review_missing' : 'div_v3_review_passed', { count: group.metrics.length })}</strong>
       <ul className="div-ai-checks">{group.metrics.map(metric => <li key={metric.key}><div><strong>{t(`div_ai_financial_metric_${metric.key}`)}</strong></div>
-      <p>{t('div_ai_financial_metric_value', { value: pct(metric.valueBps), direction: t(metric.direction === 'minimum' ? 'div_ai_at_least' : 'div_ai_at_most'), threshold: pct(metric.thresholdBps) })}</p><p>{t('div_ai_research_period', { period: metric.reportDate })}</p>
+      <p>{metric.thresholdBps === undefined ? t('div_ai_financial_metric_value_unverified', { value: pct(metric.valueBps) })
+        : t('div_ai_financial_metric_value', { value: pct(metric.valueBps), direction: t(metric.direction === 'minimum' ? 'div_ai_at_least' : 'div_ai_at_most'), threshold: pct(metric.thresholdBps) })}</p><p>{t('div_ai_research_period', { period: metric.reportDate })}</p>
+      {metric.basis && <p>{t(`div_ai_financial_basis_${metric.basis}`, { period: metric.comparisonReportDate ?? '—' })}</p>}
+      {metric.capitalInputs && <p>{t('div_ai_financial_capital_inputs', { roe: pct(metric.capitalInputs.roeBps), payout: pct(metric.capitalInputs.payoutBps), growth: pct(metric.capitalInputs.rwaGrowthBps) })}</p>}
       {review.reportSupplement && ['comprehensiveSolvency', 'coreSolvency'].includes(metric.key) && <p>{t('div_ai_financial_report_metric_basis')}</p>}
       {metric.changeBps !== undefined && <p>{t('div_ai_financial_yoy_change', { value: `${metric.changeBps > 0 ? '+' : ''}${(metric.changeBps / 100).toFixed(2)}` })}</p>}
+      {(metric.sourceUrls ?? []).filter(url => url.startsWith('https://')).length > 0 && <div className="div-ai-help-links">{metric.sourceUrls!.filter(url => url.startsWith('https://')).map((url, index) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_original_report_source', { index: index + 1 })}</a>)}</div>}
     </li>)}</ul></section>)}
     {review.missing.map(item => <p className="div-ai-muted" key={item}>{t(`div_ai_financial_missing_${item}`, { defaultValue: t('div_ai_financial_missing_other') })}</p>)}
+    {review.sector === 'bank' && review.missing.some(item => ['specialMentionLoans', 'overdue90DaysDeviation', 'internalCapitalCapacity'].includes(item)) && <p className="div-ai-muted">{t('div_ai_financial_bank_evidence_gap')}</p>}
     {review.status !== 'pass' && <p className="div-ai-muted">{t(`div_ai_financial_help_${review.sector}`, { code })}</p>}
     {review.reportSupplement && <div className="div-ai-auto-summary"><strong>{t('div_ai_financial_report_extract')}</strong>
       <p>{t('div_ai_financial_report_dates', { report: review.reportSupplement.reportDate, published: review.reportSupplement.publishedAt, verified: review.reportSupplement.verifiedAt, pages: review.reportSupplement.pdfPages.join('、') })}</p>
@@ -70,7 +78,7 @@ export function DividendPricingEditor({ method, disabled, onSave }: { method: Di
   const [holdingPeriod, setHoldingPeriod] = useState(method.holdingPeriod);
   const [error, setError] = useState('');
   const save = async () => {
-    const value = { ...method, strategy: 'classic_ttm' as const, holdingPeriod };
+    const value = { ...method, strategy: 'recent_batches' as const, holdingPeriod };
     if (!isDividendPricingMethod(value)) { setError(t('div_classic_invalid')); return; }
     setError('');
     await onSave(value);
@@ -100,17 +108,21 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
   const pct = (value: number) => `${Number((value / 100).toFixed(2))}%`;
   const proposal: DividendPlanProposal | null = plan ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: `¥${((pricing.d1Micros ?? 0) / 1e6).toFixed(6)}`, price: yuan(pricing.theoreticalPriceMinor) }), ...plan,
+    gridProvenance: dividendPricingProvenance(pricing, generatedAt),
   } : null;
   return <section className="div-ai-pricing-card div-check-grid" aria-label={t('div_check_grid_title')}>
     <h3>{t('div_check_grid_title')}</h3>
     {pricing.blockers.includes('pricing_calculation_stale') ? <p className="div-warning">{t('div_v2_pricing_model_stale')}</p> : <>
       <p className="div-ai-muted">{t('div_check_grid_caption')}</p>
-      {pricing.grid.length > 0 && <table className="div-check-grid-table"><thead><tr>
-        <th scope="col">{t('div_grid_level_column')}</th><th scope="col">{t('div_home_buy')}</th><th scope="col">{t('div_home_sell')}</th>
-      </tr></thead><tbody>{pricing.grid.map((buy, index) => <tr key={buy.yieldBps}>
-        <th scope="row">{index + 1}</th><td><strong>{yuan(buy.priceMinor)}</strong><small>{pct(buy.yieldBps)}</small></td>
-        <td><strong>{yuan(plan?.sellLevels[index]?.priceMinor)}</strong><small>{plan?.sellLevels[index] ? pct(plan.sellLevels[index].yieldBps) : '—'}</small></td>
-      </tr>)}</tbody></table>}
+      {plan && <><p className="div-ai-muted">{t('div_batch_columns_note', { tax: pct(pricing.taxBps ?? 0) })}</p>
+        {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)}</caption><thead><tr>
+          <th scope="col">{t('div_grid_level_column')}</th><th scope="col">{t('div_batch_gross_price')}</th><th scope="col">{t('div_batch_net_price')}</th>
+        </tr></thead><tbody>{plan[side === 'buy' ? 'buyLevels' : 'sellLevels'].map((level, index) => {
+          const gross = BigInt(pricing.dividendBase!.dpsMicros!), divisor = BigInt(level.yieldBps);
+          const grossMinor = Number(side === 'buy' ? gross / divisor : (gross + divisor - 1n) / divisor);
+          return <tr key={level.yieldBps}><th scope="row">{index + 1}<small>{pct(level.yieldBps)}</small></th>
+            <td>{yuan(grossMinor)}</td><td><strong>{yuan(level.priceMinor)}</strong></td></tr>;
+        })}</tbody></table>)}</>}
       {!plan && <p className="div-warning">{t('div_check_grid_unavailable')}{pricing.blockers.map(issue => t(`div_v2_pricing_gap_${issue}`)).join('；')}</p>}
       {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} embedded previewLabel={t('div_v2_pricing_preview')}
         beforePreview={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })}
@@ -125,10 +137,8 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
   const pricing = invalidateOutdatedDividendPricing(sourcePricing);
   const yuan = (value?: number, scale = 100) => value === undefined ? '—' : `¥${(value / scale).toLocaleString(undefined, { maximumFractionDigits: scale === 1e6 ? 6 : 2 })}`;
   const pct = (value?: number) => value === undefined ? '—' : `${(value / 100).toFixed(2)}%`;
-  const trailing = pricing.trailingDividend;
-  const trailingAmountVerified = !!trailing && Number.isSafeInteger(trailing.dpsMicros) && trailing.dpsMicros >= 0
-    && trailing.capitalActionsVerified && trailing.cashDistributionsComplete && !pricing.blockers.includes('trailing_dividend_invalid');
-  const dividendSources = Array.isArray(trailing?.sourceUrls) ? trailing.sourceUrls.filter(url => typeof url === 'string' && url.trim()) : [];
+  const base = pricing.dividendBase;
+  const dividendSources = base?.sourceUrls ?? [];
   const advisory = [...new Set([...(pricing.pauseReasons ?? []), ...(pricing.warnings ?? [])])].filter(issue => !pricing.blockers.includes(issue));
   const riskKeys = new Set<DividendPricingBlocker>(['non_positive_earnings', 'payout_above_100', 'fcf_below_150', 'fcf_non_positive', 'fcf_dividend_capped', 'anchors_conflict', 'growth_return_conflict', 'implausible_yield']);
   const isRisk = (issue: DividendPricingBlocker) => issue === 'financial_sector_review' ? pricing.financialReview?.status === 'risk' : riskKeys.has(issue);
@@ -140,8 +150,8 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
   const comparison = dividendPricingMarketComparison(pricing);
   return <section className="div-ai-pricing-evidence">
     <h4>{t('div_classic_title')}</h4>
-    {trailing && <p className="div-ai-muted">{t('div_classic_window', { from: trailing.windowStart, through: trailing.asOf })}</p>}
-    <dl className="div-ai-metrics"><div><dt>{t('div_classic_gross_dividend')}</dt><dd>{yuan(trailingAmountVerified ? trailing!.dpsMicros : undefined, 1e6)}</dd></div>
+    {pricing.ledger && <DividendLedgerView ledger={pricing.ledger} base={base} />}
+    <dl className="div-ai-metrics"><div><dt>{t('div_classic_gross_dividend')}</dt><dd>{yuan(base?.dpsMicros, 1e6)}</dd></div>
       <div><dt>{t('div_classic_net_dividend')}</dt><dd>{yuan(pricing.d1Micros, 1e6)}</dd></div></dl>
     <p className="div-ai-muted">{t('div_classic_dividend_basis', { tax: pct(pricing.taxBps) })}</p>
     <p className="div-ai-muted">{t('div_classic_price_rule')}</p><p className="div-ai-muted">{t('div_classic_buy_yields')}</p><p className="div-ai-muted">{t('div_classic_sell_yields')}</p>
@@ -158,6 +168,9 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
       <div><dt>{t('div_v2_pricing_spread_percentile')}</dt><dd>{pct(pricing.spreadPercentileBps)}</dd></div></dl>
     {pricing.treasury && <p className="div-ai-muted">{t('div_v2_pricing_treasury_date', { yield: pct(pricing.treasury.yieldBps), date: pricing.treasury.asOf })}</p>}
     {pricing.opportunity && <p className="div-ai-muted">{t('div_v2_pricing_opportunity_evidence', { yield: pct(pricing.opportunity.yieldBps), date: pricing.opportunity.asOf })} · {pricing.opportunity.sourceUrl.startsWith('https://') ? <a href={pricing.opportunity.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_v2_opportunity_reference')}</a> : pricing.opportunity.sourceUrl}</p>}
-    {pricing.history && <p className="div-ai-muted">{t('div_v2_pricing_history_dates', { from: pricing.history.from, through: pricing.history.through })}</p>}
+    {pricing.history && <p className="div-ai-muted">{t('div_batch_history_prices', { from: pricing.history.priceFrom ?? pricing.history.from, through: pricing.history.priceThrough ?? pricing.history.through, count: pricing.history.priceSampleCount ?? pricing.history.samples.length })}</p>}
+    {pricing.historyCoverage && <><p className="div-ai-muted">{t('div_batch_history_verified', { count: pricing.historyCoverage.sampleCount, from: pricing.historyCoverage.from ?? '—', through: pricing.historyCoverage.through ?? '—' })}</p>
+      <ul className="div-ai-muted">{pricing.historyCoverage.reasons.map(reason => <li key={reason}>{t(`div_batch_history_${reason}`)}</li>)}</ul></>}
+
   </section>;
 }

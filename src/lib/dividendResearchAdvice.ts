@@ -1,10 +1,12 @@
 import type { DividendIndexResearch, DividendResearchRule, DividendStockResearch } from './dividendResearch.ts';
-import { invalidateOutdatedDividendPricing, type DividendPricingBlocker } from './dividendPricing.ts';
+import { reviewDividendGrid, type DividendGridBasisState } from './dividendGridProvenance.ts';
+import { DIVIDEND_PRICING_CALCULATION_VERSION, invalidateOutdatedDividendPricing, type DividendPricingBlocker } from './dividendPricing.ts';
 import { buildDividendHomePlan, buildGrid, dateInChina, type DividendStock } from './dividendWorkbench.ts';
 
 export type DividendResearchDecision = 'evidence' | 'wait_price' | 'eligible';
 export interface DividendResearchAdvice {
   decision: DividendResearchDecision;
+  basisState: DividendGridBasisState;
   failedRules: DividendResearchRule[];
   missingRules: DividendResearchRule[];
   pricingBlockers: DividendPricingBlocker[];
@@ -52,23 +54,30 @@ export function dividendResearchAdvice(stock: DividendStockResearch, indices: Di
   // freshness rules, so failed financial downloads cannot hide a valid saved trigger.
   const quoteBase: DividendStock = savedStock ?? { code: stock.code, name: stock.name, group: 'watch', weightBps: 0,
     shareMode: 'manual', manualShares: 0, lotSize: 100, buyLevels: [], sellLevels: [] };
+  const savedReview = savedStock ? reviewDividendGrid(savedStock, stock.pricing?.dividendBase, { asOf, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches', taxBps: stock.pricing?.taxBps }) : undefined;
+  const currentShareBasisDate = stock.pricing?.dividendBase?.latestExDate;
+  // Only an explicit saved grid can use the provisional old-grid comparison.
+  // A fresh candidate ladder must use a quote after all cash/share changes.
+  const matchesCandidateBasis = (quoteDate?: string) => !!savedReview?.hasSavedGrid || !currentShareBasisDate
+    || !!quoteDate && quoteDate.slice(0, 10) >= currentShareBasisDate;
   const researchQuote = stock.pricing?.currentPriceMinor !== undefined && stock.pricing.priceDate
     ? { priceMinor: stock.pricing.currentPriceMinor, date: stock.pricing.priceDate, fetchedAt: 0 } : undefined;
   const researchQuoteUsable = buildDividendHomePlan({ ...quoteBase, quote: researchQuote,
-    quoteFailedAt: issues.includes('quote_missing') ? 0 : undefined }, undefined, 0, asOf).quoteUsable;
-  const savedQuoteUsable = savedStock ? buildDividendHomePlan(savedStock, undefined, 0, asOf).quoteUsable : false;
+    quoteFailedAt: issues.includes('quote_missing') ? 0 : undefined }, undefined, 0, asOf).quoteUsable && matchesCandidateBasis(researchQuote?.date);
+  const savedQuoteUsable = savedStock ? buildDividendHomePlan(savedStock, undefined, 0, asOf).quoteUsable && matchesCandidateBasis(savedStock.quote?.date) : false;
   const selectedQuote = savedQuoteUsable && (!researchQuoteUsable || savedStock!.quote!.date >= researchQuote!.date)
     ? savedStock!.quote : researchQuoteUsable ? researchQuote : undefined;
   const currentPriceMinor = selectedQuote?.priceMinor;
   const currentPriceDate = selectedQuote?.date;
   const quoteUsable = selectedQuote !== undefined;
   const pricingMissingReasons = issues.filter(issue => !dividendPricingIssueIsRisk(issue, stock) && !(issue === 'quote_missing' && quoteUsable));
-  const grid = savedStock ? buildGrid(savedStock, 0, 0, 'buy', asOf) : stock.pricing?.canApply ? stock.pricing.grid : [];
+  const basisState: DividendGridBasisState = savedReview?.hasSavedGrid ? savedReview.basisState : stock.pricing?.canApply && stock.pricing.dividendBase?.asOf === asOf ? 'verified' : 'unavailable';
+  const grid = savedReview?.hasSavedGrid ? buildGrid(savedStock!, 0, 0, 'buy', asOf) : basisState === 'verified' ? stock.pricing!.grid : [];
   const firstBuyPriceMinor = grid[0]?.priceMinor;
   const triggeredBuyLevels = selectedQuote ? grid.flatMap((level, index) => level.priceMinor !== undefined && selectedQuote.priceMinor <= level.priceMinor ? [index + 1] : []) : [];
   // A margin-of-safety reference must not become a second gate on an already
   // discounted ladder. Financial and technical findings remain visible below.
   const decision: DividendResearchDecision = !quoteUsable || !grid.some(level => level.priceMinor !== undefined) ? 'evidence' : triggeredBuyLevels.length ? 'eligible' : 'wait_price';
-  return { decision, failedRules, missingRules, pricingBlockers, pricingPauseReasons, pricingRiskReasons, pricingMissingReasons,
+  return { decision, basisState, failedRules, missingRules, pricingBlockers, pricingPauseReasons, pricingRiskReasons, pricingMissingReasons,
     technicalMissing, marketMissing, marketPacing, additionalRulesUnverified, currentPriceMinor, currentPriceDate, quoteUsable, marginPriceMinor, firstBuyPriceMinor, triggeredBuyLevels };
 }

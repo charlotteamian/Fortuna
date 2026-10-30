@@ -4,8 +4,10 @@ import { computeHoldingPosition } from './holdingPosition.ts';
 import { getHoldingMode } from './productPortfolio.ts';
 import { mainlandQuoteSymbol, parseDividendMarketQuote } from './dividendQuote.ts';
 import { gridAnnualDps, isDividendDataV2, latestReportDividend, parseDividendAnnouncements, type DividendAnnouncement } from './dividendForecast.ts';
+import { isDividendGridProvenance, type DividendGridProvenance } from './dividendGridProvenance.ts';
 export { latestReportDividend, forecastHoldingYearDividends, gridAnnualDps } from './dividendForecast.ts';
 export type { DividendAnnouncement, LatestReportDividend, HoldingYearDividendEvent, HoldingYearDividendForecast } from './dividendForecast.ts';
+export type { DividendGridProvenance } from './dividendGridProvenance.ts';
 
 export interface DividendPayment { exDate: string; reportDate: string; dpsMicros: number }
 export interface DividendData {
@@ -27,6 +29,7 @@ export interface DividendStock {
   shareMode: 'linked' | 'manual'; manualShares: number;
   manualDpsMicros?: number; lotSize: number; note?: string;
   buyLevels?: GridLevel[]; sellLevels?: GridLevel[];
+  gridProvenance?: DividendGridProvenance;
   buyPaused?: boolean;
   quote?: DividendQuote; dividend?: DividendData;
   quoteFailedAt?: number; dividendFailedAt?: number;
@@ -230,6 +233,7 @@ export function isDividendStock(raw: unknown): raw is DividendStock {
   const validLevels = (levels: GridLevel[] | undefined) => levels === undefined || (Array.isArray(levels) && levels.length > 0 && levels.length <= 20 && levels.every(l => integer(l.yieldBps, 10000) && l.yieldBps > 0 && integer(l.portionBps, 10000) && (l.priceMinor === undefined || integer(l.priceMinor) && l.priceMinor > 0)) && levels.reduce((n,l) => n + l.portionBps, 0) <= 10000);
   return typeof s.code === 'string' && mainlandCode(s.code) === s.code && typeof s.name === 'string' && s.name.trim().length > 0 && ['core', 'watch', 'hidden'].includes(s.group) && integer(s.weightBps, 10000) && ['linked', 'manual'].includes(s.shareMode) && Number.isFinite(s.manualShares) && s.manualShares >= 0 && integer(s.lotSize, 10000) && s.lotSize > 0 && (s.manualDpsMicros === undefined || integer(s.manualDpsMicros)) && validLevels(s.buyLevels) && validLevels(s.sellLevels)
     && (s.buyPaused === undefined || typeof s.buyPaused === 'boolean')
+    && (s.gridProvenance === undefined || isDividendGridProvenance(s.gridProvenance))
     && (s.quote === undefined || integer(s.quote.priceMinor) && s.quote.priceMinor > 0 && typeof s.quote.date === 'string' && integer(s.quote.fetchedAt))
     && (s.dividend === undefined || integer(s.dividend.dpsMicros) && typeof s.dividend.asOf === 'string' && typeof s.dividend.windowStart === 'string' && integer(s.dividend.fetchedAt) && Array.isArray(s.dividend.payments) && s.dividend.payments.every(p => typeof p.exDate === 'string' && typeof p.reportDate === 'string' && integer(p.dpsMicros)) && isDividendDataV2(s.dividend));
 }

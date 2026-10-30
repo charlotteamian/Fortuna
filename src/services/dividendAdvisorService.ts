@@ -5,7 +5,7 @@ import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type Divi
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
 import { parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
 import { dividendPricingIssueText, humanizeDividendPricingIssues } from '../lib/dividendPricing.ts';
-import { dividendPricingPlan } from '../lib/dividendPricingPlan.ts';
+import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -210,16 +210,16 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
       const money = (value: number) => (value / 100).toFixed(2);
       const pauseDetails = (pricing.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue, chinese ? 'zh' : 'en')).join(chinese ? '；' : '; ');
       const reason = chinese
-        ? `以最近12个月已实施分红按固定股息率重算四档买入、四档卖出，每档25%；5%股息率中性参考线${money(pricing.theoreticalPriceMinor!)}元。保留当前手动暂停设置，仓位按价格档位、预算与持仓判断。风险提示：${pauseDetails || '本次无额外定价提示'}。`
-        : `Rebuild four buy and four sell levels from implemented trailing cash dividends and fixed cash yields, 25% each. The 5% neutral reference is CNY ${money(pricing.theoreticalPriceMinor!)}. Preserve the manual pause setting; actions depend on price levels, budget and holdings. Alerts: ${pauseDetails || 'no additional pricing alerts'}.`;
+        ? `以最近已核验批次分红按固定股息率重算四档买入、四档卖出，每档25%；5%股息率中性参考线${money(pricing.theoreticalPriceMinor!)}元。保留当前手动暂停设置，仓位按价格档位、预算与持仓判断。风险提示：${pauseDetails || '本次无额外定价提示'}。`
+        : `Rebuild four buy and four sell levels from verified recent-batch cash dividends and fixed cash yields, 25% each. The 5% neutral reference is CNY ${money(pricing.theoreticalPriceMinor!)}. Preserve the manual pause setting; actions depend on price levels, budget and holdings. Alerts: ${pauseDetails || 'no additional pricing alerts'}.`;
       result.actions = result.actions.filter(action => action.code !== saved.code);
       result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason: reason.slice(0, 2000),
         ...(explicitPause ? { buyPaused: true } : {}),
         ...plan });
       const dividend = ((pricing.d1Micros ?? 0) / 1e6).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-      const window = pricing.trailingDividend ? `${pricing.trailingDividend.windowStart}—${pricing.trailingDividend.asOf}` : '';
-      summaries.push(chinese ? `${saved.name}：最近12个月已实施分红${dividend}元/股${pricing.taxBps ? '（按所选持有期扣税后）' : '（税前；所选持有期税率0%）'}，观察期${window}。按固定股息率计算，买入四档${plan.buyLevels.map(level => money(level.priceMinor!)).join('／')}元；卖出四档${plan.sellLevels.map(level => money(level.priceMinor!)).join('／')}元，每档25%。5%股息率中性参考线${money(pricing.theoreticalPriceMinor!)}元，是纪律参考，不是公允价值。预览确认后同时替换两侧，保留当前手动暂停设置。风险提示：${pauseDetails || '本次无额外定价提示'}；仓位仍按价格档位、预算和持仓判断。`
-        : `${saved.name}: implemented trailing cash dividend CNY ${dividend} per share (${pricing.taxBps ? 'after the selected holding-period tax' : 'pretax; selected tax rate 0%'}), window ${window}. Fixed-yield buy levels ${plan.buyLevels.map(level => money(level.priceMinor!)).join(' / ')}; sell levels ${plan.sellLevels.map(level => money(level.priceMinor!)).join(' / ')}, 25% each. The 5% neutral reference is CNY ${money(pricing.theoreticalPriceMinor!)}; this is a discipline reference, not fair value. Preview and confirm to replace both sides while preserving the manual pause setting. Alerts: ${pauseDetails || 'no additional pricing alerts'}. Actions depend on price levels, budget and holdings.`);
+      const window = pricing.dividendBase?.reportPeriods.join('／') ?? '';
+      summaries.push(chinese ? `${saved.name}：最近已核验批次分红${dividend}元/股${pricing.taxBps ? '（按所选持有期扣税后）' : '（税前；所选持有期税率0%）'}，所属期${window}。按固定股息率计算，买入四档${plan.buyLevels.map(level => money(level.priceMinor!)).join('／')}元；卖出四档${plan.sellLevels.map(level => money(level.priceMinor!)).join('／')}元，每档25%。5%股息率中性参考线${money(pricing.theoreticalPriceMinor!)}元，是纪律参考，不是公允价值。预览确认后同时替换两侧，保留当前手动暂停设置。风险提示：${pauseDetails || '本次无额外定价提示'}；仓位仍按价格档位、预算和持仓判断。`
+        : `${saved.name}: verified recent-batch cash dividend CNY ${dividend} per share (${pricing.taxBps ? 'after the selected holding-period tax' : 'pretax; selected tax rate 0%'}), window ${window}. Fixed-yield buy levels ${plan.buyLevels.map(level => money(level.priceMinor!)).join(' / ')}; sell levels ${plan.sellLevels.map(level => money(level.priceMinor!)).join(' / ')}, 25% each. The 5% neutral reference is CNY ${money(pricing.theoreticalPriceMinor!)}; this is a discipline reference, not fair value. Preview and confirm to replace both sides while preserving the manual pause setting. Alerts: ${pauseDetails || 'no additional pricing alerts'}. Actions depend on price levels, budget and holdings.`);
     }
     // For explicit repricing, the deterministic result owns both prices and
     // readiness. Do not append a contradictory model refusal or another price.
@@ -236,6 +236,10 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   }
   result.actions = result.actions.slice(0, 10);
   result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');
-  result.actions = result.actions.map(action => ({ ...action, reason: humanizeDividendPricingIssues(action.reason, chinese ? 'zh' : 'en').slice(0, 2000) }));
+  result.actions = result.actions.map(action => {
+    const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
+    const gridProvenance = pricing && (action.buyLevels || action.sellLevels) ? dividendPricingProvenance(pricing, context.research!.generatedAt) : undefined;
+    return { ...action, ...(gridProvenance ? { gridProvenance } : {}), reason: humanizeDividendPricingIssues(action.reason, chinese ? 'zh' : 'en').slice(0, 2000) };
+  });
   return result;
 }

@@ -1,8 +1,9 @@
 import type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { dividendAnnualCashEvidence, dividendAnnualReportEvidence, type DividendAnnualReportEvidence } from './dividendAnnualReportEvidence.ts';
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
+import { dividendLedgerBase, dividendLedgerHistoryDiagnostics, type DividendLedger, type DividendLedgerBase } from './dividendLedger.ts';
 /** Changes to inputs, evidence or arithmetic must retire older cached drafts. */
-export const DIVIDEND_PRICING_CALCULATION_VERSION = 4;
+export const DIVIDEND_PRICING_CALCULATION_VERSION = 5;
 export const CLASSIC_DIVIDEND_BUY_YIELDS = [550, 575, 600, 650] as const;
 export const CLASSIC_DIVIDEND_SELL_YIELDS = [480, 450, 420, 400] as const;
 export const CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS = 500;
@@ -15,7 +16,7 @@ export interface DividendPricingStockOverride {
 }
 export interface DividendPricingMethod {
   /** Absent in legacy backups; every new calculation uses this fixed-yield method. */
-  strategy?: 'classic_ttm';
+  strategy?: 'classic_ttm' | 'recent_batches';
   requiredReturnBps: number;
   growthBps: number;
   holdingPeriod: 'over_year' | 'month_to_year' | 'up_to_month';
@@ -54,7 +55,7 @@ export interface DividendPricingAnnual {
   fcfCoverageBps?: number;
 }
 export interface DividendYieldHistory {
-  basis: 'implemented_cash_ex_date_trailing_year_over_unadjusted_month_close';
+  basis: 'implemented_cash_ex_date_trailing_year_over_unadjusted_month_close' | 'verified_recent_batches_over_unadjusted_month_close';
   samples: { date: string; yieldBps: number; treasuryBps?: number; spreadBps?: number }[];
   from: string;
   through: string;
@@ -62,6 +63,10 @@ export interface DividendYieldHistory {
   /** A source feed must not contradict already verified annual cash disclosures. */
   cashDistributionsComplete?: boolean;
   sourceUrls: string[];
+  priceSampleCount?: number;
+  priceFrom?: string;
+  priceThrough?: string;
+  ledgerIssues?: string[];
 }
 export interface DividendYieldHistoryCoverage {
   usable: boolean;
@@ -73,7 +78,7 @@ export interface DividendYieldHistoryCoverage {
   through?: string;
   ageDays?: number;
   maxAgeDays: 40;
-  reasons: ('history_unavailable' | 'samples_insufficient' | 'span_insufficient' | 'stale' | 'capital_actions_unverified' | 'cash_distributions_incomplete')[];
+  reasons: ('history_unavailable' | 'samples_insufficient' | 'span_insufficient' | 'stale' | 'capital_actions_unverified' | 'cash_distributions_incomplete' | 'announcement_unverified' | 'ledger_conflict')[];
 }
 /** Exact implemented cash in (windowStart, asOf], on the asOf share basis. */
 export interface DividendPricingTrailingDividend {
@@ -92,7 +97,8 @@ export type DividendPricingBlocker = 'annual_eps_missing' | 'annual_payout_missi
   | 'opportunity_cost_missing' | 'opportunity_cost_stale' | 'anchors_conflict' | 'growth_return_conflict'
   | 'quote_missing' | 'roe_bps_missing' | 'cyclical_normalisation_required' | 'annual_stale'
   | 'dividend_continuity_missing' | 'implausible_yield' | 'anchors_missing' | 'pricing_calculation_stale'
-  | 'trailing_dividend_missing' | 'trailing_dividend_invalid' | 'trailing_dividend_stale' | 'trailing_dividend_zero' | 'cash_distributions_incomplete';
+  | 'trailing_dividend_missing' | 'trailing_dividend_invalid' | 'trailing_dividend_stale' | 'trailing_dividend_zero' | 'cash_distributions_incomplete'
+  | 'dividend_ledger_missing' | 'dividend_base_unverified' | 'dividend_base_incomplete' | 'dividend_source_conflict' | 'dividend_frequency_unknown' | 'dividend_crosscheck_mismatch';
 export interface DividendPricingGrid {
   /** Price relative to the 5% neutral line; never an additional price discount. */
   discountBps: number;
@@ -106,8 +112,10 @@ export interface DividendPricingResult {
   /** Missing on historical cached calculations. Those remain evidence, not new drafts. */
   calculationVersion?: number;
   /** Absent on historical calculations, which cannot create a new plan. */
-  pricingBasis?: 'classic_ttm';
+  pricingBasis?: 'classic_ttm' | 'recent_batches';
   trailingDividend?: DividendPricingTrailingDividend;
+  ledger?: DividendLedger;
+  dividendBase?: DividendLedgerBase;
   status: 'ready' | 'blocked';
   canApply: boolean;
   riskClass: DividendPricingRiskClass;
@@ -163,6 +171,8 @@ export interface DividendPricingInput {
   method: DividendPricingMethod;
   annuals: DividendPricingAnnual[];
   trailingDividend?: DividendPricingTrailingDividend;
+  ledger?: DividendLedger;
+  dividendBase?: DividendLedgerBase;
   priceMinor?: number;
   priceDate?: string;
   /** Implemented trailing cash on the quote's share basis, not sustainable D1. */
@@ -177,7 +187,7 @@ export interface DividendPricingInput {
 }
 
 export function defaultDividendPricingMethod(): DividendPricingMethod {
-  return { strategy: 'classic_ttm', requiredReturnBps: 800, growthBps: 0, holdingPeriod: 'over_year', safetyMarginBps: 1500,
+  return { strategy: 'recent_batches', requiredReturnBps: 800, growthBps: 0, holdingPeriod: 'month_to_year', safetyMarginBps: 1500,
     riskPremiumBps: { bondlike: 175, bank: 225, cyclical: 350, other: 300 }, historicalPercentileBps: 7500,
     stockOverrides: {} };
 }
@@ -186,7 +196,7 @@ export function isDividendPricingMethod(raw: unknown): raw is DividendPricingMet
   const p = raw as DividendPricingMethod;
   const integer = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
   const text = (v: unknown, length: number) => v === undefined || typeof v === 'string' && v.length <= length;
-  return (p.strategy === undefined || p.strategy === 'classic_ttm')
+  return (p.strategy === undefined || p.strategy === 'classic_ttm' || p.strategy === 'recent_batches')
     && integer(p.requiredReturnBps, 1, 5000) && integer(p.growthBps, 0, 300)
     && ['over_year', 'month_to_year', 'up_to_month'].includes(p.holdingPeriod)
     && integer(p.safetyMarginBps, 1000, 3000) && integer(p.historicalPercentileBps, 7000, 8000)
@@ -402,6 +412,22 @@ export function dividendPricingYieldHistory(prices: { date: string; priceMinor: 
     from: samples[0].date, through: samples.at(-1)!.date, capitalActionsVerified, cashDistributionsComplete,
     sourceUrls };
 }
+
+/** Each historical quote uses the verified batches and capital actions known on that date. */
+export function dividendLedgerYieldHistory(prices: { date: string; priceMinor: number }[], ledger: DividendLedger,
+  treasury?: DividendTreasuryResearch): DividendYieldHistory {
+  const diagnostics = dividendLedgerHistoryDiagnostics(ledger, prices);
+  const samples = diagnostics.samples.flatMap(sample => {
+    if (sample.yieldBps === undefined || sample.yieldBps < 0 || sample.yieldBps > 3000) return [];
+    const bond = treasury?.history.filter(row => row.date <= sample.date).at(-1);
+    const currentBond = bond && Date.parse(sample.date) - Date.parse(bond.date) <= 10 * 86400000 ? bond : undefined;
+    return [{ date: sample.date, yieldBps: sample.yieldBps, ...(currentBond ? { treasuryBps: currentBond.yieldBps, spreadBps: sample.yieldBps - currentBond.yieldBps } : {}) }];
+  });
+  const priceDates = [...new Set(prices.map(price => price.date))].sort();
+  return { basis: 'verified_recent_batches_over_unadjusted_month_close', samples, from: samples[0]?.date ?? '', through: samples.at(-1)?.date ?? '',
+    capitalActionsVerified: true, cashDistributionsComplete: ledger.complete, sourceUrls: ledger.sourceUrls,
+    priceSampleCount: diagnostics.priceSampleCount, priceFrom: priceDates[0], priceThrough: priceDates.at(-1), ledgerIssues: diagnostics.reasons };
+}
 export function dividendPricingPercentile(values: number[], fraction: number): number | undefined {
   if (!values.length) return undefined;
   const sorted = [...values].sort((a,b) => a-b), position = (sorted.length - 1) * fraction, lo = Math.floor(position), hi = Math.ceil(position);
@@ -425,6 +451,8 @@ export function dividendPricingHistoryCoverage(history: DividendYieldHistory | u
   if (ageDays === undefined || ageDays < 0 || ageDays > 40) reasons.push('stale');
   if (history && !history.capitalActionsVerified) reasons.push('capital_actions_unverified');
   if (history?.cashDistributionsComplete === false) reasons.push('cash_distributions_incomplete');
+  if (monthly.length < 60 && history?.ledgerIssues?.some(issue => ['ANNOUNCEMENT_UNVERIFIED', 'CAPITAL_OR_CASH_UNVERIFIED'].includes(issue))) reasons.push('announcement_unverified');
+  if (monthly.length < 60 && history?.ledgerIssues?.includes('SOURCE_CONFLICT')) reasons.push('ledger_conflict');
   return { usable: reasons.length === 0, sampleCount: monthly.length, requiredSamples:60, spanYears, requiredSpanYears:4.8,
     from, through, ageDays, maxAgeDays:40, reasons };
 }
@@ -486,25 +514,26 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const fcfReferenceBelowEarnings = earningsDividendMicros !== undefined && fcfDividendCapMicros !== undefined && fcfDividendCapMicros < earningsDividendMicros;
   const fcfCapApplied = false;
   pause(warnings.includes('fcf_below_150') || fcfReferenceBelowEarnings, 'fcf_below_150');
-  // Earnings and cash-flow estimates remain dated diagnostics. Only implemented
-  // trailing cash supplies the new grid numerator; no forecast or EPS substitute.
+  // New grids use the verified most recent distribution batches, never a rolling cash window.
   const trailingDividend = input.trailingDividend;
-  block(!trailingDividend, 'trailing_dividend_missing');
-  const trailingShapeValid = !!trailingDividend && Number.isSafeInteger(trailingDividend.dpsMicros) && trailingDividend.dpsMicros >= 0
-    && date(trailingDividend.asOf) === trailingDividend.asOf && trailingDividend.windowStart === dividendWindowStart(trailingDividend.asOf)
-    && typeof trailingDividend.capitalActionsVerified === 'boolean' && typeof trailingDividend.cashDistributionsComplete === 'boolean'
-    && (trailingDividend.quoteComparisonSafeFrom === undefined || date(trailingDividend.quoteComparisonSafeFrom) === trailingDividend.quoteComparisonSafeFrom
-      && trailingDividend.quoteComparisonSafeFrom <= trailingDividend.asOf)
-    && Array.isArray(trailingDividend.sourceUrls) && trailingDividend.sourceUrls.length > 0
-    && trailingDividend.sourceUrls.every(url => typeof url === 'string' && !!url.trim());
-  block(!!trailingDividend && !trailingShapeValid, 'trailing_dividend_invalid');
-  block(trailingShapeValid && trailingDividend!.asOf !== asOf, 'trailing_dividend_stale');
-  block(trailingShapeValid && !trailingDividend!.capitalActionsVerified, 'capital_actions_unverified');
-  block(trailingShapeValid && !trailingDividend!.cashDistributionsComplete, 'cash_distributions_incomplete');
-  const trailingUsable = trailingShapeValid && trailingDividend!.asOf === asOf
-    && trailingDividend!.capitalActionsVerified && trailingDividend!.cashDistributionsComplete;
-  const d1Micros = trailingUsable ? Number(BigInt(trailingDividend!.dpsMicros) * BigInt(10000-taxBps) / 10000n) : undefined;
-  block(trailingUsable && d1Micros === 0, 'trailing_dividend_zero');
+  const dividendBase = input.ledger ? dividendLedgerBase(input.ledger, asOf, { epsMicros: annuals[0]?.epsMicros, payoutBps: annuals[0]?.payoutBps }) : input.dividendBase;
+  const baseShapeValid = !!dividendBase && dividendBase.asOf === asOf && Number.isSafeInteger(dividendBase.dpsMicros) && dividendBase.dpsMicros! >= 0
+    && ['annual', 'semiannual'].includes(dividendBase.frequency) && dividendBase.requiredBatches === (dividendBase.frequency === 'semiannual' ? 2 : 1)
+    && Array.isArray(dividendBase.selectedBatchIds) && dividendBase.selectedBatchIds.length === dividendBase.requiredBatches
+    && new Set(dividendBase.selectedBatchIds).size === dividendBase.requiredBatches
+    && date(dividendBase.latestExDate) === dividendBase.latestExDate && dividendBase.latestExDate! <= asOf
+    && Array.isArray(dividendBase.sourceUrls) && dividendBase.sourceUrls.length > 0
+    && dividendBase.sourceUrls.every(url => typeof url === 'string' && url.startsWith('https://'));
+  const flags = dividendBase?.flags ?? [];
+  block(!dividendBase, 'dividend_ledger_missing');
+  block(!!dividendBase && (!baseShapeValid || !dividendBase.verified), 'dividend_base_unverified');
+  block(flags.includes('INCOMPLETE') || flags.includes('SOURCE_PAGES_INCOMPLETE'), 'dividend_base_incomplete');
+  block(flags.includes('SOURCE_CONFLICT'), 'dividend_source_conflict');
+  block(flags.includes('FREQUENCY_UNKNOWN'), 'dividend_frequency_unknown');
+  block(flags.includes('CROSSCHECK_MISMATCH'), 'dividend_crosscheck_mismatch');
+  const baseUsable = baseShapeValid && dividendBase!.verified && !blockers.length;
+  const d1Micros = baseUsable ? Number(BigInt(dividendBase!.dpsMicros!) * BigInt(10000 - taxBps) / 10000n) : undefined;
+  block(baseUsable && d1Micros === 0, 'trailing_dividend_zero');
   const treasuryValid = !!treasury && Number.isSafeInteger(treasury.yieldBps) && treasury.yieldBps >= 0 && treasury.yieldBps < 3000
     && !!treasury.sourceUrl.trim();
   const treasuryUsable = treasuryValid && age(treasury!.asOf) <= 10;
@@ -540,9 +569,9 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const quoteUsable = currentPrice !== undefined;
   // A recent quote may precede a cash payment, share change or TTM rollover.
   // It can still support its own dated cash yield, but not this new cash grid.
-  const quoteMatchesGrid = quoteUsable && trailingUsable && (input.priceDate === asOf
-    || trailingDividend!.quoteComparisonSafeFrom !== undefined && input.priceDate! >= trailingDividend!.quoteComparisonSafeFrom);
-  pause(!quoteUsable || trailingUsable && !quoteMatchesGrid, 'quote_missing');
+  const quoteMatchesGrid = quoteUsable && baseUsable && (input.priceDate === asOf
+    || dividendBase!.latestExDate !== undefined && input.priceDate! >= dividendBase!.latestExDate);
+  pause(!quoteUsable || baseUsable && !quoteMatchesGrid, 'quote_missing');
   const roes = recent.flatMap(y => y.roeBps === undefined ? [] : [y.roeBps]);
   const meanRoeBps = roes.length === 3 ? Math.round(roes.reduce((s,v) => s+v,0)/3) : undefined;
   const currentPbBps = input.priceMinor && input.bvpsMicros && input.bvpsMicros > 0 ? Math.round(input.priceMinor * 1e8 / input.bvpsMicros) : undefined;
@@ -557,7 +586,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const candidatePriceMinor = anchorPriceMinor;
   pause(quoteMatchesGrid && d1Micros !== undefined && d1Micros/currentPrice! > 3000, 'implausible_yield');
   const buyPrices = CLASSIC_DIVIDEND_BUY_YIELDS.map(yieldBps => priceFor(yieldBps));
-  const sellPrices = CLASSIC_DIVIDEND_SELL_YIELDS.map(yieldBps => priceFor(yieldBps));
+  const sellPrices = CLASSIC_DIVIDEND_SELL_YIELDS.map(yieldBps => d1Micros !== undefined ? Number((BigInt(d1Micros) + BigInt(yieldBps) - 1n) / BigInt(yieldBps)) : undefined);
   block(d1Micros !== undefined && d1Micros > 0 && (!candidatePriceMinor
     || [...buyPrices,...sellPrices].some(price => !price || !Number.isSafeInteger(price))
     || buyPrices.some((price,index) => index > 0 && price! >= buyPrices[index-1]!)
@@ -586,7 +615,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
       && Number.isSafeInteger(sample.spreadBps) && sample.spreadBps === sample.yieldBps - sample.treasuryBps!
       ? [sample.spreadBps] : []) : [];
   const spreadPercentileBps = currentSpreadBps !== undefined && spreads.length >= 60 ? Math.round(spreads.filter(v => v <= currentSpreadBps).length / spreads.length * 10000) : undefined;
-  return { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis: 'classic_ttm', trailingDividend,
+  return { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis: 'recent_batches', trailingDividend, ledger: input.ledger, dividendBase,
     status: canApply ? 'ready' : 'blocked', canApply, riskClass, blockers: [...new Set(blockers)], pauseReasons: [...new Set(pauseReasons)], warnings: [...new Set(warnings)], annuals,
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
@@ -596,6 +625,12 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
 }
 
 const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]> = {
+  dividend_ledger_missing: ['尚未取得逐笔分红台账', 'The distribution ledger is unavailable'],
+  dividend_base_unverified: ['所需批次的公告或送转口径尚未核验', 'The required batches or share changes remain unverified'],
+  dividend_base_incomplete: ['最近所需分红批次不完整', 'The required recent distribution batches are incomplete'],
+  dividend_source_conflict: ['分红来源存在冲突，冲突记录不进入计算', 'Conflicting distribution sources are excluded from calculation'],
+  dividend_frequency_unknown: ['分红频率尚不能确定', 'Distribution frequency has not been established'],
+  dividend_crosscheck_mismatch: ['分红基数与每股收益乘派息率偏离超过25%，口径待核实', 'The dividend base differs from EPS times payout by over 25%; reconcile the basis'],
   annual_eps_missing: ['缺少三年扣非每股收益或有效归一盈利依据；历史现金网格仍独立计算', 'Three-year recurring EPS or documented normalised earnings are missing; the historical-cash grid remains independent'],
   annual_payout_missing: ['缺少五年可核实派息率；不能据此确认分红持续性', 'Five verified annual payout ratios are missing; dividend sustainability remains unverified'],
   non_positive_earnings: ['归一盈利非正，过去分红不代表未来能维持', 'Normalised earnings are non-positive; past dividends do not establish future sustainability'],
@@ -607,7 +642,7 @@ const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]
   financial_sector_review: ['金融行业专项有风险或资料缺口，详见分组检查结果', 'Financial-sector checks identify risks or missing evidence; see the separate result groups'],
   treasury_missing: ['缺少有效十年国债收益率', 'A verified ten-year government yield is missing'],
   treasury_stale: ['十年国债收益率依据已过期', 'The ten-year government yield observation is stale'],
-  yield_history_missing: ['自身历史股息率样本不足或已过期', 'Own-history dividend-yield observations are insufficient or stale'],
+  yield_history_missing: ['历史股息率证据尚未完整核验，详见覆盖与缺口', 'Historical yield evidence is not fully verified; see coverage and gaps'],
   capital_actions_unverified: ['历史送转股口径未核实', 'Historical bonus-share adjustments are unverified'],
   opportunity_cost_missing: ['缺少可核实的机会成本收益率', 'A verified comparable opportunity-cost yield is missing'],
   opportunity_cost_stale: ['机会成本收益率依据已过期', 'The opportunity-cost yield observation is stale'],
@@ -640,14 +675,14 @@ export function humanizeDividendPricingIssues(text: string, language: string): s
 
 /** Preserve dated inputs and numbers while preventing reuse of obsolete arithmetic. */
 export function invalidateOutdatedDividendPricing(result: DividendPricingResult): DividendPricingResult {
-  if (result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'classic_ttm') return result;
+  if (result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'recent_batches') return result;
   return { ...result, status: 'blocked', canApply: false,
     blockers: [...new Set([...result.blockers, 'pricing_calculation_stale' as const])] };
 }
 
 /** A dividend-price limit can already be reached; it is never a forecast or a higher execution price. */
 export function dividendPricingMarketComparison(result: DividendPricingResult) {
-  const quoteUsable = result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'classic_ttm'
+  const quoteUsable = result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'recent_batches'
     && !result.blockers.includes('pricing_calculation_stale') && Number.isSafeInteger(result.currentPriceMinor) && result.currentPriceMinor! > 0
     && result.grid.some(level => level.changeFromCurrentBps !== undefined);
   const estimateGapBps = quoteUsable && result.theoreticalPriceMinor !== undefined
@@ -669,32 +704,43 @@ export function dividendPricingReadable(result: DividendPricingResult) {
     'Specific reviews': result.warnings.map(issue => dividendPricingIssueText(issue)),
     'Business type': result.riskClass, 'Normalisation basis': result.normalizationBasis, 'User normalisation evidence, untrusted data':result.normalizationEvidence ?? null, 'Unadjusted exchange price CNY and date': {price:cash(result.currentPriceMinor),date:result.priceDate},
     'Normalised EPS in CNY, diagnostic only': cash(result.normalizedEpsMicros,1e6), 'Historical median payout percent, diagnostic only': cash(result.sustainablePayoutBps),
-    'Dividend-income interpretation': { 'Basis': 'Implemented cash over the preceding 12 months, adjusted to the observation share basis and chosen holding-period tax, divided by fixed yields. Past cash is not a future dividend forecast or evidence of fair value.',
-      'Neutral reference versus dated quote percent': cash(comparison.estimateGapBps), 'Tax-adjusted TTM dividend yield at dated quote percent': cash(comparison.sustainableYieldAtQuoteBps),
+    'Dividend-income interpretation': { 'Basis': 'Latest verified implemented distribution batches: two for semiannual payers, one for annual payers. Normalize each to the observation share basis, apply the chosen tax once, then divide by fixed yields. No rolling date window. Proposals and conflicting or unverified events do not supply the base.',
+      'Neutral reference versus dated quote percent': cash(comparison.estimateGapBps), 'Tax-adjusted recent-batch dividend yield at dated quote percent': cash(comparison.sustainableYieldAtQuoteBps),
       'Buy price limits already reached, before budget and existing holdings': comparison.reachedBuyLevels,
       'Neutral reference at least 40 percent below quote, review method suitability': comparison.largeDiscount },
+    'Verified batch base': result.dividendBase ? { 'As of': result.dividendBase.asOf, 'Frequency': result.dividendBase.frequency,
+      'Required batches': result.dividendBase.requiredBatches, 'Selected report periods': result.dividendBase.reportPeriods,
+      'Latest effective ex-date or share change': result.dividendBase.latestExDate, 'Verified': result.dividendBase.verified,
+      'Checks': result.dividendBase.flags, 'EPS times payout crosscheck in CNY per share': cash(result.dividendBase.crosscheckDpsMicros, 1e6),
+      'Crosscheck difference percent': cash(result.dividendBase.crosscheckDeviationBps) } : null,
+    'Distribution ledger, latest twelve records': result.ledger?.events.slice(0, 12).map(event => ({
+      'Report period': event.reportDate, 'Distribution type': event.period, 'Announcement date': event.announcementDate,
+      'Record date': event.recordDate, 'Ex-date': event.exDate, 'Cash per ten shares in CNY': cash(event.cashPer10Micros, 1e6),
+      'Share conversion factor': event.shareFactor, 'Implemented': event.implemented, 'Announcement verification': event.verification,
+      'Cash per current share in CNY': cash(event.normalizedDpsMicros, 1e6), 'Sources': event.sources.map(source => source.url),
+    })) ?? [],
     'Implemented trailing cash evidence': result.trailingDividend ? { 'As of': result.trailingDividend.asOf,
       'Window start, exclusive': result.trailingDividend.windowStart, 'Window end, inclusive': result.trailingDividend.asOf,
       'Capital actions verified': result.trailingDividend.capitalActionsVerified,
       'Cash disclosures complete and consistent': result.trailingDividend.cashDistributionsComplete,
       'Earliest dated quote matching this cash window and share basis': result.trailingDividend.quoteComparisonSafeFrom ?? result.trailingDividend.asOf,
       'Sources': result.trailingDividend.sourceUrls } : null,
-    'Pretax implemented trailing cash in CNY per share': cash(result.trailingDividend?.dpsMicros,1e6),
+    'Pretax verified batch dividend base in CNY per share': cash(result.dividendBase?.dpsMicros,1e6),
     'Earnings-based pretax dividend reference in CNY per share, not the grid numerator': cash(result.earningsDividendMicros,1e6),
-    'Earnings reference limitation': 'Reported EPS and payout evidence may have different profit or share bases; this diagnostic does not verify future dividends and never replaces implemented TTM.',
+    'Earnings reference limitation': 'Reported EPS and payout evidence may have different profit or share bases; this diagnostic does not verify future dividends and never replaces the verified implemented batch base.',
     'Cash-supported pretax dividend reference in CNY per share at 1.5x coverage': cash(result.fcfDividendCapMicros,1e6),
     'Cash-flow reference changes fixed grid': false,
     'Cash-flow reference evidence': result.fcfEvidence?.map(year => ({ year: year.year, basis: year.basis,
       'FCF in CNY per share': cash(year.fcfPerShareMicros,1e6), 'Pretax dividend ceiling in CNY per share': cash(year.dividendCapMicros,1e6) })) ?? [],
-    'Dividend tax percent': cash(result.taxBps), 'Tax-adjusted TTM dividend in CNY per share': cash(result.d1Micros,1e6),
+    'Dividend tax percent': cash(result.taxBps), 'Tax-adjusted batch dividend base in CNY per share': cash(result.d1Micros,1e6),
     'Reference yields percent; no effect on the fixed grid': { 'Government bond plus assumed spread': cash(result.anchors.riskFreePlusPremiumBps), 'Own-history percentile yield': cash(result.anchors.historicalPercentileBps), 'Alternative cash-yield reference, not a total-return hurdle': cash(result.anchors.opportunityCostBps), 'Median, diagnostic only': cash(result.anchors.medianBps), 'Maximum disagreement in percentage points': cash(result.anchors.rangeBps) },
     'Fixed neutral cash yield percent': CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS / 100,
-    'Reference calculations, no effect on grid': 'Gordon uses historical TTM as a stated illustrative dividend assumption. PB uses historical profitability and payout evidence. Neither establishes a return forecast.',
+    'Reference calculations, no effect on grid': 'Gordon uses verified recent batches as an illustrative dividend assumption. PB uses historical profitability and payout evidence. Neither establishes a return forecast.',
     'Gordon r minus g percent': cash(result.gordonYieldBps), 'Gordon price CNY': cash(result.gordonPriceMinor),
     'PB bridge comparison price CNY': cash(result.pbBridgePriceMinor), 'Neutral 5 percent reference price CNY': cash(result.theoreticalPriceMinor),
     'Legacy safety-margin illustration CNY, no effect on grid': cash(result.marginPriceMinor),
     'Current PB': cash(result.currentPbBps,10000), 'Three-year mean ROE percent': cash(result.meanRoeBps), 'PB implied yield percent': cash(result.pbImpliedYieldBps), 'Reasonable PB': cash(result.reasonablePbBps,10000),
-    'Current implemented trailing cash yield minus government yield in percentage points': cash(result.currentSpreadBps), 'Own historical spread percentile percent': cash(result.spreadPercentileBps),
+    'Current verified batch cash yield minus government yield in percentage points': cash(result.currentSpreadBps), 'Own historical spread percentile percent': cash(result.spreadPercentileBps),
     'Government yield percent and source date': result.treasury ? { percent: result.treasury.yieldBps/100, date: result.treasury.asOf, source: result.treasury.sourceUrl } : null,
     'Opportunity comparison': result.opportunity ? { percent: result.opportunity.yieldBps/100, date: result.opportunity.asOf, source: result.opportunity.sourceUrl, basis: result.opportunity.basis } : null,
     'Historical yield basis': result.history ? { basis: result.history.basis, from: result.history.from, through: result.history.through, observations: result.history.samples.length, 'Bonus share conversion captured': result.history.capitalActionsVerified, 'Cash feed consistent with verified issuer disclosures': result.history.cashDistributionsComplete !== false } : null,
@@ -704,7 +750,8 @@ export function dividendPricingReadable(result: DividendPricingResult) {
       from:result.historyCoverage.from, through:result.historyCoverage.through,
       'Latest observation age in days':result.historyCoverage.ageDays, 'Maximum age in days':result.historyCoverage.maxAgeDays,
       'Evidence gaps':result.historyCoverage.reasons.map(reason => ({ history_unavailable:'Historical cash-yield observations unavailable', samples_insufficient:'Fewer than 60 distinct completed monthly observations',
-        span_insufficient:'Historical observations span less than 4.8 years', stale:'Latest completed month unavailable or more than 40 days old', capital_actions_unverified:'Bonus-share adjustments unverified', cash_distributions_incomplete:'Cash distribution feed omits cash confirmed in issuer disclosures; exclude this historical yield anchor' })[reason]) } : null,
+        span_insufficient:'Historical observations span less than 4.8 years', stale:'Latest completed month unavailable or more than 40 days old', capital_actions_unverified:'Bonus-share adjustments unverified', cash_distributions_incomplete:'Cash distribution feed omits cash confirmed in issuer disclosures; exclude this historical yield anchor',
+        announcement_unverified:'Distribution announcements for the required historical batches remain unverified', ledger_conflict:'Historical distribution sources conflict' })[reason]) } : null,
     'Annual evidence': result.annuals.map(y => ({ year:y.year, 'Report published':y.noticeDate, 'Reported EPS CNY':cash(y.epsMicros,1e6), 'Adjusted EPS CNY':cash(y.adjustedEpsMicros,1e6), 'Dividend CNY per share':cash(y.dividendMicros,1e6), 'Payout percent':cash(y.payoutBps), 'Payout calculation basis':y.payoutBasis,
       'Matching annual net profit CNY':cash(y.netProfitMinor), 'Archival issuer disclosure, not fetched live':y.reportEvidence ?? null,
       'ROE percent':cash(y.roeBps), 'Operating cash CNY':cash(y.operatingCashMinor), 'Capital expenditure CNY':cash(y.capitalExpenditureMinor), 'Dividend cash CNY':cash(y.dividendCashMinor), 'FCF / dividend percent':cash(y.fcfCoverageBps) })),

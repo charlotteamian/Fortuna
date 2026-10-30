@@ -8,8 +8,10 @@ import {
   type DividendResearchSource, type DividendSelectionPrinciples, type DividendStockResearch,
 } from '../lib/dividendResearch';
 import { calculateDividendPricing, defaultDividendPricingMethod, isDividendPricingMethod, parseDividendTreasury, dividendPricingAnnuals,
-  dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingTrailingDividend, dividendPricingHistoryCoverage, parseDividendOpportunityRows, DIVIDEND_OPPORTUNITY_URL,
+  dividendPricingPriceHistory, dividendLedgerYieldHistory, parseDividendOpportunityRows, DIVIDEND_OPPORTUNITY_URL,
   type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from '../lib/dividendPricing';
+import { researchDividendLedger } from './dividendLedgerEvidenceService';
+import { dividendLedgerBase } from '../lib/dividendLedger';
 import { dateInChina } from '../lib/dividendWorkbench';
 
 export function defaultDividendResearchCandidates(): Pick<DividendStock, 'code' | 'name'>[] {
@@ -121,7 +123,8 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
   const symbol = quoteSymbol(stock.code);
   const asOf = dateInChina(), cashUrl = dividendCashFlowSourceUrl(stock.code), monthUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},month,,,120,`;
   const distributionTask = download('dividend', dividendResearchDistributionUrl(stock.code), raw => ({...parseDividendDistributionResearch(raw, stock.code), pricingRaw:raw}));
-  const [technical, financial, distributions, cash, monthly, treasury, opportunity] = await Promise.all([
+  const ledgerTask = distributionTask.then(value => value.data ? researchDividendLedger(value.data.pricingRaw, stock.code, asOf) : undefined);
+  const [technical, financial, distributions, cash, monthly, treasury, opportunity, ledger] = await Promise.all([
     download('technical', dividendTechnicalSourceUrl(symbol), raw => parseDividendTechnicalResearch(raw, stock.code, symbol)),
     download('financial', dividendFinancialSourceUrl(stock.code), raw => ({...parseDividendFinancialResearch(raw, stock.code), pricingRaw:raw})),
     distributionTask,
@@ -131,15 +134,12 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
       preferPartial:(candidate, previous) => candidate.at(-1)!.date > previous.at(-1)!.date
         || candidate.at(-1)!.date === previous.at(-1)!.date && candidate.length > previous.length,
       validate:async prices => {
-        const distribution = await distributionTask;
-        if (!distribution.data) return undefined;
-        const history = dividendPricingYieldHistory(prices.filter(p => p.date.slice(0,7) < asOf.slice(0,7)), distribution.data.pricingRaw, stock.code);
-        const coverage = dividendPricingHistoryCoverage(history, asOf);
-        // More monthly prices cannot repair a dividend-feed evidence gap.
-        const gaps = coverage.reasons.filter(reason => reason !== 'capital_actions_unverified' && reason !== 'cash_distributions_incomplete');
-        return gaps.length ? `PRICE_HISTORY_INCOMPLETE:${coverage.sampleCount}/60:${coverage.from ?? '-'}:${coverage.through ?? '-'}:${gaps.join(',')}` : undefined;
+        const completed = prices.filter(price => price.date.slice(0, 7) < asOf.slice(0, 7));
+        const months = new Set(completed.map(price => price.date.slice(0, 7))).size;
+        const span = completed.length ? (Date.parse(completed.at(-1)!.date) - Date.parse(completed[0].date)) / (365.25 * 86400000) : 0;
+        return months < 60 || span < 4.8 ? `PRICE_HISTORY_INCOMPLETE:${months}/60:${completed[0]?.date ?? '-'}:${completed.at(-1)?.date ?? '-'}` : undefined;
       },
-    }), macro, opportunityTask,
+    }), macro, opportunityTask, ledgerTask,
   ]);
   if (technical.source) technical.source.asOf = technical.data!.asOf;
   if (financial.source) financial.source.asOf = financial.data!.latest.reportDate;
@@ -148,15 +148,11 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
   if (cash.source) cash.source.asOf = String((cash.data as {result:{data:Record<string,unknown>[]}}).result.data[0]?.REPORT_DATE ?? '').slice(0,10) || undefined;
   const unadjusted = monthly.data?.at(-1);
   const quoteAgeDays = unadjusted ? (Date.parse(asOf) - Date.parse(unadjusted.date)) / 86400000 : Infinity;
-  const currentCashHistory = unadjusted && Number.isSafeInteger(unadjusted.priceMinor) && unadjusted.priceMinor > 0
-    && quoteAgeDays >= 0 && quoteAgeDays <= 10 && distributions.data
-    ? dividendPricingYieldHistory([unadjusted], distributions.data.pricingRaw, stock.code, treasury) : undefined;
-  // Match historical yields to this quote's date and post-bonus share basis.
-  // A single current observation does not need the historical anchor's 60 months.
-  const currentCashYieldBps = currentCashHistory?.capitalActionsVerified && currentCashHistory.cashDistributionsComplete !== false
-    ? currentCashHistory.samples[0]?.yieldBps : undefined;
+  const quoteBase = unadjusted && quoteAgeDays >= 0 && quoteAgeDays <= 10 && ledger ? dividendLedgerBase(ledger, unadjusted.date) : undefined;
+  const currentCashYieldBps = quoteBase?.verified && quoteBase.dpsMicros !== undefined && unadjusted
+    ? Math.round(quoteBase.dpsMicros / unadjusted.priceMinor) : undefined;
   // Cash-grid readiness is independent of the financial and comparison feeds.
-  // Even a failed distribution download gets an explicit missing-TTM result.
+  // Even a failed distribution download gets an explicit missing-ledger result.
   const pricing = (() => {
     const industry=(cash.data as {result?:{data?:Record<string,unknown>[]}} | undefined)?.result?.data?.[0]?.INDUSTRY_NAME;
     if (financial.data && typeof industry==='string' && industry.trim()) financial.data.sector=industry;
@@ -165,15 +161,15 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
     const bvps = typeof last?.BPS === 'number' && last.BPS > 0 ? Math.round(last.BPS*1e6) : undefined;
     return calculateDividendPricing({code:stock.code,name:stock.name,financialSector:financial.data?.financialSector ?? /银行|保险|证券/.test(stock.name),sector:financial.data?.sector, financialReview:financial.data?.sectorReview, method,
       annuals:financial.data && distributions.data ? dividendPricingAnnuals(financial.data.pricingRaw,cash.data,distributions.data.pricingRaw,stock.code,asOf) : [], treasury,
-      trailingDividend:distributions.data ? dividendPricingTrailingDividend(distributions.data.pricingRaw,stock.code,asOf) : undefined,
-      history:monthly.data && distributions.data ? dividendPricingYieldHistory(monthly.data.filter(p => p.date.slice(0,7) < asOf.slice(0,7)),distributions.data.pricingRaw,stock.code,treasury) : undefined,
+      ledger,
+      history:monthly.data && ledger ? dividendLedgerYieldHistory(monthly.data.filter(p => p.date.slice(0,7) < asOf.slice(0,7)),ledger,treasury) : undefined,
       opportunity, priceMinor:unadjusted?.priceMinor,priceDate:unadjusted?.date,bvpsMicros:bvps,asOf,
       currentCashYieldBps,
-      sourceUrls:[dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthly.source?.url ?? monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
+      sourceUrls:[...(ledger?.sourceUrls ?? []),dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthly.source?.url ?? monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
   })();
   return evaluateDividendResearch({ code: stock.code, name: financial.data?.name || stock.name, pricing,
     technical: technical.data, financial: financial.data, distributions: distributions.data,
-    yieldBps: currentCashYieldBps,
+    yieldBps: currentCashYieldBps, yieldReportPeriods: quoteBase?.verified ? quoteBase.reportPeriods : undefined,
     checks: [], status: 'unknown', sources: [technical.source, financial.source, distributions.source, cash.source, monthly.source].filter((value): value is DividendResearchSource => !!value),
     issues: [technical.issue, financial.issue, distributions.issue, cash.issue, monthly.issue].filter((value): value is DividendResearchIssue => !!value),
   }, principles);
@@ -196,7 +192,7 @@ export async function fetchDividendResearch(
   if (!Array.isArray(stocks) || stocks.some(stock => !stock || mainlandCode(stock.code) !== stock.code)) throw new Error('INVALID_RESEARCH_CODES');
   const unique = [...new Map(stocks.map(stock => [stock.code, stock])).values()];
   const maximum = Math.max(1, Math.min(100, options.maxStocks ?? 40));
-  const deadline = Date.now() + Math.max(1000, Math.min(60000, options.timeBudgetMs ?? 20000));
+  const deadline = Date.now() + Math.max(1000, Math.min(60000, options.timeBudgetMs ?? 60000));
   const results = new Map<string, DividendStockResearch>();
   let cursor = 0;
   const stockTasks = Promise.all(Array.from({ length: Math.min(4, maximum, unique.length) }, async () => {

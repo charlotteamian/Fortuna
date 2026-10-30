@@ -198,7 +198,7 @@
 .div-ai-pricing-grid span { color: var(--text-secondary); font-size: 11px; }
 .div-ai-pricing-grid strong { font-size: 15px; overflow-wrap: anywhere; }
 .div-ai-pricing-grid small { color: var(--text-secondary); font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; }
-.div-ai-pricing-editor > .div-ai-principles-form { margin: 14px 0; }
+.div-ai-pricing-editor > .div-ai-principles-form { grid-template-columns: minmax(0, 1fr); margin: 14px 0; }
 .div-ai-pricing-editor .div-method { margin: 14px 0; }
 .div-ai-pricing-editor select, .div-ai-principles-form select { width: 100%; padding: 10px; min-width: 0; font-size: 12px; }
 .div-ai-pricing-code { display: grid; gap: 6px; max-width: 260px; margin: 12px 0; color: var(--text-secondary); font-size: 12px; }
@@ -233,6 +233,11 @@
 
 .div-ai-research-card > header .div-ai-research-toggle { min-height: 32px; padding: 5px 9px; font-size: 11px; }
 .div-ai-stock-checked { margin: 0 15px 10px; font-size: 11px; }
+
+.div-grid-origin { min-width: 0; margin: 0 15px 12px; font-size: .72rem; line-height: 1.7; }
+.div-grid-origin > p { margin: 5px 0; overflow-wrap: anywhere; }
+.div-grid-origin > .div-warning { font-size: .72rem; line-height: 1.7; }
+.div-home-plan > .div-grid-origin { margin: 10px 0; }
 
 .div-check-price { margin: 0 15px 14px; padding: 10px 12px; border-radius: 9px; background: var(--bg-secondary); }
 .div-check-grid { margin: 0 15px 16px; }

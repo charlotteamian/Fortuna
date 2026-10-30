@@ -1,3 +1,5 @@
+import { loadDividendGridBases } from '../services/dividendGridBasisService';
+import type { DividendGridBasisCheck } from '../lib/dividendGridProvenance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BUY_LEVELS, SELL_LEVELS, buildDividendHomePlan, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
@@ -23,6 +25,7 @@ export default function DividendPage() {
   const [amountVisible, setAmountVisible] = useState(true);
   const [data, setData] = useState<Workbench | null>(null);
   const [dailyPlanKey, setDailyPlanKey] = useState('');
+  const [gridBases, setGridBases] = useState<Record<string, DividendGridBasisCheck>>({});
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [strategySaving, setStrategySaving] = useState(false);
@@ -53,9 +56,9 @@ export default function DividendPage() {
   const load = useCallback(async () => {
     const id = ++loadId.current;
     const next = await loadDividendWorkbench();
-    const planKey = await loadDividendDailyAdvicePlanKey(next);
+    const [planKey, bases] = await Promise.all([loadDividendDailyAdvicePlanKey(next), loadDividendGridBases(next.stocks.map(stock => stock.code), dateInChina())]);
     if (alive.current && id === loadId.current) {
-      setData(next);
+      setData(next); setGridBases(bases);
       setDailyPlanKey(planKey);
       if (!collapseLoaded.current) {
         collapseLoaded.current = true; collapseState.current = next.collapsedCodes; setCollapsedCodes(next.collapsedCodes);
@@ -232,7 +235,7 @@ export default function DividendPage() {
               {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
               {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</span></span>
           </button>
-          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
+          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan basis={gridBases[stock.code]} stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
             onEdit={() => void openStockPlan(stock.code)} /> : <div className="div-unfunded-home"><span>{t('div_check_unfunded')}</span><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan(stock.code)}>{t('div_home_edit_plan')}</button></div>}
           <div id={`div-stock-body-${stock.code}`} hidden={!expanded}>
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>

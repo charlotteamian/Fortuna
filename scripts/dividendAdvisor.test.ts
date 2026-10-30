@@ -12,6 +12,8 @@ import { parseDividendResponse, type DividendStock } from '../src/lib/dividendWo
 import { askDividendAdvisor, askDividendAdvisorWithActions, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
 import { defaultDividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
 import type { DividendPricingResult } from '../src/lib/dividendPricing.ts';
+import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
+import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -29,7 +31,7 @@ registerHooks({
 const { db, initializeSettings, exportData, exportToExcel, importData } = await import('../src/db.ts');
 const { buildPortableSnapshot } = await import('../src/lib/portableSnapshot.ts');
 const now = new Date('2026-10-16T03:00:00Z').getTime();
-const trailingDividend = (dpsMicros=500000) => ({ dpsMicros,asOf:'2026-10-16',windowStart:'2025-10-16',capitalActionsVerified:true,cashDistributionsComplete:true,sourceUrls:['https://example.com/implemented-dividends'] });
+const dividendBase = (dpsMicros=500000) => verifiedDividendBase(dpsMicros, '2026-10-16');
 const stock: DividendStock = {
   code: '601398', name: 'Fixture bank', group: 'core', weightBps: 5000, shareMode: 'linked', manualShares: 0, lotSize: 100,
   quote: { priceMinor: 500, date: '2026-10-15 15:00', fetchedAt: now - 3600_000 },
@@ -151,7 +153,7 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
       generatedAt: now, principles: defaultDividendSelectionPrinciples(), indices: [],
       stocks: [{ code: stock.code, name: stock.name, checks: [], status: 'unknown', sources: [], issues: [],
         pricing: { status: 'blocked', canApply: false, grid: [], anchors: {}, annuals: [], blockers: [], warnings: [], normalizationBasis: 'missing', riskClass: 'other', taxBps: 0, gordonYieldBps: 800, sourceUrls: [] } as DividendPricingResult }] } }, now);
-  const verifiedPricing=calculateDividendPricing({code:stock.code,name:stock.name,financialSector:true,method:defaultDividendPricingMethod(),annuals:[],asOf:'2026-10-16',trailingDividend:trailingDividend(200000)});
+  const verifiedPricing=calculateDividendPricing({code:stock.code,name:stock.name,financialSector:true,method:defaultDividendPricingMethod(),annuals:[],asOf:'2026-10-16',dividendBase:dividendBase(200000)});
   const levels=verifiedPricing.grid.map(level=>({yieldBps:level.yieldBps,portionBps:2500,priceMinor:level.priceMinor}));
   const run = (buyLevels = levels) => askDividendAdvisorWithActions(config(), data, '复核定价', [], { transport: async () => ({ status: 200,
     data: response('openai', `资料检查。\n\`\`\`fortuna-actions\n${JSON.stringify([{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true, buyLevels }])}\n\`\`\``) }) });
@@ -171,7 +173,7 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
 test('regeneration supplies a verified ladder without changing manual pause state, even during accelerating declines', async () => {
   const { calculateDividendPricing, defaultDividendPricingMethod } = await import('../src/lib/dividendPricing.ts');
   const pricing = calculateDividendPricing({ code: stock.code, name: stock.name, financialSector: false,
-    method: defaultDividendPricingMethod(), asOf: '2026-10-16', priceMinor: 1000, priceDate: '2026-10-16',trailingDividend:trailingDividend(),
+    method: defaultDividendPricingMethod(), asOf: '2026-10-16', priceMinor: 1000, priceDate: '2026-10-16',dividendBase:dividendBase(),
     treasury: { yieldBps: 200, asOf: '2026-10-16', fetchedAt: now, history: [], sourceUrl: 'https://example.com/treasury' },
     annuals: Array.from({ length: 5 }, (_, index) => ({ year: 2025 - index, reportDate: `${2025 - index}-12-31`, noticeDate: `${2026 - index}-03-20`,
       epsMicros: 1000000, adjustedEpsMicros: 1000000, dividendMicros: 500000, payoutBps: 5000, fcfCoverageBps: 20000 })) });
@@ -233,10 +235,10 @@ test('regeneration supplies a verified ladder without changing manual pause stat
   assert.equal(isDividendPlanProposal(merged.actions[0]), true);
 });
 
-test('pricing questions produce an implemented-TTM draft without automatic pauses despite payout warnings', async () => {
+test('pricing questions use verified recent batches, selected tax and directional rounding without automatic financial pauses', async () => {
   const { calculateDividendPricing, defaultDividendPricingMethod } = await import('../src/lib/dividendPricing.ts');
   const pricing=calculateDividendPricing({code:stock.code,name:stock.name,financialSector:false,method:defaultDividendPricingMethod(),
-    asOf:'2026-10-16',priceMinor:1000,priceDate:'2026-10-16',trailingDividend:trailingDividend(),
+    asOf:'2026-10-16',priceMinor:1000,priceDate:'2026-10-16',dividendBase:dividendBase(),
     treasury:{yieldBps:200,asOf:'2026-10-16',fetchedAt:now,history:[],sourceUrl:'https://example.com/treasury'},
     annuals:Array.from({length:5},(_,i)=>({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
       epsMicros:1000000,adjustedEpsMicros:1000000,dividendMicros:500000,payoutBps:i===0?10021:5000,fcfCoverageBps:i===0?12664:20000}))});
@@ -245,9 +247,15 @@ test('pricing questions produce an implemented-TTM draft without automatic pause
       stocks:[{code:stock.code,name:stock.name,checks:[],status:'risk',sources:[],issues:[],pricing}]}},now);
   const result=await askDividendAdvisorWithActions(config(),data,'计算价格',[],{language:'zh',transport:async()=>({status:200,
     data:response('openai','payout_above_100 和 fcf_below_150，所以无法生成价格。')})});
+  assert.equal(pricing.pricingBasis,'recent_batches'); assert.equal(pricing.taxBps,1000);
+  assert.equal(pricing.d1Micros,450000);
+  assert.deepEqual(pricing.grid.map(level=>level.priceMinor),[818,782,750,692]);
+  const plan = dividendPricingPlan(pricing); assert.ok(plan);
+  assert.deepEqual(plan.sellLevels.map(level=>level.priceMinor),[938,1000,1072,1125]);
   assert.equal(result.actions.length,1);assert.equal(result.actions[0].buyPaused,undefined);
   assert.deepEqual(result.actions[0].buyLevels?.map(level=>level.priceMinor),pricing.grid.map(level=>level.priceMinor));
-  assert.match(result.answer,/10.00元/);assert.match(result.answer,/风险提示/);
+  assert.deepEqual(result.actions[0].sellLevels?.map(level=>level.priceMinor),plan.sellLevels.map(level=>level.priceMinor));
+  assert.match(result.answer,/9.00元/);assert.match(result.answer,/风险提示/);
   assert.doesNotMatch(result.answer,/payout_above_100|fcf_below_150|无法生成价格/);
   assert.doesNotMatch(result.actions[0].reason,/payout_above_100|fcf_below_150/);
   const resume=await askDividendAdvisorWithActions(config(),data,'复核',[],{language:'zh',transport:async()=>({status:200,
@@ -269,18 +277,28 @@ for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${proto
   assert.deepEqual(advisory.actions, [], 'a provider cannot create an unsolicited pause action');
 });
 
-test('the method prompt separates announcement and forecast amounts from implemented TTM pricing', () => {
+test('the method prompt preserves verified recent batches, directional rounding and provisional saved-grid states', () => {
   const prompt = dividendAdvisorSystemPrompt('zh');
   assert.match(prompt, /latest announced reporting period only/);
   assert.match(prompt, /upcoming announcements replace their corresponding historical seasonal estimate/);
   assert.match(prompt, /exact prior-year same-reporting-period implemented amount as a labelled estimate/);
   assert.match(prompt, /Never double an interim amount/);
   assert.match(prompt, /Do not append generic investment-risk statements/);
-  assert.match(prompt, /fixed buy yields of 5\.5%, 5\.75%, 6% and 6\.5%/);
-  assert.match(prompt, /fixed sell yields of 4\.8%, 4\.5%, 4\.2% and 4%/);
-  assert.match(prompt, /four levels allocates or sells 25%/);
-  assert.match(prompt, /Do not additionally subtract each cash dividend from every level/);
-  assert.match(prompt, /neutral reference line.*not intrinsic fair value/);
+  assert.match(prompt, /latest TWO distinct implemented batches for a confirmed semiannual payer, or latest ONE for an annual payer/);
+  assert.match(prompt, /official announcement verification/);
+  assert.match(prompt, /Source conflicts and unverified selected batches block a new price draft/);
+  assert.match(prompt, /Announced but unimplemented proposals are forward references only/);
+  assert.match(prompt, /Never use a rolling twelve-month window/);
+  assert.match(prompt, /EPS × payout is a cross-check: a deviation over 25%/);
+  assert.match(prompt, /selected tax once \(default 10%; options 20%, 10%, 0%\)/);
+  assert.match(prompt, /distinguish pretax and after-tax prices/);
+  assert.match(prompt, /buy yields 5\.5%, 5\.75%, 6%, 6\.5% and sell yields 4\.8%, 4\.5%, 4\.2%, 4%, each level 25%/);
+  assert.match(prompt, /Buy prices round DOWN to cents; sell prices round UP/);
+  assert.match(prompt, /5% neutral reference.*not intrinsic fair value/);
+  assert.match(prompt, /base change over 10%, a later ex-date or changed parameters prompts regeneration review; never automatically replace prices/);
+  assert.match(prompt, /incomplete or conflicting but a saved explicit grid exists.*provisional: '按已保存网格：触发／未触发（基数未核对）'/);
+  assert.match(prompt, /If no saved grid exists and the new base cannot be verified, say '无法判断'/);
+  assert.match(prompt, /Missing quotes prevent current trigger claims/);
   assert.match(prompt, /EXACT four calculated explicit priceMinor\/yieldBps pairs with portionBps 2500 each/);
   assert.doesNotMatch(prompt, /highest available valid yield|EXACTLY THREE buy/);
 });

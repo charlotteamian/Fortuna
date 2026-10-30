@@ -13,14 +13,14 @@ export default function DividendReviewSummary({ summary }: { summary: ReviewSumm
   </div>;
 }
 
-export function DividendReviewPrice({ currentPriceMinor, firstBuyPriceMinor, priceDate, triggeredBuyLevels, priceState, saved = true }: {
+export function DividendReviewPrice({ currentPriceMinor, firstBuyPriceMinor, priceDate, triggeredBuyLevels, priceState, saved = true, basisState = 'verified' }: {
   currentPriceMinor?: number; firstBuyPriceMinor?: number; priceDate?: string; triggeredBuyLevels: number[];
-  priceState: 'triggered' | 'waiting' | 'unknown'; saved?: boolean;
+  priceState: 'triggered' | 'waiting' | 'unknown'; saved?: boolean; basisState?: 'verified' | 'saved_unverified' | 'unavailable';
 }) {
   const { t } = useTranslation();
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
   return <div className="div-review-price-overview">
-    <div className="div-review-price-heading"><strong className={`div-review-price-state ${priceState}`}>{t(`div_v3_review_price_${priceState}`, { levels: triggeredBuyLevels.join('、') })}</strong>
+    <div className="div-review-price-heading"><strong className={`div-review-price-state ${priceState}`}>{t(basisState === 'unavailable' ? 'div_grid_unavailable' : basisState === 'saved_unverified' ? `div_batch_saved_${priceState}` : `div_v3_review_price_${priceState}`, { levels: triggeredBuyLevels.join('、') })}</strong>
       <span>{t(saved ? 'div_v4_price_saved' : 'div_v4_price_candidate')}</span></div>
     <dl className="div-review-price-values"><div><dt>{t('div_v4_price_current')}</dt><dd>{yuan(currentPriceMinor)}</dd></div>
       <div><dt>{t('div_v4_price_first')}</dt><dd>{yuan(firstBuyPriceMinor)}</dd></div></dl>

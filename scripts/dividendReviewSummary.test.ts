@@ -1,3 +1,4 @@
+import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,8 +11,8 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-23', fetchedAt: 1,
   lastCloseMinor: 1000, ma5Minor: 1000, ma10Minor: 990, ma30Minor: 980, ma30SlopePercent: 1, rsi6: 55,
   change5Percent: 1, change10Percent: 2, change30Percent: 3, previous5Percent: 1, drawdown60Percent: -2,
   state: 'rising', pacing: 'observe' };
-const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis:'classic_ttm', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
-  normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: {}, gordonYieldBps: 800,
+const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis:'recent_batches', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
+  dividendBase: verifiedDividendBase(500000, '2026-10-23'), normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: {}, gordonYieldBps: 800,
   grid: [{ priceMinor: 1200, discountBps: 9500, yieldBps: 500, cumulativePortionBps: 3333, meetsSafetyMargin: false }],
   sourceUrls: [], currentPriceMinor: 1000, priceDate: '2026-10-23' };
 function research(checks: DividendResearchCheck[], pricingChanges: Partial<DividendPricingResult> = {}): DividendStockResearch {
@@ -31,7 +32,7 @@ function cashAnnuals(basis: 'cash' | 'coverage'): DividendPricingAnnual[] {
 }
 function priceCashEvidence(annuals: DividendPricingAnnual[]) {
   return calculateDividendPricing({ code: '000333', name: 'Fixture', financialSector: false,
-    method: defaultDividendPricingMethod(), annuals, trailingDividend: { dpsMicros:500000, asOf:'2026-10-23', windowStart:'2025-10-23', capitalActionsVerified:true, cashDistributionsComplete:true, sourceUrls:['https://example.com/dividend'] }, asOf: '2026-10-23', priceMinor: 1000, priceDate: '2026-10-23',
+    method: defaultDividendPricingMethod(), annuals, dividendBase: verifiedDividendBase(500000, '2026-10-23'), trailingDividend: { dpsMicros:500000, asOf:'2026-10-23', windowStart:'2025-10-23', capitalActionsVerified:true, cashDistributionsComplete:true, sourceUrls:['https://example.com/dividend'] }, asOf: '2026-10-23', priceMinor: 1000, priceDate: '2026-10-23',
     treasury: { yieldBps: 200, asOf: '2026-10-23', fetchedAt: 1, sourceUrl: 'https://example.com/treasury', history: [] } });
 }
 
