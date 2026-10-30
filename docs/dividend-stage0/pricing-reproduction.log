@@ -1,0 +1,287 @@
+{
+  "asOf": "2026-10-30",
+  "dataBoundary": "Archived and synthetic input only; fake IndexedDB; no real quote, AI request, user database or trade.",
+  "samples": [
+    {
+      "id": "PA-tax-0",
+      "scope": "archived-input-arithmetic-only",
+      "grossMicros": 609000,
+      "netMicros": 609000,
+      "taxBps": 0,
+      "buyMinor": [
+        1107,
+        1059,
+        1015,
+        936
+      ],
+      "sellMinor": [
+        1269,
+        1354,
+        1450,
+        1523
+      ],
+      "portionBps": 2500,
+      "provenanceKeys": [
+        "generatedAt",
+        "grossDpsMicros",
+        "taxBps",
+        "parameterVersion",
+        "basisKind"
+      ]
+    },
+    {
+      "id": "PA-tax-1000",
+      "scope": "archived-input-arithmetic-only",
+      "grossMicros": 609000,
+      "netMicros": 548100,
+      "taxBps": 1000,
+      "buyMinor": [
+        996,
+        953,
+        913,
+        843
+      ],
+      "sellMinor": [
+        1142,
+        1218,
+        1305,
+        1371
+      ],
+      "portionBps": 2500,
+      "provenanceKeys": [
+        "generatedAt",
+        "grossDpsMicros",
+        "taxBps",
+        "parameterVersion",
+        "basisKind"
+      ]
+    },
+    {
+      "id": "PA-tax-2000",
+      "scope": "archived-input-arithmetic-only",
+      "grossMicros": 609000,
+      "netMicros": 487200,
+      "taxBps": 2000,
+      "buyMinor": [
+        885,
+        847,
+        812,
+        749
+      ],
+      "sellMinor": [
+        1015,
+        1083,
+        1160,
+        1218
+      ],
+      "portionBps": 2500,
+      "provenanceKeys": [
+        "generatedAt",
+        "grossDpsMicros",
+        "taxBps",
+        "parameterVersion",
+        "basisKind"
+      ]
+    },
+    {
+      "id": "semiannual-deduplicate",
+      "scope": "synthetic",
+      "baseMicros": 609000,
+      "frequency": "semiannual",
+      "selectedBatchIds": [
+        "000001:2026-06-30:2026-09-24:interim",
+        "000001:2025-12-31:2026-06-12:annual"
+      ],
+      "verified": true,
+      "flags": [
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "conflicting-latest-must-not-fall-back",
+      "scope": "synthetic",
+      "baseMicros": null,
+      "frequency": "semiannual",
+      "selectedBatchIds": [
+        "000001:2026-06-30:2026-09-24:interim",
+        "000001:2025-12-31:2026-06-12:annual"
+      ],
+      "verified": false,
+      "flags": [
+        "SOURCE_CONFLICT",
+        "CAPITAL_OR_CASH_UNVERIFIED",
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "unverified-latest",
+      "scope": "synthetic",
+      "baseMicros": null,
+      "frequency": "semiannual",
+      "selectedBatchIds": [
+        "000001:2026-06-30:2026-09-24:interim",
+        "000001:2025-12-31:2026-06-12:annual"
+      ],
+      "verified": false,
+      "flags": [
+        "ANNOUNCEMENT_UNVERIFIED",
+        "CAPITAL_OR_CASH_UNVERIFIED",
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "annual-one-batch",
+      "scope": "synthetic",
+      "baseMicros": 500000,
+      "frequency": "annual",
+      "selectedBatchIds": [
+        "000001:2025-12-31:2026-06-10:annual"
+      ],
+      "verified": true,
+      "flags": [
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "annual-frequency-insufficient-history",
+      "scope": "synthetic",
+      "baseMicros": null,
+      "frequency": "unknown",
+      "selectedBatchIds": [],
+      "verified": false,
+      "flags": [
+        "FREQUENCY_UNKNOWN",
+        "INCOMPLETE",
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "incomplete-source-pages",
+      "scope": "synthetic",
+      "baseMicros": null,
+      "frequency": "semiannual",
+      "selectedBatchIds": [
+        "000001:2026-06-30:2026-09-24:interim",
+        "000001:2025-12-31:2026-06-12:annual"
+      ],
+      "verified": false,
+      "flags": [
+        "SOURCE_PAGES_INCOMPLETE",
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "same-day-and-later-bonus-normalization",
+      "scope": "synthetic",
+      "baseMicros": 503703,
+      "frequency": "semiannual",
+      "selectedBatchIds": [
+        "000001:2025-06-30:2025-09-10:interim",
+        "000001:2024-12-31:2025-06-10:annual"
+      ],
+      "verified": true,
+      "flags": [
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "crosscheck-25-percent-boundary",
+      "scope": "synthetic",
+      "atBoundary": {
+        "baseMicros": 609000,
+        "frequency": "semiannual",
+        "selectedBatchIds": [
+          "000001:2026-06-30:2026-09-24:interim",
+          "000001:2025-12-31:2026-06-12:annual"
+        ],
+        "verified": true,
+        "flags": []
+      },
+      "aboveBoundaryByOneMicro": {
+        "baseMicros": 609000,
+        "frequency": "semiannual",
+        "selectedBatchIds": [
+          "000001:2026-06-30:2026-09-24:interim",
+          "000001:2025-12-31:2026-06-12:annual"
+        ],
+        "verified": false,
+        "flags": [
+          "CROSSCHECK_MISMATCH"
+        ]
+      }
+    },
+    {
+      "id": "special-replaces-annual-batch",
+      "scope": "synthetic",
+      "baseMicros": 2000000,
+      "frequency": "annual",
+      "selectedBatchIds": [
+        "000001:2026-06-30:2026-10-20:special"
+      ],
+      "verified": true,
+      "flags": [
+        "CROSSCHECK_MISSING"
+      ]
+    },
+    {
+      "id": "special-title-extraction-unavailable",
+      "scope": "modified-archived-text",
+      "parsed": null
+    },
+    {
+      "id": "no-saved-grid-but-old-fallback-prices",
+      "scope": "synthetic",
+      "headerBasisState": "unavailable",
+      "hasSavedGrid": false,
+      "buyMinor": [
+        1218,
+        1107,
+        1015,
+        937,
+        870,
+        812,
+        761
+      ],
+      "buyState": "triggered",
+      "buyTriggeredLevel": 6,
+      "additionalBuyShares": 800
+    },
+    {
+      "id": "no-saved-grid-forecast-also-enters-old-formula",
+      "scope": "archived-input-synthetic-plan",
+      "buyMinor": [
+        1218,
+        1107,
+        1015,
+        937,
+        870,
+        812,
+        761
+      ],
+      "buyState": "triggered"
+    },
+    {
+      "id": "home-accepts-pre-ex-date-quote",
+      "scope": "synthetic",
+      "quoteDate": "2026-10-28",
+      "latestExDate": "2026-10-29",
+      "quoteUsable": true,
+      "basisState": "verified",
+      "buyState": "triggered"
+    },
+    {
+      "id": "failed-official-refresh-relabelled-current",
+      "scope": "mocked-failure-in-memory-only",
+      "ledgerAsOf": "2026-10-30",
+      "documentVerifiedDates": [
+        "2026-10-29"
+      ],
+      "ledgerIssues": [
+        "CNINFO_HTTP_503_SYNTHETIC"
+      ],
+      "baseVerified": true,
+      "newDraftCanApply": true,
+      "homepageBasisState": "verified"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "dataBoundary": "Only synthetic, process-local fake-indexeddb. No real account, quote, API or device data.",
+  "cases": [
+    {
+      "id": "UI-DATA-02",
+      "description": "A stale editor saving only its note restores an older grid, pause and manual position.",
+      "currentBeforeSave": {
+        "code": "000001",
+        "name": "Synthetic bank",
+        "group": "core",
+        "weightBps": 10000,
+        "shareMode": "manual",
+        "manualShares": 200,
+        "lotSize": 100,
+        "buyPaused": true,
+        "buyLevels": [
+          {
+            "priceMinor": 900,
+            "yieldBps": 550,
+            "portionBps": 10000
+          }
+        ],
+        "sellLevels": [
+          {
+            "priceMinor": 1200,
+            "yieldBps": 480,
+            "portionBps": 10000
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793235600000,
+          "grossDpsMicros": 600000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        }
+      },
+      "afterSave": {
+        "code": "000001",
+        "name": "Synthetic bank",
+        "group": "core",
+        "weightBps": 10000,
+        "shareMode": "manual",
+        "manualShares": 100,
+        "lotSize": 100,
+        "buyPaused": false,
+        "buyLevels": [
+          {
+            "priceMinor": 1000,
+            "yieldBps": 550,
+            "portionBps": 10000
+          }
+        ],
+        "sellLevels": [
+          {
+            "priceMinor": 1200,
+            "yieldBps": 480,
+            "portionBps": 10000
+          }
+        ],
+        "note": "Only a note was edited in the old form."
+      },
+      "observed": true
+    },
+    {
+      "id": "UI-FUND-01",
+      "description": "Same-day manual reference without a market quote produces an entry-met or exit-triggered status.",
+      "manualEntry": {
+        "entry": {
+          "drawdownBps": 1666.6666666666665,
+          "targetPriceMicros": 1080000,
+          "status": "met",
+          "issues": []
+        },
+        "priceMicros": 1000000,
+        "targetAmountMinor": 100000,
+        "exitPriceMicros": 1200000,
+        "exitState": "waiting"
+      },
+      "manualExit": {
+        "entry": {
+          "drawdownBps": 0,
+          "targetPriceMicros": 1080000,
+          "status": "wait",
+          "issues": []
+        },
+        "priceMicros": 1200000,
+        "targetAmountMinor": 100000,
+        "exitPriceMicros": 1200000,
+        "exitState": "triggered"
+      },
+      "observed": true
+    },
+    {
+      "id": "UI-GRID-01",
+      "description": "Homepage call omitting the current tax cannot flag a changed holding-period tax.",
+      "homepageTaxCheck": {
+        "hasSavedGrid": true,
+        "hasCompleteSavedGrid": true,
+        "generatedDate": "2026-10-30",
+        "provenanceMissing": false,
+        "currentBasisVerified": true,
+        "basisState": "verified",
+        "stale": false,
+        "staleReasons": [],
+        "basisChangeBps": 0,
+        "quoteUsable": false,
+        "buyState": "unknown",
+        "sellState": "unknown",
+        "buyTriggeredLevels": [],
+        "sellTriggeredLevels": [],
+        "marketDeviation": null
+      },
+      "explicitTaxCheck": {
+        "hasSavedGrid": true,
+        "hasCompleteSavedGrid": true,
+        "generatedDate": "2026-10-30",
+        "provenanceMissing": false,
+        "currentBasisVerified": true,
+        "basisState": "saved_unverified",
+        "stale": true,
+        "staleReasons": [
+          "tax_changed"
+        ],
+        "basisChangeBps": 0,
+        "quoteUsable": false,
+        "buyState": "unknown",
+        "sellState": "unknown",
+        "buyTriggeredLevels": [],
+        "sellTriggeredLevels": [],
+        "marketDeviation": null
+      },
+      "observed": true
+    },
+    {
+      "id": "UI-DATA-03",
+      "description": "JSON round trip retains the complete settings; Excel retains saved grid/budget/manual state but drops the home collapsed reading preference.",
+      "gridAndBudgetRetained": true,
+      "jsonSettingsRetained": true,
+      "excelHomeCollapseRetained": false
+    },
+    {
+      "id": "UI-LOAD-01",
+      "description": "One malformed synthetic ledger rejects the entire homepage basis load because per-item errors are not isolated.",
+      "wholeBatchRejected": true,
+      "observed": true
+    }
+  ]
+}

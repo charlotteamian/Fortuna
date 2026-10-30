@@ -1,0 +1,111 @@
+{
+  "environment": "Fresh isolated Chrome profile; ten synthetic stocks and two synthetic funds; no real user database, external AI, live quotes or announcement requests.",
+  "checks": [
+    "Dividend amounts default visible while global asset amounts are hidden.",
+    "Reproduced: all ten stocks collapsed still display all twenty buy/sell grid tables.",
+    "Without AI configuration, clicking daily advice opens configuration and creates no deterministic daily result."
+  ],
+  "errors": [],
+  "layouts": [
+    {
+      "width": 390,
+      "scale": 1,
+      "state": "expanded",
+      "viewport": 390,
+      "documentWidth": 390,
+      "listHeight": 11086,
+      "listScrollHeight": 11086,
+      "tenCardsHeight": 10942,
+      "firstCardHeight": 1129,
+      "visibleGridTables": 20,
+      "visibleForecasts": 10,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "state": "collapsed",
+      "viewport": 390,
+      "documentWidth": 390,
+      "listHeight": 9610,
+      "listScrollHeight": 9610,
+      "tenCardsHeight": 9466,
+      "firstCardHeight": 982,
+      "visibleGridTables": 20,
+      "visibleForecasts": 0,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "state": "collapsed",
+      "viewport": 390,
+      "documentWidth": 390,
+      "listHeight": 12857,
+      "listScrollHeight": 12857,
+      "tenCardsHeight": 12670,
+      "firstCardHeight": 1309,
+      "visibleGridTables": 20,
+      "visibleForecasts": 0,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "state": "expanded",
+      "viewport": 320,
+      "documentWidth": 320,
+      "listHeight": 11196,
+      "listScrollHeight": 11196,
+      "tenCardsHeight": 11052,
+      "firstCardHeight": 1140,
+      "visibleGridTables": 20,
+      "visibleForecasts": 10,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "state": "collapsed",
+      "viewport": 320,
+      "documentWidth": 320,
+      "listHeight": 9720,
+      "listScrollHeight": 9720,
+      "tenCardsHeight": 9576,
+      "firstCardHeight": 993,
+      "visibleGridTables": 20,
+      "visibleForecasts": 0,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "state": "collapsed",
+      "viewport": 320,
+      "documentWidth": 320,
+      "listHeight": 13480,
+      "listScrollHeight": 13480,
+      "tenCardsHeight": 13292,
+      "firstCardHeight": 1381,
+      "visibleGridTables": 20,
+      "visibleForecasts": 0,
+      "overflow": []
+    }
+  ],
+  "screenshots": [
+    "home-390-expanded.png",
+    "stocks-390-collapsed.png",
+    "stock-card-390-collapsed.png",
+    "stocks-390-collapsed-font130.png",
+    "stocks-320-collapsed.png",
+    "stock-card-320-collapsed.png",
+    "stocks-320-collapsed-font130.png",
+    "daily-no-ai-320.png",
+    "daily-no-ai-opens-settings-320.png"
+  ],
+  "collapseReductionPercent": 13.49,
+  "noAiClick": {
+    "deterministicChecklistCount": 0,
+    "settingsVisible": true
+  }
+}

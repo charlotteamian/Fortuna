@@ -1,0 +1,71 @@
+{
+  "asOf": "2026-10-30",
+  "synthetic": true,
+  "networkUsed": false,
+  "persistentWrites": false,
+  "samples": [
+    {
+      "id": "R01",
+      "input": "manual pause + ROE fail + sector evidence missing + quote 9.00 / saved buy 10.00",
+      "researchDecision": "eligible",
+      "homeBuyState": "paused",
+      "priceTriggerLevels": [
+        1
+      ],
+      "failedRules": [
+        "roe"
+      ],
+      "missingRules": [
+        "financialSector"
+      ],
+      "interpretation": "eligible is a price-only result; it cannot represent execution eligibility"
+    },
+    {
+      "id": "R02",
+      "quoteDate": "2026-10-29 15:00",
+      "latestRefreshFailed": false,
+      "homeQuoteUsable": true,
+      "homeBuyState": "triggered",
+      "aiSnapshotSavedQuoteReachesPrice": true
+    },
+    {
+      "id": "R03",
+      "quoteDate": "2026-10-01 15:00",
+      "latestRefreshFailed": false,
+      "homeQuoteUsable": false,
+      "homeBuyState": "quote_missing",
+      "aiSnapshotSavedQuoteReachesPrice": true
+    },
+    {
+      "id": "R04",
+      "quoteDate": "2026-10-30 10:00",
+      "latestRefreshFailed": true,
+      "homeQuoteUsable": false,
+      "homeBuyState": "quote_missing",
+      "aiSnapshotSavedQuoteReachesPrice": true
+    },
+    {
+      "id": "R05",
+      "input": "manual pause and failed eligibility; stub prose proposes buying",
+      "returnedAnswer": "模拟银行今天已到价，请立即新增买入100股。",
+      "persistentActions": 0,
+      "interpretation": "machine actions are constrained; displayed prose has no deterministic actionCheck guard"
+    },
+    {
+      "id": "R06",
+      "input": "ordinary bank provider feed, no separately verified bank report evidence",
+      "missingBankFields": [
+        "specialMentionLoans",
+        "overdue90DaysDeviation",
+        "internalCapitalCapacity"
+      ],
+      "interpretation": "production downloader currently passes no bankEvidence argument"
+    },
+    {
+      "id": "R07",
+      "input": "no financial or dividend evidence",
+      "screening": "unknown",
+      "interpretation": "the existing numeric screen correctly preserves unknown instead of pass"
+    }
+  ]
+}

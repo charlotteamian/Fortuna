@@ -1,0 +1,48 @@
+{
+  "checkedAt": "2026-10-30T09:34:54.344660+00:00",
+  "baselineCommit": "3163b70ae2add7f00dbc9e01c63f0ab7fa1f2c1f",
+  "branch": "codex/dividend-stage0-audit-20261030",
+  "productionProtectedFilesCompared": 330,
+  "protectedFilesChanged": [],
+  "preexistingUntrackedEntriesChecked": 182,
+  "preexistingEntriesMissing": [],
+  "trackedDiffBeforeStage0Commit": "",
+  "checks": {
+    "npmTest": {
+      "passed": 538,
+      "failed": 0,
+      "log": "baseline-test.log"
+    },
+    "npmLint": {
+      "exitCode": 0,
+      "log": "final-lint.log"
+    },
+    "npmBuild": {
+      "exitCode": 0,
+      "log": "baseline-build.log",
+      "warning": "Vite chunks >500kB; compilation succeeded"
+    },
+    "pricingRecords": 17,
+    "riskRecords": 7,
+    "uiDataRecords": 5,
+    "browser": {
+      "pageErrors": [],
+      "dimensions": [
+        320,
+        390
+      ],
+      "fontScales": [
+        1,
+        1.3
+      ],
+      "realUserDatabase": false,
+      "liveMarketOrAi": false,
+      "adbDevices": []
+    }
+  },
+  "releasePublished": false,
+  "productionAlgorithmsChanged": false,
+  "schemaChanged": false,
+  "versionChanged": false,
+  "rollback": "Revert only the stage-0 documentation commit; never restore or downgrade user databases."
+}
