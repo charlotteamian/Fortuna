@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
 import { buildDividendLedger, parseDividendOfficialAnnouncementText, type DividendLedger, type DividendOfficialEvent } from '../lib/dividendLedger';
 import { dateInChina } from '../lib/dividendWorkbench';
+import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 
 export interface DividendOfficialEvidenceOptions {
   post?: (path: string, fields: Record<string, string>) => Promise<unknown>;
@@ -15,6 +16,9 @@ database.version(1).stores({ documents: 'url', ledgers: 'code' });
 const documents: Table<DocumentEvidence, string> = database.table('documents');
 const ledgers: Table<DividendLedger, string> = database.table('ledgers');
 const CNINFO = 'https://www.cninfo.com.cn';
+// Failed attempts remain available to this run without replacing a successful
+// persistent ledger. This is transient evidence state, never business storage.
+const latestLedgerAttempts = new Map<string, DividendLedger>();
 
 async function post(path: string, fields: Record<string, string>): Promise<unknown> {
   const data = new URLSearchParams(fields).toString();
@@ -115,17 +119,48 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
     }));
     return { events: (await documents.toArray()).flatMap(record => record.event?.code === code ? [record.event] : []), issues: [...new Set(issues)] };
   } catch (error) {
-    return { events: cached, issues: [error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED'] };
+    const reason = error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED';
+    return { events: cached, issues: reason.startsWith('CNINFO_') || reason === 'ANNOUNCEMENT_DOWNLOAD_FAILED' ? [reason] : [reason, 'ANNOUNCEMENT_REFRESH_FAILED'] };
   }
 }
 
+async function rememberFailedLedgerAttempt(code: string, asOf: string, issues: string[]): Promise<void> {
+  const previous = await ledgers.get(code).catch(() => undefined);
+  latestLedgerAttempts.set(code, { code, asOf, events: previous?.events ?? [], complete: false,
+    issues: [...new Set(issues)], sourceUrls: previous?.sourceUrls ?? [] });
+}
+
 export async function researchDividendLedger(raw: unknown, code: string, asOf: string, options: DividendOfficialEvidenceOptions = {}): Promise<DividendLedger> {
-  const evidence = await fetchDividendOfficialEvidence(code, asOf, options);
-  const ledger = buildDividendLedger(raw, code, asOf, { officialEvents: evidence.events });
+  let evidence: Awaited<ReturnType<typeof fetchDividendOfficialEvidence>>;
+  try { evidence = await fetchDividendOfficialEvidence(code, asOf, options); }
+  catch (error) {
+    await rememberFailedLedgerAttempt(code, asOf, [error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED', 'ANNOUNCEMENT_REFRESH_FAILED']);
+    throw error;
+  }
+  let ledger: DividendLedger;
+  try { ledger = buildDividendLedger(raw, code, asOf, { officialEvents: evidence.events }); }
+  catch (error) {
+    await rememberFailedLedgerAttempt(code, asOf, [...evidence.issues, error instanceof Error ? error.message : 'INVALID_DIVIDEND_LEDGER_SOURCE', 'DIVIDEND_SOURCE_REFRESH_FAILED']);
+    throw error;
+  }
   ledger.issues = [...new Set([...ledger.issues, ...evidence.issues])];
+  if (!dividendEvidenceStatus(ledger, asOf).usable) {
+    // Existing complete=false already means source coverage is incomplete. It
+    // prevents an unsuccessful new attempt from becoming a verified cash base,
+    // while leaving all cached facts, their dates and the last success intact.
+    ledger.complete = false;
+    latestLedgerAttempts.set(code, structuredClone(ledger));
+    return ledger;
+  }
   await ledgers.put(ledger);
+  latestLedgerAttempts.delete(code);
   return ledger;
 }
 export async function loadSavedDividendLedger(code: string): Promise<DividendLedger | undefined> { return ledgers.get(code); }
+/** Prefer the latest attempt for checks, including a same-day failed refresh. */
+export async function loadDividendLedgerForCheck(code: string): Promise<DividendLedger | undefined> {
+  const attempted = latestLedgerAttempts.get(code);
+  return attempted ? structuredClone(attempted) : loadSavedDividendLedger(code);
+}
 
-export function closeDividendLedgerEvidence() { database.close(); }
+export function closeDividendLedgerEvidence() { latestLedgerAttempts.clear(); database.close(); }
