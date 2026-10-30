@@ -4,7 +4,7 @@ import { dividendCheckSummary } from '../lib/dividendCheckSummary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BUY_LEVELS, SELL_LEVELS, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
-import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
+import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, dividendStockEditFingerprint, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendFundHomePlan from '../components/DividendFundHomePlan';
@@ -211,7 +211,7 @@ export default function DividendPage() {
     {linkedPickerOpen && <LinkedStockPicker positions={untracked} amountVisible={amountVisible} onClose={() => setLinkedPickerOpen(false)} onSaved={async count => { setLinkedPickerOpen(false); await load(); setAllocationResult(null); setMessage(t('div_linked_added', { count })); setError(''); }} />}
   </div>;
   return <div className="dividend-page">
-    {editor && <StockEditor initial={editor} isNew={isNew} stocks={data.stocks} budgetMinor={data.budgetMinor} amountVisible={amountVisible} onClose={() => setEditor(null)} onSaved={async action => {
+    {editor && <StockEditor initial={editor} isNew={isNew} stocks={data.stocks} budgetMinor={data.budgetMinor} amountVisible={amountVisible} onConflict={load} onClose={() => setEditor(null)} onSaved={async action => {
       const before = data.stocks.filter(stock => stock.code !== editor.code); setEditor(null); const next = await load();
       setAllocationResult(action === 'redistributed' && before.some(stock => stock.weightBps > 0) ? { before, after: next.stocks } : null);
       setError(''); setMessage(t(action === 'redistributed' ? 'div_deleted_redistributed' : action === 'deleted' ? 'div_deleted_unallocated' : 'div_saved'));
@@ -303,11 +303,12 @@ function LinkedStockPicker({ positions, amountVisible, onClose, onSaved }: { pos
   </form></dialog>;
 }
 
-function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClose, onSaved }: { initial: DividendStock; isNew: boolean; stocks: DividendStock[]; budgetMinor: number; amountVisible: boolean; onClose: () => void; onSaved: (action?: 'deleted' | 'redistributed') => Promise<void> }) {
+function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClose, onSaved, onConflict }: { initial: DividendStock; isNew: boolean; stocks: DividendStock[]; budgetMinor: number; amountVisible: boolean; onClose: () => void; onSaved: (action?: 'deleted' | 'redistributed') => Promise<void>; onConflict: () => Promise<unknown> }) {
   const { t } = useTranslation();
   const dialog = useRef<HTMLDialogElement>(null);
   const deletePreview = useRef<HTMLElement>(null);
   const [stock, setStock] = useState(initial);
+  const [openedFingerprint] = useState(() => dividendStockEditFingerprint(initial));
   const [dps, setDps] = useState(initial.manualDpsMicros === undefined ? '' : String(initial.manualDpsMicros / 1e6));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -324,9 +325,14 @@ function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClo
     if (!code || (isNew && stocks.some(s => s.code === code)) || !stock.name.trim() || (dps !== '' && (!Number.isFinite(Number(dps)) || Number(dps) < 0))) { setError(t('div_invalid_stock')); return; }
     setSaving(true);
     try {
-      await saveDividendStock({ ...stock, code, name: stock.name.trim(), manualDpsMicros: dps === '' ? undefined : Math.round(Number(dps) * 1e6) });
+      await saveDividendStock({ ...stock, code, name: stock.name.trim(), manualDpsMicros: dps === '' ? undefined : Math.round(Number(dps) * 1e6) },
+        isNew ? { expectNew: true } : { expectedFingerprint: openedFingerprint });
       await onSaved();
-    } catch { setError(t('div_invalid_stock')); }
+    } catch (cause) {
+      const conflict = cause instanceof Error && cause.message === 'DIVIDEND_STOCK_CHANGED';
+      setError(t(conflict ? 'div_check_stock_conflict' : 'div_invalid_stock'));
+      if (conflict) await onConflict().catch(() => undefined);
+    }
     finally { setSaving(false); }
   };
   const remove = async () => {

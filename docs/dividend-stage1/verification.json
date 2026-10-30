@@ -1,0 +1,66 @@
+{
+  "verifiedAt": "2026-10-30T15:17:39.195261+00:00",
+  "baselineCommit": "e0cf8c3138ca02bdd753f84f90d1f004d1aeeb2a",
+  "branch": "codex/dividend-stage1-status-20261030",
+  "commitsBeforeFinal": [
+    "d54a26727725c686c554f2cfb65ce033bb3cc8d4",
+    "42bd94324cb2d6195d8af9b9b02d34435da65143"
+  ],
+  "finalCommitMessage": "fix: reject stale dividend stock editor saves [skip ci]",
+  "protectedFilesCompared": 143,
+  "protectedFilesChanged": [],
+  "preexistingUntrackedEntriesChecked": 182,
+  "preexistingUntrackedEntriesMissing": [],
+  "unchangedStage0Reports": {
+    "docs/dividend-stage0/pricing-audit.md": "2a3565a4fe876d217d8bc626d9df7852eae76b9e7801703b40484fe5d24fab73",
+    "docs/dividend-stage0/risk-audit.md": "f771f72519e08ae3b7934737371203be30933fcb661ea03efb0e8afd2892d094",
+    "docs/dividend-stage0/ui-data-audit.md": "2260348b4973b39fc89765c3e570254dd2e93876bf51c157d491d1d091c5c3c3"
+  },
+  "checks": {
+    "npmTest": {
+      "tests": 591,
+      "pass": 591,
+      "fail": 0,
+      "log": "final-test.log"
+    },
+    "npmLint": {
+      "exitCode": 0,
+      "log": "final-lint.log"
+    },
+    "npmBuild": {
+      "exitCode": 0,
+      "log": "final-build.log",
+      "warning": "Vite chunk size >500kB; compilation succeeded"
+    },
+    "browser": {
+      "success": true,
+      "checks": 12,
+      "pageErrors": [],
+      "widths": [
+        320,
+        390
+      ],
+      "fontScales": [
+        1,
+        1.3
+      ],
+      "screenshots": 17,
+      "data": "synthetic/archived fixtures; isolated profile; mocked network"
+    },
+    "adbDevices": []
+  },
+  "dataSafety": {
+    "realDatabaseOpened": false,
+    "realDeviceInstalled": false,
+    "externalAiRequested": false,
+    "liveMarketAccuracyTested": false,
+    "schemaChanged": false,
+    "pricingFormulaChanged": false,
+    "fundFormulaChanged": false,
+    "versionChanged": false,
+    "capSyncRun": false,
+    "pushed": false,
+    "released": false
+  },
+  "rollback": "Revert final data-conflict commit, then 42bd943, then d54a267. Do not restore or downgrade user databases."
+}

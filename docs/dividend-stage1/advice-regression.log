@@ -1,0 +1,31 @@
+✔ unsafe model buy prose cannot override paused or failed deterministic action checks (14.961084ms)
+✔ model grids share the homepage current-quote gate and never receive implicit seven-tier prices (1.386ms)
+✔ context excludes private account identities and preserves alternative budgets, dates and actual recorded quantities (0.379ms)
+✔ model snapshot uses readable units and dates rather than implementation fields (0.428625ms)
+✔ model receives the exact prior-year dividend estimate alongside the undisclosed current amount (1.006292ms)
+✔ manual annual DPS stays separate from latest-report DPS and manual shares override linked positions (0.224375ms)
+✔ accelerating declines produce a visible warning and cannot invent pause or resume actions (0.920833ms)
+✔ the assistant cannot turn missing or contradicted valuation inputs into executable model prices (2.323584ms)
+✔ regeneration supplies a verified ladder without changing manual pause state, even during accelerating declines (3.218125ms)
+✔ pricing questions use verified recent batches, selected tax and directional rounding without automatic financial pauses (0.770375ms)
+✔ openai converts a JSON-fenced pause draft to an action while retaining pricing verification (0.571833ms)
+✔ gemini converts a JSON-fenced pause draft to an action while retaining pricing verification (0.452625ms)
+✔ anthropic converts a JSON-fenced pause draft to an action while retaining pricing verification (0.388ms)
+✔ the method prompt preserves verified recent batches, directional rounding and provisional saved-grid states (0.13975ms)
+✔ openai sends text, current snapshot and bounded conversation with the proper authentication (0.396625ms)
+✔ gemini sends text, current snapshot and bounded conversation with the proper authentication (0.250583ms)
+✔ anthropic sends text, current snapshot and bounded conversation with the proper authentication (0.220542ms)
+✔ full endpoints preserve custom query parameters, and vendor compatibility flags remain available (0.218416ms)
+✔ provider failures, invalid responses and network exceptions expose stable codes without provider data or keys (1.791625ms)
+✔ timeouts and navigation cancellation end a hung request and abort browser transport (13.331167ms)
+✔ truncated or blocked answers are not presented as complete operational guidance (0.529917ms)
+✔ bad configuration/questions and non-HTTPS remote URLs fail before any API call (0.384375ms)
+✔ model credentials stay outside JSON/Excel backups, asset snapshots and ledger restore (23.180625ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 274.889417

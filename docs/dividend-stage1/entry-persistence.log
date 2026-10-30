@@ -1,0 +1,40 @@
+✔ missing research time and a failed current source do not inherit a passing cached result (7.137167ms)
+✔ a missing earlier tier keeps original tier numbers and cannot invent cumulative quantities (0.907542ms)
+✔ a future fund quote cannot supply current either/both price evidence while a valid independent index condition remains visible (0.506542ms)
+✔ a current verified numerator keeps the existing v5 four-buy/four-sell prices and leaves every input intact (0.928625ms)
+✔ pass plus a verified current grid above the buy price waits, while a reached price remains distinct from execution (0.671708ms)
+✔ failed eligibility and manual pause preserve the price event without allowing an unconditional new buy (0.660916ms)
+✔ failed buying eligibility never blocks an independently reached sell price (0.30275ms)
+✔ missing new evidence preserves saved explicit prices and returns no manufactured price when none were saved (0.347542ms)
+✔ legacy yield-only seven-tier defaults never escape as new calculated prices (0.171667ms)
+✔ an unsaved candidate can display only the current v5 plan and requires saving before execution review (0.272958ms)
+✔ partial historical grids keep their explicit prices and never fill missing tiers with a dividend forecast (0.276167ms)
+✔ up to ten days of old observations remain historical comparisons, never a current trigger (0.865875ms)
+✔ a failed primary refresh cannot be bypassed by a current research quote (0.253375ms)
+✔ future timestamps, incompatible ex-date basis and same-time source conflicts remain unknown (0.662208ms)
+✔ an old parameter version, changed tax or newer numerator never silently replaces an explicit saved grid (1.37175ms)
+✔ source refresh failure and incomplete pagination downgrade status without redating old verified documents (0.623ms)
+✔ provisional cross-check/special-distribution/saved-snapshot limits affect new-buy review without rewriting pricing (0.275375ms)
+✔ eligibility preserves evidence unknown and carries at most three main reasons instead of a risk score (0.262333ms)
+✔ a pure download timestamp change leaves the semantic fingerprint unchanged; a price event changes it (0.559917ms)
+✔ funds preserve their own drawdown/index-yield/high-price engine and never receive a stock dividend ladder (0.160792ms)
+✔ a dated fund index yield and a manual price are never promoted to a current executable quote (0.177333ms)
+✔ fund either/both conditions preserve meaningful short-circuiting despite an irrelevant missing observation (0.135959ms)
+✔ quote parsing rejects invalid times and preserves a closed-session current-day price fact without pretending it can trade (0.068167ms)
+✔ malformed evidence and a partial cached financial section downgrade one item instead of crashing the collection (0.40125ms)
+✔ preview stays read-only and confirmation saves both rounded ladders and deterministic origin without changing the ledger (84.480459ms)
+✔ a model-provided origin is stripped and only the exact deterministic origin can validate (4.289ms)
+✔ confirmation fingerprints bind both the saved origin and the origin shown in the preview (7.776416ms)
+✔ budget and share edits retain birth, while a manual price edit clears unverifiable birth (2.965417ms)
+✔ reading a legacy pricing method upgrades only the executor defaults, preserving saved grids and stored settings (2.98325ms)
+✔ a newer batch selection retires an old draft even when its total cash and prices are unchanged (3.631625ms)
+✔ a newer independent ledger retires old UI drafts even when the research cache has not changed (6.149125ms)
+✔ a failed same-day official refresh blocks confirmation while preserving the last successful ledger and all plans (3.838292ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 280.5

@@ -1,0 +1,46 @@
+✔ unsafe model buy prose cannot override paused or failed deterministic action checks (16.10425ms)
+✔ model grids share the homepage current-quote gate and never receive implicit seven-tier prices (1.581792ms)
+✔ context excludes private account identities and preserves alternative budgets, dates and actual recorded quantities (0.433541ms)
+✔ model snapshot uses readable units and dates rather than implementation fields (0.594959ms)
+✔ model receives the exact prior-year dividend estimate alongside the undisclosed current amount (2.099667ms)
+✔ manual annual DPS stays separate from latest-report DPS and manual shares override linked positions (0.387208ms)
+✔ accelerating declines produce a visible warning and cannot invent pause or resume actions (4.465916ms)
+✔ the assistant cannot turn missing or contradicted valuation inputs into executable model prices (2.62ms)
+✔ regeneration supplies a verified ladder without changing manual pause state, even during accelerating declines (3.31325ms)
+✔ pricing questions use verified recent batches, selected tax and directional rounding without automatic financial pauses (0.864333ms)
+✔ openai converts a JSON-fenced pause draft to an action while retaining pricing verification (0.623916ms)
+✔ gemini converts a JSON-fenced pause draft to an action while retaining pricing verification (0.509458ms)
+✔ anthropic converts a JSON-fenced pause draft to an action while retaining pricing verification (0.390791ms)
+✔ the method prompt preserves verified recent batches, directional rounding and provisional saved-grid states (0.152833ms)
+✔ openai sends text, current snapshot and bounded conversation with the proper authentication (0.42275ms)
+✔ gemini sends text, current snapshot and bounded conversation with the proper authentication (0.274542ms)
+✔ anthropic sends text, current snapshot and bounded conversation with the proper authentication (0.229792ms)
+✔ full endpoints preserve custom query parameters, and vendor compatibility flags remain available (0.249459ms)
+✔ provider failures, invalid responses and network exceptions expose stable codes without provider data or keys (1.930458ms)
+✔ timeouts and navigation cancellation end a hung request and abort browser transport (10.826792ms)
+✔ truncated or blocked answers are not presented as complete operational guidance (0.647959ms)
+✔ bad configuration/questions and non-HTTPS remote URLs fail before any API call (0.438041ms)
+✔ model credentials stay outside JSON/Excel backups, asset snapshots and ledger restore (25.323541ms)
+✔ saved advice scope changes for meaningful quote evidence but not a repeated download timestamp (40.781583ms)
+✔ summary reads preserve the complete exported ledger and original source verification dates byte for byte (6.068291ms)
+✔ current user tax settings reach the summary and mark a saved different-tax grid for review without rewriting prices (3.381834ms)
+✔ one malformed ledger cannot blank other stock summaries or bypass missing evidence (5.199834ms)
+✔ a malformed research cache leaves independent stock evidence and read-only ledger contents available (4.212125ms)
+✔ a stock without an explicit saved grid cannot create the old seven tiers from a manual dividend assumption (2.354583ms)
+✔ inspection of an uninitialised settings row does not create or migrate settings as a side effect (4.154958ms)
+✔ preview stays read-only and confirmation saves both rounded ladders and deterministic origin without changing the ledger (103.985166ms)
+✔ a model-provided origin is stripped and only the exact deterministic origin can validate (5.223167ms)
+✔ confirmation fingerprints bind both the saved origin and the origin shown in the preview (9.65775ms)
+✔ budget and share edits retain birth, while a manual price edit clears unverifiable birth (3.990625ms)
+✔ reading a legacy pricing method upgrades only the executor defaults, preserving saved grids and stored settings (3.6245ms)
+✔ a newer batch selection retires an old draft even when its total cash and prices are unchanged (4.114875ms)
+✔ a newer independent ledger retires old UI drafts even when the research cache has not changed (6.909208ms)
+✔ a failed same-day official refresh blocks confirmation while preserving the last successful ledger and all plans (4.330917ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 333.677292

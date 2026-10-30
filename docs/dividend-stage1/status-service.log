@@ -1,0 +1,14 @@
+✔ summary reads preserve the complete exported ledger and original source verification dates byte for byte (26.856542ms)
+✔ current user tax settings reach the summary and mark a saved different-tax grid for review without rewriting prices (4.014208ms)
+✔ one malformed ledger cannot blank other stock summaries or bypass missing evidence (2.919209ms)
+✔ a malformed research cache leaves independent stock evidence and read-only ledger contents available (3.367542ms)
+✔ a stock without an explicit saved grid cannot create the old seven tiers from a manual dividend assumption (2.919875ms)
+✔ inspection of an uninitialised settings row does not create or migrate settings as a side effect (2.776834ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 212.97175

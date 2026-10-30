@@ -1,0 +1,40 @@
+✔ missing research time and a failed current source do not inherit a passing cached result (7.392958ms)
+✔ a missing earlier tier keeps original tier numbers and cannot invent cumulative quantities (0.9355ms)
+✔ a future fund quote cannot supply current either/both price evidence while a valid independent index condition remains visible (0.517916ms)
+✔ a current verified numerator keeps the existing v5 four-buy/four-sell prices and leaves every input intact (0.942875ms)
+✔ pass plus a verified current grid above the buy price waits, while a reached price remains distinct from execution (0.6845ms)
+✔ failed eligibility and manual pause preserve the price event without allowing an unconditional new buy (0.610459ms)
+✔ failed buying eligibility never blocks an independently reached sell price (0.296083ms)
+✔ missing new evidence preserves saved explicit prices and returns no manufactured price when none were saved (0.338875ms)
+✔ legacy yield-only seven-tier defaults never escape as new calculated prices (0.171166ms)
+✔ an unsaved candidate can display only the current v5 plan and requires saving before execution review (0.268834ms)
+✔ partial historical grids keep their explicit prices and never fill missing tiers with a dividend forecast (0.271209ms)
+✔ up to ten days of old observations remain historical comparisons, never a current trigger (0.941625ms)
+✔ a failed primary refresh cannot be bypassed by a current research quote (0.26ms)
+✔ future timestamps, incompatible ex-date basis and same-time source conflicts remain unknown (1.015917ms)
+✔ an old parameter version, changed tax or newer numerator never silently replaces an explicit saved grid (0.925416ms)
+✔ source refresh failure and incomplete pagination downgrade status without redating old verified documents (0.670875ms)
+✔ provisional cross-check/special-distribution/saved-snapshot limits affect new-buy review without rewriting pricing (0.273167ms)
+✔ eligibility preserves evidence unknown and carries at most three main reasons instead of a risk score (0.301875ms)
+✔ a pure download timestamp change leaves the semantic fingerprint unchanged; a price event changes it (0.607292ms)
+✔ funds preserve their own drawdown/index-yield/high-price engine and never receive a stock dividend ladder (0.169917ms)
+✔ a dated fund index yield and a manual price are never promoted to a current executable quote (0.166292ms)
+✔ fund either/both conditions preserve meaningful short-circuiting despite an irrelevant missing observation (0.129834ms)
+✔ quote parsing rejects invalid times and preserves a closed-session current-day price fact without pretending it can trade (0.0775ms)
+✔ malformed evidence and a partial cached financial section downgrade one item instead of crashing the collection (0.389583ms)
+✔ resume inspection does not turn date-only quotes or legacy annual assumptions into today price evidence (23.737375ms)
+✔ a complete replacement uses one verified recent-batch dividend and four fixed-yield levels on each side (1.535792ms)
+✔ fresh review uses saved user assumptions and only a later confirmed preview resumes the unchanged plan (3.961041ms)
+✔ financial risks, missing evidence and weak markets remain advisory and never write a pause or require every check to pass (9.944417ms)
+✔ price status uses the saved grid and safety margin never becomes another buying threshold (4.296667ms)
+✔ review falls back to a valid saved quote when new financial pricing is absent, preserving separate missing evidence (7.369125ms)
+✔ expired reviews and edits to user principles, pricing assumptions or saved plans require another review (3.581541ms)
+✔ a saved-plan edit while evidence is downloading invalidates that review without writing (1.718083ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 213.006333

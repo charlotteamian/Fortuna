@@ -1,0 +1,35 @@
+✔ a current verified numerator keeps the existing v5 four-buy/four-sell prices and leaves every input intact (10.432584ms)
+✔ pass plus a verified current grid above the buy price waits, while a reached price remains distinct from execution (0.896334ms)
+✔ failed eligibility and manual pause preserve the price event without allowing an unconditional new buy (0.719167ms)
+✔ failed buying eligibility never blocks an independently reached sell price (0.361541ms)
+✔ missing new evidence preserves saved explicit prices and returns no manufactured price when none were saved (0.437625ms)
+✔ legacy yield-only seven-tier defaults never escape as new calculated prices (0.204125ms)
+✔ an unsaved candidate can display only the current v5 plan and requires saving before execution review (0.302166ms)
+✔ partial historical grids keep their explicit prices and never fill missing tiers with a dividend forecast (0.333ms)
+✔ up to ten days of old observations remain historical comparisons, never a current trigger (0.979166ms)
+✔ a failed primary refresh cannot be bypassed by a current research quote (0.309209ms)
+✔ future timestamps, incompatible ex-date basis and same-time source conflicts remain unknown (0.685042ms)
+✔ an old parameter version, changed tax or newer numerator never silently replaces an explicit saved grid (0.673959ms)
+✔ source refresh failure and incomplete pagination downgrade status without redating old verified documents (0.733209ms)
+✔ provisional cross-check/special-distribution/saved-snapshot limits affect new-buy review without rewriting pricing (0.747292ms)
+✔ eligibility preserves evidence unknown and carries at most three main reasons instead of a risk score (0.361292ms)
+✔ a pure download timestamp change leaves the semantic fingerprint unchanged; a price event changes it (0.898583ms)
+✔ funds preserve their own drawdown/index-yield/high-price engine and never receive a stock dividend ladder (0.442917ms)
+✔ a dated fund index yield and a manual price are never promoted to a current executable quote (0.170917ms)
+✔ fund either/both conditions preserve meaningful short-circuiting despite an irrelevant missing observation (0.174208ms)
+✔ quote parsing rejects invalid times and preserves a closed-session current-day price fact without pretending it can trade (0.078959ms)
+✔ malformed evidence and a partial cached financial section downgrade one item instead of crashing the collection (0.4135ms)
+✔ summary reads preserve the complete exported ledger and original source verification dates byte for byte (25.83225ms)
+✔ current user tax settings reach the summary and mark a saved different-tax grid for review without rewriting prices (4.212208ms)
+✔ one malformed ledger cannot blank other stock summaries or bypass missing evidence (2.990792ms)
+✔ a malformed research cache leaves independent stock evidence and read-only ledger contents available (3.540041ms)
+✔ a stock without an explicit saved grid cannot create the old seven tiers from a manual dividend assumption (3.014083ms)
+✔ inspection of an uninitialised settings row does not create or migrate settings as a side effect (2.881917ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 210.842459

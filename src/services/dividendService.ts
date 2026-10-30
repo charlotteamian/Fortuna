@@ -39,15 +39,40 @@ export async function saveDividendBudget(budgetMinor: number) {
   await updateSettings({ dividendBudgetMinor: budgetMinor });
   requestPortableSnapshot('dividend-budget');
 }
-export async function saveDividendStock(stock: DividendStock) {
-  if (!isDividendStock(stock)) throw new Error('INVALID_DIVIDEND_STOCK');
+/** Bind an editor to user-owned fields; market refreshes must not invalidate a draft. */
+export function dividendStockEditFingerprint(stock: DividendStock): string {
+  const levels = (value: DividendStock['buyLevels']) => value?.map(({ yieldBps, portionBps, priceMinor }) => ({ yieldBps, portionBps, priceMinor }));
+  const origin = stock.gridProvenance;
+  return JSON.stringify({ code: stock.code, name: stock.name, group: stock.group, weightBps: stock.weightBps,
+    shareMode: stock.shareMode, manualShares: stock.manualShares, manualDpsMicros: stock.manualDpsMicros,
+    lotSize: stock.lotSize, note: stock.note, buyPaused: stock.buyPaused ?? false,
+    buyLevels: levels(stock.buyLevels), sellLevels: levels(stock.sellLevels),
+    gridProvenance: origin && { generatedAt: origin.generatedAt, grossDpsMicros: origin.grossDpsMicros,
+      taxBps: origin.taxBps, parameterVersion: origin.parameterVersion, basisKind: origin.basisKind } });
+}
+
+export interface DividendStockSaveOptions {
+  expectedFingerprint?: string;
+  expectNew?: boolean;
+}
+
+export async function saveDividendStock(stock: DividendStock, options: DividendStockSaveOptions = {}) {
+  if (!isDividendStock(stock) || !options || typeof options !== 'object'
+    || (options.expectedFingerprint !== undefined && (typeof options.expectedFingerprint !== 'string' || !options.expectedFingerprint))
+    || (options.expectNew !== undefined && typeof options.expectNew !== 'boolean')
+    || (options.expectNew && options.expectedFingerprint !== undefined)) throw new Error('INVALID_DIVIDEND_STOCK');
   await db.transaction('rw', db.dividendStocks, async () => {
     const current = await db.dividendStocks.get(stock.code);
+    // Check inside the write transaction, before constructing or persisting any update.
+    if ((options.expectNew && current) || (options.expectedFingerprint !== undefined
+      && (!current || dividendStockEditFingerprint(current) !== options.expectedFingerprint))) throw new Error('DIVIDEND_STOCK_CHANGED');
     const saved = { ...stock };
     if (current && JSON.stringify(stock.buyLevels) === JSON.stringify(current.buyLevels)
       && JSON.stringify(stock.sellLevels) === JSON.stringify(current.sellLevels) && current.gridProvenance) saved.gridProvenance = current.gridProvenance;
     else delete saved.gridProvenance;
     for (const key of ['quote', 'quoteFailedAt', 'dividend', 'dividendFailedAt', 'trend', 'trendFailedAt'] as const) {
+      // An editor cannot restore a cache field that a concurrent refresh cleared.
+      if (current && options.expectedFingerprint !== undefined) delete saved[key];
       if (current && Object.hasOwn(current, key)) Object.assign(saved, { [key]: current[key] });
     }
     await db.dividendStocks.put(saved);

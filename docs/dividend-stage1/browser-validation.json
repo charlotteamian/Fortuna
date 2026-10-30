@@ -1,0 +1,96 @@
+{
+  "success": true,
+  "environment": "Fresh isolated Chrome; synthetic ledger, archived arithmetic fixtures, mocked quotes and research transport; no real user database or external AI.",
+  "checks": [
+    {
+      "name": "failed eligibility, observed price touch and manual pause are distinct",
+      "passed": true
+    },
+    {
+      "name": "manual dividend without saved explicit grid produces no old seven-tier prices",
+      "passed": true
+    },
+    {
+      "name": "previous-day quotes never produce current triggered table rows",
+      "passed": true
+    },
+    {
+      "name": "current tax change marks historical grid pending without replacing its prices",
+      "passed": true
+    },
+    {
+      "name": "pre-ex-date quotes do not trigger a new-basis grid",
+      "passed": true
+    },
+    {
+      "name": "one malformed ledger does not hide other stock plans",
+      "passed": true
+    },
+    {
+      "name": "manual fund reference price is not an executable market trigger",
+      "passed": true
+    },
+    {
+      "name": "dividend amounts remain visible independently of hidden global asset amounts",
+      "passed": true
+    },
+    {
+      "name": "Stock Checks consumes the same eligibility and pause result as home",
+      "passed": true
+    },
+    {
+      "name": "same-day official refresh failure downgrades trust while retaining all saved prices and original successful evidence",
+      "passed": true
+    },
+    {
+      "name": "stale editor rejects overwrite, keeps the draft and protects newer grid, pause, manual shares and note",
+      "passed": true
+    },
+    {
+      "name": "reopening after conflict loads the latest record and a normal guarded note save preserves every other field",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "layouts": [
+    {
+      "width": 390,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "overflow": []
+    }
+  ],
+  "screenshots": [
+    "home-390-1.png",
+    "stock-390-1.png",
+    "fund-390-1.png",
+    "home-390-1.3.png",
+    "stock-390-1.3.png",
+    "fund-390-1.3.png",
+    "home-320-1.png",
+    "stock-320-1.png",
+    "fund-320-1.png",
+    "home-320-1.3.png",
+    "stock-320-1.3.png",
+    "fund-320-1.3.png",
+    "selection-390.png",
+    "selection-page-390.png",
+    "failed-refresh-390.png",
+    "editor-conflict-390.png",
+    "editor-conflict-320-font130.png"
+  ]
+}
