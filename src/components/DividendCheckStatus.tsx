@@ -14,7 +14,7 @@ const adviceKeys: Record<string, string> = {
   research_missing: 'research', research_not_current: 'research', additional_rules_unverified: 'additional_rules',
   crosscheck_missing: 'crosscheck', special_dividend_review: 'special', saved_evidence_snapshot_missing: 'saved_evidence',
   manual_pause: 'pause', eligibility_fail: 'eligibility', eligibility_unknown: 'eligibility', execution_session_unverified: 'session',
-  budget_missing: 'budget', budget_empty: 'budget', no_holding: 'holding', below_lot: 'lot', covered: 'lot',
+  budget_missing: 'budget', budget_empty: 'budget', no_holding: 'holding', holding_unknown: 'holding', below_lot: 'lot', covered: 'lot',
   cash_fees_liquidity_unverified: 'execution', fees_liquidity_unverified: 'execution',
   fund_manual_price: 'fund_reference', fund_manual_reference: 'fund_reference', fund_mode_hold: 'fund_mode', fund_mode_rebalance: 'fund_mode',
   price_missing: 'fund_reference', price_prior_date: 'fund_reference', high_missing: 'fund_reference', index_yield_missing: 'fund_reference', index_yield_prior_date: 'fund_reference',

@@ -1,0 +1,47 @@
+{
+  "environment": "synthetic/fake-indexeddb, archived arithmetic fixture, local transport stub; no external calls or real data",
+  "ai": {
+    "unsafePreserved": false,
+    "action": "unknown",
+    "answer": "操作建议已按确定性检查限制。请先处理以下约束；到价不等于允许新增买入。\n\n模拟基金 (512890)\n选股资格: 证据不足\n价格依据: 历史保存价 · 待核对\n今日价格观察: 买入 未知, 卖出 未知\n操作检查: 买入 待核实, 卖出 待核实\n缺少适用的基金行情；行情缺失；基金价格仅为手工参考"
+  },
+  "fund": {
+    "held500": {
+      "status": "review",
+      "reasons": [
+        "execution_session_unverified"
+      ],
+      "requiresUserConfirmation": true
+    },
+    "omittedShares": {
+      "buy": {
+        "status": "unknown",
+        "reasons": [
+          "holding_unknown"
+        ],
+        "requiresUserConfirmation": false
+      },
+      "sell": {
+        "status": "unknown",
+        "reasons": [
+          "holding_unknown"
+        ],
+        "requiresUserConfirmation": false
+      },
+      "budgetMinor": 1000000,
+      "shares": null
+    }
+  },
+  "next": {
+    "tierIndices": [
+      2
+    ],
+    "nextBuy": {
+      "index": 2,
+      "priceMinor": 1000,
+      "basis": "price_reference"
+    },
+    "nextBuyState": "unknown"
+  },
+  "unrelatedOldSpecialBlocked": false
+}

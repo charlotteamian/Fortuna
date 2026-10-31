@@ -8,6 +8,7 @@ import { dividendPricingIssueText, humanizeDividendPricingIssues, type DividendP
 import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan.ts';
 import { dividendCheckSummaryText } from '../lib/dividendCheckExplanation.ts';
 import { dividendCheckEn, dividendCheckZh } from '../i18n/dividendCheckTranslations.ts';
+import { dividendAdvisorConcepts, dividendAdvisorConceptFallback, dividendAdvisorResumeGuide } from '../i18n/dividendAdvisorConceptTranslations.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -149,6 +150,23 @@ export async function askDividendAdvisor(config: DividendAdvisorConfig, context:
   }
 }
 
+/** A standalone concept uses a fixed method explanation, never provider prose.
+ * Finite topic matching is not used to judge whether an operation is safe. All
+ * operations, mixed requests and unknown topics remain owned by checks. */
+function standaloneConceptExplanation(question: string, chinese: boolean): { answer: string } | undefined {
+  const request = question.trim().replace(/[。！？?.!]+$/, '').trim();
+  const match = /^(?:请问|请)?(?:能不能|能否|能|可以)?(?:帮我)?(?:什么是|如何理解|解释一下|解释下|解释|介绍一下|说明一下|说明|讲讲|说说)([^，,；;。！？?\n]{1,60})$/.exec(request)
+    ?? /^([^，,；;。！？?\n]{1,60}?)(?:是什么意思|什么意思|的意思是什么|是什么|是啥)$/.exec(request)
+    ?? /^(?:please |could you |can you )?(?:what is|what are|define|explain(?: the concept of| the formula for)?|describe)\s+([^,;.!?\n]{1,100})$/i.exec(request)
+    ?? /^what does\s+([^,;.!?\n]{1,80})\s+mean$/i.exec(request);
+  if (!match) return undefined;
+  const topic = match[1].replace(/(?:吗|呢|呀)$/, '').replace(/(?:的)?(?:概念|原理|公式)$/, '')
+    .replace(/\s+(?:in simple terms|in plain english|simply|briefly)$/i, '').replace(/^the\s+/i, '').trim().toLowerCase();
+  if (/并|然后|顺便|以及|今天|今日|现在|\b(?:and|then|also|today|now|my|our|your)\b/i.test(topic)) return undefined;
+  const concept = dividendAdvisorConcepts.find(item => item.aliases.includes(topic));
+  return { answer: (concept ?? dividendAdvisorConceptFallback)[chinese ? 'zh' : 'en'] };
+}
+
 export async function askDividendAdvisorWithActions(...args: Parameters<typeof askDividendAdvisor>) {
   const raw = await askDividendAdvisor(...args);
   const context = args[1];
@@ -162,12 +180,13 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
   const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
   const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
   const question = args[2];
+  const dictionary = chinese ? dividendCheckZh : dividendCheckEn;
+  const resumeGuide = /恢复|\b(?:resume|restart|reactivate)\b/i.test(question) ? dividendAdvisorResumeGuide[chinese ? 'zh' : 'en'] : '';
+  let pricingAnswer = '';
+  const pricingReasons = new Map<string, string>();
   const explicitPause = /(?:暂停|停止|关闭)(?:现有|这只|该股|股票|计划|网格|的|全部|所有|新增|继续|\s)*(?:加仓|买入|买进)/.test(question)
     && !/(?:不要|别|不必|无需|不用)[^，。；！？\n]{0,8}(?:暂停|停止|关闭)/.test(question)
     || /\b(?:pause|stop|disable)\s+(?:additional\s+)?(?:buying|buys|additions)\b/i.test(question) && !/\b(?:do not|don't|no need to)\s+(?:pause|stop|disable)\b/i.test(question);
-  if (result.actions.some(action => action.buyPaused === false)) result.answer = chinese
-    ? '如需恢复已手动暂停的网格，请在“选股检查”完成新的经营、价格与技术复核，阅读风险与待补充项后预览并确认。风险只作提示，不要求全部通过；恢复网格也不代表立即买入，仍按保存的价格档位、预算和持仓判断。'
-    : 'To resume a manually paused grid, run a fresh review in Stock Checks, read the risks and missing evidence, then preview and confirm. Alerts do not need to all pass. Resuming the grid does not place a trade; saved price levels, budget and holdings still apply.';
   // Numerical drafts must come from the verified method, never a model's guess.
   // Pausing is independent of valuation and remains available when inputs are missing.
   result.actions = result.actions.flatMap(draft => {
@@ -221,6 +240,7 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
       const reason = chinese
         ? `以最近已核验批次分红按固定股息率重算四档买入、四档卖出，每档25%；5%股息率中性参考线${money(pricing.theoreticalPriceMinor!)}元。保留当前手动暂停设置，仓位按价格档位、预算与持仓判断。风险提示：${pauseDetails || '本次无额外定价提示'}。`
         : `Rebuild four buy and four sell levels from verified recent-batch cash dividends and fixed cash yields, 25% each. The 5% neutral reference is CNY ${money(pricing.theoreticalPriceMinor!)}. Preserve the manual pause setting; actions depend on price levels, budget and holdings. Alerts: ${pauseDetails || 'no additional pricing alerts'}.`;
+      pricingReasons.set(saved.code, reason.slice(0, 2000));
       result.actions = result.actions.filter(action => action.code !== saved.code);
       result.actions.push({ id: `reprice-${saved.code}`, code: saved.code, reason: reason.slice(0, 2000),
         ...(explicitPause ? { buyPaused: true } : {}),
@@ -232,7 +252,7 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     }
     // For explicit repricing, the deterministic result owns both prices and
     // readiness. Do not append a contradictory model refusal or another price.
-    if (summaries.length) result.answer = summaries.join('\n\n');
+    if (summaries.length) pricingAnswer = summaries.join('\n\n');
   }
   // Show accelerating declines as context without inventing pause actions.
   let technicalNotice = '';
@@ -243,40 +263,30 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     if (accelerating.length) { technicalNotice = chinese
       ? `风险提示：${accelerating.map(stock => stock.name).join('、')}的已获取日线显示下跌加速，短期波动风险较高；不自动暂停，仍按价格档位、预算和持仓自主决定。`
       : `Risk alert: the downloaded daily data for ${accelerating.map(stock => stock.name).join(', ')} show an accelerating decline and higher short-term volatility. This does not pause the grid; decide using price levels, budget and holdings.`;
-      result.answer = `${technicalNotice}\n\n${result.answer}`; }
+    }
   }
-  result.actions = result.actions.slice(0, 10);
-  result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');
-  result.actions = result.actions.map(action => {
+  result.actions = result.actions.slice(0, 10).map(action => {
     const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
     const gridProvenance = pricing && (action.buyLevels || action.sellLevels) ? dividendPricingProvenance(pricing, context.research!.generatedAt) : undefined;
-    return { ...action, ...(gridProvenance ? { gridProvenance } : {}), reason: humanizeDividendPricingIssues(action.reason, chinese ? 'zh' : 'en').slice(0, 2000) };
+    // A preview's reason is visible too. Never retain a provider's action
+    // conclusion here after replacing the main answer.
+    const reason = action.buyLevels || action.sellLevels ? pricingReasons.get(action.code) ?? dictionary.div_check_help_grid : dictionary.div_check_pause_draft;
+    return { ...action, ...(gridProvenance ? { gridProvenance } : {}), reason };
   });
-  // Concrete action answers belong to deterministic checks. A provider's prose
-  // cannot override a pause, failed principle or unknown execution condition.
-  // Verified repricing and explicit pause drafts retain their separate preview
-  // flow; this guard never changes the price calculation or saved pause state.
   const allChecks = [...context.stockPlan.stocks.map(stock => stock.checkSummary), ...context.fundPlan.funds.map(fund => fund.checkSummary)];
   const namedChecks = allChecks.filter(check => question.includes(check.name) || !!check.code && question.includes(check.code));
   const scope = namedChecks.length ? namedChecks : /股票.*基金|stocks.*funds|全部|所有|both|all/i.test(question) ? allChecks
     : context.activeStrategy === 'stocks' ? context.stockPlan.stocks.map(stock => stock.checkSummary) : context.fundPlan.funds.map(fund => fund.checkSummary);
-  const actionQuestion = /今日|今天|操作|做什么|买不买|卖不卖|加仓|买入|买进|卖出|调仓|\b(?:today|action|buy|sell|trade|add|purchase)\b/i.test(question);
-  const buyDirective = /(?:立即|直接|现在|今天|今日|建议|应该|应当|可以|请|新增|继续|开始)[^。！？\n]{0,30}(?:买入|加仓|买进|建仓)|\b(?:buy|purchase|add to|increase (?:your |the )?position)\b/i.test(result.answer);
-  const sellDirective = /(?:立即|直接|现在|今天|今日|建议|应该|应当|可以|请)[^。！？\n]{0,30}(?:卖出|减仓|清仓)|\b(?:sell|reduce (?:your |the )?position)\b/i.test(result.answer);
-  const conceptQuestion = /什么是|如何理解|解释.*(?:概念|原理|公式)|\b(?:what is|define)\b|explain.*(?:concept|formula)/i.test(question);
-  // Unknown phrasing is not an execution permission. With unresolved conditions,
-  // non-concept questions use the rule result even if the provider uses slang.
-  const constrainedContext = !conceptQuestion && scope.some(check => check.actionCheck.buy.status !== 'confirmation_candidate'
-    || check.actionCheck.buy.requiresUserConfirmation);
-  const restricted = scope.some(check => (actionQuestion || buyDirective) && (check.actionCheck.buy.status !== 'confirmation_candidate' || check.actionCheck.buy.requiresUserConfirmation)
-    || sellDirective && (check.actionCheck.sell.status !== 'confirmation_candidate' || check.actionCheck.sell.requiresUserConfirmation));
-  if (!regenerate && (constrainedContext || restricted && (actionQuestion || buyDirective || sellDirective))) {
-    const pauseNotice = result.actions.some(action => action.buyPaused === true) ? `${(chinese ? dividendCheckZh : dividendCheckEn).div_check_pause_draft}\n\n` : '';
-    result.answer = `${pauseNotice}${technicalNotice ? `${technicalNotice}\n\n` : ''}${(chinese ? dividendCheckZh : dividendCheckEn).div_check_ai_limited}\n\n${dividendCheckSummaryText(scope, chinese ? 'zh' : 'en')}`;
+  // Intent never grants provider prose an exception. Only an actually rebuilt
+  // pricing answer owns the preview channel; operation status always comes from
+  // the same summary, even for a mixed repricing question or an unmatched target.
+  const explanation = !pricingAnswer && !result.actions.length ? standaloneConceptExplanation(question, chinese) : undefined;
+  if (explanation) result.answer = explanation.answer;
+  if (!explanation) {
+    result.answer = [result.actions.some(action => action.buyPaused === true) ? dictionary.div_check_pause_draft : '',
+      resumeGuide, technicalNotice, pricingAnswer, dictionary.div_check_ai_limited, dividendCheckSummaryText(scope, chinese ? 'zh' : 'en')]
+      .filter(Boolean).join('\n\n');
   }
-  if (regenerate) {
-    const uncertain = scope.filter(check => check.risk.evidenceInsufficient.some(item => ['crosscheck_missing', 'special_dividend_review', 'saved_evidence_snapshot_missing'].includes(item.reason)));
-    if (uncertain.length) result.answer += `\n\n${(chinese ? dividendCheckZh : dividendCheckEn).div_check_ai_limited}\n${dividendCheckSummaryText(uncertain, chinese ? 'zh' : 'en')}`;
-  }
+  result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');
   return result;
 }

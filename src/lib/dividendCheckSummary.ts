@@ -18,6 +18,11 @@ export interface DividendCheckRisk {
 export interface DividendActionCheck {
   status: 'blocked' | 'review' | 'wait' | 'confirmation_candidate' | 'unknown'; reasons: string[]; requiresUserConfirmation: boolean;
 }
+type DividendNextTierState = 'pending' | 'covered' | 'unknown' | 'no_holding' | 'budget_empty' | 'below_lot';
+interface DividendNextTier {
+  index: number; priceMinor?: number; priceMicros?: number;
+  basis?: 'cumulative_target' | 'price_reference'; targetShares?: number; sellShares?: number;
+}
 interface DividendCheckSummaryBase {
   id: string; code?: string; name: string;
   eligibility: { status: 'pass' | 'fail' | 'unknown'; reasons: string[]; checks: DividendResearchCheck[] };
@@ -25,7 +30,8 @@ interface DividendCheckSummaryBase {
     status: 'verified' | 'saved_unverified' | 'unavailable'; origin: 'saved' | 'current' | 'none';
     buyLevels: GridLevel[]; sellLevels: GridLevel[]; reasons: string[];
     buyTierIndices: number[]; sellTierIndices: number[];
-    nextBuy?: { index: number; priceMinor?: number; priceMicros?: number }; nextSell?: { index: number; priceMinor?: number; priceMicros?: number };
+    nextBuy?: DividendNextTier; nextSell?: DividendNextTier;
+    nextBuyState?: DividendNextTierState; nextSellState?: DividendNextTierState;
     generatedAt?: number; grossDpsMicros?: number; netDpsMicros?: number; taxBps?: number; parameterVersion?: number;
     sourceUrls: string[]; selectedBatchIds: string[]; entryPriceMicros?: number; exitPriceMicros?: number;
   };
@@ -35,7 +41,7 @@ interface DividendCheckSummaryBase {
     lastAvailable?: { date: string; priceMinor?: number; priceMicros?: number; buy: DividendTriggerState; sell: DividendTriggerState; buyLevels: number[]; sellLevels: number[] };
   };
   risk: { blocking: DividendCheckRisk[]; attention: DividendCheckRisk[]; evidenceInsufficient: DividendCheckRisk[] };
-  actionCheck: { buy: DividendActionCheck; sell: DividendActionCheck; budgetMinor?: number; shares: number; additionalBuyShares?: number; sellShares?: number };
+  actionCheck: { buy: DividendActionCheck; sell: DividendActionCheck; budgetMinor?: number; shares: number | null; additionalBuyShares?: number; sellShares?: number };
   freshness: {
     generatedAt: number; asOf: string; researchGeneratedAt?: number; quoteSourceAt?: string; quoteFetchedAt?: number;
     reportPeriod?: string; noticeDate?: string; verifiedAt?: string; evidenceVerifiedDates: string[]; sources: string[];
@@ -139,6 +145,25 @@ export function dividendCheckSummary(input: {
     sellShares: quote.status === 'current' && !partialSell ? rawDisplayPlan.sellShares : 0,
     buyTriggeredLevel: quote.status === 'current' ? historicalBuy.reached.at(-1) ?? 0 : 0,
     sellTriggeredLevel: quote.status === 'current' ? historicalSell.reached.at(-1) ?? 0 : 0 };
+  // These are outstanding cumulative targets, not a trade history or a second
+  // allocation engine. Missing quantities permit only an indexed price reference.
+  // See docs/dividend-stage1/next-tier-definition.md for the exact semantics.
+  const priceReference = (levels: GridLevel[], indices: number[]): DividendNextTier | undefined => levels[0]?.priceMinor === undefined ? undefined
+    : { index: indices[0], priceMinor: levels[0].priceMinor, basis: 'price_reference' };
+  const nextBuyRow = displayPlan.buy.findIndex(row => row.targetShares !== undefined && row.targetShares > shares);
+  const nextSellRow = displayPlan.sell.findIndex(row => row.sellShares !== undefined && row.sellShares > 0);
+  const buyTargetUnknown = partialBuy || !buyLevels.length || displayPlan.budgetMinor === undefined;
+  const sellTargetUnknown = partialSell || !sellLevels.length;
+  const nextBuyState: DividendNextTierState = displayPlan.budgetMinor !== undefined && displayPlan.budgetMinor <= 0 ? 'budget_empty'
+    : buyTargetUnknown ? 'unknown' : nextBuyRow < 0 ? shares <= 0 && displayPlan.buy.every(row => row.targetShares === 0) ? 'below_lot' : 'covered'
+    : displayPlan.buy[nextBuyRow].targetShares! - shares < stock.lotSize ? 'below_lot' : 'pending';
+  const nextSellState: DividendNextTierState = shares <= 0 ? 'no_holding' : sellTargetUnknown ? 'unknown' : nextSellRow < 0 ? 'below_lot' : 'pending';
+  const nextBuy: DividendNextTier | undefined = nextBuyState === 'unknown' ? priceReference(buyLevels, buyTierIndices)
+    : nextBuyRow < 0 || nextBuyState === 'budget_empty' ? undefined : { index: buyTierIndices[nextBuyRow], priceMinor: displayPlan.buy[nextBuyRow].priceMinor,
+      basis: 'cumulative_target', targetShares: displayPlan.buy[nextBuyRow].targetShares };
+  const nextSell: DividendNextTier | undefined = nextSellState === 'unknown' ? priceReference(sellLevels, sellTierIndices)
+    : nextSellRow < 0 || shares <= 0 ? undefined : { index: sellTierIndices[nextSellRow], priceMinor: displayPlan.sell[nextSellRow].priceMinor,
+      basis: 'cumulative_target', sellShares: displayPlan.sell[nextSellRow].sellShares };
   const sources = distinct([...(basis?.sourceUrls ?? []), ...(research?.sources.map(source => source.url) ?? [])]);
   const selectedIds = basis?.selectedBatchIds ?? [];
   const ledgerEvents = Array.isArray(ledger?.events) ? ledger.events.filter(event => event && typeof event === 'object') : [];
@@ -192,7 +217,31 @@ export function dividendCheckSummary(input: {
   for (const reason of gridReasons) add(reason === 'dividend_source_conflict' ? 'blocking' : 'evidenceInsufficient', reason);
   for (const reason of quote.reasons) add(reason === 'quote_source_conflict' ? 'blocking' : 'evidenceInsufficient', reason);
   if (basis?.flags?.includes('CROSSCHECK_MISSING')) add('evidenceInsufficient', 'crosscheck_missing');
-  if (ledgerEvents.some(event => event.period === 'special' && event.implemented && (!event.exDate || event.exDate <= asOf))) add('evidenceInsufficient', 'special_dividend_review');
+  const comparisonBatchIds = new Set([...selectedIds, ...input.savedEvidenceSnapshot?.selectedBatchIds ?? []]);
+  const earliestSelectedExDate = selectedEvents.flatMap(event => event.exDate ? [event.exDate] : []).sort()[0];
+  const relevantSpecialEvents = ledgerEvents.filter(event => {
+    if (event.period !== 'special' || event.announcementDate && event.announcementDate > asOf) return false;
+    // Selected unverified/conflicting cash is still a current unresolved item.
+    if (comparisonBatchIds.has(event.batchId)) return true;
+    if (!event.implemented || !event.exDate || event.exDate > asOf) return false;
+    const normalizesSelectedCash = !!earliestSelectedExDate && event.exDate >= earliestSelectedExDate
+      && (event.shareFactor !== 1 || event.verification === 'conflict');
+    const affectsCurrentComparison = event.exDate === basis?.latestExDate
+      && (gridReview.staleReasons.includes('ex_dividend_since_generation') || quote.reasons.includes('quote_before_ex'));
+    return normalizesSelectedCash || affectsCurrentComparison;
+  });
+  for (const event of relevantSpecialEvents) {
+    // This limitation belongs to this special event. A regular selected cash
+    // batch must not supply its sources or turn an unverified special event into
+    // a newly verified one merely because both affect the same comparison.
+    const eventSources = Array.isArray(event.sources) ? event.sources : [];
+    const eventVerifiedDates = event.verification === 'verified'
+      ? eventSources.flatMap(source => typeof source?.verifiedAt === 'string' ? [source.verifiedAt] : []).sort() : [];
+    risk.evidenceInsufficient.push({ id: `special_dividend_review:${event.id}`, reason: 'special_dividend_review',
+      sources: distinct(eventSources.flatMap(source => typeof source?.url === 'string' ? [source.url] : [])),
+      reportPeriod: event.reportDate, publishedAt: event.announcementDate, verifiedAt: eventVerifiedDates.at(-1),
+      impact: 'new_buy', autoRepair: false, unresolvedAction: 'review' });
+  }
   if (hasSaved && (!input.savedEvidenceSnapshot?.sourceUrls.length || !input.savedEvidenceSnapshot.selectedBatchIds.length)) add('evidenceInsufficient', 'saved_evidence_snapshot_missing');
   const buyConstraints = distinct([...gridReasons, ...(gridStatus !== 'verified' ? ['grid_not_verified'] : []),
     ...risk.blocking.map(item => item.reason), ...risk.evidenceInsufficient.filter(item => item.impact !== 'information' && !item.reason.startsWith('quote_')).map(item => item.reason),
@@ -211,8 +260,7 @@ export function dividendCheckSummary(input: {
   const summary: DividendStockCheckSummary = {
     kind: 'stock', id: stock.code, code: stock.code, name: stock.name, eligibility,
     grid: { status: gridStatus, origin: hasSaved ? 'saved' : currentPlan ? 'current' : 'none', buyLevels, sellLevels, buyTierIndices, sellTierIndices, reasons: gridReasons,
-      nextBuy: buyLevels[0]?.priceMinor === undefined ? undefined : { index: 1, priceMinor: buyLevels[0].priceMinor },
-      nextSell: sellLevels[0]?.priceMinor === undefined ? undefined : { index: 1, priceMinor: sellLevels[0].priceMinor },
+      nextBuy, nextSell, nextBuyState, nextSellState,
       generatedAt: hasSaved ? origin?.generatedAt : input.researchGeneratedAt, grossDpsMicros: hasSaved ? origin?.grossDpsMicros : basis?.dpsMicros,
       netDpsMicros: hasSaved && origin ? Number(BigInt(origin.grossDpsMicros) * BigInt(10000 - origin.taxBps) / 10000n) : pricing?.d1Micros,
       taxBps: hasSaved ? origin?.taxBps : pricing?.taxBps, parameterVersion: hasSaved ? origin?.parameterVersion : pricing?.calculationVersion,
@@ -233,7 +281,8 @@ export function dividendCheckSummary(input: {
 export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: DividendFund; shares?: number; asOf?: string; now?: number; quoteSession?: 'confirmed' | 'unknown' }): DividendFundCheckSummary {
   const now = input.now ?? Date.now(), asOf = input.asOf ?? dateInChina(new Date(now)), { plan, fund } = input;
   const quote = dividendQuoteUsability({ quote: fund.quote, failedAt: fund.quoteFailedAt, asOf, now, quoteSession: input.quoteSession });
-  const referencePlan = buildDividendFundHomePlan(plan, fund, asOf), shares = input.shares ?? 0;
+  const referencePlan = buildDividendFundHomePlan(plan, fund, asOf);
+  const shares = typeof input.shares === 'number' && Number.isFinite(input.shares) && input.shares >= 0 ? input.shares : null;
   // Keep the original condition engine and both/either short circuit. Remove
   // inapplicable quotes and the manual-price fallback only from its current
   // observation input; the user's saved fund and target formulas stay intact.
@@ -251,10 +300,10 @@ export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: 
   const risks = reasons.map(reason => ({ id: reason, reason, sources: [...sources], reportPeriod: fund.reference?.asOf, impact: 'new_buy' as const,
     autoRepair: reason === 'quote_missing' || reason === 'quote_refresh_failed', unresolvedAction: reason.startsWith('quote_') ? 'retry' as const : 'review' as const }));
   const budgetMinor = fundPlan.targetAmountMinor;
-  const buyAction = budgetMinor !== undefined && budgetMinor <= 0 ? action('blocked', ['budget_empty']) : fundPlan.entry.status === 'wait' ? action('wait')
+  const buyAction = budgetMinor !== undefined && budgetMinor <= 0 ? action('blocked', ['budget_empty']) : shares === null ? action('unknown', ['holding_unknown']) : fundPlan.entry.status === 'wait' ? action('wait')
     : buy === 'unknown' ? action('unknown', reasons) : budgetMinor === undefined ? action('review', ['budget_missing'])
     : !quote.sessionConfirmed ? action('review', ['execution_session_unverified']) : action('confirmation_candidate', ['cash_fees_liquidity_unverified']);
-  const sellAction = shares <= 0 ? action('blocked', ['no_holding']) : plan.mode !== 'swing' ? action('wait', [`fund_mode_${plan.mode}`])
+  const sellAction = shares === null ? action('unknown', ['holding_unknown']) : shares <= 0 ? action('blocked', ['no_holding']) : plan.mode !== 'swing' ? action('wait', [`fund_mode_${plan.mode}`])
     : sell === 'unknown' ? action('unknown', reasons) : sell === 'not_triggered' ? action('wait')
     : !quote.sessionConfirmed ? action('review', ['execution_session_unverified']) : action('confirmation_candidate', ['fees_liquidity_unverified']);
   const summary: DividendFundCheckSummary = { kind: 'fund', id: fund.id, code: fund.code, name: fund.name,

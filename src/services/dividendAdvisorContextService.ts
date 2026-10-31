@@ -58,6 +58,9 @@ export async function loadDividendFundPositions(funds: DividendFund[]) {
   const fundPositions = new Map<string, number>();
   if (codes.size) {
     const [accounts, holdings, txns] = await Promise.all([db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray()]);
+    // Only a successful ledger read establishes zero. An omitted position input
+    // remains unknown in the shared check instead of pretending it was loaded.
+    for (const code of codes) fundPositions.set(code, 0);
     const validAccounts = new Set(accounts.filter(account => !account.archivedAt && account.type === 'asset' && account.currency === 'CNY' && account.portfolio).map(account => account.id));
     const accountById = new Map(accounts.map(account => [account.id, account]));
     for (const holding of holdings) {

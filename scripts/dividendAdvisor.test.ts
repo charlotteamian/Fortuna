@@ -301,7 +301,7 @@ for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${proto
   const draft = { id: 'pause_bank_buy', code: stock.code, reason: '等待现金流覆盖改善后复核。', buyPaused: true };
   const result = await askDividendAdvisorWithActions(config(protocol), context(), '暂停现有计划加仓', [], { transport: async () => ({ status: 200,
     data: response(protocol, `建议暂停现有计划加仓。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });
-  assert.deepEqual(result.actions, [draft]);
+  assert.deepEqual(result.actions, [{ ...draft, reason: '已准备暂停草案；预览并确认后才会修改计划。' }]);
   assert.match(result.answer, /预览并确认后才会修改计划/);
   const advisory = await askDividendAdvisorWithActions(config(protocol), context(), '复核计划', [], { transport: async () => ({ status: 200,
     data: response(protocol, `现金流风险。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });

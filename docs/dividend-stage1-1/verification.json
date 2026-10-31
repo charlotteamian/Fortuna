@@ -1,0 +1,206 @@
+{
+  "date": "2026-10-31",
+  "baseline": "4200c6b8fd64605696bc0e1401c038a2f5f8a32c",
+  "branch": "codex/dividend-stage1-status-20261030",
+  "scope": "Stage1.1 only; local commit, synthetic IndexedDB/browser/stub only",
+  "baselineTests": {
+    "tests": 591,
+    "pass": 591,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "finalTests": {
+    "tests": 653,
+    "pass": 653,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "addedTests": 62,
+  "lint": {
+    "command": "npm run lint",
+    "exitCode": 0,
+    "log": "final-lint.log"
+  },
+  "build": {
+    "command": "npm run build",
+    "exitCode": 0,
+    "includes": "tsc -b && vite build",
+    "log": "final-build.log",
+    "knownWarning": "Existing >500kB chunks"
+  },
+  "browser": {
+    "checksPassed": 21,
+    "pageErrors": [],
+    "screenshots": [
+      "home-390-1.png",
+      "stock-390-1.png",
+      "fund-390-1.png",
+      "home-390-1.3.png",
+      "stock-390-1.3.png",
+      "fund-390-1.3.png",
+      "home-320-1.png",
+      "stock-320-1.png",
+      "fund-320-1.png",
+      "home-320-1.3.png",
+      "stock-320-1.3.png",
+      "fund-320-1.3.png",
+      "selection-390.png",
+      "selection-page-390.png",
+      "failed-refresh-390.png",
+      "editor-conflict-390.png",
+      "editor-conflict-320-font130.png",
+      "fund-held-manager-390.png",
+      "fund-unknown-manager-320-font130.png",
+      "fund-mixed-regenerate-chat-390.png",
+      "unmatched-mixed-chat-320.png",
+      "pricing-preview-390.png"
+    ],
+    "widths": [
+      320,
+      390
+    ],
+    "fontScales": [
+      1,
+      1.3
+    ],
+    "noHorizontalOverflow": true,
+    "record": "browser-validation.json",
+    "readOnlyTablesUnchanged": true,
+    "previewTablesUnchanged": true,
+    "notes": "Actual editor conflict verifies full-table zero writes and keeps draft; actual normal editor save merges newest quote; actual AI preview button leaves all ledger tables unchanged before confirmation."
+  },
+  "protectedFiles": {
+    "src/db.ts": {
+      "baseline": "32151599dfe4bcf728dbbec1b27e7fc497ce7266d73248b54fe0637c32bee798",
+      "current": "32151599dfe4bcf728dbbec1b27e7fc497ce7266d73248b54fe0637c32bee798"
+    },
+    "src/lib/dividendPricing.ts": {
+      "baseline": "f3abc25a14068aa2f8c965d5a21d87635500c3b917e6e16a86adfaf3d48bb7aa",
+      "current": "f3abc25a14068aa2f8c965d5a21d87635500c3b917e6e16a86adfaf3d48bb7aa"
+    },
+    "src/lib/dividendLedger.ts": {
+      "baseline": "664bc2f918cb3098f385ff7ee5719173877cdebf3811b3eabe2b302bfd18cd81",
+      "current": "664bc2f918cb3098f385ff7ee5719173877cdebf3811b3eabe2b302bfd18cd81"
+    },
+    "src/lib/dividendFundPlan.ts": {
+      "baseline": "82d0b58cbc10691c7d24ee7d43c80bfc28e1793918f2ddd595affdf617f7f85f",
+      "current": "82d0b58cbc10691c7d24ee7d43c80bfc28e1793918f2ddd595affdf617f7f85f"
+    },
+    "src/lib/dividendWorkbench.ts": {
+      "baseline": "b310d3c433f8587f1a327fecd1aae04ea30f54ced9362d80fdb57681d7e9fd52",
+      "current": "b310d3c433f8587f1a327fecd1aae04ea30f54ced9362d80fdb57681d7e9fd52"
+    },
+    "src/lib/dividendImport.ts": {
+      "baseline": "6fca46dd0f52b6df7cb703083692c268b5761a94df45c35b39a97c8fb526b4da",
+      "current": "6fca46dd0f52b6df7cb703083692c268b5761a94df45c35b39a97c8fb526b4da"
+    },
+    "package.json": {
+      "baseline": "5518119ba9bd7d64a03e1e63560a268c0a4a45b3649a8e6eb692e3faa9092633",
+      "current": "5518119ba9bd7d64a03e1e63560a268c0a4a45b3649a8e6eb692e3faa9092633"
+    },
+    "package-lock.json": {
+      "baseline": "84df4b387504461ed2101588fb2aa5376a835afc4104a3ef75c1002bf4d795f2",
+      "current": "84df4b387504461ed2101588fb2aa5376a835afc4104a3ef75c1002bf4d795f2"
+    },
+    "capacitor.config.ts": {
+      "baseline": "4d27176407d7385efe046d960dd38406d517c7d5d580504e32f9445218a3f3b1",
+      "current": "4d27176407d7385efe046d960dd38406d517c7d5d580504e32f9445218a3f3b1"
+    },
+    "android/app/build.gradle": {
+      "baseline": "d0849d1c40cbbda780d17adfeed87238e662142745d333ed2638cf92f55c6f8f",
+      "current": "d0849d1c40cbbda780d17adfeed87238e662142745d333ed2638cf92f55c6f8f"
+    },
+    "ios/App/App.xcodeproj/project.pbxproj": {
+      "baseline": "f25224f6ee5d8ac2c88cc051d95f766c836a68131e79809e0908e47a6c3a1423",
+      "current": "f25224f6ee5d8ac2c88cc051d95f766c836a68131e79809e0908e47a6c3a1423"
+    },
+    "docs/dividend-pricing-method.md": {
+      "baseline": "7131c5f145828976dbb22d029331ce37607c5388a158c15e9ac473e24d7adb7c",
+      "current": "7131c5f145828976dbb22d029331ce37607c5388a158c15e9ac473e24d7adb7c"
+    },
+    "docs/dividend-stage0/pricing-audit.md": {
+      "baseline": "2a3565a4fe876d217d8bc626d9df7852eae76b9e7801703b40484fe5d24fab73",
+      "current": "2a3565a4fe876d217d8bc626d9df7852eae76b9e7801703b40484fe5d24fab73"
+    },
+    "docs/dividend-stage0/risk-audit.md": {
+      "baseline": "f771f72519e08ae3b7934737371203be30933fcb661ea03efb0e8afd2892d094",
+      "current": "f771f72519e08ae3b7934737371203be30933fcb661ea03efb0e8afd2892d094"
+    },
+    "docs/dividend-stage0/ui-data-audit.md": {
+      "baseline": "2260348b4973b39fc89765c3e570254dd2e93876bf51c157d491d1d091c5c3c3",
+      "current": "2260348b4973b39fc89765c3e570254dd2e93876bf51c157d491d1d091c5c3c3"
+    }
+  },
+  "allProtectedFilesUnchanged": true,
+  "beforeAfter": {
+    "script": "reproduce.mjs",
+    "before": "reproduction-before.json",
+    "after": "reproduction-after.json",
+    "baselineMethod": "git archive 4200c6b, fresh temp checkout linked to existing dependency installation"
+  },
+  "modifiedTrackedAtVerification": [
+    "docs/dividend-stage1/README.md",
+    "scripts/dividendAdvisor.test.ts",
+    "scripts/dividendCheckSummary.test.ts",
+    "src/components/DividendCheckStatus.tsx",
+    "src/components/DividendFundWorkbench.tsx",
+    "src/i18n/dividendCheckTranslations.ts",
+    "src/lib/dividendAdvisor.ts",
+    "src/lib/dividendCheckSummary.ts",
+    "src/pages/DividendPage.tsx",
+    "src/services/dividendAdvisorContextService.ts",
+    "src/services/dividendAdvisorService.ts"
+  ],
+  "limits": {
+    "externalModels": false,
+    "liveQuotes": false,
+    "realUserData": false,
+    "physicalDevice": false,
+    "emulatorInstall": false,
+    "capacitorSync": false,
+    "push": false,
+    "release": false,
+    "stage2": false,
+    "stage3": false,
+    "concepts": "16 deterministic bilingual concept groups and explicit fallback for unsupported topics; no unrestricted provider-prose explanation channel"
+  },
+  "artifactSha256": {
+    "README.md": "8238a8163f6d843aca6de0b1f88c100106d6bec0e94c6193f973b1676ca6a1cf",
+    "baseline-test.log": "d03a0e3ff1755ce827ba1f5d9d3ae2f2496c38e462d97396c0914d1644f694f6",
+    "baseline.json": "a6cb63e6140b4008157a22b12097c35b57ebec28786b6102b00c955234ec0ab1",
+    "browser-run.log": "338187c3f4307e7c8ee5f4e9ecab369c55c4599f42bae730162ae12ea7cac14a",
+    "browser-validation.json": "338187c3f4307e7c8ee5f4e9ecab369c55c4599f42bae730162ae12ea7cac14a",
+    "editor-conflict-320-font130.png": "ae687086c453db23056d61467bf022c9532688784952e5c4390449d5bdf24d1e",
+    "editor-conflict-390.png": "4208c4af225d101d7a68fad9c245ff4355751b38317c8eda8215c562934f2261",
+    "failed-refresh-390.png": "5c9bd09142d5eb3547eb930a014cbb7b678f1e525daed7f5d3e4ae359ae7db1a",
+    "final-build.log": "fd8b21678e91d25a96d329aaf59d1f8c89c2982b703970da84af1017387f6d5d",
+    "final-lint.log": "af92411c61627d5ec00d3c8fddd46a3aaff4f67b1c9935fdc4d4a84cda149c4b",
+    "final-test.log": "02b99ba4be962bf09e8f1111520cd9abd77de1d23f0c2dc4916056eed608361e",
+    "fund-320-1.3.png": "4d4146ac5da3a0831959b967f6eb64235f92823908871321f76dec35a6bdd674",
+    "fund-320-1.png": "517e23a66ef52363694fa76e123aa9036c5e8829fe6af591277a030428d87e5e",
+    "fund-390-1.3.png": "11689049d6aa952a2c5f8c9516a63e78481609a5cb14d47427832c712609d17b",
+    "fund-390-1.png": "d236806481ac27ef09f7a2cb8e6f2b7ece3984cab352fe16ce160b76a03d254a",
+    "fund-held-manager-390.png": "0f87813d659f96469a639ca7664a1b17ffa07811c1d2ac48bc3eb59963811fec",
+    "fund-mixed-regenerate-chat-390.png": "ec991fc43b3af824d7b1b253531e5f2fe885a7d57012bf2c930196bc3d8abac2",
+    "fund-unknown-manager-320-font130.png": "2e681459968d80b8243e818d6d6c2cabce88d971165f8e2ba758fa3c87920270",
+    "home-320-1.3.png": "230968a9afa69de430dbc6eebabc8094278acaa3e3611e016ff38b8dbb0741cc",
+    "home-320-1.png": "71aa451d1d33f6a17a8b17c404af031d3a5c120e6bfbe8eecbf6148d174baa51",
+    "home-390-1.3.png": "192c219403f26016091e1c7e081c47472074f02821f96269e5f71eeeedbf9006",
+    "home-390-1.png": "0d0afb01ecf0aa88a886834e0884f282cdabc401cf8bd0de496f7e8dd05981f0",
+    "pricing-preview-390.png": "fcdf5c6c4b54eb80d40294daeacfea3df2571bc8393b5607463f2264a66b87f1",
+    "reproduce.mjs": "58912deacd4d5d82b312ac6d8a8a06c2629e2a51171b76e27be85606cc6313da",
+    "reproduction-after.json": "59ad029d7fb92d03259a63d554e7b9f78da2352c3f4fb4423c6f6f8d52518d7d",
+    "reproduction-before.json": "81a792ed920994940444ee331000bbf1e785954bb6ac368fe5da0900b52e305d",
+    "selection-390.png": "ed941da59e57a9d16a184c806ed8685be1e6a472e132e464804fcae59cf2c7c0",
+    "selection-page-390.png": "7c13dae0aa9178d8831c8c4ce40b79075a2f884558f4eb8065f8d2fe6266eb48",
+    "stock-320-1.3.png": "2ab797ff99908a03016825cbecd0385c170ae53716ca1e3c7018d3c480548650",
+    "stock-320-1.png": "7d80013739284f87ebe53efd772833c309f4711fdcf1fd7e3db24df8432fbe2f",
+    "stock-390-1.3.png": "667eb0afdd4cc46e0fcd0eb3831a68070f55133338744731c7d162a7eeb5bc52",
+    "stock-390-1.png": "210d3b729b2743c43f28cd5034991ec7c992d9f5141c11c4f7411787f5a78993",
+    "unmatched-mixed-chat-320.png": "2d716f5489bf81231e50e409e5f3f22a8930bc2f88115dfcbcec0aa80fb361a7",
+    "validate-browser.mjs": "637d5c7662bca262fe460b6f013aa79e0b47de007967bc221729fbecc1a9040c"
+  },
+  "logNormalization": "Trailing whitespace and excess final blank lines removed; test and command records unchanged."
+}

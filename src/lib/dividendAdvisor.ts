@@ -81,7 +81,7 @@ export function buildDividendAdvisorContext(input: DividendAdvisorInput, now = D
     return ({
     code: fund.code ?? null, name: fund.name, indexKind: fund.indexKind, weightBps: fund.weightBps,
     budgetMinor: allocation.amounts.get(fund.id) ?? 0, note: fund.note,
-    recordedShares: fund.code ? input.fundPositions?.get(fund.code) ?? 0 : null,
+    recordedShares: summary.actionCheck.shares,
     quote: fund.quote ?? null, quoteState: quoteState(fund.quote, fund.quoteFailedAt),
     manualReference: fund.reference ?? null,
     ruleCheck: summary.fundPlan.entry,

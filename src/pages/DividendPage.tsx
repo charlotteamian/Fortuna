@@ -166,7 +166,7 @@ export default function DividendPage() {
   const planManagement = <div className="div-plan-manager">
     <h2 className="div-ai-panel-title">{t('div_ai_tab_plan')}</h2><p className="div-ai-muted">{t('div_v2_management_intro')}</p>
     <details className="div-method" open><summary>{t('div_strategy')}</summary>{strategySelector}</details>
-    {data.strategy === 'funds' ? <DividendFundWorkbench plan={data.fundPlan} amountVisible={amountVisible} onSaved={load} /> : <>
+    {data.strategy === 'funds' ? <DividendFundWorkbench plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} onSaved={load} /> : <>
       <details className="div-method"><summary>{t('div_budget_manage')} · {data.budgetConfigured ? money(data.budgetMinor) : '—'}</summary>
         <form className="div-budget" onSubmit={event => { event.preventDefault(); void persistBudget(); }}><label htmlFor="div-budget">{t('div_budget')}</label><div className="div-actions">
           <input id="div-budget" inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0" max="1000000000000" step="0.01" placeholder={t('div_budget_placeholder')} value={budgetInput} disabled={budgetSaving} onChange={event => setBudgetInput(event.target.value)} />

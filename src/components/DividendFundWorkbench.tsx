@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendFundAllocation, dividendFundPriceMicros, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
-import { dividendFundCheckSummary } from '../lib/dividendCheckSummary';
+import { dividendFundCheckSummary, type DividendFundCheckSummary } from '../lib/dividendCheckSummary';
 import DividendCheckStatus from './DividendCheckStatus';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { deleteDividendFund, saveDividendFund, saveDividendFundConfig } from '../services/dividendFundService';
@@ -13,7 +13,9 @@ const optionalNumber = (value: number | undefined, scale: number) => value === u
 const errorKey = (error: unknown) => error instanceof Error && error.message === 'DIVIDEND_FUND_OVERWEIGHT' ? 'df_overweight'
   : error instanceof Error && error.message === 'DIVIDEND_FUND_DUPLICATE' ? 'df_duplicate' : 'df_invalid';
 
-export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: { plan: DividendFundPlan; amountVisible: boolean; onSaved: () => Promise<unknown> }) {
+export default function DividendFundWorkbench({ plan, checks, amountVisible, onSaved }: {
+  plan: DividendFundPlan; checks: Record<string, DividendFundCheckSummary>; amountVisible: boolean; onSaved: () => Promise<unknown>;
+}) {
   const { t } = useTranslation();
   const [budget, setBudget] = useState(optionalNumber(plan.budgetMinor, 100));
   const [mode, setMode] = useState(plan.mode);
@@ -75,7 +77,7 @@ export default function DividendFundWorkbench({ plan, amountVisible, onSaved }: 
     {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
     <input className="div-search" aria-label={t('df_search')} placeholder={t('df_search')} value={search} onChange={event => setSearch(event.target.value)} />
     <div className="div-stock-list df-fund-list">{funds.map(fund => {
-      const check = dividendFundCheckSummary({ plan, fund });
+      const check = checks[fund.id] ?? dividendFundCheckSummary({ plan, fund });
       const reference = check.fundPlan.entry;
       const priceMicros = dividendFundPriceMicros(fund);
       return <article className="div-stock" key={fund.id}>

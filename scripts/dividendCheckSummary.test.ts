@@ -43,6 +43,8 @@ test('a missing earlier tier keeps original tier numbers and cannot invent cumul
   assert.equal(value.displayPlan.buyTriggeredLevel, 2); assert.equal(value.displayPlan.buy[0].targetShares, undefined);
   assert.equal(value.displayPlan.buy[0].cumulative, 10000, 'missing price tiers still retain their saved allocation in the cumulative label');
   assert.equal(value.displayPlan.additionalBuyShares, 0); assert.equal(value.actionCheck.buy.status, 'review');
+  assert.deepEqual(value.grid.nextBuy, { index: 2, priceMinor: 1000, basis: 'price_reference' });
+  assert.equal(value.grid.nextBuyState, 'unknown');
 });
 
 test('a future fund quote cannot supply current either/both price evidence while a valid independent index condition remains visible', () => {
@@ -170,12 +172,167 @@ test('source refresh failure and incomplete pagination downgrade status without 
 });
 
 test('provisional cross-check/special-distribution/saved-snapshot limits affect new-buy review without rewriting pricing', () => {
-  const extra = { ...ledger.events[0], id: 'synthetic-special', batchId: 'synthetic-special', period: 'special' as const, implemented: true, exDate: '2026-10-01' };
-  const result = summarize({ basis: { ...pricing.dividendBase!, flags: ['CROSSCHECK_MISSING'] }, ledger: { ...ledger, events: [...ledger.events, extra] } });
+  const selectedId = pricing.dividendBase!.selectedBatchIds[0];
+  const result = summarize({ basis: { ...pricing.dividendBase!, flags: ['CROSSCHECK_MISSING'] },
+    ledger: { ...ledger, events: ledger.events.map(event => event.batchId === selectedId ? { ...event, period: 'special' as const } : event) } });
   for (const reason of ['crosscheck_missing', 'special_dividend_review', 'saved_evidence_snapshot_missing']) {
     assert.ok(result.risk.evidenceInsufficient.some(item => item.reason === reason)); assert.ok(result.actionCheck.buy.reasons.includes(reason));
   }
   assert.equal(result.grid.status, 'verified'); assert.equal(pricing.canApply, true); assert.deepEqual(result.grid.buyLevels, plan.buyLevels);
+});
+
+test('next buy uses the first uncovered original cumulative target for zero, partial and fully covered holdings', () => {
+  const zero = summarize({ shares: 0 });
+  assert.equal(zero.grid.nextBuy?.index, 1); assert.equal(zero.grid.nextBuyState, 'pending');
+  assert.equal(zero.grid.nextBuy?.basis, 'cumulative_target');
+  assert.equal(zero.grid.nextBuy?.targetShares, zero.displayPlan.buy[0].targetShares);
+  const firstTarget = zero.displayPlan.buy[0].targetShares!;
+  const partial = summarize({ shares: firstTarget });
+  assert.equal(partial.grid.nextBuy?.index, 2); assert.equal(partial.grid.nextBuyState, 'pending');
+  assert.equal(partial.grid.nextBuy?.targetShares, partial.displayPlan.buy[1].targetShares);
+  for (const shares of [zero.displayPlan.buy.at(-1)!.targetShares!, zero.displayPlan.buy.at(-1)!.targetShares! + 100]) {
+    const covered = summarize({ shares });
+    assert.equal(covered.grid.nextBuy, undefined); assert.equal(covered.grid.nextBuyState, 'covered');
+  }
+});
+
+test('multiple reached buy tiers preserve the outstanding target separately from the deepest reached total', () => {
+  const result = summarize({ shares: 0, stock: { ...stock, quote: { ...stock.quote!, priceMinor: 800 } },
+    research: { ...research, pricing: { ...pricing, currentPriceMinor: 800 } } });
+  assert.deepEqual(result.trigger.buyLevels, [1, 2, 3, 4]); assert.equal(result.grid.nextBuy?.index, 1);
+  assert.equal(result.actionCheck.additionalBuyShares, result.displayPlan.buy[3].targetShares);
+  assert.ok(result.actionCheck.additionalBuyShares! > result.grid.nextBuy!.targetShares!);
+});
+
+test('pausing does not change next prices or cumulative targets and never unlocks a buy', () => {
+  const active = summarize(), paused = summarize({ stock: { ...stock, buyPaused: true } });
+  assert.deepEqual(paused.grid.nextBuy, active.grid.nextBuy); assert.deepEqual(paused.grid.nextSell, active.grid.nextSell);
+  assert.equal(paused.grid.nextBuyState, active.grid.nextBuyState); assert.equal(paused.actionCheck.buy.status, 'blocked');
+});
+
+test('missing budget, empty budget and a sub-lot gap are distinct from fully covered targets', () => {
+  const missing = summarize({ totalBudgetMinor: undefined, shares: 0 });
+  assert.equal(missing.grid.nextBuyState, 'unknown'); assert.equal(missing.grid.nextBuy?.basis, 'price_reference');
+  assert.equal(missing.grid.nextBuy?.targetShares, undefined);
+  const empty = summarize({ totalBudgetMinor: 0, shares: 0 });
+  assert.equal(empty.grid.nextBuyState, 'budget_empty'); assert.equal(empty.grid.nextBuy, undefined);
+  const firstTarget = summarize({ shares: 0 }).displayPlan.buy[0].targetShares!;
+  const smallGap = summarize({ shares: firstTarget - 50 });
+  assert.equal(smallGap.grid.nextBuyState, 'below_lot'); assert.equal(smallGap.grid.nextBuy?.index, 1);
+  const tinyBudget = summarize({ totalBudgetMinor: 1, shares: 0 });
+  assert.equal(tinyBudget.grid.nextBuyState, 'below_lot'); assert.equal(tinyBudget.grid.nextBuy, undefined);
+});
+
+test('next sell respects current holdings and original lot rounding without inventing executed tier progress', () => {
+  const held = summarize({ shares: 1000 });
+  assert.deepEqual(held.grid.nextSell, { index: 1, priceMinor: plan.sellLevels[0].priceMinor, basis: 'cumulative_target', sellShares: 200 });
+  const oneLot = summarize({ shares: 100 });
+  assert.equal(oneLot.grid.nextSell?.index, 4); assert.equal(oneLot.grid.nextSell?.sellShares, 100);
+  const noHolding = summarize({ shares: 0, stock: { ...stock, quote: { ...stock.quote!, priceMinor: 2000 } },
+    research: { ...research, pricing: { ...pricing, currentPriceMinor: 2000 } } });
+  assert.deepEqual(noHolding.trigger.sellLevels, [1, 2, 3, 4]);
+  assert.equal(noHolding.grid.nextSell, undefined); assert.equal(noHolding.grid.nextSellState, 'no_holding');
+  assert.equal(noHolding.actionCheck.sell.status, 'blocked');
+  const allReached = summarize({ shares: 1000, stock: { ...stock, quote: { ...stock.quote!, priceMinor: 2000 } },
+    research: { ...research, pricing: { ...pricing, currentPriceMinor: 2000 } } });
+  assert.equal(allReached.grid.nextSell?.index, 1); assert.equal(allReached.actionCheck.sellShares, 1000);
+});
+
+test('partial sell prices keep the original index only as a quantity-unknown price reference', () => {
+  const result = summarize({ stock: { ...stock, sellLevels: [{ yieldBps: 480, portionBps: 2500 }, { yieldBps: 450, portionBps: 7500, priceMinor: 1500 }] } });
+  assert.deepEqual(result.grid.nextSell, { index: 2, priceMinor: 1500, basis: 'price_reference' });
+  assert.equal(result.grid.nextSellState, 'unknown'); assert.equal(result.grid.nextSell?.sellShares, undefined);
+  const unavailable = summarize({ stock: { ...stock, buyLevels: undefined, sellLevels: undefined }, research: undefined });
+  assert.equal(unavailable.grid.nextBuy, undefined); assert.equal(unavailable.grid.nextSell, undefined);
+  assert.equal(unavailable.grid.nextBuyState, 'unknown'); assert.equal(unavailable.grid.nextSellState, 'unknown');
+});
+
+test('an unrelated old special dividend neither persists a new-buy restriction nor changes current prices', () => {
+  const old = { ...ledger.events[0], id: 'old-special', batchId: 'old-special', period: 'special' as const, reportDate: '2019-12-31',
+    announcementDate: '2020-05-01', exDate: '2020-06-01', shareFactor: 1, implemented: true };
+  const baseline = summarize(), result = summarize({ ledger: { ...ledger, events: [...ledger.events, old] } });
+  assert.ok(!result.risk.evidenceInsufficient.some(item => item.reason === 'special_dividend_review'));
+  assert.deepEqual(result.actionCheck.buy.reasons, baseline.actionCheck.buy.reasons);
+  assert.deepEqual(result.grid.buyLevels, baseline.grid.buyLevels); assert.deepEqual(result.grid.sellLevels, baseline.grid.sellLevels);
+});
+
+test('special dividends selected by current or supplied saved comparison evidence retain the review limit', () => {
+  const old = { ...ledger.events[0], id: 'old-special', batchId: 'old-special', period: 'special' as const, reportDate: '2019-12-31',
+    announcementDate: '2020-05-01', exDate: '2020-06-01', shareFactor: 1, implemented: true };
+  const result = summarize({ ledger: { ...ledger, events: [...ledger.events, old] },
+    savedEvidenceSnapshot: { sourceUrls: ['https://example.com/synthetic-saved-special'], selectedBatchIds: [old.batchId] } });
+  assert.ok(result.actionCheck.buy.reasons.includes('special_dividend_review'));
+  for (const verification of ['unverified', 'conflict'] as const) {
+    const selectedId = pricing.dividendBase!.selectedBatchIds[0];
+    const unresolved = summarize({ ledger: { ...ledger, events: ledger.events.map(event => event.batchId === selectedId
+      ? { ...event, period: 'special', verification } : event) } });
+    assert.ok(unresolved.risk.evidenceInsufficient.some(item => item.reason === 'special_dividend_review'));
+  }
+});
+
+test('a special capital action affecting selected cash or an ex-date affecting current comparison remains relevant', () => {
+  const extra = { ...ledger.events[0], id: 'current-special', batchId: 'current-special', period: 'special' as const,
+    announcementDate: '2026-10-01', exDate: '2026-10-02', implemented: true, shareFactor: 1.1, bonusPer10Bps: 1000 };
+  const capital = summarize({ ledger: { ...ledger, events: [...ledger.events, extra] } });
+  assert.ok(capital.risk.evidenceInsufficient.some(item => item.reason === 'special_dividend_review'));
+  const priceComparison = summarize({ ledger: { ...ledger, events: [...ledger.events, { ...extra, shareFactor: 1, bonusPer10Bps: 0 }] },
+    basis: { ...pricing.dividendBase!, latestExDate: extra.exDate },
+    stock: { ...stock, gridProvenance: { ...stock.gridProvenance!, generatedAt: Date.parse('2026-09-30T03:00:00Z') } } });
+  assert.ok(priceComparison.grid.reasons.includes('ex_dividend_since_generation'));
+  assert.ok(priceComparison.risk.evidenceInsufficient.some(item => item.reason === 'special_dividend_review'));
+  const todaySpecial = { ...extra, announcementDate: '2026-10-29', exDate: asOf, shareFactor: 1, bonusPer10Bps: 0 };
+  const beforeExQuote = summarize({ ledger: { ...ledger, events: [...ledger.events, todaySpecial] },
+    basis: { ...pricing.dividendBase!, latestExDate: asOf },
+    stock: { ...stock, quote: { ...stock.quote!, date: '2026-10-29 10:00' } } });
+  assert.ok(beforeExQuote.trigger.quote.reasons.includes('quote_before_ex'));
+  assert.ok(beforeExQuote.risk.evidenceInsufficient.some(item => item.reason === 'special_dividend_review'));
+});
+
+test('an excluded future special proposal is not silently admitted to the current base or execution limits', () => {
+  const proposal = { ...ledger.events[0], id: 'future-special', batchId: 'future-special', period: 'special' as const,
+    announcementDate: asOf, exDate: '2026-11-10', implemented: false, proposal: true, stage: 'proposal' as const };
+  const result = summarize({ ledger: { ...ledger, events: [...ledger.events, proposal] } });
+  assert.ok(!result.risk.evidenceInsufficient.some(item => item.reason === 'special_dividend_review'));
+  assert.deepEqual(result.grid.selectedBatchIds, pricing.dividendBase!.selectedBatchIds); assert.deepEqual(result.grid.buyLevels, plan.buyLevels);
+});
+
+test('a relevant unverified special event uses its own source and dates without inheriting regular cash verification', () => {
+  const special = { ...ledger.events[0], id: 'unverified-special', batchId: 'unverified-special', period: 'special' as const,
+    reportDate: '2026-09-30', announcementDate: '2026-10-01', exDate: '2026-10-02', implemented: true, shareFactor: 1.1,
+    verification: 'unverified' as const, sources: [{ provider: 'issuer' as const, url: 'https://example.com/special-source' }] };
+  const unrelated = { ...special, id: 'old-special', batchId: 'old-special', reportDate: '2019-12-31', exDate: '2020-06-01',
+    announcementDate: '2020-05-01', shareFactor: 1, verification: 'verified' as const,
+    sources: [{ provider: 'issuer' as const, url: 'https://example.com/unrelated-old-special', verifiedAt: '2026-10-30' }] };
+  const result = summarize({ ledger: { ...ledger, events: [...ledger.events, special, unrelated] } });
+  const risks = result.risk.evidenceInsufficient.filter(item => item.reason === 'special_dividend_review');
+  assert.equal(risks.length, 1);
+  assert.deepEqual(risks[0].sources, ['https://example.com/special-source']);
+  assert.equal(risks[0].reportPeriod, '2026-09-30'); assert.equal(risks[0].publishedAt, '2026-10-01');
+  assert.equal(risks[0].verifiedAt, undefined);
+  assert.ok(!risks[0].sources.some(source => pricing.dividendBase!.sourceUrls.includes(source)));
+  assert.ok(result.actionCheck.buy.reasons.includes('special_dividend_review'));
+  const unknownDates = summarize({ ledger: { ...ledger, events: [...ledger.events,
+    { ...special, reportDate: undefined, announcementDate: undefined, sources: [] }] } });
+  const unknown = unknownDates.risk.evidenceInsufficient.find(item => item.reason === 'special_dividend_review')!;
+  assert.equal(unknown.reportPeriod, undefined); assert.equal(unknown.publishedAt, undefined); assert.equal(unknown.verifiedAt, undefined);
+  assert.deepEqual(unknown.sources, []);
+});
+
+test('multiple relevant special events keep separate original verification metadata', () => {
+  const special = { ...ledger.events[0], id: 'verified-special-one', batchId: 'verified-special-one', period: 'special' as const,
+    reportDate: '2026-09-30', announcementDate: '2026-10-01', exDate: '2026-10-02', implemented: true, shareFactor: 1.1,
+    verification: 'verified' as const,
+    sources: [{ provider: 'issuer' as const, url: 'https://example.com/special-one', verifiedAt: '2026-10-03' }] };
+  const second = { ...special, id: 'verified-special-two', batchId: 'verified-special-two', reportDate: '2026-10-01',
+    announcementDate: '2026-10-04', exDate: '2026-10-05',
+    sources: [{ provider: 'issuer' as const, url: 'https://example.com/special-two', verifiedAt: '2026-10-06' }] };
+  const result = summarize({ ledger: { ...ledger, events: [...ledger.events, special, second] } });
+  const risks = result.risk.evidenceInsufficient.filter(item => item.reason === 'special_dividend_review');
+  assert.deepEqual(risks.map(item => ({ id: item.id, sources: item.sources, period: item.reportPeriod, published: item.publishedAt, verified: item.verifiedAt })), [
+    { id: 'special_dividend_review:verified-special-one', sources: ['https://example.com/special-one'], period: '2026-09-30', published: '2026-10-01', verified: '2026-10-03' },
+    { id: 'special_dividend_review:verified-special-two', sources: ['https://example.com/special-two'], period: '2026-10-01', published: '2026-10-04', verified: '2026-10-06' },
+  ]);
+  assert.equal(result.actionCheck.buy.reasons.filter(reason => reason === 'special_dividend_review').length, 1);
 });
 
 test('eligibility preserves evidence unknown and carries at most three main reasons instead of a risk score', () => {

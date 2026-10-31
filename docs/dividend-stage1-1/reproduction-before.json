@@ -1,0 +1,43 @@
+{
+  "environment": "synthetic/fake-indexeddb, archived arithmetic fixture, local transport stub; no external calls or real data",
+  "ai": {
+    "unsafePreserved": true,
+    "action": "unknown",
+    "answer": "今天已到价，请立即新增买入100份。"
+  },
+  "fund": {
+    "held500": {
+      "status": "review",
+      "reasons": [
+        "execution_session_unverified"
+      ],
+      "requiresUserConfirmation": true
+    },
+    "omittedShares": {
+      "buy": {
+        "status": "wait",
+        "reasons": [],
+        "requiresUserConfirmation": false
+      },
+      "sell": {
+        "status": "blocked",
+        "reasons": [
+          "no_holding"
+        ],
+        "requiresUserConfirmation": false
+      },
+      "budgetMinor": 1000000,
+      "shares": 0
+    }
+  },
+  "next": {
+    "tierIndices": [
+      2
+    ],
+    "nextBuy": {
+      "index": 1,
+      "priceMinor": 1000
+    }
+  },
+  "unrelatedOldSpecialBlocked": true
+}
