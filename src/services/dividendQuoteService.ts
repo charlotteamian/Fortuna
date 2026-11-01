@@ -67,6 +67,7 @@ export async function refreshDividendMarketQuotes(control: DividendRequestContro
         }),
       } });
     }
+    assertDividendRequestCurrent(control);
   });
   if (codes.length) requestPortableSnapshot('dividend-quotes');
   return { done: codes.length, failed: failed.length, fetchedAt: failedAt, codes, failedCodes: failed, quotes };

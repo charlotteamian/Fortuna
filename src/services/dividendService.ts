@@ -227,6 +227,7 @@ export async function refreshDividendStock(code: string, control: DividendReques
     if (!currentDividend()) return;
     if (!currentQuote()) { delete update.quote; delete update.quoteFailedAt; }
     await db.dividendStocks.update(code, update);
+    assertDividendRequestCurrent(control);
   });
   return (control.skipQuote || quote.status === 'fulfilled') && dividend.status === 'fulfilled' && update.dividendFailedAt === undefined;
 }

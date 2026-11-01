@@ -86,7 +86,10 @@ function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDi
           distributions: stock.distributions ?? old.distributions,
           pricing: stock.pricing?.dividendBase?.verified ? stock.pricing : old.pricing ?? stock.pricing,
           sources: [...new Map([...old.sources, ...stock.sources].map(source => [source.url, source])).values()] });
-        contexts[stock.code] = stock.sources.length ? context : contexts[stock.code] ?? context;
+        // A partially successful attempt is still not a newly completed
+        // per-stock review. Fresh source timestamps live on those sources;
+        // the previous review date and its context remain the last success.
+        contexts[stock.code] = contexts[stock.code] ?? context;
       } else { stocks.set(stock.code, stock); contexts[stock.code] = context; }
     }
   }

@@ -130,7 +130,11 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
           const announcementDate = item.announcementTime ? dateInChina(new Date(item.announcementTime)) : url.match(/finalpage\/(\d{4}-\d{2}-\d{2})\//)?.[1];
           const event = announcementDate ? parseDividendOfficialAnnouncementText(text, { code, announcementDate, sourceUrl: url, verifiedAt: asOf }) : undefined;
           await beforeDividendCacheWrite(options);
-          if (currentDocument()) await documents.put({ url, sha256, checkedAt: asOf, ...(event ? { event } : { issue: 'ANNOUNCEMENT_FIELDS_UNVERIFIED' }) });
+          if (currentDocument()) await database.transaction('rw', documents, async () => {
+            assertDividendRequestCurrent(options);
+            await documents.put({ url, sha256, checkedAt: asOf, ...(event ? { event } : { issue: 'ANNOUNCEMENT_FIELDS_UNVERIFIED' }) });
+            assertDividendRequestCurrent(options);
+          });
           if (!event) issues.push('ANNOUNCEMENT_FIELDS_UNVERIFIED');
         } catch { assertDividendRequestCurrent(options); issues.push('ANNOUNCEMENT_DOWNLOAD_FAILED'); }
       }
@@ -178,8 +182,9 @@ export async function researchDividendLedger(raw: unknown, code: string, asOf: s
     latestLedgerAttempts.set(code, structuredClone(ledger));
     return ledger;
   }
-  await ledgers.put(ledger);
-  assertDividendRequestCurrent(control);
+  await database.transaction('rw', ledgers, async () => {
+    assertDividendRequestCurrent(control); await ledgers.put(ledger); assertDividendRequestCurrent(control);
+  });
   latestLedgerAttempts.delete(code);
   return ledger;
 }

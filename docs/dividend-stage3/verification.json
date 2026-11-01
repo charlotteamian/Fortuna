@@ -1,0 +1,214 @@
+{
+  "date": "2026-11-01",
+  "baseline": "d53c600",
+  "branch": "codex/dividend-stage3-daily-check",
+  "tests": {
+    "baseline": 750,
+    "final": 786,
+    "removed": [],
+    "added": [
+      "daily projection reuses failed principle, manual pause, price touch, original tier and action constraints without changing the summary",
+      "fund waiting, manual price, unknown holding and confirmed zero are projected from the original fund summary",
+      "cross-kind sorting deduplicates by original plan key, orders review then unknown then wait, and never scores risk counts",
+      "unconfigured deterministic runner completes every real stage and publishes local results before refreshing",
+      "repeated clicks join the same active check and do not duplicate requests",
+      "cancel during a non-cancellable call settles promptly and late events cannot replace partial or newer results",
+      "whole-flow timeout covers the initial local read and stops an uncooperative refresh",
+      "a pre-cancelled check starts no refresh and produces a cancelled batch",
+      "user input changes while checking abort cache writes and mark the retained result as needing recheck",
+      "one failed source is isolated, all remaining items are checked, and local history remains visible",
+      "single-item retry refreshes only the chosen failed item and preserves other results and original check times",
+      "retry rechecks current fingerprints, leaves changed unselected items stale and refuses non-failed targets",
+      "scope freshness distinguishes cross-day and semantic changes from a repeat download",
+      "result storage retains legacy advice and last completed result separately from cancellation, and rejects late owners",
+      "a storage failure leaves a visible deterministic result and reports persistence failure",
+      "aborting a detached native-like promise ignores its later value and prevents post-response work",
+      "native quote cancellation preserves every plan and old quote, including when the call finishes after a newer refresh",
+      "stock disclosure cancellation stops all writes, leaving dividend dates, pause, prices and holdings intact",
+      "official evidence cancellation isolates a late custom transport and does not redate the last successful ledger",
+      "read-only check snapshot does not initialise or migrate an empty main database",
+      "input guard ignores source and reading timestamps but detects plan, holding and tax changes",
+      "all real refresh services failing retain dated evidence and user inputs while still producing a complete deterministic list without AI",
+      "failed research preserves old successful financial fields, URLs and original per-stock verification context",
+      "a source commit guard refuses a superseded request before touching any cache",
+      "an identical unsaved calculation does not go stale just because its download batch time changed",
+      "an older progress revision cannot restore running over a terminal result in the same batch",
+      "malformed check metadata is ignored without deleting legacy or successful records, and new invalid writes reject atomically",
+      "check metadata strips nested client configuration and credentials rather than serialising extra fields",
+      "overlapping quote requests retain the newer request even if the earlier successful response arrives last",
+      "native research cancellation stops follow-ups and callbacks even when every underlying transport ignores the signal",
+      "cancelling while a progress snapshot is loading does not wait for that uncooperative read",
+      "a stalled cache save cannot extend source work beyond the check deadline indefinitely",
+      "daily projection retains old quote facts without promoting them to a current trigger",
+      "daily projection retains future quote facts without promoting them to a current trigger",
+      "daily projection retains before ex-date quote facts without promoting them to a current trigger",
+      "daily projection retains invalid quote facts without promoting them to a current trigger"
+    ]
+  },
+  "protectedFiles": [
+    {
+      "file": "src/lib/dividendPricing.ts",
+      "sha256": "f3abc25a14068aa2f8c965d5a21d87635500c3b917e6e16a86adfaf3d48bb7aa",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendLedger.ts",
+      "sha256": "664bc2f918cb3098f385ff7ee5719173877cdebf3811b3eabe2b302bfd18cd81",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendFundPlan.ts",
+      "sha256": "82d0b58cbc10691c7d24ee7d43c80bfc28e1793918f2ddd595affdf617f7f85f",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendWorkbench.ts",
+      "sha256": "b310d3c433f8587f1a327fecd1aae04ea30f54ced9362d80fdb57681d7e9fd52",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendCheckSummary.ts",
+      "sha256": "af010a04c14044358daf99225ed1a98ac54ac9ee6317985b213bff15f59454ff",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendGridProvenance.ts",
+      "sha256": "0c0a7bcc8ec55435cb22298fd84f7ecf503865135d515da35658f59a54d50c88",
+      "unchanged": true
+    },
+    {
+      "file": "src/services/dividendAdvisorActionsService.ts",
+      "sha256": "0d13e061a5600e6ee2e319289fa92cfc69520bc46351503f0dd85016502c51c4",
+      "unchanged": true
+    },
+    {
+      "file": "src/services/dividendResumeReviewService.ts",
+      "sha256": "ac2df05c6d48fff35a37d6b2fc5b1ede51b8fcb1a8c57559f921486efa702052",
+      "unchanged": true
+    },
+    {
+      "file": "src/db.ts",
+      "sha256": "7be9b0ee3a708347e1e32b0d1a4a4d1500a4a7abdebaa3e69e040ccd6186cc5e",
+      "unchanged": true
+    },
+    {
+      "file": "package.json",
+      "sha256": "5518119ba9bd7d64a03e1e63560a268c0a4a45b3649a8e6eb692e3faa9092633",
+      "unchanged": true
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "84df4b387504461ed2101588fb2aa5376a835afc4104a3ef75c1002bf4d795f2",
+      "unchanged": true
+    },
+    {
+      "file": "capacitor.config.ts",
+      "sha256": "4d27176407d7385efe046d960dd38406d517c7d5d580504e32f9445218a3f3b1",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-pricing-method.md",
+      "sha256": "7131c5f145828976dbb22d029331ce37607c5388a158c15e9ac473e24d7adb7c",
+      "unchanged": true
+    },
+    {
+      "file": "android/app/build.gradle",
+      "sha256": "d0849d1c40cbbda780d17adfeed87238e662142745d333ed2638cf92f55c6f8f",
+      "unchanged": true
+    },
+    {
+      "file": "ios/App/App.xcodeproj/project.pbxproj",
+      "sha256": "f25224f6ee5d8ac2c88cc051d95f766c836a68131e79809e0908e47a6c3a1423",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-stage0/README.md",
+      "sha256": "8ea4a403384762d67eba0b891ab03210fe75b0ef89bf76dadc4b4ca1c9315939",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-stage1/README.md",
+      "sha256": "f46702bf985fa49135796aa777cca7f635811bac33f5a1fdea2c3aa1c7cabd7b",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-stage1-1/README.md",
+      "sha256": "8238a8163f6d843aca6de0b1f88c100106d6bec0e94c6193f973b1676ca6a1cf",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-stage1-2/README.md",
+      "sha256": "ab3b60f860692c633f106a3aafcdf79953bc0dee8ac824260ac3f277e3d26760",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-stage2/README.md",
+      "sha256": "7601fdf16166842f471bd7fc0ac927b22a744d200529d0f8f7c33143c80f72dd",
+      "unchanged": true
+    }
+  ],
+  "mainDatabaseSchema": "unchanged (entire src/db.ts hash matches baseline)",
+  "dailyCheckStorage": "Existing FortunaDividendDailyAdvice v1 advice table; extra result record IDs only; legacy latest record untouched",
+  "noNativeSyncReleaseInstall": true,
+  "testRuns": {
+    "baseline": {
+      "tests": 750,
+      "passed": 750,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "final": {
+      "tests": 786,
+      "passed": 786,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0
+    }
+  },
+  "historyAncestors": {
+    "d54a267": true,
+    "42bd943": true,
+    "4200c6b": true,
+    "74b6266": true,
+    "db29094": true,
+    "98848a4": true,
+    "d53c600": true
+  },
+  "browser": {
+    "stage3": {
+      "file": "browser-validation.json",
+      "success": true,
+      "checks": 13,
+      "pageErrors": 0,
+      "screenshots": 11
+    },
+    "stage1.1": {
+      "file": "stage11-regression/browser-validation.json",
+      "success": true,
+      "checks": 21,
+      "pageErrors": 0,
+      "screenshots": 22
+    },
+    "stage1.2": {
+      "file": "stage12-regression/browser-validation.json",
+      "success": true,
+      "checks": 9,
+      "pageErrors": 0,
+      "screenshots": 11
+    },
+    "stage2": {
+      "file": "stage2-regression/browser-validation.json",
+      "success": true,
+      "checks": 11,
+      "pageErrors": 0,
+      "screenshots": 14
+    }
+  },
+  "browserChecksTotal": 54,
+  "checks": {
+    "test": "passed",
+    "lint": "passed",
+    "build": "passed"
+  }
+}

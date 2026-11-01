@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 import Dexie from 'dexie';
 import { Capacitor } from '@capacitor/core';
 import { dividendCheckSummary, dividendFundCheckSummary } from '../src/lib/dividendCheckSummary.ts';
-import { dividendDailyCheckIsStale, dividendDailyCoverage, dividendDailyItem, sortDividendDailyItems, type DividendDailyCheck, type DividendDailyItem, type DividendDailySource } from '../src/lib/dividendDailyCheck.ts';
+import { dividendDailyCheckIsStale, dividendDailyCoverage, dividendDailyItem, dividendDailySemanticFingerprint, sortDividendDailyItems, type DividendDailyCheck, type DividendDailyItem, type DividendDailySource } from '../src/lib/dividendDailyCheck.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import { verifiedDividendBase, pingAnOfficialLedger } from './helpers/dividendPricingFixture.ts';
 import { awaitDividendRequest, assertDividendRequestCurrent } from '../src/services/dividendRequestControl.ts';
@@ -31,6 +31,7 @@ const { refreshDividendStock } = await import('../src/services/dividendService.t
 const { loadDividendDailyCheckInputKey } = await import('../src/services/dividendDailyAdviceScopeService.ts');
 const { loadDividendDailyChecks, saveDividendDailyCheck, saveDividendDailyAdvice, loadDividendDailyAdvice, closeDividendDailyAdvice } = await import('../src/services/dividendDailyAdviceService.ts');
 const { researchDividendLedger, closeDividendLedgerEvidence } = await import('../src/services/dividendLedgerEvidenceService.ts');
+const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
 const { saveDividendResearchCache, loadDividendResearchCache, closeDividendResearchCache } = await import('../src/services/dividendResearchCacheService.ts');
 const asOf = '2026-11-01', now = Date.parse(`${asOf}T03:00:00Z`);
 const stock = { code: '000001', name: 'Synthetic bank', group: 'core' as const, weightBps: 10000, shareMode: 'manual' as const, manualShares: 200, lotSize: 100,
@@ -281,8 +282,94 @@ test('failed research preserves old successful financial fields, URLs and origin
   const cache = (await loadDividendResearchCache())!;
   assert.deepEqual(cache.snapshot.stocks[0].sources, oldStock.sources); assert.equal(cache.stockContexts?.[stock.code].generatedAt, previous.generatedAt);
   assert.equal(cache.snapshot.stocks[0].issues[0].reason, 'request_failed');
+  await saveDividendResearchCache({ scope: 'plan', candidateInput: '', snapshot: { generatedAt: now + 1, principles: defaultDividendSelectionPrinciples(), indices: [],
+    stocks: [{ ...oldStock, sources: [{ kind: 'technical', provider: 'Tencent', url: 'https://example.com/synthetic-technical', fetchedAt: now + 1, asOf }],
+      issues: [{ kind: 'financial', reason: 'request_failed' }] }] } }, { preserveFailedSources: true });
+  const partial = (await loadDividendResearchCache())!;
+  assert.equal(partial.stockContexts?.[stock.code].generatedAt, previous.generatedAt, 'a fresh technical download cannot redate the failed financial review');
+  assert.ok(partial.snapshot.stocks[0].sources.some(source => source.url.endsWith('synthetic-financial') && source.fetchedAt === now - 86400000));
 });
 
 test('a source commit guard refuses a superseded request before touching any cache', async () => {
   assert.throws(() => assertDividendRequestCurrent({ isCurrent: () => false }), /Superseded/);
+});
+
+test('an identical unsaved calculation does not go stale just because its download batch time changed', () => {
+  const check = summary(); check.grid.origin = 'current';
+  const first = JSON.parse(check.freshness.semanticFingerprint); first.grid.origin = 'current'; first.grid.generatedAt = now;
+  check.freshness.semanticFingerprint = JSON.stringify(first);
+  const other = structuredClone(check), second = JSON.parse(other.freshness.semanticFingerprint); second.grid.generatedAt++;
+  other.freshness.semanticFingerprint = JSON.stringify(second);
+  assert.equal(dividendDailySemanticFingerprint(check), dividendDailySemanticFingerprint(other));
+  second.trigger.quote.priceMinor++; other.freshness.semanticFingerprint = JSON.stringify(second);
+  assert.notEqual(dividendDailySemanticFingerprint(check), dividendDailySemanticFingerprint(other));
+});
+
+test('an older progress revision cannot restore running over a terminal result in the same batch', async () => {
+  const h = harness(), completed = await h.runner.run(); await saveDividendDailyCheck(completed, { claim: true });
+  assert.equal(await saveDividendDailyCheck({ ...completed, status: 'running', revision: completed.revision - 1 }), false);
+  assert.equal((await loadDividendDailyChecks()).current?.status, 'completed'); assert.equal(stored.verno, 1);
+});
+
+test('malformed check metadata is ignored without deleting legacy or successful records, and new invalid writes reject atomically', async () => {
+  const h = harness(), completed = await h.runner.run(); await saveDividendDailyCheck(completed, { claim: true });
+  const invalid = { ...completed, items: [{ ...completed.items[0], eligibility: null }] };
+  await assert.rejects(saveDividendDailyCheck(invalid as never), /INVALID_DAILY_CHECK/);
+  assert.equal((await loadDividendDailyChecks()).current?.status, 'completed');
+  await stored.table('advice').put({ id: 'check:current', check: invalid });
+  assert.equal((await loadDividendDailyChecks()).current, null); assert.equal((await loadDividendDailyChecks()).completed?.batchId, completed.batchId);
+  assert.deepEqual((await stored.table('advice').get('check:current')).check, invalid);
+});
+
+test('check metadata strips nested client configuration and credentials rather than serialising extra fields', async () => {
+  const h = harness(), completed = await h.runner.run();
+  const supplied = { ...completed, items: completed.items.map(item => ({ ...item, apiKey: 'PRIVATE_ITEM', quote: { ...item.quote, config: { token: 'PRIVATE_QUOTE' } } })),
+    sources: completed.sources.map(source => ({ ...source, credentials: 'PRIVATE_SOURCE' })) };
+  await saveDividendDailyCheck(supplied, { claim: true });
+  assert.doesNotMatch(JSON.stringify(await stored.table('advice').toArray()), /PRIVATE_|apiKey|config|credentials/);
+  assert.deepEqual((await loadDividendDailyChecks()).current, JSON.parse(JSON.stringify(completed)));
+});
+
+test('overlapping quote requests retain the newer request even if the earlier successful response arrives last', async t => {
+  await initializeSettings(); await db.dividendStocks.put(stock); const firstResponse = deferred<Response>(), started = deferred<void>(); let count = 0;
+  const text = (price: number) => { const fields = Array(40).fill(''); fields[1] = 'Synthetic'; fields[2] = stock.code; fields[3] = String(price); fields[30] = '20261101100000'; fields[32] = '0'; return `v_sz000001="${fields.join('~')}";`; };
+  t.mock.method(globalThis, 'fetch', async () => { if (++count === 1) { started.resolve(); return firstResponse.promise; } return new Response(text(11)); });
+  const earlier = refreshDividendMarketQuotes(); await started.promise; await refreshDividendMarketQuotes(); firstResponse.resolve(new Response(text(8))); await earlier;
+  assert.equal((await db.dividendStocks.get(stock.code))?.quote?.priceMinor, 1100); assert.equal(count, 2);
+});
+
+test('native research cancellation stops follow-ups and callbacks even when every underlying transport ignores the signal', async t => {
+  t.mock.method(Capacitor, 'isNativePlatform', () => true); const gate = deferred<void>(), started = deferred<void>(); let calls = 0, callbacks = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; started.resolve(); await gate.promise; return new Response('{}'); });
+  const { defaultDividendSelectionPrinciples } = await import('../src/lib/dividendResearch.ts');
+  const controller = new AbortController(), task = fetchDividendResearch([stock], defaultDividendSelectionPrinciples(), { signal: controller.signal, onStock: async () => { callbacks++; } });
+  await started.promise; controller.abort(); await assert.rejects(task); const stoppedCalls = calls; gate.resolve(); await tick();
+  assert.equal(calls, stoppedCalls); assert.equal(callbacks, 0); assert.equal(await ledgers.table('ledgers').count(), 0); assert.equal(await research.table('results').count(), 0);
+});
+
+test('cancelling while a progress snapshot is loading does not wait for that uncooperative read', async () => {
+  const started = deferred<void>(); let reads = 0;
+  const runner = createDividendDailyCheckRunner({ load: async () => { if (++reads > 1) { started.resolve(); return new Promise(() => undefined); } return { inputKey: 'x', planKey: 'y', items: items() }; },
+    inputKey: async () => 'x', save: async () => true, refresh: async (_progress, options = {}) => { await options.onEvent?.({ stage: 'evidence' }); return {} as never; } });
+  const task = runner.run(); await started.promise; const time = performance.now(); runner.cancel(); const value = await task;
+  assert.equal(value.status, 'cancelled'); assert.equal(value.items.length, 2); assert.ok(performance.now() - time < 300);
+});
+
+test('a stalled cache save cannot extend source work beyond the check deadline indefinitely', async () => {
+  let refreshCalls = 0;
+  const runner = createDividendDailyCheckRunner({ load: async () => ({ inputKey: 'x', planKey: 'y', items: items() }), inputKey: async () => 'x',
+    refresh: async () => { refreshCalls++; return {} as never; }, save: async () => new Promise(() => undefined) });
+  const start = performance.now(), value = await runner.run({ timeoutMs: 10 });
+  assert.equal(value.status, 'timed_out'); assert.equal(refreshCalls, 0); assert.ok(performance.now() - start < 1500);
+  assert.ok(value.errors.includes('storage_failed'));
+});
+
+for (const [name, patch] of [
+  ['old', { date: '2026-10-31 10:00', priceMinor: 900 }], ['future', { date: '2026-11-02 10:00', priceMinor: 900 }],
+  ['before ex-date', { date: '2026-01-01 10:00', priceMinor: 900 }], ['invalid', { date: `${asOf} 10:00`, priceMinor: -1 }],
+] as const) test(`daily projection retains ${name} quote facts without promoting them to a current trigger`, () => {
+  const check = dividendCheckSummary({ stock: { ...stock, buyPaused: false, quote: { ...stock.quote, ...patch } }, asOf, now,
+    totalBudgetMinor: 1000000, basis: verifiedDividendBase(609000, asOf, { latestExDate: '2026-09-24' }) });
+  const row = dividendDailyItem(check); assert.equal(row.trigger, 'unknown'); assert.deepEqual(row.quote, check.trigger.quote);
+  assert.equal(row.quote.sessionConfirmed, false); assert.equal(row.actions.buy.status, check.actionCheck.buy.status);
 });

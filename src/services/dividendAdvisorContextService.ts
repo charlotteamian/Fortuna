@@ -83,7 +83,7 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
         const ok = await refreshDividendStock(stock.code, { ...options, skipQuote: true });
         const current = await db.dividendStocks.get(stock.code);
         await report({ id: `${itemKey}:disclosure`, itemKey, stage: 'evidence', provider: 'Eastmoney', url: dividendSourceUrl(stock.code),
-          attemptedAt: Date.now(), status: ok ? 'success' : 'failed', sourceDate: current?.dividend?.asOf, detail: ok ? undefined : 'dividend_download_failed' });
+          attemptedAt: Date.now(), status: ok ? 'success' : 'failed', sourceDate: current?.dividend?.announcements?.map(item => item.announcedAt).sort().at(-1), detail: ok ? undefined : 'dividend_download_failed' });
         await report({ id: `${itemKey}:schedule`, itemKey, stage: 'evidence', provider: 'Eastmoney',
           url: `https://emweb.eastmoney.com/PC_HSF10/BonusFinancing/PageAjax?code=${quoteSymbol(stock.code).toUpperCase()}`,
           attemptedAt: Date.now(), status: current?.dividend && !current.dividend.scheduleFailedAt ? 'success' : 'failed', detail: current?.dividend?.scheduleFailedAt ? 'schedule_download_failed' : undefined });
@@ -115,7 +115,7 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
           url: issue.url, status: issue.reason === 'deferred' ? 'deferred' : 'failed', attemptedAt: Date.now(), detail: issue.detail ?? issue.reason });
         const ledger = stock.pricing?.ledger;
         await report({ id: `${itemKey}:official`, itemKey, stage: 'evidence', provider: 'CNINFO', url: 'https://www.cninfo.com.cn/new/hisAnnouncement/query',
-          status: ledger?.complete ? 'success' : 'failed', attemptedAt: Date.now(), sourceDate: ledger?.asOf,
+          status: ledger?.complete ? 'success' : 'failed', attemptedAt: Date.now(), sourceDate: ledger?.events.flatMap(event => event.announcementDate ? [event.announcementDate] : []).sort().at(-1),
           verifiedDates: [...new Set(ledger?.events.flatMap(event => event.sources.flatMap(source => source.verifiedAt ? [source.verifiedAt] : [])) ?? [])],
           detail: ledger?.complete ? undefined : ledger?.issues.join('; ').slice(0, 500) || 'official_evidence_unavailable' });
         if (!saved) await report({ id: `${itemKey}:cache`, itemKey, stage: 'evidence', provider: 'cache', status: 'failed', detail: 'research_save_failed' });
