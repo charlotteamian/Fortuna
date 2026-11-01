@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import { isDividendSelectionPrinciples, type DividendResearchSnapshot } from '../lib/dividendResearch.ts';
 import { mainlandCode } from '../lib/dividendWorkbench.ts';
 import { invalidateOutdatedDividendPricing } from '../lib/dividendPricing.ts';
+import { assertDividendRequestCurrent, beforeDividendCacheWrite, type DividendRequestControl } from './dividendRequestControl.ts';
 
 export interface SavedDividendResearch {
   snapshot: DividendResearchSnapshot;
@@ -68,7 +69,7 @@ export function dividendResearchScopeStocks(value: SavedDividendResearch, config
   return value.snapshot.stocks.filter(stock => codes.has(stock.code));
 }
 
-function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDividendResearch): SavedDividendResearch {
+function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDividendResearch, preserveFailedSources = false): SavedDividendResearch {
   if (!previous) return cleanResearch(incoming);
   const saved = cleanResearch(previous), next = cleanResearch(incoming);
   const stocks = new Map(saved.snapshot.stocks.map(stock => [stock.code, stock]));
@@ -77,7 +78,16 @@ function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDi
     const context = next.stockContexts![stock.code];
     // A slow single-stock review may finish after a newer batch. Compare each stock's own evidence date.
     if (!contexts[stock.code] || context.generatedAt >= contexts[stock.code].generatedAt) {
-      stocks.set(stock.code, stock); contexts[stock.code] = context;
+      const old = stocks.get(stock.code);
+      if (preserveFailedSources && old && stock.issues.length) {
+        // Failed attempts describe this batch; they do not redate historical
+        // source data or throw away the last successful financial/price fields.
+        stocks.set(stock.code, { ...stock, technical: stock.technical ?? old.technical, financial: stock.financial ?? old.financial,
+          distributions: stock.distributions ?? old.distributions,
+          pricing: stock.pricing?.dividendBase?.verified ? stock.pricing : old.pricing ?? stock.pricing,
+          sources: [...new Map([...old.sources, ...stock.sources].map(source => [source.url, source])).values()] });
+        contexts[stock.code] = stock.sources.length ? context : contexts[stock.code] ?? context;
+      } else { stocks.set(stock.code, stock); contexts[stock.code] = context; }
     }
   }
   const latest = next.snapshot.generatedAt >= saved.snapshot.generatedAt ? next : saved;
@@ -92,12 +102,15 @@ export async function loadDividendResearchCache(): Promise<SavedDividendResearch
   return cleanResearch(value);
 }
 
-export async function saveDividendResearchCache(value: SavedDividendResearch): Promise<SavedDividendResearch> {
+export async function saveDividendResearchCache(value: SavedDividendResearch, options: DividendRequestControl & { preserveFailedSources?: boolean } = {}): Promise<SavedDividendResearch> {
   if (!valid(value)) throw new Error('INVALID_RESEARCH_CACHE');
+  await beforeDividendCacheWrite(options);
   return cache.transaction('rw', results, async () => {
+    assertDividendRequestCurrent(options);
     const previous = await results.get('latest');
     if (previous && !valid(previous)) throw new Error('INVALID_RESEARCH_CACHE');
-    const merged = mergeResearch(previous ?? null, value);
+    const merged = mergeResearch(previous ?? null, value, options.preserveFailedSources);
+    assertDividendRequestCurrent(options);
     await results.put({ id: 'latest', ...merged });
     return merged;
   });

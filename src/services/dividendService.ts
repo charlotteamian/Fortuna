@@ -8,6 +8,7 @@ import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { defaultDividendFundPlan } from '../lib/dividendFundPlan';
 import { enrichDividendPaymentDates, isDividendDataV2 } from '../lib/dividendForecast';
 import { previewDividendRiskRemoval } from './dividendAdvisorActionsService';
+import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
 
 export async function loadDividendWorkbench() {
   await initializeSettings();
@@ -18,6 +19,11 @@ export async function loadDividendWorkbench() {
       await db.settings.update('main', { dividendWorkbenchInitialized: true });
     }
   });
+  return loadDividendWorkbenchReadOnly();
+}
+
+/** Existing inputs only: no settings initialisation, seeding or migration. */
+export async function loadDividendWorkbenchReadOnly() {
   const [stocks, settings, accounts, holdings, txns] = await Promise.all([
     db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
   ]);
@@ -173,15 +179,16 @@ export async function addLinkedDividendStocks(codes: string[]): Promise<number> 
   return count;
 }
 
-async function readSource(url: string, proxy: string): Promise<string> {
+async function readSource(url: string, proxy: string, control: DividendRequestControl = {}): Promise<string> {
+  assertDividendRequestCurrent(control);
   if (Capacitor.isNativePlatform()) {
-    const res = await CapacitorHttp.get({ url, responseType: 'text', connectTimeout: 10000, readTimeout: 10000 });
+    const res = await awaitDividendRequest(CapacitorHttp.get({ url, responseType: 'text', connectTimeout: 10000, readTimeout: 10000 }), control);
     if (res.status < 200 || res.status >= 300) throw new Error(`HTTP_${res.status}`);
     return httpResponseDataToText(res.data);
   }
-  const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) });
+  const res = await fetch(proxy, { signal: dividendRequestSignal(control, 12000) });
   if (!res.ok) throw new Error(`HTTP_${res.status}`);
-  return res.text();
+  return awaitDividendRequest(res.text(), control);
 }
 export function dividendSourceUrl(code: string): string {
   const query = new URLSearchParams({ type: 'RPT_SHAREBONUS_DET', sty: 'ALL', filter: `(SECURITY_CODE="${code}")`, p: '1', ps: '500', sr: '-1', st: 'REPORT_DATE', source: 'HSF10', client: 'PC' });
@@ -189,17 +196,22 @@ export function dividendSourceUrl(code: string): string {
 }
 
 /** Independent failures keep their dated cache; manual DPS and user edits are never overwritten. */
-export async function refreshDividendStock(code: string): Promise<boolean> {
+export async function refreshDividendStock(code: string, control: DividendRequestControl & { skipQuote?: boolean } = {}): Promise<boolean> {
+  assertDividendRequestCurrent(control);
+  const currentDividend = claimDividendRequest(`dividend:${code}`), currentQuote = control.skipQuote ? () => false : claimDividendRequest(`quote:${code}`);
   const url = dividendSourceUrl(code);
   const schedulePath = `/PC_HSF10/BonusFinancing/PageAjax?code=${quoteSymbol(code).toUpperCase()}`;
   const [quote, dividend, schedule] = await Promise.allSettled([
-    readSource(`https://qt.gtimg.cn/q=${quoteSymbol(code)}`, `/qt-api/q=${quoteSymbol(code)}`).then(text => parseDividendQuote(text, code)),
-    readSource(url, url.replace('https://datacenter.eastmoney.com', '/dividend-api')).then(text => parseDividendResponse(JSON.parse(text), code)),
-    readSource(`https://emweb.eastmoney.com${schedulePath}`, `/dividend-schedule-api${schedulePath}`).then(text => JSON.parse(text) as unknown),
+    control.skipQuote ? Promise.resolve(undefined) : readSource(`https://qt.gtimg.cn/q=${quoteSymbol(code)}`, `/qt-api/q=${quoteSymbol(code)}`, control).then(text => parseDividendQuote(text, code)),
+    readSource(url, url.replace('https://datacenter.eastmoney.com', '/dividend-api'), control).then(text => parseDividendResponse(JSON.parse(text), code)),
+    readSource(`https://emweb.eastmoney.com${schedulePath}`, `/dividend-schedule-api${schedulePath}`, control).then(text => JSON.parse(text) as unknown),
   ]);
+  await beforeDividendCacheWrite(control);
   const update: Partial<DividendStock> = {};
-  if (quote.status === 'fulfilled') { update.quote = quote.value; update.quoteFailedAt = undefined; }
-  else update.quoteFailedAt = Date.now();
+  if (!control.skipQuote) {
+    if (quote.status === 'fulfilled') { update.quote = quote.value; update.quoteFailedAt = undefined; }
+    else update.quoteFailedAt = Date.now();
+  }
   if (dividend.status === 'fulfilled') {
     update.dividend = dividend.value;
     if (schedule.status === 'fulfilled') {
@@ -210,8 +222,13 @@ export async function refreshDividendStock(code: string): Promise<boolean> {
     if (!isDividendDataV2(update.dividend) || !Number.isSafeInteger(update.dividend.dpsMicros)) { delete update.dividend; update.dividendFailedAt = Date.now(); }
   }
   else update.dividendFailedAt = Date.now();
-  await db.dividendStocks.update(code, update);
-  return quote.status === 'fulfilled' && dividend.status === 'fulfilled' && update.dividendFailedAt === undefined;
+  await db.transaction('rw', db.dividendStocks, async () => {
+    assertDividendRequestCurrent(control);
+    if (!currentDividend()) return;
+    if (!currentQuote()) { delete update.quote; delete update.quoteFailedAt; }
+    await db.dividendStocks.update(code, update);
+  });
+  return (control.skipQuote || quote.status === 'fulfilled') && dividend.status === 'fulfilled' && update.dividendFailedAt === undefined;
 }
 export async function refreshDividendStocks(codes: string[], onProgress: (done: number, total: number) => void) {
   let cursor = 0, done = 0, failed = 0;

@@ -13,6 +13,7 @@ import { calculateDividendPricing, defaultDividendPricingMethod, isDividendPrici
 import { researchDividendLedger } from './dividendLedgerEvidenceService';
 import { dividendLedgerBase } from '../lib/dividendLedger';
 import { dateInChina } from '../lib/dividendWorkbench';
+import { assertDividendRequestCurrent, awaitDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
 
 export function defaultDividendResearchCandidates(): Pick<DividendStock, 'code' | 'name'>[] {
   return defaultDividendStocks().map(({ code, name }) => ({ code, name }));
@@ -41,48 +42,52 @@ export function dividendCashFlowSourceUrl(code: string) {
 export function dividendTreasurySourceUrl(page=1) {
   return `https://datacenter.eastmoney.com/api/data/v1/get?${new URLSearchParams({ reportName:'RPTA_WEB_TREASURYYIELD', columns:'SOLAR_DATE,EMM00166466', pageNumber:String(page), pageSize:'500', sortColumns:'SOLAR_DATE', sortTypes:'-1' })}`;
 }
-async function fetchMacro(asOf: string): Promise<DividendTreasuryResearch | undefined> {
-  const responses = await Promise.allSettled(Array.from({length:6},(_,i) => readJson(dividendTreasurySourceUrl(i+1))));
+async function fetchMacro(asOf: string, control: DividendRequestControl): Promise<DividendTreasuryResearch | undefined> {
+  const responses = await Promise.allSettled(Array.from({length:6},(_,i) => readJson(dividendTreasurySourceUrl(i+1), control)));
+  assertDividendRequestCurrent(control);
   const data = responses.flatMap(r => { if (r.status !== 'fulfilled') return []; const p=r.value as {success?:boolean;result?:{data?:unknown[]}}; return p?.success && Array.isArray(p.result?.data) ? p.result.data : []; });
   try { return parseDividendTreasury({success:true,result:{data}},asOf); } catch { return undefined; }
 }
-async function fetchOpportunity(asOf: string): Promise<DividendOpportunityResearch | undefined> {
+async function fetchOpportunity(asOf: string, control: DividendRequestControl): Promise<DividendOpportunityResearch | undefined> {
   try {
+    assertDividendRequestCurrent(control);
     let bytes: ArrayBuffer | Uint8Array;
     if (Capacitor.isNativePlatform()) {
-      const r = await CapacitorHttp.get({ url:DIVIDEND_OPPORTUNITY_URL, responseType:'arraybuffer', connectTimeout:8000, readTimeout:8000 });
+      const r = await awaitDividendRequest(CapacitorHttp.get({ url:DIVIDEND_OPPORTUNITY_URL, responseType:'arraybuffer', connectTimeout:8000, readTimeout:8000 }), control);
       if (r.status !== 200 || typeof r.data !== 'string' || r.data.length > 1000000) return undefined;
       bytes = Uint8Array.from(atob(r.data), ch => ch.charCodeAt(0));
     } else {
-      const r = await fetch(DIVIDEND_OPPORTUNITY_URL.replace('https://oss-ch.csindex.com.cn','/dividend-index-api'), {cache:'no-store',signal:AbortSignal.timeout(10000)});
+      const r = await fetch(DIVIDEND_OPPORTUNITY_URL.replace('https://oss-ch.csindex.com.cn','/dividend-index-api'), {cache:'no-store',signal:dividendRequestSignal(control, 10000)});
       if (!r.ok) return undefined;
-      bytes = await r.arrayBuffer(); if (bytes.byteLength > 1000000) return undefined;
+      bytes = await awaitDividendRequest(r.arrayBuffer(), control); if (bytes.byteLength > 1000000) return undefined;
     }
     const module = await import('xlsx'), XLSX = module.default ?? module;
+    assertDividendRequestCurrent(control);
     const workbook = XLSX.read(bytes,{type:'array'});
     return parseDividendOpportunityRows(XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[workbook.SheetNames[0]],{header:1}), asOf);
-  } catch { return undefined; }
+  } catch { assertDividendRequestCurrent(control); return undefined; }
 }
 
-async function readJson(url: string): Promise<unknown> {
+async function readJson(url: string, control: DividendRequestControl): Promise<unknown> {
+  assertDividendRequestCurrent(control);
   let text: string;
   if (Capacitor.isNativePlatform()) {
-    const response = await CapacitorHttp.get({ url, responseType: 'text', connectTimeout: 8000, readTimeout: 8000 });
+    const response = await awaitDividendRequest(CapacitorHttp.get({ url, responseType: 'text', connectTimeout: 8000, readTimeout: 8000 }), control);
     if (response.status < 200 || response.status >= 300) throw new Error(`RESEARCH_HTTP_${response.status}`);
     text = httpResponseDataToText(response.data);
   } else {
     const proxy = url.replace('https://web.ifzq.gtimg.cn', '/dividend-trend-api')
       .replace('https://proxy.finance.qq.com', '/dividend-tencent-api').replace('https://datacenter.eastmoney.com', '/dividend-api');
-    const response = await fetch(proxy, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    const response = await fetch(proxy, { cache: 'no-store', signal: dividendRequestSignal(control, 10000) });
     if (!response.ok) throw new Error(`RESEARCH_HTTP_${response.status}`);
-    text = await response.text();
+    text = await awaitDividendRequest(response.text(), control);
   }
   try { return JSON.parse(text); }
   catch { throw new Error('RESEARCH_INVALID_DATA'); }
 }
 
 async function download<T>(kind: DividendResearchSource['kind'], url: string, parser: (raw: unknown) => T,
-  options: { retryUrl?: string; validate?: (data: T) => Promise<string | undefined>; preferPartial?: (candidate:T, previous:T) => boolean } = {}):
+  control: DividendRequestControl, options: { retryUrl?: string; validate?: (data: T) => Promise<string | undefined>; preferPartial?: (candidate:T, previous:T) => boolean } = {}):
   Promise<{ data?:T; source?:DividendResearchSource; issue?:DividendResearchIssue }> {
   // The two Tencent hosts expose the same dated payload. Retry a failed or invalid
   // response once through Tencent's public proxy, preserving the successful URL.
@@ -93,7 +98,8 @@ async function download<T>(kind: DividendResearchSource['kind'], url: string, pa
   let partial: { data: T; source: DividendResearchSource } | undefined;
   for (const sourceUrl of urls) {
     try {
-      const raw = await readJson(sourceUrl);
+      assertDividendRequestCurrent(control);
+      const raw = await readJson(sourceUrl, control);
       let data: T;
       try { data = parser(raw); }
       catch (error) {
@@ -111,6 +117,7 @@ async function download<T>(kind: DividendResearchSource['kind'], url: string, pa
       }
       return { data, source };
     } catch (error) {
+      assertDividendRequestCurrent(control);
       reason = error instanceof Error && error.message === 'RESEARCH_INVALID_DATA' ? 'invalid_data' : 'request_failed';
       failures.push(error instanceof Error ? error.message : 'RESEARCH_REQUEST_FAILED');
     }
@@ -119,17 +126,19 @@ async function download<T>(kind: DividendResearchSource['kind'], url: string, pa
 }
 
 async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principles: DividendSelectionPrinciples, method: DividendPricingMethod,
-  macro: Promise<DividendTreasuryResearch | undefined>, opportunityTask: Promise<DividendOpportunityResearch | undefined>): Promise<DividendStockResearch> {
+  macro: Promise<DividendTreasuryResearch | undefined>, opportunityTask: Promise<DividendOpportunityResearch | undefined>, control: DividendRequestControl): Promise<DividendStockResearch> {
+  assertDividendRequestCurrent(control);
+  const downloadSource = <T>(kind: DividendResearchSource['kind'], url: string, parser: (raw: unknown) => T, options: Parameters<typeof download<T>>[4] = {}) => download(kind, url, parser, control, options);
   const symbol = quoteSymbol(stock.code);
   const asOf = dateInChina(), cashUrl = dividendCashFlowSourceUrl(stock.code), monthUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},month,,,120,`;
-  const distributionTask = download('dividend', dividendResearchDistributionUrl(stock.code), raw => ({...parseDividendDistributionResearch(raw, stock.code), pricingRaw:raw}));
-  const ledgerTask = distributionTask.then(value => value.data ? researchDividendLedger(value.data.pricingRaw, stock.code, asOf) : undefined);
+  const distributionTask = downloadSource('dividend', dividendResearchDistributionUrl(stock.code), raw => ({...parseDividendDistributionResearch(raw, stock.code), pricingRaw:raw}));
+  const ledgerTask = distributionTask.then(value => value.data ? researchDividendLedger(value.data.pricingRaw, stock.code, asOf, control) : undefined);
   const [technical, financial, distributions, cash, monthly, treasury, opportunity, ledger] = await Promise.all([
-    download('technical', dividendTechnicalSourceUrl(symbol), raw => parseDividendTechnicalResearch(raw, stock.code, symbol)),
-    download('financial', dividendFinancialSourceUrl(stock.code), raw => ({...parseDividendFinancialResearch(raw, stock.code), pricingRaw:raw})),
+    downloadSource('technical', dividendTechnicalSourceUrl(symbol), raw => parseDividendTechnicalResearch(raw, stock.code, symbol)),
+    downloadSource('financial', dividendFinancialSourceUrl(stock.code), raw => ({...parseDividendFinancialResearch(raw, stock.code), pricingRaw:raw})),
     distributionTask,
-    download('financial', cashUrl, raw => { const p=raw as {success?:boolean;result?:{data?:Record<string,unknown>[]}}; if (!p?.success || !Array.isArray(p.result?.data) || p.result.data.some(r=>r.SECURITY_CODE!==stock.code)) throw new Error('CASH_INVALID'); return raw; }),
-    download('technical', monthUrl, raw => dividendPricingPriceHistory(raw,symbol,asOf), {
+    downloadSource('financial', cashUrl, raw => { const p=raw as {success?:boolean;result?:{data?:Record<string,unknown>[]}}; if (!p?.success || !Array.isArray(p.result?.data) || p.result.data.some(r=>r.SECURITY_CODE!==stock.code)) throw new Error('CASH_INVALID'); return raw; }),
+    downloadSource('technical', monthUrl, raw => dividendPricingPriceHistory(raw,symbol,asOf), {
       retryUrl:`https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=${symbol},month,,,320,`,
       preferPartial:(candidate, previous) => candidate.at(-1)!.date > previous.at(-1)!.date
         || candidate.at(-1)!.date === previous.at(-1)!.date && candidate.length > previous.length,
@@ -141,6 +150,7 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
       },
     }), macro, opportunityTask, ledgerTask,
   ]);
+  assertDividendRequestCurrent(control);
   if (technical.source) technical.source.asOf = technical.data!.asOf;
   if (financial.source) financial.source.asOf = financial.data!.latest.reportDate;
   if (distributions.source) distributions.source.asOf = distributions.data!.asOf;
@@ -183,12 +193,17 @@ const INDICES: Pick<DividendIndexResearch, 'code' | 'name'>[] = [
 export async function fetchDividendResearch(
   stocks: Pick<DividendStock, 'code' | 'name'>[],
   principles: DividendSelectionPrinciples,
-  options: { maxStocks?: number; timeBudgetMs?: number; pricingMethod?: DividendPricingMethod } = {},
+  options: DividendRequestControl & { maxStocks?: number; timeBudgetMs?: number; pricingMethod?: DividendPricingMethod;
+    marketContext?: Pick<DividendResearchSnapshot, 'indices' | 'macro' | 'opportunity'>;
+    onStock?: (snapshot: DividendResearchSnapshot) => Promise<void>; } = {},
 ): Promise<DividendResearchSnapshot> {
+  assertDividendRequestCurrent(options);
+  const startedAt = Date.now();
   if (!isDividendSelectionPrinciples(principles)) throw new Error('INVALID_DIVIDEND_PRINCIPLES');
   const pricingMethod = options.pricingMethod ?? defaultDividendPricingMethod();
   if (!isDividendPricingMethod(pricingMethod)) throw new Error('INVALID_DIVIDEND_PRICING_METHOD');
-  const macroTask = fetchMacro(dateInChina()), opportunityTask = fetchOpportunity(dateInChina());
+  const macroTask = options.marketContext ? Promise.resolve(options.marketContext.macro) : fetchMacro(dateInChina(), options);
+  const opportunityTask = options.marketContext ? Promise.resolve(options.marketContext.opportunity) : fetchOpportunity(dateInChina(), options);
   if (!Array.isArray(stocks) || stocks.some(stock => !stock || mainlandCode(stock.code) !== stock.code)) throw new Error('INVALID_RESEARCH_CODES');
   const unique = [...new Map(stocks.map(stock => [stock.code, stock])).values()];
   const maximum = Math.max(1, Math.min(100, options.maxStocks ?? 40));
@@ -197,22 +212,28 @@ export async function fetchDividendResearch(
   let cursor = 0;
   const stockTasks = Promise.all(Array.from({ length: Math.min(4, maximum, unique.length) }, async () => {
     while (cursor < Math.min(unique.length, maximum) && Date.now() < deadline) {
+      assertDividendRequestCurrent(options);
       const stock = unique[cursor++];
-      try { results.set(stock.code, await fetchStock(stock, principles, pricingMethod, macroTask, opportunityTask)); }
+      try { results.set(stock.code, await fetchStock(stock, principles, pricingMethod, macroTask, opportunityTask, options)); }
       catch (error) {
+        assertDividendRequestCurrent(options);
         // A computation/shape failure is different from a request never started.
         results.set(stock.code, evaluateDividendResearch({ ...stock, checks:[], status:'unknown', sources:[],
           issues:[{ kind:'financial', reason:'invalid_data', detail:error instanceof Error ? error.message.slice(0,300) : 'RESEARCH_CALCULATION_FAILED' }] }, principles));
       }
+      assertDividendRequestCurrent(options);
+      await options.onStock?.({ generatedAt: startedAt, principles: { ...principles }, pricingMethod, indices: [],
+        macro: await macroTask, opportunity: await opportunityTask, stocks: [results.get(stock.code)!] });
     }
   }));
-  const indexTasks = Promise.all(INDICES.map(async index => {
-    const result = await download('technical', dividendTechnicalSourceUrl(index.code), raw => parseDividendTechnicalResearch(raw, index.code.slice(2), index.code));
+  const indexTasks = options.marketContext ? Promise.resolve(options.marketContext.indices) : Promise.all(INDICES.map(async index => {
+    const result = await download('technical', dividendTechnicalSourceUrl(index.code), raw => parseDividendTechnicalResearch(raw, index.code.slice(2), index.code), options);
     if (result.source) result.source.asOf = result.data!.asOf;
     return { ...index, technical: result.data, sources: result.source ? [result.source] : [], issues: result.issue ? [result.issue] : [] };
   }));
   const [, indices, macro, opportunity] = await Promise.all([stockTasks, indexTasks, macroTask, opportunityTask]);
-  return { generatedAt: Date.now(), principles: { ...principles }, indices, pricingMethod, macro, opportunity,
+  assertDividendRequestCurrent(options);
+  return { generatedAt: startedAt, principles: { ...principles }, indices, pricingMethod, macro, opportunity,
     stocks: unique.map(stock => results.get(stock.code) ?? evaluateDividendResearch({ ...stock, checks: [], status: 'unknown', sources: [],
       issues: (['technical', 'financial', 'dividend'] as const).map(kind => ({ kind, reason: 'deferred' })) }, principles)) };
 }
