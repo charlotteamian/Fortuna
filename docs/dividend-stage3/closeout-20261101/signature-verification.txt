@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Fortuna, OU=Personal Wealth Tracker, O=Fortuna, L=Shanghai, ST=Shanghai, C=CN
+Signer #1 certificate SHA-256 digest: b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c
+Signer #1 certificate SHA-1 digest: a60cde1a789fd9e97b3e3a7ab7952db10c296bc9
+Signer #1 certificate MD5 digest: 2d91f73fe265fc8d95ab5fb08f14aff4
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 4096
+Signer #1 public key SHA-256 digest: d98d58ca82e0e4180acd829496bb7dbcd8272c2f9441e520a45638f9ffe4e8b0
+Signer #1 public key SHA-1 digest: 9dee6bb0b9b1414a9b6b13fdfde66879fd9668bf
+Signer #1 public key MD5 digest: 9a449903c8e49ef25ce12db77f04424b

@@ -1,0 +1,63 @@
+{
+  "date": "2026-11-01",
+  "version": "5.0.1",
+  "androidVersionCode": 38,
+  "iosMetadataVersion": "5.0.1",
+  "iosMetadataBuildNumber": 38,
+  "baseline": "eb1c77c9190f528cc5083bcb23f5f84943e0d9bd",
+  "fixCommit": "ec8759dda68ab73e27993bc3e8c16728a7631cc3",
+  "releaseCommit": "d3a61d8294a765d6644c1c6135f9c6aae13fcc41",
+  "tag": "v5.0.1",
+  "branch": "codex/dividend-stage3-daily-check",
+  "mainMerged": false,
+  "github": {
+    "workflowRunId": 41314338923,
+    "workflowUrl": "https://github.com/charlotteamian/Fortuna/actions/runs/41314338923",
+    "workflowConclusion": "success",
+    "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v5.0.1",
+    "publishedAt": "2026-11-01T14:09:03Z",
+    "latestReleaseVerified": true,
+    "assetName": "Fortuna-5.0.1-release.apk",
+    "assetSize": 6034725,
+    "downloadUrl": "https://github.com/charlotteamian/Fortuna/releases/download/v5.0.1/Fortuna-5.0.1-release.apk",
+    "assetDigest": "sha256:157a89f44981ba43fbb389bf0389713ea389a737be0c49753e75bb282df95cba"
+  },
+  "apk": {
+    "localPath": "/Users/restartday/Documents/Fortuna/build/releases/v5.0.1/Fortuna-5.0.1-release.apk",
+    "package": "com.fortuna.wealthtracker",
+    "versionName": "5.0.1",
+    "versionCode": 38,
+    "size": 6034725,
+    "sha256": "157a89f44981ba43fbb389bf0389713ea389a737be0c49753e75bb282df95cba",
+    "certificateSha256": "b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c",
+    "webFiles": 48,
+    "webMismatches": [],
+    "signatureMatchesPinnedLongTermCertificate": true,
+    "downloadMatchesGitHubDigest": true,
+    "webAssetsMatchTestedProductionBuild": true
+  },
+  "updater": {
+    "previousVersion": "5.0.0",
+    "offeredVersion": "5.0.1",
+    "assetName": "Fortuna-5.0.1-release.apk",
+    "downloadUrl": "https://github.com/charlotteamian/Fortuna/releases/download/v5.0.1/Fortuna-5.0.1-release.apk",
+    "alreadyCurrentOffersUpdate": false
+  },
+  "validation": {
+    "localTests": 809,
+    "ciTests": 809,
+    "newRegressionTests": 23,
+    "browserChecks": 15,
+    "browserPageErrors": 0,
+    "lintPassed": true,
+    "productionBuildPassed": true,
+    "nativeUpdaterUnitTestsPassed": true,
+    "androidCapacitorSyncCompleted": true
+  },
+  "limitations": [
+    "No physical-device installation or upgrade-data verification",
+    "No live market-service or real-model acceptance",
+    "No real user database accessed",
+    "No pricing/fund/ledger/backup business-rule changes"
+  ]
+}

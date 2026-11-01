@@ -90,3 +90,5 @@
 发布版本 **5.0.1 / Android versionCode 38**；iOS 版本元数据同步为 5.0.1/build 38，但本次只构建 Android APK。签名包和 GitHub 更新的最终核验见同目录 `release-verification.json`。特别分红、交叉缺证门槛、自动禁买、旧网格证据快照继续待决，定价/基金算法、主库和备份格式不变。
 
 修复提交为 `ec8759d`；发布元数据及本次验证材料为本文所在发布准备提交。回退分开处理两者，按交付提交逆序 `git revert`，先保护后续改动。不降数据库版本、不导入旧备份，也不把降 versionCode 的 APK 当作可覆盖升级包。
+
+实际发布已完成：`v5.0.1` 指向 `d3a61d8`，[GitHub 构建](https://github.com/charlotteamian/Fortuna/actions/runs/41314338923)成功，CI 再次通过 809 项测试和 Android 更新器单测。[发布页](https://github.com/charlotteamian/Fortuna/releases/tag/v5.0.1)与[正式签名 APK](https://github.com/charlotteamian/Fortuna/releases/download/v5.0.1/Fortuna-5.0.1-release.apk)已可用。下载包为 6,034,725 字节，SHA-256 为 `157a89f44981ba43fbb389bf0389713ea389a737be0c49753e75bb282df95cba`；签名与仓库长期证书一致，48 个网页文件与本轮生产构建逐字节相同。实际 latest-release 数据通过应用原更新解析器，5.0.0 可识别 5.0.1，5.0.1 不再重复提示更新。设备安装及升级保留数据尚未验收。
