@@ -1,0 +1,15 @@
+✔ Copying web assets from dist to android/app/src/main/assets/public in 7.46ms
+✔ Creating capacitor.config.json in android/app/src/main/assets in 409.67μs
+✔ copy android in 14.24ms
+✔ Updating Android plugins in 1.58ms
+[info] Found 3 Capacitor plugins for android:
+       @capacitor/filesystem@8.1.2
+       @capacitor/share@8.0.1
+       @ebarooni/capacitor-calendar@8.0.1
+✔ update android in 17.01ms
+[info] Sync finished in 0.04s
+npm notice
+npm notice New minor version of npm available! 11.11.0 -> 11.21.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.1
+npm notice To update run: npm install -g npm@11.21.1
+npm notice
