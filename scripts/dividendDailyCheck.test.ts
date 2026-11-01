@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 import Dexie from 'dexie';
 import { Capacitor } from '@capacitor/core';
 import { dividendCheckSummary, dividendFundCheckSummary } from '../src/lib/dividendCheckSummary.ts';
-import { dividendDailyCheckIsStale, dividendDailyCoverage, dividendDailyItem, dividendDailySemanticFingerprint, sortDividendDailyItems, type DividendDailyCheck, type DividendDailyItem, type DividendDailySource } from '../src/lib/dividendDailyCheck.ts';
+import { dividendDailyCheckedKeys, dividendDailyCheckIsStale, dividendDailyCoverage, dividendDailyItem, dividendDailySemanticFingerprint, sortDividendDailyItems, type DividendDailyCheck, type DividendDailyItem, type DividendDailySource } from '../src/lib/dividendDailyCheck.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import { verifiedDividendBase, pingAnOfficialLedger } from './helpers/dividendPricingFixture.ts';
 import { awaitDividendRequest, assertDividendRequestCurrent } from '../src/services/dividendRequestControl.ts';
@@ -29,7 +29,7 @@ const { db, initializeSettings } = await import('../src/db.ts');
 const { refreshDividendMarketQuotes } = await import('../src/services/dividendQuoteService.ts');
 const { refreshDividendStock } = await import('../src/services/dividendService.ts');
 const { loadDividendDailyCheckInputKey } = await import('../src/services/dividendDailyAdviceScopeService.ts');
-const { loadDividendDailyChecks, saveDividendDailyCheck, saveDividendDailyAdvice, loadDividendDailyAdvice, closeDividendDailyAdvice } = await import('../src/services/dividendDailyAdviceService.ts');
+const { claimDividendDailyCheckBatch, loadDividendDailyCheckOwner, loadDividendDailyChecks, saveDividendDailyCheck, saveDividendDailyAdvice, loadDividendDailyAdvice, closeDividendDailyAdvice } = await import('../src/services/dividendDailyAdviceService.ts');
 const { researchDividendLedger, closeDividendLedgerEvidence } = await import('../src/services/dividendLedgerEvidenceService.ts');
 const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
 const { saveDividendResearchCache, loadDividendResearchCache, closeDividendResearchCache } = await import('../src/services/dividendResearchCacheService.ts');
@@ -53,6 +53,10 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 const sourcesFor = (key: string): DividendDailySource[] => ['quote', 'disclosure', 'schedule', 'research', 'official', 'plan'].map(kind => ({ id: `${key}:${kind}`, itemKey: key,
   stage: kind === 'quote' ? 'quotes' : kind === 'plan' ? 'plans' : 'evidence', provider: 'synthetic', status: 'success' }));
+const saveClaimedCheck = async (value: DividendDailyCheck) => {
+  assert.equal(await claimDividendDailyCheckBatch(value.batchId, value.startedAt), true);
+  return saveDividendDailyCheck(value, { claim: true });
+};
 function harness() {
   let inputKey = 'user-input-v1', planKey = 'semantic-v1', rows = items(), saved: DividendDailyCheck | undefined;
   let refreshCalls = 0;
@@ -196,9 +200,9 @@ test('result storage retains legacy advice and last completed result separately 
   const h = harness(), completed = await h.runner.run();
   const legacy = { answer: 'Historical explanation', generatedAt: new Date(now).toISOString(), language: 'en', planKey: 'old', refreshLimited: false };
   await saveDividendDailyAdvice(legacy);
-  await saveDividendDailyCheck({ ...completed, apiKey: 'PRIVATE_KEY', config: { secret: 'PRIVATE_SECRET' } } as DividendDailyCheck, { claim: true });
+  await saveClaimedCheck({ ...completed, apiKey: 'PRIVATE_KEY', config: { secret: 'PRIVATE_SECRET' } } as DividendDailyCheck);
   const cancelled = { ...completed, batchId: crypto.randomUUID(), status: 'cancelled' as const };
-  await saveDividendDailyCheck(cancelled, { claim: true });
+  await saveClaimedCheck(cancelled);
   assert.equal(await saveDividendDailyCheck(completed), false);
   assert.equal((await loadDividendDailyChecks()).current?.status, 'cancelled'); assert.equal((await loadDividendDailyChecks()).completed?.batchId, completed.batchId);
   assert.deepEqual(await loadDividendDailyAdvice(), legacy); assert.doesNotMatch(JSON.stringify(await stored.table('advice').toArray()), /PRIVATE_|apiKey|config/);
@@ -306,13 +310,13 @@ test('an identical unsaved calculation does not go stale just because its downlo
 });
 
 test('an older progress revision cannot restore running over a terminal result in the same batch', async () => {
-  const h = harness(), completed = await h.runner.run(); await saveDividendDailyCheck(completed, { claim: true });
+  const h = harness(), completed = await h.runner.run(); await saveClaimedCheck(completed);
   assert.equal(await saveDividendDailyCheck({ ...completed, status: 'running', revision: completed.revision - 1 }), false);
   assert.equal((await loadDividendDailyChecks()).current?.status, 'completed'); assert.equal(stored.verno, 1);
 });
 
 test('malformed check metadata is ignored without deleting legacy or successful records, and new invalid writes reject atomically', async () => {
-  const h = harness(), completed = await h.runner.run(); await saveDividendDailyCheck(completed, { claim: true });
+  const h = harness(), completed = await h.runner.run(); await saveClaimedCheck(completed);
   const invalid = { ...completed, items: [{ ...completed.items[0], eligibility: null }] };
   await assert.rejects(saveDividendDailyCheck(invalid as never), /INVALID_DAILY_CHECK/);
   assert.equal((await loadDividendDailyChecks()).current?.status, 'completed');
@@ -325,7 +329,7 @@ test('check metadata strips nested client configuration and credentials rather t
   const h = harness(), completed = await h.runner.run();
   const supplied = { ...completed, items: completed.items.map(item => ({ ...item, apiKey: 'PRIVATE_ITEM', quote: { ...item.quote, config: { token: 'PRIVATE_QUOTE' } } })),
     sources: completed.sources.map(source => ({ ...source, credentials: 'PRIVATE_SOURCE' })) };
-  await saveDividendDailyCheck(supplied, { claim: true });
+  await saveClaimedCheck(supplied);
   assert.doesNotMatch(JSON.stringify(await stored.table('advice').toArray()), /PRIVATE_|apiKey|config|credentials/);
   assert.deepEqual((await loadDividendDailyChecks()).current, JSON.parse(JSON.stringify(completed)));
 });
@@ -362,6 +366,182 @@ test('a stalled cache save cannot extend source work beyond the check deadline i
   const start = performance.now(), value = await runner.run({ timeoutMs: 10 });
   assert.equal(value.status, 'timed_out'); assert.equal(refreshCalls, 0); assert.ok(performance.now() - start < 1500);
   assert.ok(value.errors.includes('storage_failed'));
+});
+
+for (const state of ['unchanged', 'changed', 'unknown quote', 'long missing evidence'] as const) {
+  test(`cross-day retry keeps unselected ${state} results historical without counting or explaining them as checked today`, async () => {
+    const h = harness();
+    if (state === 'unknown quote' || state === 'long missing evidence') h.rows = items().map(item => ({ ...item, bucket: 'unknown',
+      fingerprint: state, quote: { status: 'unknown', reasons: ['quote_missing'], historicalUsable: false, sessionConfirmed: false } }));
+    const previous = await h.runner.run(), yesterday = Date.now() - 86400000;
+    previous.startedAt = yesterday; previous.finishedAt = yesterday; previous.status = 'partial';
+    previous.items = previous.items.map(item => ({ ...item, checkedAt: yesterday }));
+    previous.sources = previous.sources.map(source => ({ ...source, attemptedAt: yesterday, sourceDate: '2026-10-29', verifiedDates: ['2026-10-29'] }));
+    previous.sources[0].status = 'failed';
+    const key = previous.sources[0].itemKey, other = previous.items.find(item => item.key !== key)!;
+    if (state === 'changed') h.rows = items().map(item => item.key === key ? item : { ...item, fingerprint: 'changed-today' });
+    const value = await h.runner.run({ previous, retryKeys: [key] });
+    assert.equal(value.status, 'partial'); assert.deepEqual(value.checkedKeys, [key]);
+    assert.equal(value.items.find(item => item.key === other.key)?.checkedAt, yesterday);
+    assert.equal(value.items.find(item => item.key === other.key)?.stale, true);
+    assert.equal(dividendDailyCheckIsStale(value, value.planKey), true);
+    assert.ok(dividendDailyCoverage(value.sources).historical > 0);
+    assert.equal(dividendDailyCoverage(value.sources).success, sourcesFor(key).length - 1);
+    for (const source of value.sources.filter(source => source.itemKey === other.key)) {
+      assert.equal(source.historical, true); assert.equal(source.attemptedAt, yesterday);
+      assert.equal(source.sourceDate, '2026-10-29'); assert.deepEqual(source.verifiedDates, ['2026-10-29']);
+    }
+  });
+}
+
+for (const status of ['cancelled', 'partial', 'timed_out'] as const) test(`cross-day retry after ${status} never promotes untouched old or provisional items`, async () => {
+  const h = harness(), previous = await h.runner.run(), yesterday = Date.now() - 86400000, key = previous.items[0].key;
+  previous.status = status; previous.startedAt = yesterday;
+  previous.items = previous.items.map((item, index) => ({ ...item, checkedAt: index ? undefined : yesterday }));
+  previous.sources[0].status = 'deferred';
+  const value = await h.runner.run({ previous, retryKeys: [key] });
+  assert.equal(value.status, 'partial'); assert.deepEqual(value.checkedKeys, [key]);
+  assert.equal(value.items.find(item => item.key !== key)?.checkedAt, undefined);
+  assert.equal(dividendDailyCheckIsStale(value, value.planKey), true);
+});
+
+test('cancelling a cross-day retry retains the old check time and never restores yesterday to today coverage', async () => {
+  const h = harness(), previous = await h.runner.run(), yesterday = Date.now() - 86400000, key = previous.items[0].key;
+  previous.startedAt = yesterday; previous.items.forEach(item => { item.checkedAt = yesterday; }); previous.sources[0].status = 'failed';
+  h.operation = async (_progress, options = {}) => { await options.onEvent?.({ stage: 'plans', checkedKeys: [key] }); h.runner.cancel(); return {} as never; };
+  const value = await h.runner.run({ previous, retryKeys: [key] });
+  assert.equal(value.status, 'cancelled'); assert.deepEqual(value.checkedKeys, [key]);
+  assert.equal(value.items.find(item => item.key !== key)?.checkedAt, yesterday);
+  assert.equal(dividendDailyCheckIsStale(value, value.planKey), true);
+});
+
+test('source attempt freshness is independent of its historical publication and verified dates', async () => {
+  const h = harness(), value = await h.runner.run(), source = { ...value.sources[0], attemptedAt: Date.now() - 86400000 };
+  assert.equal(dividendDailyCoverage([source]).success, 0); assert.equal(dividendDailyCoverage([source]).historical, 1);
+  assert.equal(dividendDailyCheckIsStale({ ...value, sources: [source] }, value.planKey), true);
+  const today = { ...source, attemptedAt: Date.now(), sourceDate: '2020-01-01', verifiedDates: ['2020-01-02'] };
+  assert.equal(dividendDailyCoverage([today]).success, 1); assert.equal(dividendDailyCoverage([today]).historical, 0);
+});
+
+test('loading a legacy mixed-day completed cache fixes its view and counters without rewriting the saved evidence', async () => {
+  const h = harness(), value = await h.runner.run(); value.items[1].checkedAt = Date.now() - 86400000;
+  const raw = JSON.parse(JSON.stringify(value)); await stored.table('advice').put({ id: 'check:current', check: raw });
+  const loaded = (await loadDividendDailyChecks()).current!;
+  assert.deepEqual(loaded.checkedKeys, [value.items[0].key]); assert.equal(loaded.items[1].stale, true);
+  assert.equal(dividendDailyCheckIsStale(loaded, loaded.planKey), true);
+  assert.deepEqual((await stored.table('advice').get('check:current')).check, raw);
+});
+
+function persistentRunner(overrides: Partial<Parameters<typeof createDividendDailyCheckRunner>[0]> = {}) {
+  return createDividendDailyCheckRunner({ load: async () => ({ inputKey: 'input', planKey: 'plan', items: items() }), inputKey: async () => 'input',
+    claim: claimDividendDailyCheckBatch, owner: loadDividendDailyCheckOwner, save: saveDividendDailyCheck,
+    refresh: async (_progress, options = {}) => {
+      for (const key of options.itemKeys ?? items().map(item => item.key)) {
+        for (const source of sourcesFor(key)) await options.onEvent?.({ stage: source.stage, source: { ...source, attemptedAt: Date.now() } });
+        await options.onEvent?.({ stage: 'plans', checkedKeys: [key] });
+      }
+      return {} as never;
+    }, ...overrides });
+}
+
+const assertStoredBatch = async (batchId: string) => {
+  const saved = await loadDividendDailyChecks(); assert.equal(saved.current?.batchId, batchId); assert.equal(saved.completed?.batchId, batchId);
+  assert.equal(await loadDividendDailyCheckOwner(), batchId);
+};
+
+for (const sameMillisecond of [false, true]) test(`two actual-storage runners reject an old delayed initial read${sameMillisecond ? ' with identical start milliseconds' : ''}`, async t => {
+  if (sameMillisecond) { const fixed = Date.now(); t.mock.method(Date, 'now', () => fixed); }
+  const entered = deferred<void>(), release = deferred<void>(); let oldRefreshes = 0;
+  const old = persistentRunner({ load: async () => { entered.resolve(); await release.promise; return { inputKey: 'input', planKey: 'plan', items: items() }; },
+    refresh: async () => { oldRefreshes++; return {} as never; } });
+  const oldTask = old.run(); await entered.promise;
+  const newer = await persistentRunner().run(); assert.equal(newer.status, 'completed'); await assertStoredBatch(newer.batchId);
+  release.resolve(); assert.equal((await oldTask).status, 'cancelled'); assert.equal(oldRefreshes, 0); await assertStoredBatch(newer.batchId);
+  assert.equal((await stored.table('advice').get('check:owner')).sequence, 2);
+});
+
+test('an old terminal save released after a newer completion cannot replace either durable result', async () => {
+  const entered = deferred<void>(), release = deferred<void>();
+  const old = persistentRunner({ save: async (value, options) => { if (value.status === 'completed') { entered.resolve(); await release.promise; } return saveDividendDailyCheck(value, options); } });
+  const oldTask = old.run(); await entered.promise; const newer = await persistentRunner().run(); await assertStoredBatch(newer.batchId);
+  release.resolve(); assert.equal((await oldTask).status, 'cancelled'); await assertStoredBatch(newer.batchId);
+});
+
+test('an old runner cancelling after a newer completion cannot reclaim or emit late source writes', async () => {
+  const entered = deferred<void>(), release = deferred<void>(); let writes = 0;
+  const old = persistentRunner({ refresh: async (_progress, options = {}) => {
+    entered.resolve(); await release.promise;
+    await options.beforeWrite?.(); writes++; return {} as never;
+  } });
+  const task = old.run(); await entered.promise; const newer = await persistentRunner().run(); old.cancel();
+  assert.equal((await task).status, 'cancelled'); release.resolve(); await tick(); assert.equal(writes, 0); await assertStoredBatch(newer.batchId);
+});
+
+test('an old delayed initial claim save is rejected and starts no source work after the reserved owner changes', async () => {
+  const entered = deferred<void>(), release = deferred<void>(); let refreshes = 0, rejected = 0;
+  const old = persistentRunner({ save: async (value, options) => {
+    if (options?.claim) { entered.resolve(); await release.promise; }
+    const accepted = await saveDividendDailyCheck(value, options); if (!accepted) rejected++; return accepted;
+  }, refresh: async () => { refreshes++; return {} as never; } });
+  const task = old.run(); await entered.promise; const newer = await persistentRunner().run(); release.resolve();
+  assert.equal((await task).status, 'cancelled'); assert.equal(refreshes, 0); assert.equal(rejected, 1); await assertStoredBatch(newer.batchId);
+});
+
+test('failed old progress storage still checks the durable owner before allowing any source work', async () => {
+  const entered = deferred<void>(), release = deferred<void>(); let refreshes = 0;
+  const old = persistentRunner({ save: async () => { entered.resolve(); await release.promise; throw new Error('storage unavailable'); },
+    refresh: async () => { refreshes++; return {} as never; } });
+  const task = old.run(); await entered.promise; const newer = await persistentRunner().run(); release.resolve();
+  const value = await task; assert.equal(value.status, 'cancelled'); assert.ok(value.errors.includes('storage_failed'));
+  assert.equal(refreshes, 0); await assertStoredBatch(newer.batchId);
+});
+
+test('an atomic reservation failure preserves a readable local list without scheduling unowned source writes', async () => {
+  const newer = await persistentRunner().run(); let refreshes = 0;
+  const old = persistentRunner({ claim: async () => { throw new Error('storage unavailable'); }, refresh: async () => { refreshes++; return {} as never; } });
+  const value = await old.run(); assert.equal(value.status, 'partial'); assert.ok(value.errors.includes('storage_failed'));
+  assert.equal(value.items.length, 2); assert.equal(refreshes, 0); await assertStoredBatch(newer.batchId);
+});
+
+test('a stalled reservation keeps local results visible while the whole-flow deadline bounds the wait', async () => {
+  const updates: DividendDailyCheck[] = []; let refreshes = 0;
+  const runner = persistentRunner({ claim: async () => new Promise(() => undefined), refresh: async () => { refreshes++; return {} as never; } });
+  const start = performance.now(), value = await runner.run({ timeoutMs: 15, onUpdate: update => updates.push(update) });
+  assert.equal(value.status, 'timed_out'); assert.equal(value.items.length, 2); assert.equal(updates[0].items.length, 2);
+  assert.ok(value.errors.includes('storage_failed')); assert.equal(refreshes, 0); assert.ok(performance.now() - start < 500);
+});
+
+test('a rejected reservation aborts a blocked local read immediately and never tries a terminal claim', async () => {
+  const newer = await persistentRunner().run(); let saves = 0, refreshes = 0;
+  const old = persistentRunner({ claim: async () => false, load: async () => new Promise(() => undefined),
+    save: async () => { saves++; return true; }, refresh: async () => { refreshes++; return {} as never; } });
+  assert.equal((await old.run()).status, 'cancelled'); assert.equal(saves, 0); assert.equal(refreshes, 0); await assertStoredBatch(newer.batchId);
+});
+
+test('direct old initial and terminal claim=true writes cannot re-reserve a newer completed owner', async () => {
+  const old = await persistentRunner().run(), newer = await persistentRunner().run();
+  assert.equal(await saveDividendDailyCheck({ ...old, status: 'running', revision: old.revision + 1 }, { claim: true }), false);
+  assert.equal(await saveDividendDailyCheck({ ...old, status: 'cancelled', revision: old.revision + 2 }, { claim: true }), false);
+  assert.equal(await saveDividendDailyCheck({ ...old, revision: old.revision + 3 }, { claim: true }), false);
+  await assertStoredBatch(newer.batchId);
+});
+
+test('a delayed reservation with an older start time cannot acquire a completed newer owner', async () => {
+  const newer = await persistentRunner().run();
+  assert.equal(await claimDividendDailyCheckBatch(crypto.randomUUID(), newer.startedAt - 1), false); await assertStoredBatch(newer.batchId);
+});
+
+test('the same runner still merges clicks when using atomic persistent reservations', async () => {
+  const entered = deferred<void>(), release = deferred<void>();
+  const runner = persistentRunner({ load: async () => { entered.resolve(); await release.promise; return { inputKey: 'input', planKey: 'plan', items: items() }; } });
+  const first = runner.run(); await entered.promise; assert.equal(runner.run(), first); release.resolve(); const value = await first;
+  assert.equal((await stored.table('advice').get('check:owner')).sequence, 1); await assertStoredBatch(value.batchId);
+});
+
+test('current-day item counts expire at the China date boundary without changing the fingerprint', async () => {
+  const h = harness(), value = await h.runner.run(), tomorrow = Date.now() + 86400000;
+  assert.deepEqual(dividendDailyCheckedKeys(value.items, tomorrow), []);
+  assert.equal(dividendDailyCheckIsStale(value, value.planKey, tomorrow), true);
 });
 
 for (const [name, patch] of [

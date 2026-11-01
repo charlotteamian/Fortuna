@@ -1,9 +1,10 @@
-import { dividendDailyCoverage, dividendDailyItem, sortDividendDailyItems, type DividendDailyCheck, type DividendDailyItem, type DividendDailySource } from '../lib/dividendDailyCheck';
+import { dividendDailyCheckedKeys, dividendDailyCoverage, dividendDailyItem, dividendDailyItemIsStale, dividendDailySourceIsHistorical, sortDividendDailyItems, type DividendDailyCheck, type DividendDailyItem, type DividendDailySource } from '../lib/dividendDailyCheck';
+import { dateInChina } from '../lib/dividendWorkbench';
 import { loadDividendWorkbenchReadOnly } from './dividendService';
 import { loadDividendFundPositions, prepareDividendAdvisorContext, type DividendAdvisorRefreshEvent } from './dividendAdvisorContextService';
 import { loadDividendCheckSummaries } from './dividendCheckSummaryService';
 import { loadDividendDailyAdvicePlanKey, loadDividendDailyCheckInputKey } from './dividendDailyAdviceScopeService';
-import { loadDividendDailyChecks, saveDividendDailyCheck } from './dividendDailyAdviceService';
+import { claimDividendDailyCheckBatch, loadDividendDailyCheckOwner, saveDividendDailyCheck } from './dividendDailyAdviceService';
 import { assertDividendRequestCurrent, awaitDividendRequest, suspendDividendBackgroundRefresh } from './dividendRequestControl';
 
 export const DIVIDEND_DAILY_CHECK_TIMEOUT_MS = 90_000;
@@ -23,6 +24,7 @@ interface Dependencies {
   inputKey: () => Promise<string>;
   refresh: typeof prepareDividendAdvisorContext;
   save: typeof saveDividendDailyCheck;
+  claim?: typeof claimDividendDailyCheckBatch;
   owner?: () => Promise<string | undefined>;
 }
 interface RunOptions {
@@ -54,21 +56,31 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
     const timer = setTimeout(() => controller.abort(new DOMException('Daily check deadline', 'TimeoutError')), timeoutMs);
     const forwardAbort = () => controller.abort(options.signal?.reason);
     if (options.signal?.aborted) forwardAbort(); else options.signal?.addEventListener('abort', forwardAbort, { once: true });
-    const current = () => generation === ownGeneration;
+    let superseded = false;
+    const current = () => generation === ownGeneration && !superseded;
     const control = { signal: controller.signal, isCurrent: current };
     const execute = async (): Promise<DividendDailyCheck> => {
       let value: DividendDailyCheck = { version: 1, batchId, revision: 0, startedAt, deadlineAt: startedAt + timeoutMs, status: 'running', stage: 'quotes',
         inputKey: '', planKey: '', items: [], sources: [], checkedKeys: [], errors: [], retryOf: options.previous?.batchId, retryKeys: options.retryKeys };
-      let claimed = false, queue = Promise.resolve();
+      let claimed = false, reserved = false, storageUnavailable = false, queue = Promise.resolve();
+      const stopSuperseded = () => { superseded = true; value.status = 'cancelled'; controller.abort(new DOMException('Newer daily check', 'AbortError')); };
+      // Begin the atomic reservation before any potentially slow local read.
+      // A failed reservation is final; neither initial nor terminal publication
+      // can reclaim ownership from a later runner.
+      const reservation = deps.claim?.(batchId, startedAt).then(accepted => {
+        reserved = accepted;
+        if (!accepted) stopSuperseded();
+      }, () => { storageUnavailable = true; });
       const publish = async (claim = false, terminal = false) => {
         if (!current()) return;
         value = { ...value, revision: value.revision + 1 };
         options.onUpdate?.(structuredClone(value));
         try {
-          const saved = await awaitDividendRequest(deps.save(value, { claim, isCurrent: current }), terminal
+          if (storageUnavailable || deps.claim && !reserved) throw new Error('DAILY_OWNER_UNAVAILABLE');
+          const saved = await awaitDividendRequest(deps.save(value, { claim, isCurrent: () => current() && (terminal || !controller.signal.aborted) }), terminal
             ? { signal: AbortSignal.timeout(1000), isCurrent: current } : control);
-          if (claim) claimed = saved;
-          else if (claimed && !saved) controller.abort(new DOMException('Newer daily check', 'AbortError'));
+          if (!saved) stopSuperseded();
+          else if (claim) claimed = true;
         } catch {
           if (!terminal && controller.signal.aborted) return;
           if (!value.errors.includes('storage_failed')) value.errors.push('storage_failed');
@@ -82,8 +94,8 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
           controller.abort(new Error('DIVIDEND_CHECK_INPUTS_CHANGED'));
           assertDividendRequestCurrent(control);
         }
-        if (claimed && deps.owner && await awaitDividendRequest(deps.owner(), control) !== batchId) {
-          controller.abort(new DOMException('Newer daily check', 'AbortError'));
+        if ((claimed || reserved) && deps.owner && await awaitDividendRequest(deps.owner(), control) !== batchId) {
+          stopSuperseded();
           assertDividendRequestCurrent(control);
         }
       };
@@ -97,9 +109,9 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
         value = { ...value, planKey: snapshot.planKey, items: sortDividendDailyItems(snapshot.items.map(item => {
           const previous = old.get(item.key), isChecked = checked.has(item.key);
           return { ...item, checkedAt: isChecked ? Date.now() : previous?.checkedAt,
-            stale: isChecked ? false : previous?.checkedAt !== undefined && (previous.stale || item.fingerprint !== previous.fingerprint) };
+            stale: isChecked ? false : previous?.checkedAt !== undefined && (dividendDailyItemIsStale(previous) || item.fingerprint !== previous.fingerprint) };
         })) };
-        value.checkedKeys = value.items.filter(item => item.checkedAt !== undefined && !item.stale).map(item => item.key);
+        value.checkedKeys = dividendDailyCheckedKeys(value.items);
       };
       const onEvent = (event: DividendAdvisorRefreshEvent): Promise<void> => {
         queue = queue.then(async () => {
@@ -118,6 +130,10 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
       try {
         const snapshot = await awaitDividendRequest(deps.load(), control);
         value = { ...value, inputKey: snapshot.inputKey, planKey: snapshot.planKey, items: snapshot.items };
+        if (reservation) {
+          if (current()) options.onUpdate?.(structuredClone(value));
+          await awaitDividendRequest(reservation, control);
+        }
         const retry = options.retryKeys && new Set(options.retryKeys);
         if (retry) {
           const previous = options.previous;
@@ -125,19 +141,24 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
             || !previous.sources.some(source => source.itemKey === key && ['failed', 'deferred'].includes(source.status)))) throw new Error('INVALID_DAILY_RETRY');
           const prior = new Map(previous.items.map(item => [item.key, item]));
           value.items = snapshot.items.map(item => ({ ...item, checkedAt: retry.has(item.key) ? undefined : prior.get(item.key)?.checkedAt,
-            stale: !retry.has(item.key) && (previous.inputKey !== snapshot.inputKey || prior.get(item.key)?.fingerprint !== item.fingerprint) }));
-          value.sources = [...previous.sources.filter(source => !retry.has(source.itemKey) && snapshot.items.some(item => item.key === source.itemKey) || source.itemKey === 'market'),
+            stale: !retry.has(item.key) && (previous.inputKey !== snapshot.inputKey || !prior.has(item.key)
+              || dividendDailyItemIsStale(prior.get(item.key)!) || prior.get(item.key)?.fingerprint !== item.fingerprint) }));
+          const oldDay = dateInChina(new Date(previous.startedAt)) !== dateInChina();
+          value.sources = [...previous.sources.filter(source => !retry.has(source.itemKey) && snapshot.items.some(item => item.key === source.itemKey) || source.itemKey === 'market')
+            .map(source => oldDay || dividendDailySourceIsHistorical(source) ? { ...source, historical: true } : source),
             ...initialSources(value.items.filter(item => retry.has(item.key)))];
-          value.checkedKeys = value.items.filter(item => item.checkedAt !== undefined && !item.stale).map(item => item.key);
+          value.checkedKeys = dividendDailyCheckedKeys(value.items);
         } else value.sources = initialSources(snapshot.items);
         await publish(true);
-        await guardInputs();
-        await awaitDividendRequest(deps.refresh(() => undefined, { ...control, beforeWrite: guardInputs, itemKeys: options.retryKeys, onEvent }), control);
-        await queue;
-        await guardInputs();
-        await updateItems();
+        if (!storageUnavailable) {
+          await guardInputs();
+          await awaitDividendRequest(deps.refresh(() => undefined, { ...control, beforeWrite: guardInputs, itemKeys: options.retryKeys, onEvent }), control);
+          await queue;
+          await guardInputs();
+          await updateItems();
+        }
         const coverage = dividendDailyCoverage(value.sources);
-        value.status = coverage.failed || coverage.deferred || coverage.pending || value.items.some(item => item.stale) || value.errors.length ? 'partial' : 'completed';
+        value.status = coverage.failed || coverage.deferred || coverage.pending || coverage.historical || value.items.some(item => dividendDailyItemIsStale(item)) || value.errors.length ? 'partial' : 'completed';
         value.stage = 'result';
       } catch (cause) {
         const reason = controller.signal.reason ?? cause;
@@ -166,4 +187,4 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
 
 export const dividendDailyCheckRunner = createDividendDailyCheckRunner({ load: loadDividendDailyCheckSnapshot,
   inputKey: loadDividendDailyCheckInputKey, refresh: prepareDividendAdvisorContext, save: saveDividendDailyCheck,
-  owner: async () => (await loadDividendDailyChecks()).current?.batchId });
+  claim: claimDividendDailyCheckBatch, owner: loadDividendDailyCheckOwner });

@@ -5,7 +5,7 @@ export type DividendDailyStage = 'quotes' | 'evidence' | 'plans' | 'result';
 export type DividendDailySourceState = 'pending' | 'success' | 'failed' | 'deferred';
 export interface DividendDailySource {
   id: string; itemKey: string; stage: DividendDailyStage; provider: string; url?: string;
-  status: DividendDailySourceState; attemptedAt?: number; sourceDate?: string; verifiedDates?: string[]; detail?: string;
+  status: DividendDailySourceState; attemptedAt?: number; sourceDate?: string; verifiedDates?: string[]; detail?: string; historical?: boolean;
 }
 export interface DividendDailyItem {
   key: string; kind: 'stock' | 'fund'; id: string; code?: string; name: string;
@@ -67,15 +67,29 @@ export function sortDividendDailyItems(items: DividendDailyItem[]) {
     || Number(b.trigger === 'triggered') - Number(a.trigger === 'triggered') || a.key.localeCompare(b.key));
 }
 
-export function dividendDailyCoverage(sources: DividendDailySource[], stage?: DividendDailyStage) {
+export function dividendDailyItemIsStale(item: DividendDailyItem, now = Date.now()) {
+  return !!item.stale || item.checkedAt !== undefined && dateInChina(new Date(item.checkedAt)) !== dateInChina(new Date(now));
+}
+
+export function dividendDailyCheckedKeys(items: DividendDailyItem[], now = Date.now()) {
+  return items.filter(item => item.checkedAt !== undefined && !dividendDailyItemIsStale(item, now)).map(item => item.key);
+}
+
+export function dividendDailySourceIsHistorical(source: DividendDailySource, now = Date.now()) {
+  return !!source.historical || source.attemptedAt !== undefined && dateInChina(new Date(source.attemptedAt)) !== dateInChina(new Date(now));
+}
+
+export function dividendDailyCoverage(sources: DividendDailySource[], stage?: DividendDailyStage, now = Date.now()) {
   // A research placeholder is replaced by individual source outcomes. It is
   // not an additional successful download on top of those same sources.
-  const rows = sources.filter(source => (!stage || source.stage === stage) && (!source.id.endsWith(':research') || source.status === 'pending'));
+  const visible = sources.filter(source => (!stage || source.stage === stage) && (!source.id.endsWith(':research') || source.status === 'pending'));
+  const rows = visible.filter(source => !dividendDailySourceIsHistorical(source, now));
   return { total: rows.length, success: rows.filter(source => source.status === 'success').length,
     failed: rows.filter(source => source.status === 'failed').length, deferred: rows.filter(source => source.status === 'deferred').length,
-    pending: rows.filter(source => source.status === 'pending').length };
+    pending: rows.filter(source => source.status === 'pending').length, historical: visible.length - rows.length };
 }
 
 export function dividendDailyCheckIsStale(check: DividendDailyCheck, planKey: string, now = Date.now()) {
-  return dateInChina(new Date(check.startedAt)) !== dateInChina(new Date(now)) || check.planKey !== planKey || check.items.some(item => item.stale);
+  return dateInChina(new Date(check.startedAt)) !== dateInChina(new Date(now)) || check.planKey !== planKey
+    || check.items.some(item => dividendDailyItemIsStale(item, now)) || !!check.sources?.some(source => dividendDailySourceIsHistorical(source, now));
 }

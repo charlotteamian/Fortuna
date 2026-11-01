@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateInChina } from '../lib/dividendWorkbench';
-import { dividendDailyCheckIsStale, dividendDailyCoverage, type DividendDailyCheck, type DividendDailyItem } from '../lib/dividendDailyCheck';
+import { dividendDailyCheckedKeys, dividendDailyCheckIsStale, dividendDailyCoverage, dividendDailyItemIsStale, dividendDailySourceIsHistorical, type DividendDailyCheck, type DividendDailyItem } from '../lib/dividendDailyCheck';
 import { dividendCheckReasonLabel } from '../lib/dividendCheckLabels';
 import { loadDividendAdvisorContext } from '../services/dividendAdvisorContextService';
 import { askDividendAdvisorWithActions, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
@@ -91,7 +91,8 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
     return <details key={bucket} className={`div-daily-group is-${bucket}`} open={bucket !== 'wait'}><summary>{t(`div_s3_group_${bucket}`)} <span>{rows.length}</span></summary>
       {!rows.length && <p className="div-ai-muted">{t('div_s3_group_empty')}</p>}
       <ul>{rows.map(item => <li key={item.key} data-check-key={item.key}>
-        <div className="div-daily-item-heading"><strong>{item.name} <small>{item.code ?? t('div_read_code_unknown')}</small></strong><small>{t(item.stale ? 'div_s3_item_stale' : item.checkedAt ? 'div_s3_item_checked' : 'div_s3_item_provisional')}</small></div>
+        <div className="div-daily-item-heading"><strong>{item.name} <small>{item.code ?? t('div_read_code_unknown')}</small></strong><small>{t(dividendDailyItemIsStale(item) ? 'div_s3_item_stale' : item.checkedAt ? 'div_s3_item_checked' : 'div_s3_item_provisional')}</small></div>
+        {item.checkedAt !== undefined && <small>{t('div_s3_item_last_check', { time: time(item.checkedAt) })}</small>}
         <p className="div-daily-item-quote">{price(item.quote.priceMinor, item.quote.priceMicros)} · {t(item.quote.status === 'current' ? 'div_read_quote_current' : 'div_read_quote_reference')}
           <small>{t('div_read_market_source')} · {item.quote.date ?? t('div_check_quote_unknown')}</small></p>
         <p>{t(item.kind === 'stock' ? 'div_read_next_buy' : 'div_read_fund_entry')}: {target(item, 'buy')}<br />{t(item.kind === 'stock' ? 'div_read_next_sell' : 'div_read_fund_exit')}: {target(item, 'sell')}</p>
@@ -103,6 +104,7 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
     </details>;
   })}</div>;
   const coverage = current && dividendDailyCoverage(current.sources);
+  const checkedCount = current ? dividendDailyCheckedKeys(current.items).length : 0;
   const stale = current && dividendDailyCheckIsStale(current, planKey);
   return <section className="div-daily-advice" aria-labelledby="div-daily-title">
     <div className="div-daily-heading"><div><h3 id="div-daily-title">{t('div_s3_title')}</h3><p className="div-ai-muted">{t('div_s3_intro')}</p></div>
@@ -117,17 +119,19 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
         {current.status !== 'completed' && <p className="div-ai-muted">{t(running ? 'div_s3_provisional' : 'div_s3_partial_note')}</p>}
         {['cancelled', 'timed_out'].includes(current.status) && <p className="div-ai-muted">{t('div_s3_detached_note')}</p>}
         {current.errors.map(key => <p key={key} className="div-warning">{t(`div_s3_error_${key}`, { defaultValue: t('div_s3_check_failed') })}</p>)}
-        <details className="div-daily-stage-details" open={running}><summary>{t('div_s3_progress')} · {t('div_s3_checked', { done: current.checkedKeys.length, total: current.items.length })}</summary>
+        <details className="div-daily-stage-details" open={running}><summary>{t('div_s3_progress')} · {t('div_s3_checked', { done: checkedCount, total: current.items.length })}</summary>
         <ol className="div-daily-stages" aria-label={t('div_s3_progress')}>{(['quotes', 'evidence', 'plans', 'result'] as const).map(stage => {
           const counts = dividendDailyCoverage(current.sources, stage);
           return <li key={stage} aria-current={running && stage === current.stage ? 'step' : undefined}><strong>{t(`div_s3_stage_${stage}`)}</strong>
-            <small>{stage === 'result' ? t('div_s3_checked', { done: current.checkedKeys.length, total: current.items.length }) : t('div_s3_coverage', counts)}</small></li>;
+            <small>{stage === 'result' ? t('div_s3_checked', { done: checkedCount, total: current.items.length }) : t('div_s3_coverage', counts)}</small></li>;
         })}</ol></details>
         <p className="div-ai-muted">{t('div_s3_coverage', coverage!)} · {t('div_s3_coverage_unit')}</p>
         <p className="div-daily-observation-note">{t('div_s3_observation_note')}</p>
         {list(current.items, current, !running)}
         <details className="div-daily-sources"><summary>{t('div_s3_sources')}</summary><ul>{current.sources.filter(source => !source.id.endsWith(':research') || source.status === 'pending').sort((a, b) => Number(a.status === 'success') - Number(b.status === 'success') || a.itemKey.localeCompare(b.itemKey)).map(source => <li key={source.id}>
           <strong>{current.items.find(item => item.key === source.itemKey)?.name ?? t('div_s3_market')} · {source.provider} · {t(`div_s3_source_${source.status}`)}</strong>
+          {dividendDailySourceIsHistorical(source) && <span>{t('div_s3_source_historical')}</span>}
+          {source.attemptedAt !== undefined && <small>{t('div_s3_source_attempt', { time: time(source.attemptedAt) })}</small>}
           {source.url && <a href={source.url} target="_blank" rel="noopener noreferrer">{t('div_check_source', { index: current.sources.indexOf(source) + 1 })}</a>}
           {source.sourceDate && <span>{t('div_s3_source_date', { date: source.sourceDate })}</span>}
           {source.verifiedDates?.length ? <span>{t('div_check_verified_date', { date: source.verifiedDates.join(' / ') })}</span> : null}
