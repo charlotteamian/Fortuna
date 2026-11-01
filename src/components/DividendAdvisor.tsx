@@ -17,6 +17,7 @@ import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import { validateDividendPricingProposal, type DividendPriceProposalContext } from '../services/dividendAdvisorActionsService';
 import './DividendAdvisor.css';
+import type { DividendDailyItem } from '../lib/dividendDailyCheck';
 
 interface ReaderHistoryState { fortunaDividendReader?: boolean; dividendReaderPreviousHash?: string }
 
@@ -24,7 +25,7 @@ async function restoreHistory(value: DividendAdvisorHistoryState) {
   return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
 }
 
-export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, openPlanRequest = 0 }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; openPlanRequest?: number }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, openPlanRequest = 0 }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,7 +266,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
         <button type="button" className="div-advisor-text-button" onClick={() => openReader('research')}>{t('div_ai_tab_research')} <span aria-hidden="true">↗</span></button>
         {!saved && !loading && <button type="button" className="div-advisor-text-button" onClick={openSettings}>{t('div_ai_go_settings')}</button>}
       </div>
-      <DividendDailyAdvice config={saved} disabled={loading || busy || historyBusy || readerOpen} amountVisible={amountVisible} planKey={planKey} onUpdated={onUpdated} onOpenSettings={openSettings} />
+      <DividendDailyAdvice config={saved} disabled={loading || busy || historyBusy || readerOpen} amountVisible={amountVisible} planKey={planKey} onUpdated={onUpdated} onOpenSettings={openSettings} onOpenItem={onOpenCheckItem} />
       {busy && !readerOpen && <p className="div-advisor-status" role="status">{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>}
       {error && !readerOpen && <p className="div-warning" role="alert">{error}</p>}
     </section>

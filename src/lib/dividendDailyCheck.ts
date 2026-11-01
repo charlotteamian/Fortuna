@@ -68,7 +68,9 @@ export function sortDividendDailyItems(items: DividendDailyItem[]) {
 }
 
 export function dividendDailyCoverage(sources: DividendDailySource[], stage?: DividendDailyStage) {
-  const rows = sources.filter(source => !stage || source.stage === stage);
+  // A research placeholder is replaced by individual source outcomes. It is
+  // not an additional successful download on top of those same sources.
+  const rows = sources.filter(source => (!stage || source.stage === stage) && (!source.id.endsWith(':research') || source.status === 'pending'));
   return { total: rows.length, success: rows.filter(source => source.status === 'success').length,
     failed: rows.filter(source => source.status === 'failed').length, deferred: rows.filter(source => source.status === 'deferred').length,
     pending: rows.filter(source => source.status === 'pending').length };

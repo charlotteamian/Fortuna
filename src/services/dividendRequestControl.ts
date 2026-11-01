@@ -49,3 +49,10 @@ export function claimDividendRequest(key: string) {
   const ticket = Symbol(key); latest.set(key, ticket);
   return () => latest.get(key) === ticket;
 }
+
+const foregroundChecks = new Set<symbol>();
+export function suspendDividendBackgroundRefresh() {
+  const token = Symbol('daily-check'); foregroundChecks.add(token);
+  return () => { foregroundChecks.delete(token); };
+}
+export function dividendBackgroundRefreshPaused() { return foregroundChecks.size > 0; }

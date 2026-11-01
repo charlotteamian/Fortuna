@@ -1,0 +1,27 @@
+.div-daily-local, .div-daily-previous, .div-daily-legacy { margin-top: 12px; font-size: .78rem; }
+.div-daily-advice summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
+.div-daily-result { padding: 10px 0; background: transparent; }
+.div-daily-stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 0; list-style: none; }
+.div-daily-stages li { min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 7px; font-size: .76rem; }
+.div-daily-stages li[aria-current] { border-color: var(--asset-color); }
+.div-daily-stages small { display: block; margin-top: 4px; color: var(--text-muted); line-height: 1.6; }
+.div-daily-observation-note { color: var(--text-secondary); font-size: .75rem; line-height: 1.6; }
+.div-daily-group { border-top: 1px solid var(--border); }
+.div-daily-group > summary { font-size: .85rem; font-weight: 600; }
+.div-daily-group > summary > span { color: var(--text-muted); margin-left: 6px; }
+.div-daily-group > ul, .div-daily-sources > ul { list-style: none; margin: 0; padding: 0; }
+.div-daily-group > ul > li { min-width: 0; padding: 12px 0; border-top: 1px solid var(--border); font-size: .78rem; line-height: 1.65; }
+.div-daily-group p { margin: 5px 0; }
+.div-daily-item-heading, .div-daily-item-actions { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 10px; }
+.div-daily-item-heading small { color: var(--text-muted); font-size: .72rem; font-weight: 400; }
+.div-daily-item-quote small { display: block; color: var(--text-muted); }
+.div-daily-reasons { margin: 6px 0 0; padding-left: 18px; color: var(--text-secondary); }
+.div-daily-item-actions > button, .div-daily-explanation > button { min-height: 44px; white-space: normal; text-align: left; }
+.div-daily-sources { margin-top: 12px; font-size: .75rem; }
+.div-daily-sources li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--border); }
+.div-daily-sources a { color: var(--asset-color); }
+.div-daily-sources small { color: var(--text-secondary); }
+.div-daily-explanation { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; }
+.div-daily-explanation .div-advisor-markdown { flex-basis: 100%; }
+.div-daily-advice * { overflow-wrap: anywhere; }
+@media (max-width: 340px) { .div-daily-stages { grid-template-columns: minmax(0, 1fr); } }

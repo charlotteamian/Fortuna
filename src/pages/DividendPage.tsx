@@ -22,6 +22,8 @@ import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { loadDividendDailyAdvicePlanKey } from '../services/dividendDailyAdviceScopeService';
 import './DividendPage.css';
+import type { DividendDailyItem } from '../lib/dividendDailyCheck';
+import { dividendBackgroundRefreshPaused } from '../services/dividendRequestControl';
 
 type Workbench = Awaited<ReturnType<typeof loadDividendWorkbench>>;
 const numeric = (value: number, max = 2) => value.toLocaleString(undefined, { maximumFractionDigits: max });
@@ -91,7 +93,7 @@ export default function DividendPage() {
   const automaticDisclosureDay = useRef('');
   useEffect(() => {
     const day = dateInChina();
-    if (!data || window.location.hash === '#/dividend/advice' || automaticDisclosureDay.current === day || busy.current || quotes.refreshing) return;
+    if (!data || window.location.hash === '#/dividend/advice' || automaticDisclosureDay.current === day || busy.current || quotes.refreshing || dividendBackgroundRefreshPaused()) return;
     automaticDisclosureDay.current = day;
     const codes = [...data.stocks].sort((a,b) => Number(data.positions.has(b.code))-Number(data.positions.has(a.code)) || b.weightBps-a.weightBps)
       .filter(stock => stock.dividend?.schemaVersion !== 2 || stock.dividend.asOf !== day || stock.dividendFailedAt !== undefined).map(stock=>stock.code);
@@ -104,7 +106,7 @@ export default function DividendPage() {
   const money = (minor: number) => amountVisible ? `¥${numeric(minor / 100)}` : '••••';
   const quantity = (shares: number) => amountVisible ? numeric(shares, 4) : '••••';
   const refresh = async (codes: string[]) => {
-    if (busy.current || quotes.refreshing) return;
+    if (busy.current || quotes.refreshing || dividendBackgroundRefreshPaused()) return;
     busy.current = true; setProgress({ done: 0, total: codes.length }); setError(''); setMessage('');
     try {
       const result = await refreshDividendStocks(codes, (done, total) => { if (alive.current) setProgress({ done, total }); });
@@ -152,6 +154,16 @@ export default function DividendPage() {
     const next = (code.startsWith('fund:') ? !collapsed : collapsed) ? [...collapseState.current, key] : collapseState.current.filter(value => value !== key);
     collapseState.current = next; setCollapsedCodes(next);
     void saveDividendHomeCollapse(code, collapsed).catch(() => { if (alive.current) setError(t('div_save_error')); });
+  };
+  const openCheckItem = (item: DividendDailyItem) => {
+    setReadFilter('all'); setSearch('');
+    setGroup(item.kind === 'stock' && data.stocks.find(stock => stock.code === item.code)?.group === 'hidden' ? 'hidden' : 'all');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const article = document.getElementById(`div-check-${item.key}`);
+      const evidence = article?.querySelector<HTMLDetailsElement>('.div-check-status-evidence');
+      if (evidence) { evidence.open = true; evidence.querySelector('summary')?.focus(); }
+      article?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }));
   };
   const sharesFor = (stock: DividendStock) => stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
   const today = dateInChina();
@@ -224,7 +236,7 @@ export default function DividendPage() {
     }} />}
     <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><small className="div-active-strategy">{t('div_home_all_plans')}</small></div>
       <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button></div>
-    <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} planKey={dailyPlanKey} openPlanRequest={openPlanRequest} />
+    <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} planKey={dailyPlanKey} openPlanRequest={openPlanRequest} onOpenCheckItem={openCheckItem} />
     <section className="div-quote-status" aria-label={t('div_auto_quotes')}><div role="status"><strong>{t(quotes.refreshing ? 'div_quotes_updating' : 'div_auto_quotes')}</strong>
       {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) })}</small>}
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
@@ -241,7 +253,7 @@ export default function DividendPage() {
         const shares = sharesFor(stock), latest = latestReportDividend(stock), forecast = forecastHoldingYearDividends(stock, today, shares);
         const expanded = !collapsedCodes.includes(stock.code);
         const check = checks.stocks[stock.code] ?? dividendCheckSummary({ stock, totalBudgetMinor: data.budgetConfigured ? data.budgetMinor : undefined, shares, asOf: today });
-        return <article className="div-stock div-stock-reading div-compact-row" key={stock.code}>
+        return <article className="div-stock div-stock-reading div-compact-row" id={`div-check-stock:${stock.code}`} key={stock.code}>
           <button type="button" className="div-stock-toggle" aria-expanded={expanded} aria-controls={`div-stock-body-${stock.code}`} onClick={() => toggleStock(stock.code)}>
           <span className="div-stock-heading"><span><span className="div-stock-title">{stock.name} <span>{stock.code}</span></span><small>{shares > 0 ? `${t('div_group_held')} · ` : ''}{t(`div_group_${stock.group}`)}</small></span><span className="div-stock-toggle-state">{stock.buyPaused && <span className="div-stock-paused">{t('div_ai_buy_paused')}</span>}<span className="div-stock-chevron" aria-hidden="true">{expanded ? '⌃' : '⌄'}</span><span>{t(expanded ? 'div_home_collapse' : 'div_home_expand')}</span></span></span>
           </button>

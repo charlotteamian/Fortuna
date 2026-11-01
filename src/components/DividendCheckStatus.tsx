@@ -2,15 +2,8 @@ import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
 import type { DividendCheckRisk, DividendCheckSummary } from '../lib/dividendCheckSummary';
 import './DividendCheckStatus.css';
+import { dividendCheckReasonCode, dividendCheckReasonLabel } from '../lib/dividendCheckLabels';
 
-const reasonAliases: Record<string, string> = {
-  SOURCE_CONFLICT: 'dividend_source_conflict', SOURCE_PAGES_INCOMPLETE: 'source_pages_incomplete', SOURCE_COVERAGE_INCOMPLETE: 'source_pages_incomplete',
-  CAPITAL_OR_CASH_UNVERIFIED: 'dividend_base_unverified', ANNOUNCEMENT_UNVERIFIED: 'announcement_fields_unverified',
-  CAPITAL_ACTIONS_UNVERIFIED: 'capital_actions_unverified', CROSSCHECK_MISSING: 'crosscheck_missing',
-  DIVIDEND_LEDGER_CODE_MISMATCH: 'dividend_ledger_code_mismatch', DIVIDEND_LEDGER_READ_FAILED: 'dividend_ledger_read_failed',
-  DIVIDEND_RESEARCH_CACHE_UNAVAILABLE: 'research_cache_unavailable', INVALID_RESEARCH_CACHE: 'research_cache_unavailable',
-  DIVIDEND_CHECK_ITEM_INVALID: 'dividend_check_item_invalid',
-};
 const adviceKeys: Record<string, string> = {
   research_missing: 'research', research_not_current: 'research', additional_rules_unverified: 'additional_rules',
   crosscheck_missing: 'crosscheck', special_dividend_review: 'special', saved_evidence_snapshot_missing: 'saved_evidence',
@@ -23,25 +16,14 @@ const adviceKeys: Record<string, string> = {
   stock_trend: 'trend', market_trend: 'trend', yield_history: 'history', financial_sector: 'financial', cashflow: 'financial',
   pricing_basis_changed: 'grid', pricing_invalid: 'announcement', research_cache_unavailable: 'announcement',
 };
-const normalReason = (reason: string) => reasonAliases[reason] ?? (reason.startsWith('CNINFO_') ? 'announcement_refresh_failed' : reason.toLowerCase());
+
 
 export default function DividendCheckStatus({ summary, mode = 'compact', children }: { summary: DividendCheckSummary; mode?: 'compact' | 'full' | 'row'; children?: ReactNode }) {
   const { t, i18n } = useTranslation();
   const translated = (key: string, fallback: string) => i18n.exists(key) ? t(key) : t(fallback);
-  const reasonLabel = (reason: string) => {
-    if (reason.startsWith('rule_')) {
-      const rule = reason.slice(5), check = summary.eligibility.checks.find(item => item.rule === rule);
-      const label = translated(`div_ai_rule_label_${rule}`, 'div_check_reason_unknown');
-      return t(`div_check_rule_${check?.status === 'risk' ? 'failed' : check?.status === 'unknown' ? 'unknown' : 'review'}`, { rule: label });
-    }
-    const code = normalReason(reason);
-    for (const key of [`div_check_reason_${code}`, `div_v2_pricing_gap_${code}`, `div_batch_stale_${code}`, `div_v4_topic_${code}`]) {
-      if (i18n.exists(key)) return t(key);
-    }
-    return t('div_check_reason_unknown');
-  };
+  const reasonLabel = (reason: string) => dividendCheckReasonLabel(reason, summary.eligibility, t, key => i18n.exists(key));
   const reasonHelp = (reason: string) => {
-    const code = normalReason(reason);
+    const code = dividendCheckReasonCode(reason);
     const group = reason.startsWith('rule_') ? 'rule' : adviceKeys[code]
       ?? (code.startsWith('quote_') ? 'quote'
         : code.includes('history') || code === 'capital_actions_unverified' ? 'history'
@@ -56,7 +38,7 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     ...summary.risk.blocking.map(item => item.reason), ...summary.eligibility.reasons,
     ...summary.risk.evidenceInsufficient.map(item => item.reason), ...summary.actionCheck.buy.reasons,
     ...summary.risk.attention.map(item => item.reason), ...summary.actionCheck.sell.reasons, ...summary.grid.reasons,
-  ].map(reason => [normalReason(reason), reason])).values()];
+  ].map(reason => [dividendCheckReasonCode(reason), reason])).values()];
   const primaryReasons = mode === 'full' ? reasons : reasons.slice(0, 3);
   const remainingReasons = mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [];
   const dates = summary.freshness;

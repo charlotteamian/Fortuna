@@ -4,7 +4,7 @@ import { loadDividendFundPositions, prepareDividendAdvisorContext, type Dividend
 import { loadDividendCheckSummaries } from './dividendCheckSummaryService';
 import { loadDividendDailyAdvicePlanKey, loadDividendDailyCheckInputKey } from './dividendDailyAdviceScopeService';
 import { loadDividendDailyChecks, saveDividendDailyCheck } from './dividendDailyAdviceService';
-import { assertDividendRequestCurrent, awaitDividendRequest } from './dividendRequestControl';
+import { assertDividendRequestCurrent, awaitDividendRequest, suspendDividendBackgroundRefresh } from './dividendRequestControl';
 
 export const DIVIDEND_DAILY_CHECK_TIMEOUT_MS = 90_000;
 export interface DividendDailyCheckSnapshot { inputKey: string; planKey: string; items: DividendDailyItem[] }
@@ -47,6 +47,7 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
   let generation = 0;
   const run = (options: RunOptions = {}): Promise<DividendDailyCheck> => {
     if (active) return active.promise;
+    const releaseBackgroundRefresh = suspendDividendBackgroundRefresh();
     const controller = new AbortController(), ownGeneration = ++generation;
     const startedAt = Date.now(), batchId = crypto.randomUUID();
     const timeoutMs = Math.max(1, Math.min(180_000, options.timeoutMs ?? DIVIDEND_DAILY_CHECK_TIMEOUT_MS));
@@ -156,7 +157,7 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
       }
       return structuredClone(value);
     };
-    const promise = execute().finally(() => { if (active?.generation === ownGeneration) active = undefined; });
+    const promise = execute().finally(() => { releaseBackgroundRefresh(); if (active?.generation === ownGeneration) active = undefined; });
     active = { controller, promise, generation: ownGeneration };
     return promise;
   };

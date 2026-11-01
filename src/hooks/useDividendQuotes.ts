@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { refreshDividendMarketQuotes } from '../services/dividendQuoteService';
 import { addPortableSnapshotBackgroundListener, addPortableSnapshotForegroundListener } from '../native/portableSnapshot';
+import { dividendBackgroundRefreshPaused } from '../services/dividendRequestControl';
 
 export function useDividendQuotes(targetKey: string, onUpdated: () => Promise<unknown>, manualBusy: RefObject<boolean>) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16,7 +17,7 @@ export function useDividendQuotes(targetKey: string, onUpdated: () => Promise<un
     return () => { mounted.current = false; pending.current = false; };
   }, []);
   const refresh = useCallback(async function refreshQuotes(force = false) {
-    if (!mounted.current || !nativeActive.current || document.visibilityState === 'hidden' || manualBusy.current) return;
+    if (!mounted.current || !nativeActive.current || document.visibilityState === 'hidden' || manualBusy.current || dividendBackgroundRefreshPaused()) return;
     if (inFlight.current) { if (force) pending.current = true; return; }
     // Focus and visibility often arrive together; coalesce these wake-up events.
     if (!force && Date.now() - lastAttempt.current < 5000) return;

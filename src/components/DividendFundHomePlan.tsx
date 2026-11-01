@@ -23,7 +23,7 @@ export default function DividendFundHomePlan({ plan, amountVisible, asOf, onEdit
       const check = checks?.[fund.id] ?? dividendFundCheckSummary({ plan, fund, asOf });
       const value = check.fundPlan;
       const expanded = !dividendHomeCollapsed(`fund:${fund.id}`, collapsedCodes);
-      return <article className="div-stock div-fund-home-card div-compact-row" key={fund.id}>
+      return <article className="div-stock div-fund-home-card div-compact-row" id={`div-check-fund:${fund.id}`} key={fund.id}>
         <button type="button" className="div-stock-toggle div-fund-toggle" aria-expanded={expanded} aria-controls={`div-fund-body-${fund.id}`} onClick={() => onToggle(`fund:${fund.id}`)}>
           <span className="div-stock-heading"><span><span className="div-stock-title">{fund.name} <span>{fund.code || t('div_read_code_unknown')}</span></span><small>{t(`df_index_${fund.indexKind}`)}</small></span>
             <span className="div-stock-toggle-state"><span className="div-stock-chevron" aria-hidden="true">{expanded ? '⌃' : '⌄'}</span><span>{t(expanded ? 'div_read_collapse' : 'div_read_expand')}</span></span></span></button>
