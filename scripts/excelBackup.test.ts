@@ -42,6 +42,30 @@ async function ledgerSnapshot() {
   return data;
 }
 
+for (const preference of [undefined, [], ['000001', '600036', 'open:fund:fixture']]) test(`Excel preserves the existing collapse field exactly: ${JSON.stringify(preference)}`, async () => {
+  await db.accounts.update(account.id, { includeInTotals: true, hidden: false });
+  await db.settings.update('main', { dividendHomeCollapsedCodes: preference });
+  const before = await ledgerSnapshot();
+  const backup = await exportToExcel();
+  await db.settings.update('main', { dividendHomeCollapsedCodes: ['000333'] });
+  assert.equal(await importFromExcel(backup), true);
+  assert.deepEqual((await db.settings.get('main'))?.dividendHomeCollapsedCodes, preference);
+  const after = await ledgerSnapshot();
+  for (const key of Object.keys(before).filter(key => key !== 'settings')) assert.deepEqual(after[key], before[key], key);
+});
+
+test('Excel rejects malformed collapse preferences without changing any table', async () => {
+  const backup = await exportToExcel(), before = await ledgerSnapshot();
+  for (const value of ['{', '{}', '[1]', '"000001"']) {
+    const workbook = XLSX.read(backup, { type: 'base64' });
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Settings);
+    rows[0].dividendHomeCollapsedCodes = value;
+    workbook.Sheets.Settings = XLSX.utils.json_to_sheet(rows);
+    assert.equal(await importFromExcel(XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' })), false);
+    assert.deepEqual(await ledgerSnapshot(), before);
+  }
+});
+
 test('a fresh backup restores blank optional fund settings and empty tables', async () => {
   const backup = await exportToExcel();
   const workbook = XLSX.read(backup, { type: 'base64' });

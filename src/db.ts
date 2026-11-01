@@ -552,6 +552,7 @@ export async function exportToExcel(): Promise<string> {
       categories: JSON.stringify(row.categories),
       currencies: JSON.stringify(row.currencies),
       snapshotFocusAccountIds: JSON.stringify(row.snapshotFocusAccountIds ?? []),
+      dividendHomeCollapsedCodes: row.dividendHomeCollapsedCodes === undefined ? '' : JSON.stringify(row.dividendHomeCollapsedCodes),
       dividendFundPlan: row.dividendFundPlan === undefined ? '' : JSON.stringify(row.dividendFundPlan),
       dividendSelectionPrinciples: row.dividendSelectionPrinciples === undefined ? '' : JSON.stringify(row.dividendSelectionPrinciples),
       dividendPricingMethod: row.dividendPricingMethod === undefined ? '' : JSON.stringify(row.dividendPricingMethod),
@@ -855,6 +856,12 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     };
     sheet = 'Settings';
     const settingsRaw = wsSettings ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsSettings) : [];
+    if (!settingsRaw.every(row => {
+      if (row.dividendHomeCollapsedCodes === undefined || row.dividendHomeCollapsedCodes === '') return true;
+      if (typeof row.dividendHomeCollapsedCodes !== 'string') return false;
+      const codes: unknown = JSON.parse(row.dividendHomeCollapsedCodes);
+      return Array.isArray(codes) && codes.every(code => typeof code === 'string');
+    })) return fail('invalid_data', sheet);
     if (!settingsRaw.every(row => (row.dividendPricingMethod === undefined || row.dividendPricingMethod === '' || (typeof row.dividendPricingMethod === 'string' && isDividendPricingMethod(JSON.parse(row.dividendPricingMethod)))) && (row.dividendSelectionPrinciples === undefined || row.dividendSelectionPrinciples === '' || (typeof row.dividendSelectionPrinciples === 'string' && isDividendSelectionPrinciples(JSON.parse(row.dividendSelectionPrinciples)))) && (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return fail('invalid_data', sheet);
     const restoredSettings: Settings[] = settingsRaw.flatMap(row => {
       const categories = parseJson<CategoryDef[]>(row.categories, []);
@@ -880,6 +887,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         ),
         automaticSnapshotSchemaVersion: Number(row.automaticSnapshotSchemaVersion) || 0,
         dividendWorkbenchInitialized: parseBoolean(row.dividendWorkbenchInitialized, false),
+        dividendHomeCollapsedCodes: parseJson<string[] | undefined>(row.dividendHomeCollapsedCodes, undefined),
         dividendBudgetMinor: Number.isSafeInteger(Number(row.dividendBudgetMinor)) && Number(row.dividendBudgetMinor) >= 0 ? Number(row.dividendBudgetMinor) : undefined,
         dividendStrategy: row.dividendStrategy === 'funds' ? 'funds' : 'stocks',
         dividendFundPlan: parseJson<DividendFundPlan | undefined>(row.dividendFundPlan, undefined),

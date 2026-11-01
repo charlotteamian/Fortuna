@@ -1,0 +1,20 @@
+✔ Excel preserves the existing collapse field exactly: undefined (344.705667ms)
+✔ Excel preserves the existing collapse field exactly: [] (139.227375ms)
+✔ Excel preserves the existing collapse field exactly: ["000001","600036","open:fund:fixture"] (208.781709ms)
+Excel Import failed SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+    at JSON.parse (<anonymous>)
+    at file:///Users/restartday/Documents/Fortuna/src/db.ts:862:35
+    at Array.every (<anonymous>)
+    at importFromExcel (file:///Users/restartday/Documents/Fortuna/src/db.ts:859:22)
+    at async TestContext.<anonymous> (file:///Users/restartday/Documents/Fortuna/scripts/excelBackup.test.ts:64:18)
+    at async Test.run (node:internal/test_runner/test:1208:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:831:7)
+✔ Excel rejects malformed collapse preferences without changing any table (244.74925ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1701.14525
