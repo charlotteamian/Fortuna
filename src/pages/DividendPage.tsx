@@ -10,6 +10,10 @@ import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendFundHomePlan from '../components/DividendFundHomePlan';
 import DividendAdvisor from '../components/DividendAdvisor';
 import DividendHomePlan from '../components/DividendHomePlan';
+import DividendCompactPlan from '../components/DividendCompactPlan';
+import DividendGridOrigin from '../components/DividendGridOrigin';
+import DividendReadFilters from '../components/DividendReadFilters';
+import { dividendHomeCollapsed, matchesDividendReadFilter, type DividendReadFilter } from '../lib/dividendReading';
 import DividendCheckStatus from '../components/DividendCheckStatus';
 import DividendPlanGrid from '../components/DividendPlanGrid';
 import { saveDividendStrategy } from '../services/dividendFundService';
@@ -38,6 +42,7 @@ export default function DividendPage() {
   const allocationResultRef = useRef<HTMLElement>(null);
   const [group, setGroup] = useState('all');
   const [search, setSearch] = useState('');
+  const [readFilter, setReadFilter] = useState<DividendReadFilter>('all');
   const [collapsedCodes, setCollapsedCodes] = useState<string[]>([]);
   const collapseLoaded = useRef(false);
   const collapseState = useRef<string[]>([]);
@@ -142,8 +147,9 @@ export default function DividendPage() {
     setFocusedPlanCode(''); setOpenPlanRequest(value => value + 1);
   };
   const toggleStock = (code: string) => {
-    const collapsed = !collapseState.current.includes(code);
-    const next = collapsed ? [...collapseState.current, code] : collapseState.current.filter(value => value !== code);
+    const collapsed = !dividendHomeCollapsed(code, collapseState.current);
+    const key = code.startsWith('fund:') ? `open:${code}` : code;
+    const next = (code.startsWith('fund:') ? !collapsed : collapsed) ? [...collapseState.current, key] : collapseState.current.filter(value => value !== key);
     collapseState.current = next; setCollapsedCodes(next);
     void saveDividendHomeCollapse(code, collapsed).catch(() => { if (alive.current) setError(t('div_save_error')); });
   };
@@ -156,7 +162,7 @@ export default function DividendPage() {
   const weight = data.stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
   const untracked = [...data.positions.values()].filter(position => !data.stocks.some(stock => stock.code === position.code)).sort((a, b) => a.code.localeCompare(b.code));
   const displayed = sortDividendStocks(data.stocks.filter(stock => (group === 'all' ? stock.group !== 'hidden' || sharesFor(stock) > 0 : group === 'held' ? sharesFor(stock) > 0 : stock.group === group)
-    && `${stock.name} ${stock.code}`.toLowerCase().includes(search.trim().toLowerCase())), sharesFor);
+    && `${stock.name} ${stock.code}`.toLowerCase().includes(search.trim().toLowerCase()) && matchesDividendReadFilter(checks.stocks[stock.code], readFilter)), sharesFor);
   const fundedCodes = new Set(fundedDividendStocks(data.stocks, data.budgetConfigured ? data.budgetMinor : undefined).map(stock => stock.code));
   const managedStocks = sortDividendStocks(data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())), sharesFor);
   const fundedPlans = managedStocks.filter(stock => fundedCodes.has(stock.code));
@@ -223,32 +229,30 @@ export default function DividendPage() {
       {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) })}</small>}
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
     </div><button className="btn btn-secondary" disabled={quotes.refreshing || Boolean(progress) || !quoteTargets} onClick={() => void quotes.refresh(true)}>{t('div_refresh_quotes')}</button></section>
-    <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} asOf={today} onEdit={() => void openFundPlan()} />
-    <section className="div-stock-home" aria-labelledby="div-stock-home-title"><div className="div-section-heading"><h2 id="div-stock-home-title">{t('div_home_stock_plans')}</h2><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan('')}>{t('div_manage_stocks')}</button></div>
-      <section className="div-hero div-forecast-hero"><div className="div-estimate"><span>{t('div_v2_holding_forecast')}</span><strong>{held.length > covered.length ? '—' : money(forecastTotal)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}</small></div><p className="div-muted">{t('div_v2_forecast_basis')}</p></section>
-      <div className="div-actions div-toolbar"><button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh(data.stocks.map(stock => stock.code))}>{progress ? t('div_refresh_progress', progress) : t('div_v2_refresh_disclosures')}</button></div>
-      {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
+    <details className="div-reading-tools"><summary>{t('div_read_filter')} · {t(`div_read_filter_${readFilter}`)}</summary>
       <input className="div-search" aria-label={t('div_search')} placeholder={t('div_search')} value={search} onChange={event => setSearch(event.target.value)} />
+      <DividendReadFilters value={readFilter} onChange={setReadFilter} />
       <div className="div-filters" aria-label={t('div_group')}>{['all', 'held', 'core', 'watch', 'hidden'].map(value => <button key={value} className={group === value ? 'selected' : ''} aria-pressed={group === value} onClick={() => setGroup(value)}>{t(`div_group_${value}`)}</button>)}</div>
+    </details>
+    <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} asOf={today} collapsedCodes={collapsedCodes} onToggle={toggleStock} readFilter={readFilter} search={search} onEdit={() => void openFundPlan()} />
+    <section className="div-stock-home" aria-labelledby="div-stock-home-title"><div className="div-section-heading"><h2 id="div-stock-home-title">{t('div_home_stock_plans')}</h2><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan('')}>{t('div_manage_stocks')}</button></div>
+      {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
       <div className="div-stock-list">{displayed.map(stock => {
         const shares = sharesFor(stock), latest = latestReportDividend(stock), forecast = forecastHoldingYearDividends(stock, today, shares);
         const expanded = !collapsedCodes.includes(stock.code);
-        return <article className="div-stock div-stock-reading" key={stock.code}>
+        const check = checks.stocks[stock.code] ?? dividendCheckSummary({ stock, totalBudgetMinor: data.budgetConfigured ? data.budgetMinor : undefined, shares, asOf: today });
+        return <article className="div-stock div-stock-reading div-compact-row" key={stock.code}>
           <button type="button" className="div-stock-toggle" aria-expanded={expanded} aria-controls={`div-stock-body-${stock.code}`} onClick={() => toggleStock(stock.code)}>
           <span className="div-stock-heading"><span><span className="div-stock-title">{stock.name} <span>{stock.code}</span></span><small>{shares > 0 ? `${t('div_group_held')} · ` : ''}{t(`div_group_${stock.group}`)}</small></span><span className="div-stock-toggle-state">{stock.buyPaused && <span className="div-stock-paused">{t('div_ai_buy_paused')}</span>}<span className="div-stock-chevron" aria-hidden="true">{expanded ? '⌃' : '⌄'}</span><span>{t(expanded ? 'div_home_collapse' : 'div_home_expand')}</span></span></span>
-          <span className="div-metrics div-key-metrics"><span><span>{t('div_quote')}</span><strong>{stock.quote ? `¥${numeric(stock.quote.priceMinor / 100)}` : '—'}</strong><small>{stock.quote?.date ?? t('div_not_fetched')}</small></span>
-            <span><span>{t('div_v2_latest_report_dividend')}</span><strong>{latest?.dpsMicros === undefined ? '—' : `¥${numeric(latest.dpsMicros / 1e6, 6)}`}</strong><small>{latest ? latest.basis === 'manual' ? t('div_manual') : `${latest.reportDate} · ${t(`div_v2_period_${latest.period}`)}` : t('div_v2_refresh_required')}</small>
-              {latest && latest.dpsMicros === undefined && <small>{t('div_v2_pending_amount')}</small>}
-              {latest && <small>{t('div_v2_not_annualised')} · {t(`div_v2_stage_${latest.stage}`)}</small>}</span></span>
           </button>
-          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan check={checks.stocks[stock.code]} stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
-            onEdit={() => void openStockPlan(stock.code)} /> : <div className="div-unfunded-home"><DividendCheckStatus summary={checks.stocks[stock.code] ?? dividendCheckSummary({ stock, shares, asOf: today })} /><span>{t('div_check_unfunded')}</span><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan(stock.code)}>{t('div_home_edit_plan')}</button></div>}
-          <div id={`div-stock-body-${stock.code}`} hidden={!expanded}>
+          <DividendCompactPlan summary={check} amountVisible={amountVisible}>
+          <DividendGridOrigin stock={stock} asOf={today} check={check} />
+          <p className="div-muted">{t('div_v2_latest_report_dividend')} · {latest?.dpsMicros === undefined ? '—' : `¥${numeric(latest.dpsMicros / 1e6, 6)}`} · {latest ? latest.basis === 'manual' ? t('div_manual') : `${latest.reportDate} · ${t(`div_v2_period_${latest.period}`)} · ${t(`div_v2_stage_${latest.stage}`)}` : t('div_v2_refresh_required')}</p>
           <div className="div-forecast-line"><div><span>{t('div_v2_one_year_per_share')}</span><strong>{forecast.dpsMicros === undefined ? '—' : `¥${numeric(forecast.dpsMicros / 1e6, 6)}`}</strong></div>
             {shares > 0 && <div><span>{t('div_v2_holding_amount', { shares: quantity(shares) })}</span><strong>{forecast.amountMinor === undefined ? '—' : money(forecast.amountMinor)}</strong></div>}</div>
           {!latest && <button className="div-advisor-text-button" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_v2_refresh_disclosures')}</button>}
           {(stock.quoteFailedAt || stock.dividendFailedAt) && <p className="div-warning">{t(stock.dividendFailedAt ? 'div_dividend_failed' : 'div_quote_failed')}</p>}
-          <details className="div-details"><summary>{t('div_v2_dividend_basis')}</summary>
+          <section className="div-details"><h4>{t('div_v2_dividend_basis')}</h4>
             {latest && <p className="div-muted">{latest.basis === 'manual' ? t('div_v2_manual_report') : t(latest.reportEventCount > 1 ? 'div_v2_report_multiple' : 'div_v2_report_scope', { count: latest.reportEventCount, report: latest.reportDate, period: t(`div_v2_period_${latest.period}`), date: latest.announcedAt })}</p>}
             <p className="div-muted">{t('div_v2_forecast_window', { from: forecast.asOf, through: forecast.through })}</p>
             {forecast.missingReason && <p className="div-muted">{t(`div_v2_missing_${forecast.missingReason}`)}</p>}
@@ -263,10 +267,18 @@ export default function DividendPage() {
             {stock.shareMode === 'manual' ? <p className="div-muted">{t('div_manual_override')}</p> : <p className="div-muted">{t('div_linked_sources')}: {data.positions.get(stock.code)?.sources.map(source => `${source.accountName} ${quantity(source.shares)}`).join(' · ') || t('div_no_link')}</p>}
             {stock.note && <p className="div-muted">{stock.note}</p>}
             <button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh([stock.code])}>{t('div_v2_refresh_disclosures')}</button>
-          </details>
+          </section>
+          </DividendCompactPlan>
+          <div id={`div-stock-body-${stock.code}`} hidden={!expanded}>
+          {(fundedCodes.has(stock.code) || shares > 0) ? <DividendHomePlan showStatus={false} check={check} stock={stock} totalBudgetMinor={data.budgetConfigured ? data.budgetMinor : undefined} shares={shares} amountVisible={amountVisible} asOf={today}
+            onEdit={() => void openStockPlan(stock.code)} /> : <div className="div-unfunded-home"><span>{t('div_check_unfunded')}</span><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan(stock.code)}>{t('div_home_edit_plan')}</button></div>}
           </div>
         </article>;
       })}</div>{!displayed.length && <p className="div-notice">{t('div_empty')}</p>}
+      <details className="div-reading-tools"><summary>{t('div_v2_holding_forecast')} · {held.length > covered.length ? '—' : money(forecastTotal)}</summary>
+        <section className="div-hero div-forecast-hero"><div className="div-estimate"><span>{t('div_v2_holding_forecast')}</span><strong>{held.length > covered.length ? '—' : money(forecastTotal)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}</small></div><p className="div-muted">{t('div_v2_forecast_basis')}</p></section>
+      </details>
+      <div className="div-actions div-toolbar"><button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh(data.stocks.map(stock => stock.code))}>{progress ? t('div_refresh_progress', progress) : t('div_v2_refresh_disclosures')}</button></div>
     </section>
   </div>;
 }

@@ -21,6 +21,7 @@ registerHooks({
 
 const { db, initializeSettings, updateSettings, exportData } = await import('../src/db.ts');
 const { dividendStockEditFingerprint, saveDividendStock } = await import('../src/services/dividendService.ts');
+const { loadDividendWorkbench, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
 
 const stock = (): DividendStock => ({ code: '000001', name: 'Synthetic stock', group: 'core', weightBps: 5000,
   shareMode: 'manual', manualShares: 100, manualDpsMicros: 609000, lotSize: 100, note: 'Original note', buyPaused: false,
@@ -39,6 +40,37 @@ beforeEach(async () => {
   await db.holdingTxns.put({ id: 'synthetic-buy', holdingId: 'synthetic-holding', accountId: 'synthetic-account', date: '2020-01-01', kind: 'buy', shares: 100, price: 10, createdAt: 1 });
 });
 after(() => db.close());
+
+test('absent homepage preferences default closed without writes; explicit expanded preferences survive reload', async () => {
+  const before = await state();
+  assert.deepEqual((await loadDividendWorkbench()).collapsedCodes, ['000001']);
+  assert.deepEqual(await state(), before);
+  await updateSettings({ dividendHomeCollapsedCodes: [] });
+  const expanded = await state();
+  assert.deepEqual((await loadDividendWorkbench()).collapsedCodes, []);
+  assert.deepEqual(await state(), expanded);
+});
+
+test('first expansion preserves other default-closed cards and writes only the existing reading preference', async () => {
+  await db.dividendStocks.put({ ...stock(), code: '000002' });
+  const before = await state();
+  await saveDividendHomeCollapse('000001', false);
+  const after = await state();
+  assert.deepEqual(after, { ...before, settings: [{ ...before.settings[0], dividendHomeCollapsedCodes: ['000002'] }] });
+  assert.deepEqual((await loadDividendWorkbench()).collapsedCodes, ['000002']);
+});
+
+test('fund collapse uses the existing reading field and cannot alter the saved fund plan, ledger or stock preferences', async () => {
+  const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
+  await updateSettings({ dividendHomeCollapsedCodes: ['000001'], dividendFundPlan: { ...defaultDividendFundPlan(), funds: [{ id: 'synthetic-fund', name: 'Synthetic', indexKind: 'other', weightBps: 10000 }] } });
+  const before = await state();
+  await saveDividendHomeCollapse('fund:synthetic-fund', false);
+  assert.deepEqual(await state(), { ...before, settings: [{ ...before.settings[0], dividendHomeCollapsedCodes: ['000001', 'open:fund:synthetic-fund'] }] });
+  await saveDividendHomeCollapse('fund:synthetic-fund', true);
+  assert.deepEqual(await state(), before);
+  await assert.rejects(saveDividendHomeCollapse('fund:not-configured', false), /INVALID_DIVIDEND_STOCK/);
+  assert.deepEqual(await state(), before);
+});
 
 test('a stale note save cannot replace a newer grid, pause or manual position', async () => {
   const original = stock(), expectedFingerprint = dividendStockEditFingerprint(original);

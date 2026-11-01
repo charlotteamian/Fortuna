@@ -82,7 +82,7 @@ function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDi
   }
   const latest = next.snapshot.generatedAt >= saved.snapshot.generatedAt ? next : saved;
   return { ...latest, snapshot: { ...latest.snapshot, stocks: [...stocks.values()] }, stockContexts: contexts,
-    collapsedCodes: saved.collapsedCodes };
+    collapsedCodes: previous.collapsedCodes === undefined ? incoming.collapsedCodes ?? saved.collapsedCodes : saved.collapsedCodes };
 }
 
 export async function loadDividendResearchCache(): Promise<SavedDividendResearch | null> {
@@ -103,17 +103,23 @@ export async function saveDividendResearchCache(value: SavedDividendResearch): P
   });
 }
 
-export async function saveDividendResearchCollapse(code: string, collapsed: boolean): Promise<void> {
+/** Distinguishes an absent legacy reading preference from an explicitly expanded list. */
+export async function loadDividendResearchCollapsePreference(): Promise<string[] | undefined> {
+  const value = await results.get('latest');
+  if (value && !valid(value)) throw new Error('INVALID_RESEARCH_CACHE');
+  return value?.collapsedCodes;
+}
+
+export async function saveDividendResearchCollapse(code: string, collapsed: boolean, initialCollapsedCodes?: string[]): Promise<void> {
   if (mainlandCode(code) !== code) throw new Error('INVALID_RESEARCH_CACHE');
   await cache.transaction('rw', results, async () => {
     const previous = await results.get('latest');
     if (!previous) return;
     if (!valid(previous)) throw new Error('INVALID_RESEARCH_CACHE');
-    const clean = cleanResearch(previous);
-    const collapsedCodes = new Set(clean.collapsedCodes);
-    if (collapsed && clean.snapshot.stocks.some(stock => stock.code === code)) collapsedCodes.add(code);
+    const collapsedCodes = new Set(previous.collapsedCodes ?? initialCollapsedCodes?.filter(value => previous.snapshot.stocks.some(stock => stock.code === value)) ?? []);
+    if (collapsed && previous.snapshot.stocks.some(stock => stock.code === code)) collapsedCodes.add(code);
     else collapsedCodes.delete(code);
-    await results.put({ id: 'latest', ...clean, collapsedCodes: [...collapsedCodes] });
+    await results.put({ ...previous, collapsedCodes: [...collapsedCodes] });
   });
 }
 

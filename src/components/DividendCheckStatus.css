@@ -20,3 +20,13 @@
 .div-check-status-sources { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 5px 0; padding: 0; list-style: none; }
 .div-check-status-sources a { color: var(--text-secondary); }
 @media (max-width: 360px) { .div-check-status-main dt { flex-basis: 100%; } }
+.div-check-status-row { border: 0; padding: 0; margin: .4rem 0 0; }
+.div-check-status-row .div-check-status-main { gap: .2rem; }
+.div-check-status-row .div-check-status-main > div { gap: .15rem .5rem; }
+.div-check-status-row .div-check-status-main dt { flex: 0 0 auto; }
+.div-check-status-row .div-check-status-main dd { flex: 1 1 0; gap: .15rem .65rem; }
+.div-check-primary-reasons { display: grid; gap: .15rem; padding-left: 1.1rem; margin: .4rem 0; }
+.div-check-status-row .div-check-status-note { margin: .3rem 0; font-size: .75rem; }
+.div-check-status-row .div-check-status-evidence { margin: 0; }
+.div-check-status-row .div-check-status-evidence > summary { display: list-item; min-height: 44px; padding: .6rem 0; cursor: pointer; }
+.div-check-status-evidence > summary:focus-visible { outline: 2px solid var(--asset-color); outline-offset: 2px; }

@@ -21,16 +21,19 @@ export async function loadDividendWorkbench() {
   const [stocks, settings, accounts, holdings, txns] = await Promise.all([
     db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
   ]);
-  return { stocks, collapsedCodes: settings?.dividendHomeCollapsedCodes ?? [], strategy: settings?.dividendStrategy ?? 'stocks', fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(), budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
+  return { stocks, collapsedCodes: settings?.dividendHomeCollapsedCodes ?? stocks.map(stock => stock.code), strategy: settings?.dividendStrategy ?? 'stocks', fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(), budgetMinor: settings?.dividendBudgetMinor ?? 0, budgetConfigured: settings?.dividendBudgetMinor !== undefined, positions: linkedDividendPositions(accounts, holdings, txns) };
 }
 /** Persist reading preferences without touching positions, grids or other cards. */
 export async function saveDividendHomeCollapse(code: string, collapsed: boolean) {
-  if (mainlandCode(code) !== code || typeof collapsed !== 'boolean') throw new Error('INVALID_DIVIDEND_STOCK');
+  if (typeof code !== 'string' || typeof collapsed !== 'boolean') throw new Error('INVALID_DIVIDEND_STOCK');
   await initializeSettings();
-  await db.transaction('rw', db.settings, async () => {
+  await db.transaction('rw', db.settings, db.dividendStocks, async () => {
     const settings = await db.settings.get('main');
-    const codes = new Set(settings?.dividendHomeCollapsedCodes ?? []);
-    if (collapsed) codes.add(code); else codes.delete(code);
+    const fund = code.startsWith('fund:') && settings?.dividendFundPlan?.funds.some(item => `fund:${item.id}` === code);
+    if (!fund && mainlandCode(code) !== code) throw new Error('INVALID_DIVIDEND_STOCK');
+    const codes = new Set(settings?.dividendHomeCollapsedCodes ?? await db.dividendStocks.toCollection().primaryKeys());
+    const key = fund ? `open:${code}` : code;
+    if (fund ? !collapsed : collapsed) codes.add(key); else codes.delete(key);
     await db.settings.update('main', { dividendHomeCollapsedCodes: [...codes] });
   });
 }

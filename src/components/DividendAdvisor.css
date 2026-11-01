@@ -97,6 +97,9 @@
 .div-ai-index-context { margin: 0; }
 .div-ai-index-context > details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .div-ai-research-card { min-width: 0; border: 1px solid var(--border); border-radius: 13px; background: var(--bg-card); }
+.div-ai-research-card > .div-compact-plan { padding: 0 .75rem; }
+.div-ai-research-card > header .div-ai-research-toggle { min-height: 44px; font-size: .75rem; }
+.div-ai-research-card > [hidden] { display: none !important; }
 .div-ai-research-card > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 62px; padding: 13px 15px; }
 .div-ai-research-card > header > span:first-child { flex: 1; min-width: 0; }
 .div-ai-research-card > header strong { font-size: 14px; overflow-wrap: anywhere; }
@@ -273,3 +276,5 @@
 .div-daily-result-heading { margin-bottom: 10px; color: var(--text-muted); }
 .div-daily-result .div-advisor-markdown { font-size: .85rem; line-height: 1.8; }
 .div-daily-result .div-advisor-markdown h1, .div-daily-result .div-advisor-markdown h2, .div-daily-result .div-advisor-markdown h3 { font-size: .95rem; }
+.div-ai-research-card > header .div-ai-research-toggle { min-height: 44px; font-size: .75rem; }
+.div-ai-research-card .div-check-status-evidence > summary { min-height: 44px; font-size: .75rem; }

@@ -1,4 +1,26 @@
 .dividend-page { max-width: 1100px; margin: 0 auto; }
+.div-stock-home > .div-stock-list, .div-fund-home > .df-home-list { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+.div-stock.div-compact-row { padding: .75rem; }
+.div-compact-row .div-stock-heading { margin-bottom: .35rem; }
+.div-compact-row .div-stock-toggle .div-stock-toggle-state { font-size: .75rem; }
+.div-compact-plan { min-width: 0; overflow-wrap: anywhere; }
+.div-compact-quote { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .65rem; margin: .25rem 0; }
+.div-compact-quote > strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.div-compact-quote > span { color: var(--text-secondary); font-size: .75rem; line-height: 1.6; }
+.div-compact-quote small { display: block; font: inherit; }
+.div-compact-plan .div-home-plan-budget { font-size: .75rem; margin: .3rem 0; }
+.div-compact-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: .5rem 0; font-size: .75rem; line-height: 1.6; }
+.div-compact-targets dt { color: var(--text-muted); }
+.div-compact-targets dd { margin: 0; font-variant-numeric: tabular-nums; }
+.div-compact-targets dd > span, .div-compact-targets dd > small { display: block; font: inherit; }
+.div-compact-touch { color: var(--asset-color); }
+.div-compact-fund-rule { font-size: .78rem; line-height: 1.6; color: var(--text-secondary); margin: .3rem 0; overflow-wrap: anywhere; }
+.div-reading-tools { margin: .4rem 0; font-size: .75rem; color: var(--text-secondary); }
+.div-reading-tools > summary { display: list-item; min-height: 44px; padding: .6rem 0; cursor: pointer; }
+.div-reading-tools > summary:focus-visible, .div-read-filters button:focus-visible { outline: 2px solid var(--asset-color); outline-offset: 2px; }
+.div-read-filters { flex-wrap: wrap; }
+.div-read-filters > button { min-height: 44px; }
+.div-compact-row [hidden] { display: none !important; }
 .div-strategy { margin-bottom: 1rem; }
 .div-strategy > span { display: block; font-size: .85rem; color: var(--text-secondary); margin-bottom: .5rem; }
 .div-strategy-options { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }

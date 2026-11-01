@@ -1,0 +1,1284 @@
+{
+  "label": "before",
+  "sample": "10 stocks + 2 funds; 2026-11-01 11:00 fixed clock; isolated synthetic data",
+  "layouts": [
+    {
+      "width": 390,
+      "scale": 1,
+      "collapsed": {
+        "rows": [
+          {
+            "name": "模拟行情基金",
+            "height": 639.703125,
+            "intersectsViewport": true,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟未知持仓基金",
+            "height": 722.328125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟000001 000001",
+            "height": 1314.53125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600001 600001",
+            "height": 1301.34375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600036 600036",
+            "height": 1301.34375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000002 000002",
+            "height": 1248.15625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000003 000003",
+            "height": 1325.90625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000004 000004",
+            "height": 1350.46875,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000005 000005",
+            "height": 1319.9375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600002 600002",
+            "height": 1301.34375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600003 600003",
+            "height": 1176.609375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600004 600004",
+            "height": 1301.34375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          }
+        ],
+        "cardHeight": 14303.015625,
+        "listHeight": 14463.015625,
+        "renderedItems": 12,
+        "itemsInViewport": 1,
+        "completeItemsInViewport": 0,
+        "visibleTables": 20,
+        "overflow": [],
+        "font": "16px"
+      }
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "collapsed": {
+        "rows": [
+          {
+            "name": "模拟行情基金",
+            "height": 1011.5,
+            "intersectsViewport": true,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟未知持仓基金",
+            "height": 1087.625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟000001 000001",
+            "height": 1740.671875,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600001 600001",
+            "height": 1727.734375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600036 600036",
+            "height": 1727.734375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000002 000002",
+            "height": 1674.546875,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000003 000003",
+            "height": 1800.328125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000004 000004",
+            "height": 1856.203125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000005 000005",
+            "height": 1727.734375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600002 600002",
+            "height": 1727.734375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600003 600003",
+            "height": 1607.203125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600004 600004",
+            "height": 1727.734375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          }
+        ],
+        "cardHeight": 19416.75,
+        "listHeight": 19624.71875,
+        "renderedItems": 12,
+        "itemsInViewport": 1,
+        "completeItemsInViewport": 0,
+        "visibleTables": 20,
+        "overflow": [],
+        "font": "20.8px"
+      }
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "collapsed": {
+        "rows": [
+          {
+            "name": "模拟行情基金",
+            "height": 797.375,
+            "intersectsViewport": true,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟未知持仓基金",
+            "height": 838.9375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟000001 000001",
+            "height": 1424.9375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600001 600001",
+            "height": 1411.75,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600036 600036",
+            "height": 1411.75,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000002 000002",
+            "height": 1358.5625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000003 000003",
+            "height": 1452.90625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000004 000004",
+            "height": 1497.03125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000005 000005",
+            "height": 1411.75,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600002 600002",
+            "height": 1411.75,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600003 600003",
+            "height": 1287.015625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600004 600004",
+            "height": 1411.75,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          }
+        ],
+        "cardHeight": 15715.515625,
+        "listHeight": 15875.515625,
+        "renderedItems": 12,
+        "itemsInViewport": 1,
+        "completeItemsInViewport": 0,
+        "visibleTables": 20,
+        "overflow": [],
+        "font": "16px"
+      }
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "collapsed": {
+        "rows": [
+          {
+            "name": "模拟行情基金",
+            "height": 1179.8125,
+            "intersectsViewport": true,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟未知持仓基金",
+            "height": 1207.625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 0
+          },
+          {
+            "name": "模拟000001 000001",
+            "height": 1943.65625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600001 600001",
+            "height": 1916.65625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600036 600036",
+            "height": 1993.84375,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000002 000002",
+            "height": 1863.46875,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000003 000003",
+            "height": 1989.25,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000004 000004",
+            "height": 2045.125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟000005 000005",
+            "height": 1916.65625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600002 600002",
+            "height": 1916.65625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600003 600003",
+            "height": 1796.125,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          },
+          {
+            "name": "模拟600004 600004",
+            "height": 1916.65625,
+            "intersectsViewport": false,
+            "fullyInViewport": false,
+            "tables": 2
+          }
+        ],
+        "cardHeight": 21685.53125,
+        "listHeight": 21893.5,
+        "renderedItems": 12,
+        "itemsInViewport": 1,
+        "completeItemsInViewport": 0,
+        "visibleTables": 20,
+        "overflow": [],
+        "font": "20.8px"
+      }
+    }
+  ],
+  "errors": [],
+  "fixture": {
+    "asOf": "2026-11-01",
+    "stocks": [
+      {
+        "code": "000001",
+        "name": "模拟000001",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 200,
+        "lotSize": 100,
+        "buyPaused": true,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "000002",
+        "name": "模拟000002",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "000003",
+        "name": "模拟000003",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "000004",
+        "name": "模拟000004",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 1107,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 1059,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 1015,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 936,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1269
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1354
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1450
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1523
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 0,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "000005",
+        "name": "模拟000005",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "600036",
+        "name": "模拟600036",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 10000,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "600001",
+        "name": "模拟600001",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 250,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "600002",
+        "name": "模拟600002",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "600003",
+        "name": "模拟600003",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      },
+      {
+        "code": "600004",
+        "name": "模拟600004",
+        "group": "core",
+        "weightBps": 1000,
+        "shareMode": "manual",
+        "manualShares": 0,
+        "lotSize": 100,
+        "buyPaused": false,
+        "manualDpsMicros": 609000,
+        "buyLevels": [
+          {
+            "priceMinor": 996,
+            "yieldBps": 550,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 953,
+            "yieldBps": 575,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 913,
+            "yieldBps": 600,
+            "portionBps": 2500
+          },
+          {
+            "priceMinor": 843,
+            "yieldBps": 650,
+            "portionBps": 2500
+          }
+        ],
+        "sellLevels": [
+          {
+            "yieldBps": 480,
+            "portionBps": 2500,
+            "priceMinor": 1142
+          },
+          {
+            "yieldBps": 450,
+            "portionBps": 2500,
+            "priceMinor": 1218
+          },
+          {
+            "yieldBps": 420,
+            "portionBps": 2500,
+            "priceMinor": 1305
+          },
+          {
+            "yieldBps": 400,
+            "portionBps": 2500,
+            "priceMinor": 1371
+          }
+        ],
+        "gridProvenance": {
+          "generatedAt": 1793501999000,
+          "grossDpsMicros": 609000,
+          "taxBps": 1000,
+          "parameterVersion": 5,
+          "basisKind": "recent_batches"
+        },
+        "dividend": {
+          "schemaVersion": 2,
+          "dpsMicros": 0,
+          "asOf": "2026-11-01",
+          "windowStart": "2026-11-01",
+          "payments": [],
+          "announcements": [],
+          "fetchedAt": 1793502000000
+        }
+      }
+    ],
+    "fundPlan": {
+      "budgetMinor": 1000000,
+      "mode": "swing",
+      "entryRule": "both",
+      "drawdownBps": 1000,
+      "indexYieldBps": 500,
+      "funds": [
+        {
+          "id": "fund-live",
+          "name": "模拟行情基金",
+          "code": "512890",
+          "indexKind": "low_volatility_100",
+          "weightBps": 6000,
+          "reference": {
+            "asOf": "2026-11-01",
+            "highMicros": 1200000,
+            "indexYieldBps": 450,
+            "source": "Synthetic reference"
+          }
+        },
+        {
+          "id": "fund-unknown",
+          "name": "模拟未知持仓基金",
+          "indexKind": "other",
+          "weightBps": 4000,
+          "reference": {
+            "asOf": "2026-11-01",
+            "priceMicros": 1200000,
+            "highMicros": 1200000,
+            "indexYieldBps": 550,
+            "source": "Synthetic manual reference"
+          }
+        }
+      ]
+    }
+  },
+  "businessSnapshotHash": "269887d4f48a13b0230b7c282da3ba88e2bcd30f63c027a2b83f4568766fc48d",
+  "expanded": {
+    "rows": [
+      {
+        "name": "模拟行情基金",
+        "height": 639.703125,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 0
+      },
+      {
+        "name": "模拟未知持仓基金",
+        "height": 722.328125,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 0
+      },
+      {
+        "name": "模拟000001 000001",
+        "height": 1462.125,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟600001 600001",
+        "height": 1448.9375,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟600036 600036",
+        "height": 1448.9375,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟000002 000002",
+        "height": 1395.75,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟000003 000003",
+        "height": 1473.5,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟000004 000004",
+        "height": 1498.0625,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟000005 000005",
+        "height": 1467.53125,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟600002 600002",
+        "height": 1448.9375,
+        "intersectsViewport": false,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟600003 600003",
+        "height": 1324.203125,
+        "intersectsViewport": true,
+        "fullyInViewport": false,
+        "tables": 2
+      },
+      {
+        "name": "模拟600004 600004",
+        "height": 1448.9375,
+        "intersectsViewport": true,
+        "fullyInViewport": false,
+        "tables": 2
+      }
+    ],
+    "cardHeight": 15778.953125,
+    "listHeight": 15938.953125,
+    "renderedItems": 12,
+    "itemsInViewport": 2,
+    "completeItemsInViewport": 0,
+    "visibleTables": 20,
+    "overflow": [],
+    "font": "16px"
+  },
+  "selection": [
+    {
+      "code": "000001",
+      "height": 64
+    },
+    {
+      "code": "000002",
+      "height": 64
+    },
+    {
+      "code": "000003",
+      "height": 64
+    },
+    {
+      "code": "000004",
+      "height": 64
+    },
+    {
+      "code": "000005",
+      "height": 64
+    },
+    {
+      "code": "600036",
+      "height": 64
+    },
+    {
+      "code": "600001",
+      "height": 64
+    },
+    {
+      "code": "600002",
+      "height": 64
+    },
+    {
+      "code": "600003",
+      "height": 64
+    },
+    {
+      "code": "600004",
+      "height": 64
+    }
+  ],
+  "selectionExpanded": [
+    {
+      "code": "000001",
+      "height": 1372.5625
+    },
+    {
+      "code": "000002",
+      "height": 748.03125
+    },
+    {
+      "code": "000003",
+      "height": 1372.5625
+    },
+    {
+      "code": "000004",
+      "height": 1397.125
+    },
+    {
+      "code": "000005",
+      "height": 1353.65625
+    },
+    {
+      "code": "600036",
+      "height": 1372.5625
+    },
+    {
+      "code": "600001",
+      "height": 1372.5625
+    },
+    {
+      "code": "600002",
+      "height": 1372.5625
+    },
+    {
+      "code": "600003",
+      "height": 1230.8125
+    },
+    {
+      "code": "600004",
+      "height": 1372.5625
+    }
+  ]
+}

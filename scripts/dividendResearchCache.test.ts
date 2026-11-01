@@ -6,7 +6,7 @@ import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/l
 import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
 import { defaultDividendSelectionPrinciples, type DividendResearchSnapshot, type DividendStockResearch } from '../src/lib/dividendResearch.ts';
 import { closeDividendResearchCache, dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache,
-  saveDividendResearchCache, saveDividendResearchCollapse } from '../src/services/dividendResearchCacheService.ts';
+  loadDividendResearchCollapsePreference, saveDividendResearchCache, saveDividendResearchCollapse } from '../src/services/dividendResearchCacheService.ts';
 
 const stored = new Dexie('FortunaDividendResearchCache');
 stored.version(1).stores({ results: 'id' });
@@ -19,6 +19,18 @@ const stock = (code: string, name = code): DividendStockResearch => ({ code, nam
 const snapshot = (generatedAt: number, stocks: DividendStockResearch[]): DividendResearchSnapshot => ({ generatedAt,
   principles: defaultDividendSelectionPrinciples(), indices: [], stocks });
 const save = (value: DividendResearchSnapshot) => saveDividendResearchCache({ snapshot: value, scope: 'candidates', candidateInput: '招商银行' });
+
+test('legacy absent research preferences are distinguishable, and first UI expansion updates only the preference', async () => {
+  const legacy = { id: 'latest', snapshot: snapshot(1000, [stock('600036'), stock('000333')]), scope: 'plan', candidateInput: '' };
+  await stored.table('results').put(legacy);
+  assert.equal(await loadDividendResearchCollapsePreference(), undefined);
+  assert.deepEqual(await stored.table('results').get('latest'), legacy);
+  await saveDividendResearchCollapse('600036', false, ['600036', '000333']);
+  assert.deepEqual(await stored.table('results').get('latest'), { ...legacy, collapsedCodes: ['000333'] });
+  assert.deepEqual(await loadDividendResearchCollapsePreference(), ['000333']);
+  await saveDividendResearchCollapse('000333', false);
+  assert.deepEqual(await loadDividendResearchCollapsePreference(), []);
+});
 
 test('an upgrade retires persisted pricing arithmetic without deleting evidence or changing the saved stock context', async () => {
   const pricing=calculateDividendPricing({code:'600036',name:'招商银行',financialSector:true,method:defaultDividendPricingMethod(),asOf:'2026-10-23',

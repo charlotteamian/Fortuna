@@ -1,0 +1,297 @@
+{
+  "date": "2026-11-01",
+  "baseline": "db290942ea4c18d2f25e043d44656b4000def3db",
+  "branch": "codex/dividend-stage2-compact-list",
+  "tests": {
+    "baseline": 733,
+    "final": 750,
+    "removed": [],
+    "added": [
+      "compact targets keep original holding target, deepest observed touch and current cumulative difference distinct",
+      "a partial original tier is explicitly a price reference and does not invent share targets or differences",
+      "covered targets, no holdings, unknown budgets and below-lot differences remain separate",
+      "stale quotes retain source time without a current deepest touch or fabricated transaction",
+      "compact reading displays at most three primary reasons with one complete evidence entrance",
+      "manual amount masking preserves public stock prices and the chosen tier without exposing monetary or share amounts",
+      "fund summaries retain their own entry/exit references and distinguish unknown from confirmed zero holdings",
+      "reading filters keep observed touch, holdings, pause and unknown data independent and immutable",
+      "fund and explicit stock reading preferences restore independently without interpreting absence as stock expansion",
+      "legacy absent research preferences are distinguishable, and first UI expansion updates only the preference",
+      "absent homepage preferences default closed without writes; explicit expanded preferences survive reload",
+      "first expansion preserves other default-closed cards and writes only the existing reading preference",
+      "fund collapse uses the existing reading field and cannot alter the saved fund plan, ledger or stock preferences",
+      "Excel preserves the existing collapse field exactly: undefined",
+      "Excel preserves the existing collapse field exactly: []",
+      "Excel preserves the existing collapse field exactly: [\"000001\",\"600036\",\"open:fund:fixture\"]",
+      "Excel rejects malformed collapse preferences without changing any table"
+    ],
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0
+  },
+  "checks": {
+    "test": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "excelPreference": "4/4 passed",
+    "databaseSchema": "unchanged"
+  },
+  "protectedFiles": [
+    {
+      "file": "src/lib/dividendPricing.ts",
+      "sha256": "f3abc25a14068aa2f8c965d5a21d87635500c3b917e6e16a86adfaf3d48bb7aa",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendPricingPlan.ts",
+      "sha256": "48085891f08e42cd6a61e67d154493262405dade81e7d9ce111098830c455945",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendWorkbench.ts",
+      "sha256": "b310d3c433f8587f1a327fecd1aae04ea30f54ced9362d80fdb57681d7e9fd52",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendFundPlan.ts",
+      "sha256": "82d0b58cbc10691c7d24ee7d43c80bfc28e1793918f2ddd595affdf617f7f85f",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendLedger.ts",
+      "sha256": "664bc2f918cb3098f385ff7ee5719173877cdebf3811b3eabe2b302bfd18cd81",
+      "unchanged": true
+    },
+    {
+      "file": "src/lib/dividendCheckSummary.ts",
+      "sha256": "af010a04c14044358daf99225ed1a98ac54ac9ee6317985b213bff15f59454ff",
+      "unchanged": true
+    },
+    {
+      "file": "src/services/dividendAdvisorService.ts",
+      "sha256": "40c561032cbc1ccab4da8a28f793150b5344678da9e43018e73f7aca219a4dd9",
+      "unchanged": true
+    },
+    {
+      "file": "src/services/dividendAdvisorActionsService.ts",
+      "sha256": "0d13e061a5600e6ee2e319289fa92cfc69520bc46351503f0dd85016502c51c4",
+      "unchanged": true
+    },
+    {
+      "file": "src/components/DividendDailyAdvice.tsx",
+      "sha256": "01dd1a89f3261d3d1b49c678a7d0430388c10d3501166f23f9e79d3fdf905b32",
+      "unchanged": true
+    },
+    {
+      "file": "src/hooks/useDividendQuotes.ts",
+      "sha256": "df10c700623a7a5f3a084407515f3969750d06fbd5df554db6cbb2b1d188567c",
+      "unchanged": true
+    },
+    {
+      "file": "docs/dividend-pricing-method.md",
+      "sha256": "7131c5f145828976dbb22d029331ce37607c5388a158c15e9ac473e24d7adb7c",
+      "unchanged": true
+    },
+    {
+      "file": "package.json",
+      "sha256": "5518119ba9bd7d64a03e1e63560a268c0a4a45b3649a8e6eb692e3faa9092633",
+      "unchanged": true
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "84df4b387504461ed2101588fb2aa5376a835afc4104a3ef75c1002bf4d795f2",
+      "unchanged": true
+    },
+    {
+      "file": "capacitor.config.ts",
+      "sha256": "4d27176407d7385efe046d960dd38406d517c7d5d580504e32f9445218a3f3b1",
+      "unchanged": true
+    },
+    {
+      "file": "android/app/build.gradle",
+      "sha256": "d0849d1c40cbbda780d17adfeed87238e662142745d333ed2638cf92f55c6f8f",
+      "unchanged": true
+    },
+    {
+      "file": "ios/App/App.xcodeproj/project.pbxproj",
+      "sha256": "f25224f6ee5d8ac2c88cc051d95f766c836a68131e79809e0908e47a6c3a1423",
+      "unchanged": true
+    }
+  ],
+  "schemaSha256": "cdc38ede41e076649115ce24c5026bf6279a6f84ce551a5a8f17266c87a4fe81",
+  "businessSnapshotHash": "269887d4f48a13b0230b7c282da3ba88e2bcd30f63c027a2b83f4568766fc48d",
+  "sameBusinessData": true,
+  "layout": [
+    {
+      "width": 390,
+      "fontScale": 1,
+      "before": 14463.015625,
+      "after": 5908.421875,
+      "reduction": 0.5914806408155284,
+      "visibleTables": 0,
+      "overflow": [],
+      "renderedItems": 12,
+      "itemsInViewport": 1,
+      "completeItemsInViewport": 0
+    },
+    {
+      "width": 390,
+      "fontScale": 1.3,
+      "before": 19624.71875,
+      "after": 7763.5,
+      "reduction": 0.6044019739136388,
+      "visibleTables": 0,
+      "overflow": [],
+      "renderedItems": 12,
+      "itemsInViewport": 1,
+      "completeItemsInViewport": 0
+    },
+    {
+      "width": 320,
+      "fontScale": 1,
+      "before": 15875.515625,
+      "after": 5946.796875,
+      "reduction": 0.625410788822804,
+      "visibleTables": 0,
+      "overflow": [],
+      "renderedItems": 12,
+      "itemsInViewport": 1,
+      "completeItemsInViewport": 0
+    },
+    {
+      "width": 320,
+      "fontScale": 1.3,
+      "before": 21893.5,
+      "after": 9353.5,
+      "reduction": 0.5727727407678078,
+      "visibleTables": 0,
+      "overflow": [],
+      "renderedItems": 12,
+      "itemsInViewport": 1,
+      "completeItemsInViewport": 0
+    }
+  ],
+  "release": {
+    "version": "5.0.0",
+    "push": false,
+    "install": false,
+    "publish": false,
+    "nativeSync": false,
+    "realUserData": false
+  },
+  "remaining": [
+    "Stage 3: complete AI-free daily checklist, full cancellation/hard timeout, single-item retries",
+    "Pending special-dividend business rules unchanged",
+    "Physical-device and real-interface verification not performed",
+    "Existing >500 kB build chunk warning retained"
+  ],
+  "browser": {
+    "stage2": {
+      "checks": 11,
+      "passed": true,
+      "screenshots": 14,
+      "errors": []
+    },
+    "stage11Regression": {
+      "checks": 21,
+      "passed": true,
+      "errors": []
+    },
+    "stage12Regression": {
+      "checks": 9,
+      "passed": true,
+      "errors": []
+    },
+    "firstScreen": {
+      "checkEntry": {
+        "top": 153.375,
+        "bottom": 191.375
+      },
+      "data": {
+        "top": 295.828125,
+        "bottom": 364.203125
+      },
+      "firstPlan": {
+        "top": 538.390625,
+        "bottom": 562.390625
+      },
+      "firstTargets": {
+        "top": 670.140625,
+        "bottom": 708.515625
+      },
+      "contentBottom": 776.5
+    },
+    "collapseWrites": [
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      },
+      {
+        "table": "settings",
+        "operation": "update",
+        "fields": [
+          "dividendHomeCollapsedCodes"
+        ]
+      }
+    ]
+  }
+}
