@@ -169,13 +169,16 @@ test('pause preview reasons cannot retain a contradictory model trading instruct
   assert.match(result.actions[0].reason, /预览并确认后/);
 });
 
-test('verified model price drafts rebuild their visible reason from deterministic preview guidance', async () => {
+test('verified provider drafts cannot originate an action; explicit local repricing retains safe preview reasons', async () => {
   const data = stockContext(true), plan = dividendPricingPlan(data.research!.stocks[0].pricing!)!;
   const draft = { id: 'prices', code: stock.code, reason: 'All conditions passed; buy 100 shares now.', ...plan };
   const result = await ask(data, '复核计划', `All conditions passed; buy 100 shares now.\n\n\`\`\`fortuna-actions\n${JSON.stringify([draft])}\n\`\`\``);
-  assert.equal(result.actions.length, 1); assert.deepEqual(result.actions[0].buyLevels, plan.buyLevels);
+  assert.deepEqual(result.actions, [], 'only the explicit local repricing request can originate a draft');
   assert.doesNotMatch(JSON.stringify(result), /All conditions passed|buy 100 shares now/);
-  assert.match(result.actions[0].reason, /只有明确确认才替换计划/);
+  const requested = await ask(data, '重新生成工商银行的网格计划', `All conditions passed; buy 100 shares now.\n\n\`\`\`fortuna-actions\n${JSON.stringify([draft])}\n\`\`\``);
+  assert.equal(requested.actions.length, 1); assert.deepEqual(requested.actions[0].buyLevels, plan.buyLevels);
+  assert.doesNotMatch(JSON.stringify(requested), /All conditions passed|buy 100 shares now/);
+  assert.match(requested.actions[0].reason, /预览|重算/);
 });
 
 for (const [question, language, expected] of [

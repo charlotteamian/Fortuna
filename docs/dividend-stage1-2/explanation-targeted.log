@@ -1,0 +1,24 @@
+✔ a normal concept outside the fixed glossary receives a relevant model explanation (25.825541ms)
+✔ a requested dividend-yield example is labelled hypothetical and calculated locally (3.131125ms)
+✔ risk explanation quotes the supplied ROE gap without fabricating a report value or source (3.498667ms)
+✔ a simpler-language follow-up retains the earlier topic and uses the new model explanation (2.836042ms)
+✔ known local explanations and operation checks do not require configuration or a successful model (2.000917ms)
+✔ local output is delivered before an explanation request completes (2.888833ms)
+✔ model unconfigured retains local known facts and deterministic restrictions (1.834708ms)
+✔ model http retains local known facts and deterministic restrictions (2.045583ms)
+✔ model network retains local known facts and deterministic restrictions (2.405083ms)
+✔ model timeout retains local known facts and deterministic restrictions (7.885166ms)
+✔ explanation protocol rejects raw action prose while retaining local checks (1.788625ms)
+✔ explanation protocol rejects action field while retaining local checks (1.717541ms)
+✔ explanation protocol rejects concept instruction while retaining local checks (2.237375ms)
+✔ explanation protocol rejects fabricated evidence while retaining local checks (1.717042ms)
+✔ explanation protocol rejects invented factual number while retaining local checks (1.759792ms)
+✔ explanation protocol rejects invented source while retaining local checks (1.841791ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 223.449209

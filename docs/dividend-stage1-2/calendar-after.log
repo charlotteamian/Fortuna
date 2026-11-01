@@ -1,0 +1,27 @@
+✔ principles are bounded integer configuration and code input cannot inject a source query (1.279ms)
+✔ technical acceleration compares two separate five-day windows and requires an established fall (9.285666ms)
+✔ captured Tencent and Eastmoney responses preserve verified field meaning for banks, companies and indices (0.980292ms)
+✔ dated technical series stays historical, cannot establish a current yield trigger, and future series is rejected (0.644375ms)
+✔ readable research converts percentage and money units, preserves URLs, and marks custom criteria unverified (0.364375ms)
+✔ financial periods use actual publication dates, retain quarterly metrics and use annual ROE for the annual rule (0.178666ms)
+✔ only implemented dated cash dividends count, duplicate events and proposed distributions do not (0.135834ms)
+✔ matching report-year dividends and EPS establish payout, missing reports never produce a pass (0.106166ms)
+✔ banks replace industrial leverage/cashflow thresholds with actual specialist checks (0.127084ms)
+✔ captured industry fields and explicitly verified insurer-group report extract produce dated specialist conclusions (1.573375ms)
+✔ confirmed fundamental breaches remain separate from technical market timing (0.072459ms)
+✔ expired financial breaches become unknown and cannot justify removing a plan stock (0.099417ms)
+✔ research service keeps individual source failures unknown and bounds candidate requests (6.705375ms)
+✔ a failed Tencent primary recovers daily and monthly evidence through its verified public proxy (33.231292ms)
+✔ both Tencent hosts failing retain the HTTP status, original request URL and bounded attempt count (1.3625ms)
+✔ a short monthly response retries expanded prices without manufacturing verified dividend-yield months (10.139166ms)
+✔ genuinely short listing history keeps the actual current price and explains the missing anchor after bounded retry (3.352625ms)
+✔ current research yields require verified recent batches on the dated quote share basis, independently of historical coverage (13.57725ms)
+✔ verified recent batches survive failed financial and market feeds but never substitute a missing cash feed (3.128917ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 221.305375

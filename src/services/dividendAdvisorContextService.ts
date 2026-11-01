@@ -1,6 +1,7 @@
 import { db } from '../db';
 import { buildDividendAdvisorContext } from '../lib/dividendAdvisor';
-import { dateInChina } from '../lib/dividendWorkbench';
+import { dateInChina, linkedDividendPositions } from '../lib/dividendWorkbench';
+import { defaultDividendFundPlan } from '../lib/dividendFundPlan';
 import { computeHoldingPosition } from '../lib/holdingPosition';
 import { getHoldingMode } from '../lib/productPortfolio';
 import { loadDividendWorkbench, refreshDividendStock } from './dividendService';
@@ -12,6 +13,25 @@ import type { DividendFund } from '../lib/dividendFundPlan';
 import { loadDividendCheckSummaries } from './dividendCheckSummaryService';
 import { saveDividendResearchCache, loadDividendResearchCache, dividendResearchScopeStocks } from './dividendResearchCacheService';
 import { loadDividendDailyAdvicePlanKey } from './dividendDailyAdviceScopeService';
+
+/** Explain only what is already stored. Unlike the refresh workflow below,
+ * this must not initialise settings, seed a plan, redate evidence or download. */
+export async function loadDividendAdvisorContext() {
+  const [stocks, settings, accounts, holdings, txns, researchCache] = await Promise.all([
+    db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
+    loadDividendResearchCache().catch(() => null),
+  ]);
+  const data = {
+    stocks, strategy: settings?.dividendStrategy ?? 'stocks',
+    fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(),
+    budgetMinor: settings?.dividendBudgetMinor ?? 0,
+    budgetConfigured: settings?.dividendBudgetMinor !== undefined,
+    positions: linkedDividendPositions(accounts, holdings, txns),
+  };
+  const fundPositions = await loadDividendFundPositions(data.fundPlan.funds);
+  const checkSummaries = await loadDividendCheckSummaries(data, { researchCache: researchCache ?? undefined, fundPositions });
+  return buildDividendAdvisorContext({ ...data, fundPositions, research: researchCache?.snapshot, checkSummaries });
+}
 
 /** Refresh on each explicit question. Off-exchange NAV/high/index-yield remain dated manual inputs. */
 export async function prepareDividendAdvisorContext(onProgress: (done: number, total: number) => void) {

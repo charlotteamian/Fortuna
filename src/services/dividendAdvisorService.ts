@@ -3,12 +3,15 @@ import Dexie, { type Table } from 'dexie';
 import { holdingRecognitionProviderBody } from '../lib/holdingRecognitionProviders.ts';
 import { dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt, type DividendAdvisorContext, type DividendAdvisorMessage } from '../lib/dividendAdvisor.ts';
 import { validateHoldingRecognitionConfig, type HoldingRecognitionConfig } from './holdingRecognitionService.ts';
-import { parseDividendAdvisorActions } from '../lib/dividendAdvisorActions.ts';
+import type { DividendPlanProposal } from '../lib/dividendAdvisorActions.ts';
 import { dividendPricingIssueText, humanizeDividendPricingIssues, type DividendPricingResult } from '../lib/dividendPricing.ts';
 import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan.ts';
 import { dividendCheckSummaryText } from '../lib/dividendCheckExplanation.ts';
 import { dividendCheckEn, dividendCheckZh } from '../i18n/dividendCheckTranslations.ts';
-import { dividendAdvisorConcepts, dividendAdvisorConceptFallback, dividendAdvisorResumeGuide } from '../i18n/dividendAdvisorConceptTranslations.ts';
+import { dividendAdvisorConcepts, dividendAdvisorResumeGuide } from '../i18n/dividendAdvisorConceptTranslations.ts';
+import { buildDividendExplanationFacts, dividendExplanationPrompt, renderDividendExplanation } from '../lib/dividendAdvisorExplanation.ts';
+import { dividendExplanationUi } from '../i18n/dividendAdvisorExplanationTranslations.ts';
+import type { DividendResearchSnapshot } from '../lib/dividendResearch.ts';
 
 export type DividendAdvisorConfig = HoldingRecognitionConfig;
 export class DividendAdvisorError extends Error {
@@ -107,13 +110,20 @@ function parseAnswer(protocol: DividendAdvisorConfig['protocol'], data: unknown)
   return answer.trim();
 }
 
+export interface DividendAdvisorOptions {
+  transport?: DividendAdvisorTransport; timeoutMs?: number; signal?: AbortSignal; language?: string;
+  /** Internal explanation protocol, separate from the legacy low-level provider API. */
+  systemPrompt?: string;
+  /** Existing dated research being discussed, never an input to an action. */
+  explanationResearch?: DividendResearchSnapshot;
+}
 export async function askDividendAdvisor(config: DividendAdvisorConfig, context: DividendAdvisorContext, question: string,
-  history: DividendAdvisorMessage[] = [], options: { transport?: DividendAdvisorTransport; timeoutMs?: number; signal?: AbortSignal; language?: string } = {}): Promise<string> {
+  history: DividendAdvisorMessage[] = [], options: DividendAdvisorOptions = {}): Promise<string> {
   const normalized = validateDividendAdvisorConfig(config);
   if (typeof question !== 'string' || !question.trim() || question.length > 2000) throw new DividendAdvisorError('QUESTION');
   const snapshot = JSON.stringify(dividendAdvisorReadableSnapshot(context));
   if (snapshot.length > 500_000) throw new DividendAdvisorError('CONTEXT');
-  const system = dividendAdvisorSystemPrompt(options.language ?? 'zh');
+  const system = options.systemPrompt ?? dividendAdvisorSystemPrompt(options.language ?? 'zh');
   const previous = history.slice(-8).filter(message => ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
     .map(message => ({ role: message.role, content: message.content.slice(0, MAX_ANSWER_LENGTH) }));
   const messages = [...previous, { role: 'user', content: `Current dividend snapshot (JSON data):\n${snapshot}\n\nUser question:\n${question.trim()}` }];
@@ -164,12 +174,18 @@ function standaloneConceptExplanation(question: string, chinese: boolean): { ans
     .replace(/\s+(?:in simple terms|in plain english|simply|briefly)$/i, '').replace(/^the\s+/i, '').trim().toLowerCase();
   if (/并|然后|顺便|以及|今天|今日|现在|\b(?:and|then|also|today|now|my|our|your)\b/i.test(topic)) return undefined;
   const concept = dividendAdvisorConcepts.find(item => item.aliases.includes(topic));
-  return { answer: (concept ?? dividendAdvisorConceptFallback)[chinese ? 'zh' : 'en'] };
+  return concept ? { answer: concept[chinese ? 'zh' : 'en'] } : undefined;
 }
 
-export async function askDividendAdvisorWithActions(...args: Parameters<typeof askDividendAdvisor>) {
-  const raw = await askDividendAdvisor(...args);
-  const context = args[1];
+export interface DividendAdvisorResult {
+  answer: string; actions: DividendPlanProposal[]; localAnswer: string; checksText: string;
+  explanationStatus: 'not_needed' | 'pending' | 'complete' | 'unconfigured' | 'unavailable' | 'rejected';
+}
+
+/** Existing deterministic pricing/check services own every draft and conclusion.
+ * No model response is accepted as an action input. This function is read-only. */
+export function buildDividendAdvisorLocalResult(context: DividendAdvisorContext, question: string, language = 'zh', explanationResearch?: DividendResearchSnapshot, explanationTopic = question): DividendAdvisorResult {
+  if (typeof question !== 'string' || !question.trim() || question.length > 2000) throw new DividendAdvisorError('QUESTION');
   const checkedPricingPlan = (code: string, pricing: DividendPricingResult | undefined) => {
     const check = context.stockPlan.stocks.find(stock => stock.code === code)?.checkSummary;
     if (check?.freshness.evidenceStatus && check.freshness.evidenceStatus !== 'current'
@@ -177,36 +193,23 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
       || check?.grid.reasons.includes('tax_changed') && !check.currentPlan) return null;
     return pricing ? dividendPricingPlan(pricing) : null;
   };
-  const result = parseDividendAdvisorActions(raw, context.stockPlan.stocks.map(stock => stock.code));
-  const chinese = (args[4]?.language ?? 'zh').startsWith('zh');
-  const question = args[2];
+  const result = { answer: '', actions: [] as DividendPlanProposal[] };
+  const chinese = language.startsWith('zh');
   const dictionary = chinese ? dividendCheckZh : dividendCheckEn;
+  const ui = dividendExplanationUi[chinese ? 'zh' : 'en'];
   const resumeGuide = /恢复|\b(?:resume|restart|reactivate)\b/i.test(question) ? dividendAdvisorResumeGuide[chinese ? 'zh' : 'en'] : '';
   let pricingAnswer = '';
   const pricingReasons = new Map<string, string>();
-  const explicitPause = /(?:暂停|停止|关闭)(?:现有|这只|该股|股票|计划|网格|的|全部|所有|新增|继续|\s)*(?:加仓|买入|买进)/.test(question)
-    && !/(?:不要|别|不必|无需|不用)[^，。；！？\n]{0,8}(?:暂停|停止|关闭)/.test(question)
-    || /\b(?:pause|stop|disable)\s+(?:additional\s+)?(?:buying|buys|additions)\b/i.test(question) && !/\b(?:do not|don't|no need to)\s+(?:pause|stop|disable)\b/i.test(question);
-  // Numerical drafts must come from the verified method, never a model's guess.
-  // Pausing is independent of valuation and remains available when inputs are missing.
-  result.actions = result.actions.flatMap(draft => {
-    // Only the user's explicit pause request can create a pause draft. Resume
-    // choices go through the fresh review and its explicit confirmation.
-    const { buyPaused, ...details } = draft;
-    const action = { ...details, ...(buyPaused === true && explicitPause ? { buyPaused: true } : {}) };
-    const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
-    if (!action.buyLevels && !action.sellLevels) return action.buyPaused === undefined ? [] : [action];
-    const plan = checkedPricingPlan(action.code, pricing);
-    const matches = (side: 'buyLevels' | 'sellLevels') => !action[side] || !!plan && action[side].length === plan[side].length
-      && action[side].every((level, index) => level.priceMinor === plan[side][index].priceMinor
-        && level.yieldBps === plan[side][index].yieldBps && level.portionBps === plan[side][index].portionBps);
-    const { buyLevels, sellLevels, ...pause } = action;
-    // Every numerical replacement includes both verified sides, even if the
-    // provider emits only buys. Never preserve an unrelated stale sell ladder.
-    void buyLevels; void sellLevels;
-    if (plan && matches('buyLevels') && matches('sellLevels')) return [{ ...pause, ...plan }];
-    return pause.buyPaused === undefined ? [] : [pause];
-  });
+  const explanationClause = (value: string) => /解释|为何|为什么|什么是|是什么意思|如何理解|概念|原理|例子|举例|\b(?:explain|why|what is|what does|define|example)\b/i.test(value);
+  const requestClauses = question.split(/[，。；！？\n]+|(?:并且|同时|然后|并)|\band\b/i).map(value => value.trim()).filter(Boolean);
+  const changeQuestion = requestClauses.filter(value => !explanationClause(value)).join(' ');
+  const explicitPause = requestClauses.some(clause => !explanationClause(clause)
+    && /^(?:请|帮我|麻烦|please\s+)?(?:暂停|停止|关闭)[^，。；！？\n]{0,60}(?:加仓|买入|买进)|^(?:please\s+)?(?:pause|stop|disable)\s+(?:additional\s+)?(?:buying|buys|additions)\b/i.test(clause));
+  const namedStocks = context.stockPlan.stocks.filter(stock => question.includes(stock.name) || question.includes(stock.code));
+  if (explicitPause && (context.activeStrategy === 'stocks' || namedStocks.length || /股票|\bstocks?\b/i.test(changeQuestion))) {
+    const targets = namedStocks.length ? namedStocks : /现有|所有|全部|existing|current|all/i.test(question) ? context.stockPlan.stocks : [];
+    result.actions = targets.slice(0, 10).map(stock => ({ id: `pause-${stock.code}`, code: stock.code, buyPaused: true, reason: dictionary.div_check_pause_draft }));
+  }
   // Explicit regeneration must not depend on whether the model emits a machine
   // draft. Use only the same deterministic ladder shown in the research card.
   const negated = /(?:不要|别|无需|不用|不必|暂不|先不|不想|不需要)[^，。；！？\n]{0,8}(?:生成|重做|重建|重设|更新|调整|修正|修改|定价|计算|估算|给出|给个|提供)/.test(question)
@@ -215,15 +218,15 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
     void buyLevels; void sellLevels;
     return action.buyPaused === undefined ? [] : [action];
   });
-  const regenerate = !negated && (/(?:生成|重做|重建|重设|更新|调整|修正|修改|重新评估|重新定价|估算|计算|给出|给个|提供)/.test(question) && /(?:网格|计划|买价|买入价|锚点|估值|定价|价格)/.test(question)
-    || /(?:regenerat|generat|rebuild|revis|adjust|replac|new|calculat|estimat)[\s\S]{0,60}(?:grid|plan|buy price|valuation|price)/i.test(question));
+  const regenerate = !negated && (/(?:生成|重做|重建|重设|更新|调整|修正|修改|重新评估|重新定价|估算|计算|给出|给个|提供)/.test(changeQuestion) && /(?:网格|计划|买价|买入价|锚点|估值|定价|价格)/.test(changeQuestion)
+    || /(?:regenerat|generat|rebuild|revis|adjust|replac|new|calculat|estimat)[\s\S]{0,60}(?:grid|plan|buy price|valuation|price)/i.test(changeQuestion));
   if (context.activeStrategy === 'stocks' && regenerate) {
     const aliases: Record<string, string[]> = { '601288': ['农行'], '601398': ['工行'], '601939': ['建行'], '601988': ['中行'], '601328': ['交行'], '600036': ['招行'], '601658': ['邮储'] };
     const named = context.stockPlan.stocks.filter(stock => [stock.code, stock.name,
       stock.name.replace(/集团|股份|有限公司/g, '').trim(), ...aliases[stock.code] ?? []]
-      .some(name => name.length >= 2 && question.toLowerCase().includes(name.toLowerCase())));
-    const general = /所有|全部|各只|整个组合|all (?:stock|grid|plan)/i.test(question)
-      || /^(?:请|帮我|麻烦|能否|可以|我要|我想|再|重新|生成|新建|调整|更新|重做|估算|计算|给出|给个|提供|一下|一个|新的|当前|我的|现有|的|网格|计划|买价|买入价|锚点|价格|估值|定价|方案|[。！？\s])+$/.test(question);
+      .some(name => name.length >= 2 && changeQuestion.toLowerCase().includes(name.toLowerCase())));
+    const general = /所有|全部|各只|整个组合|all (?:stock|grid|plan)/i.test(changeQuestion)
+      || /^(?:请|帮我|麻烦|能否|可以|我要|我想|再|重新|生成|新建|调整|更新|重做|估算|计算|给出|给个|提供|一下|一个|新的|当前|我的|现有|的|网格|计划|买价|买入价|锚点|价格|估值|定价|方案|[。！？\s])+$/.test(changeQuestion);
     const scope = named.length ? named : general ? context.stockPlan.stocks : [];
     const summaries: string[] = [];
     for (const saved of scope.slice(0, 10)) {
@@ -288,5 +291,65 @@ export async function askDividendAdvisorWithActions(...args: Parameters<typeof a
       .filter(Boolean).join('\n\n');
   }
   result.answer = humanizeDividendPricingIssues(result.answer, chinese ? 'zh' : 'en');
-  return result;
+  // Calculation examples are hypothetical teaching material, never proposed
+  // trading prices. The same renderer recomputes all arithmetic locally.
+  let localExample: string | null = null;
+  if (/(?:例子|举例|example)/i.test(question) && /股息率|dividend yield|cash yield/i.test(question) && !regenerate && !explicitPause) {
+    const cash = /每股(?:现金)?分红(?:为|是)?\s*([0-9]+(?:\.[0-9]+)?)\s*元/i.exec(question)
+      ?? /(?:cash\s+)?dividends?\s+per\s+share(?:\s+(?:of|is))?\s*(?:CNY|¥)?\s*([0-9]+(?:\.[0-9]+)?)/i.exec(question);
+    const price = /股价(?:为|是)?\s*([0-9]+(?:\.[0-9]+)?)\s*元/i.exec(question)
+      ?? /share\s+price(?:\s+(?:of|is))?\s*(?:CNY|¥)?\s*([0-9]+(?:\.[0-9]+)?)/i.exec(question);
+    const inputs = cash && price ? [Number(cash[1]), Number(price[1])] : /\d/.test(question) ? null : [0.5, 10];
+    localExample = inputs ? renderDividendExplanation(JSON.stringify({ version: 1, blocks: [{ type: 'example', formula: 'cash_yield', inputs }] }), [], language) ?? ui.invalidTeachingInputs : ui.exampleInputsMissing;
+  }
+  if (localExample && !regenerate && !explicitPause) result.answer = localExample;
+  const checksText = dividendCheckSummaryText(scope, language);
+  const needsExplanation = !explanation && !localExample && (explanationTopic !== question || /解释|为何|为什么|怎么理解|简单|说法|举例|例子|\b(?:explain|why|example|simplify|simpler|clarify|mean)\b/i.test(question)
+    || /什么是|是什么意思|如何理解|\bwhat (?:is|are|does)\b/i.test(question));
+  if (needsExplanation) {
+    const facts = buildDividendExplanationFacts(context, language, explanationResearch);
+    const relevant = /roe|净资产收益率/i.test(explanationTopic) ? facts.filter(fact => /roe/i.test(fact.id)) : [];
+    // Missing facts stay missing; the AI can explain this material but cannot
+    // promote it to a verified figure or alter the independent checks.
+    if (!result.actions.length && !pricingAnswer) result.answer = [relevant.length ? relevant.map(fact => fact.text).join('\n\n') : ui.localNeedsExplanation,
+      `### ${ui.localTitle}`, checksText].filter(Boolean).join('\n\n');
+  }
+  return { ...result, localAnswer: result.answer, checksText, explanationStatus: needsExplanation ? 'pending' : 'not_needed' };
+}
+
+/** Local output is delivered before optional model work. Explanations never
+ * enter the draft/check channel, including during failure or cancellation. */
+export async function askDividendAdvisorWithActions(config: DividendAdvisorConfig | null, context: DividendAdvisorContext, question: string,
+  history: DividendAdvisorMessage[] = [], options: DividendAdvisorOptions & { onLocalResult?: (result: DividendAdvisorResult) => void } = {}): Promise<DividendAdvisorResult> {
+  const language = options.language ?? 'zh', chinese = language.startsWith('zh');
+  const ui = dividendExplanationUi[chinese ? 'zh' : 'en'];
+  if (options.signal?.aborted) throw new DividendAdvisorError('CANCELLED');
+  const isFollowup = (value: string) => /^(?:请|再|能否)?(?:换个简单说法|换一种说法|说简单些|简单点|再简单点|再详细一点|详细一点|继续|继续解释)[。？！?!.\s]*$|^(?:please\s+)?(?:simplify(?:\s+that)?|say it more simply|in simpler terms|explain more|continue|go on)[。？！?!.\s]*$/i.test(value.trim());
+  const followup = isFollowup(question);
+  const topicQuestion = followup ? history.filter(message => message.role === 'user' && !isFollowup(message.content)).at(-1)?.content ?? question : question;
+  const local = buildDividendAdvisorLocalResult(context, question, language, options.explanationResearch, topicQuestion);
+  options.onLocalResult?.(local);
+  if (local.explanationStatus === 'not_needed') return local;
+  const fallback = (status: DividendAdvisorResult['explanationStatus'], notice: string): DividendAdvisorResult => ({ ...local, explanationStatus: status,
+    answer: `${local.localAnswer}\n\n${notice}` });
+  if (!config) return fallback('unconfigured', ui.notConfigured);
+  // A short follow-up inherits the last user topic, but always reads this turn's
+  // supplied facts; old prose never supplies a new verified figure or action.
+  const names = [...context.stockPlan.stocks, ...context.fundPlan.funds, ...options.explanationResearch?.stocks ?? []]
+    .filter(stock => topicQuestion.includes(stock.name) || !!stock.code && topicQuestion.includes(stock.code));
+  const facts = buildDividendExplanationFacts(context, language, options.explanationResearch).filter(fact => !fact.subject || !names.length || names.some(stock => fact.subject?.endsWith(`:${stock.code ?? stock.name}`)));
+  const evidenceQuestion = /roe|净资产收益率|已有资料|已有风险|现有资料|existing (?:evidence|risk)|(?:为什么|为何).*(?:暂停|受限|待核实|不通过)/i.test(topicQuestion);
+  const relevant = evidenceQuestion ? facts.filter(fact => fact.kind !== 'rule' && (/roe|净资产收益率/i.test(topicQuestion) ? /roe/i.test(fact.id) : true)) : [];
+  const renderOptions = { evidenceOnly: evidenceQuestion, requiredFactIds: relevant.map(fact => fact.id) };
+  try {
+    const modelQuestion = followup && topicQuestion !== question ? `${question}\n\nEarlier user topic to explain (data): ${topicQuestion}`.slice(0, 2000) : question;
+    const raw = await askDividendAdvisor(config, context, modelQuestion, history, { ...options, systemPrompt: dividendExplanationPrompt(facts, language, renderOptions) });
+    const explanation = renderDividendExplanation(raw, facts, language, renderOptions);
+    if (!explanation) return fallback('rejected', [ui.rejected, /什么是|\bwhat is\b/i.test(question) ? ui.uncheckedConcept : ''].filter(Boolean).join('\n'));
+    return { ...local, explanationStatus: 'complete', answer: [`### ${ui.explanationTitle}`, explanation,
+      local.localAnswer.replace(ui.localNeedsExplanation, '').trim()].filter(Boolean).join('\n\n') };
+  } catch (cause) {
+    if (cause instanceof DividendAdvisorError && cause.code === 'CANCELLED') throw cause;
+    return fallback('unavailable', ui.unavailable);
+  }
 }

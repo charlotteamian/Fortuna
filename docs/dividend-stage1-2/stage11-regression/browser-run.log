@@ -1,0 +1,238 @@
+{
+  "success": true,
+  "environment": "Fresh isolated Chrome; synthetic ledger, archived arithmetic fixtures, mocked quotes, research and AI transport; no real user database or external AI.",
+  "checks": [
+    {
+      "name": "failed eligibility, observed price touch and manual pause are distinct",
+      "passed": true
+    },
+    {
+      "name": "manual dividend without saved explicit grid produces no old seven-tier prices",
+      "passed": true
+    },
+    {
+      "name": "previous-day quotes never produce current triggered table rows",
+      "passed": true
+    },
+    {
+      "name": "current tax change marks historical grid pending without replacing its prices",
+      "passed": true
+    },
+    {
+      "name": "pre-ex-date quotes do not trigger a new-basis grid",
+      "passed": true
+    },
+    {
+      "name": "one malformed ledger does not hide other stock plans",
+      "passed": true
+    },
+    {
+      "name": "manual fund reference price is not an executable market trigger",
+      "passed": true
+    },
+    {
+      "name": "dividend amounts remain visible independently of hidden global asset amounts",
+      "passed": true
+    },
+    {
+      "name": "Stock Checks consumes the same eligibility and pause result as home",
+      "passed": true
+    },
+    {
+      "name": "same-day official refresh failure downgrades trust while retaining all saved prices and original successful evidence",
+      "passed": true
+    },
+    {
+      "name": "stale editor rejects overwrite, keeps the draft and protects newer grid, pause, manual shares and note",
+      "passed": true
+    },
+    {
+      "name": "reopening after conflict loads the latest record and a normal guarded note save preserves every other field",
+      "passed": true
+    },
+    {
+      "name": "normal editor save merges a concurrent latest quote without a conflict or restoring old quote caches",
+      "passed": true
+    },
+    {
+      "name": "home and fund manager render identical action states for held, confirmed zero and unknown positions",
+      "passed": true
+    },
+    {
+      "name": "read-only full summary and AI-context construction leave every ledger table byte-identical; AI receives held/zero/unknown unchanged",
+      "passed": true
+    },
+    {
+      "name": "actual fund chat replaces unsafe mixed-regeneration model prose with deterministic operation states",
+      "passed": true
+    },
+    {
+      "name": "legitimate four-buy/four-sell repricing remains a preview with zero ledger writes and constrained operation prose",
+      "passed": true
+    },
+    {
+      "name": "actual chat with unmatched repricing cannot retain an unsafe provider buy instruction",
+      "passed": true
+    },
+    {
+      "name": "actual paused-stock chat retains fresh review and explicit preview/confirmation guidance for resuming",
+      "passed": true
+    },
+    {
+      "name": "normal colloquial concept question remains explanatory even when the model stub supplies unsafe prose",
+      "passed": true
+    },
+    {
+      "name": "actual AI preview button opens the paired price comparison and leaves all ledger tables unchanged until user confirmation",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "layouts": [
+    {
+      "width": 390,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "overflow": []
+    }
+  ],
+  "screenshots": [
+    "home-390-1.png",
+    "stock-390-1.png",
+    "fund-390-1.png",
+    "home-390-1.3.png",
+    "stock-390-1.3.png",
+    "fund-390-1.3.png",
+    "home-320-1.png",
+    "stock-320-1.png",
+    "fund-320-1.png",
+    "home-320-1.3.png",
+    "stock-320-1.3.png",
+    "fund-320-1.3.png",
+    "selection-390.png",
+    "selection-page-390.png",
+    "failed-refresh-390.png",
+    "editor-conflict-390.png",
+    "editor-conflict-320-font130.png",
+    "fund-held-manager-390.png",
+    "fund-unknown-manager-320-font130.png",
+    "fund-mixed-regenerate-chat-390.png",
+    "unmatched-mixed-chat-320.png",
+    "pricing-preview-390.png"
+  ],
+  "readOnly": {
+    "unchanged": true,
+    "funds": [
+      {
+        "name": "模拟手工参考基金",
+        "shares": 0,
+        "summaryShares": 0,
+        "sell": {
+          "status": "blocked",
+          "reasons": [
+            "no_holding"
+          ],
+          "requiresUserConfirmation": false
+        }
+      },
+      {
+        "name": "模拟行情基金",
+        "shares": 500,
+        "summaryShares": 500,
+        "sell": {
+          "status": "review",
+          "reasons": [
+            "execution_session_unverified"
+          ],
+          "requiresUserConfirmation": true
+        }
+      },
+      {
+        "name": "模拟零持仓基金",
+        "shares": 0,
+        "summaryShares": 0,
+        "sell": {
+          "status": "blocked",
+          "reasons": [
+            "no_holding"
+          ],
+          "requiresUserConfirmation": false
+        }
+      },
+      {
+        "name": "模拟未知持仓基金",
+        "shares": null,
+        "summaryShares": null,
+        "sell": {
+          "status": "unknown",
+          "reasons": [
+            "holding_unknown"
+          ],
+          "requiresUserConfirmation": false
+        }
+      }
+    ]
+  },
+  "preview": {
+    "unchanged": true,
+    "answer": "模拟000004：最近已核验批次分红0.5481元/股（按所选持有期扣税后），所属期2026-06-30／2025-12-31。按固定股息率计算，买入四档9.96／9.53／9.13／8.43元；卖出四档11.42／12.18／13.05／13.71元，每档25%。5%股息率中性参考线10.96元，是纪律参考，不是公允价值。预览确认后同时替换两侧，保留当前手动暂停设置。风险提示：金融行业专项有风险或资料缺口，详见分组检查结果；行情缺失、过期或与本次分红股本口径不一致，保留固定网格，价格触发待核实；仓位仍按价格档位、预算和持仓判断。\n\n操作建议已按确定性检查限制。请先处理以下约束；到价不等于允许新增买入。\n\n模拟000004 (000004)\n选股资格: 不符合规则\n价格依据: 历史保存价 · 待核对\n今日价格观察: 买入 到价, 卖出 未到价\n操作检查: 买入 先复核, 卖出 受限\n报价来源时间: 2026-11-01 10:00\n已保存网格缺少当时的公告批次证据快照；适用交易时段与实际成交条件尚未确认；仍有资料或规则待核对；网格依据尚未完成核对；营收增长需要复核",
+    "buy": [
+      {
+        "priceMinor": 996,
+        "yieldBps": 550,
+        "portionBps": 2500
+      },
+      {
+        "priceMinor": 953,
+        "yieldBps": 575,
+        "portionBps": 2500
+      },
+      {
+        "priceMinor": 913,
+        "yieldBps": 600,
+        "portionBps": 2500
+      },
+      {
+        "priceMinor": 843,
+        "yieldBps": 650,
+        "portionBps": 2500
+      }
+    ],
+    "sell": [
+      {
+        "yieldBps": 480,
+        "portionBps": 2500,
+        "priceMinor": 1142
+      },
+      {
+        "yieldBps": 450,
+        "portionBps": 2500,
+        "priceMinor": 1218
+      },
+      {
+        "yieldBps": 420,
+        "portionBps": 2500,
+        "priceMinor": 1305
+      },
+      {
+        "yieldBps": 400,
+        "portionBps": 2500,
+        "priceMinor": 1371
+      }
+    ]
+  }
+}

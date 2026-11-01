@@ -117,9 +117,9 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
         {messages.length === 0 && <section className="div-advisor-reader-intro">
           <span className="div-advisor-badge" aria-hidden="true">AI</span>
           <h2>{t('div_ai_title')}</h2><p>{t('div_ai_reader_intro')}</p>
-          {!configured && !loading ? <button className="btn btn-primary" onClick={onOpenSettings}>{t('div_ai_go_settings')}</button>
-            : <div className="div-advisor-reader-quick" aria-label={t('div_ai_quick_questions')}>{QUICK_QUESTIONS.map(key => <button className="btn btn-secondary" key={key} disabled={busy || loading}
-              onClick={() => onAsk(t(`div_ai_question_${key}`))}>{t(`div_ai_quick_${key}`)} <span aria-hidden="true">↗</span></button>)}</div>}
+          {!configured && !loading && <button className="btn btn-primary" onClick={onOpenSettings}>{t('div_ai_go_settings')}</button>}
+          <div className="div-advisor-reader-quick" aria-label={t('div_ai_quick_questions')}>{QUICK_QUESTIONS.map(key => <button className="btn btn-secondary" key={key} disabled={busy || loading}
+            onClick={() => onAsk(t(`div_ai_question_${key}`))}>{t(`div_ai_quick_${key}`)} <span aria-hidden="true">↗</span></button>)}</div>
         </section>}
         {messages.length > 0 && !amountVisible && <p className="div-advisor-hidden" role="status">{t('div_ai_reading_hidden')}</p>}
         {messages.length > 0 && amountVisible && <div className="div-advisor-reader-messages">{messages.map((message, index) => <article className={`div-advisor-reading-message ${message.role}`} key={index}>
@@ -136,7 +136,7 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
           <button type="button" className="div-advisor-text-button" onClick={onCancel}>{t('div_ai_cancel')}</button></div>}
         {error && <div className="div-warning div-advisor-reading-error" role="alert"><p>{error}</p><div className="div-actions">
           {onRetrySave && <button className="btn btn-secondary" disabled={busy || loading} onClick={onRetrySave}>{t('div_ai_retry_save')}</button>}
-          {retryQuestion && configured && <button className="btn btn-secondary" disabled={busy} onClick={() => onAsk(retryQuestion)}>{t('div_ai_retry')}</button>}
+          {retryQuestion && <button className="btn btn-secondary" disabled={busy} onClick={() => onAsk(retryQuestion)}>{t('div_ai_retry')}</button>}
           {!configured && <button className="btn btn-secondary" onClick={onOpenSettings}>{t('div_ai_go_settings')}</button>}
         </div></div>}
         <p className="div-advisor-return-hint">{t('div_ai_swipe_back_hint')}</p>
@@ -144,9 +144,9 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
     </main>
     {tab === 'chat' && <footer className="div-advisor-reader-compose"><form className="div-advisor-compose-column" onSubmit={event => { event.preventDefault(); onAsk(); }}>
       <label htmlFor="div-ai-reader-question">{t('div_ai_question_label')}</label>
-      <div className="div-advisor-compose-row"><textarea className="form-input" id="div-ai-reader-question" rows={2} maxLength={2000} disabled={busy || loading || !configured} value={question}
+      <div className="div-advisor-compose-row"><textarea className="form-input" id="div-ai-reader-question" rows={2} maxLength={2000} disabled={busy || loading} value={question}
         placeholder={t('div_ai_question_placeholder')} onChange={event => onQuestion(event.target.value)} />
-        <button type="submit" className="btn btn-primary" disabled={busy || loading || !configured || !question.trim()}>{t('div_ai_send')}</button></div>
+        <button type="submit" className="btn btn-primary" disabled={busy || loading || !question.trim()}>{t('div_ai_send')}</button></div>
     </form></footer>}
   </div>, document.body);
 }

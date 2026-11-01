@@ -1,0 +1,23 @@
+{
+  "baseline": "74b6266ea71f7bc3861fbf730f930092c204f0c5",
+  "protectedFiles": {
+    "src/db.ts": "32151599dfe4bcf728dbbec1b27e7fc497ce7266d73248b54fe0637c32bee798",
+    "src/lib/dividendPricing.ts": "f3abc25a14068aa2f8c965d5a21d87635500c3b917e6e16a86adfaf3d48bb7aa",
+    "src/lib/dividendLedger.ts": "664bc2f918cb3098f385ff7ee5719173877cdebf3811b3eabe2b302bfd18cd81",
+    "src/lib/dividendFundPlan.ts": "82d0b58cbc10691c7d24ee7d43c80bfc28e1793918f2ddd595affdf617f7f85f",
+    "src/lib/dividendWorkbench.ts": "b310d3c433f8587f1a327fecd1aae04ea30f54ced9362d80fdb57681d7e9fd52",
+    "src/lib/dividendCheckSummary.ts": "af010a04c14044358daf99225ed1a98ac54ac9ee6317985b213bff15f59454ff",
+    "src/components/DividendFundWorkbench.tsx": "52f64b8eaa5bf1d8f6d0242cbae25611d7af6f3f2d6bac23f6f74f7668a4fde4",
+    "src/lib/dividendImport.ts": "6fca46dd0f52b6df7cb703083692c268b5761a94df45c35b39a97c8fb526b4da",
+    "package.json": "5518119ba9bd7d64a03e1e63560a268c0a4a45b3649a8e6eb692e3faa9092633",
+    "package-lock.json": "84df4b387504461ed2101588fb2aa5376a835afc4104a3ef75c1002bf4d795f2",
+    "capacitor.config.ts": "4d27176407d7385efe046d960dd38406d517c7d5d580504e32f9445218a3f3b1",
+    "android/app/build.gradle": "d0849d1c40cbbda780d17adfeed87238e662142745d333ed2638cf92f55c6f8f",
+    "ios/App/App.xcodeproj/project.pbxproj": "f25224f6ee5d8ac2c88cc051d95f766c836a68131e79809e0908e47a6c3a1423",
+    "docs/dividend-pricing-method.md": "7131c5f145828976dbb22d029331ce37607c5388a158c15e9ac473e24d7adb7c",
+    "docs/dividend-stage0/pricing-audit.md": "2a3565a4fe876d217d8bc626d9df7852eae76b9e7801703b40484fe5d24fab73",
+    "docs/dividend-stage0/risk-audit.md": "f771f72519e08ae3b7934737371203be30933fcb661ea03efb0e8afd2892d094",
+    "docs/dividend-stage0/ui-data-audit.md": "2260348b4973b39fc89765c3e570254dd2e93876bf51c157d491d1d091c5c3c3"
+  },
+  "scope": "stage1.2 explanation/caller only; no live user data, API, device, push or release"
+}

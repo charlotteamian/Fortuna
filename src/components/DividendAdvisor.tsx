@@ -4,7 +4,7 @@ import { db } from '../db';
 import type { DividendAdvisorContext, DividendAdvisorMessage } from '../lib/dividendAdvisor';
 import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_CONFIG_CHANGED_EVENT, DIVIDEND_AI_SETTINGS_REQUEST_EVENT, dividendAdvisorReaderUrl } from '../lib/dividendAdvisorNavigation';
 import { askDividendAdvisorWithActions, DividendAdvisorError, loadDividendAdvisorConfig, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
-import { prepareDividendAdvisorContext } from '../services/dividendAdvisorContextService';
+import { loadDividendAdvisorContext } from '../services/dividendAdvisorContextService';
 import DividendAdvisorReader from './DividendAdvisorReader';
 import DividendAdvisorWorkspace from './DividendAdvisorWorkspace';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
@@ -12,7 +12,6 @@ import DividendDailyAdvice from './DividendDailyAdvice';
 import { archiveDividendAdvisorConversation, createDividendAdvisorConversation, deleteDividendAdvisorConversation, loadDividendAdvisorHistory,
   recoverDividendAdvisorHistory, resumeDividendAdvisorConversation, saveDividendAdvisorConversation, type DividendAdvisorHistoryState } from '../services/dividendAdvisorHistoryService';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch';
-import { prepareDividendDiscussionResearch } from '../services/dividendAdvisorDiscussionService';
 import { addPortableSnapshotBackgroundListener } from '../native/portableSnapshot';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
@@ -51,6 +50,9 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
   // Evidence belongs to the exact answer that produced a draft. It is kept in
   // memory only; opening a historical chat requires a new pricing check.
   const priceContexts = useRef(new WeakMap<DividendPlanProposal, DividendPriceProposalContext>());
+  // A clicked research card is an explanation subject, not a replacement for
+  // the current saved plan's execution inputs. Keep it only during this visit.
+  const discussionResearch = useRef<DividendResearchSnapshot | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -96,6 +98,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     const generation = ++session.current.generation;
     const conversationId = session.current.conversationId;
     session.current.open = false; session.current.conversationId = undefined;
+    discussionResearch.current = null;
     controller.current?.abort(); controller.current = null; lock.current = false;
     if (mounted.current) {
       setReaderOpen(false); setBusy(false); setPhase(''); setMessages([]); setQuestion(''); setLastQuestion('');
@@ -168,6 +171,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
         return;
       }
       session.current.conversationId = value.active?.id;
+      discussionResearch.current = null;
       setHistory(value); setMessages(value.active?.messages ?? []); setCheckedAt(value.active?.checkedAt);
       const unfinished = value.active?.messages.at(-1);
       setSnapshot(null); setQuestion(unfinished?.role === 'user' ? unfinished.content : ''); setLastQuestion('');
@@ -178,7 +182,6 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     const prompt = value.trim();
     if (lock.current || loading || historyBusy || !prompt) return;
     openReader();
-    if (!saved) { setError(t('div_ai_error_config')); return; }
     lock.current = true;
     const requestController = new AbortController();
     const generation = session.current.generation;
@@ -207,19 +210,34 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       const submittedHistory = await saveDividendAdvisorConversation(conversation.id, submittedMessages, checkedAt);
       if (!currentRequest()) return;
       setHistory(submittedHistory); setMessages(submittedMessages); setQuestion('');
-      const prepared = await prepareDividendAdvisorContext(() => undefined);
-      const context = suppliedResearch ? { ...prepared, research: await prepareDividendDiscussionResearch(prepared.research,
-        suppliedResearch.stocks.map(({ code, name }) => ({ code, name }))) } : prepared;
+      const context = await loadDividendAdvisorContext();
+      // Keep the card's original period and sources for discussion and follow-ups
+      // without replacing current checks, pricing inputs or confirmable drafts.
+      if (suppliedResearch) discussionResearch.current = structuredClone(suppliedResearch);
       if (!currentRequest()) return;
       setPhase('thinking');
-      await onUpdated();
-      if (!currentRequest()) return;
-      const answer = await askDividendAdvisorWithActions(saved, context, prompt, previousMessages, { language: i18n.language, signal: requestController.signal });
-      if (currentRequest()) {
-        for (const action of answer.actions) {
+      setSnapshot(context); setCheckedAt(context.generatedAt);
+      const registerPriceContexts = (actions: DividendPlanProposal[]) => {
+        for (const action of actions) {
           const pricing = context.research?.stocks.find(stock => stock.code === action.code)?.pricing;
           if (pricing) priceContexts.current.set(action, { pricing: structuredClone(pricing), method: context.research?.pricingMethod && structuredClone(context.research.pricingMethod), generatedAt: context.research!.generatedAt });
         }
+      };
+      const answer = await askDividendAdvisorWithActions(saved, context, prompt, previousMessages, {
+        language: i18n.language, signal: requestController.signal, explanationResearch: discussionResearch.current ?? undefined,
+        onLocalResult: local => {
+          if (!currentRequest()) return;
+          // A local draft remains a usable, evidence-bound preview even if the
+          // optional explanation is cancelled before its final response.
+          registerPriceContexts(local.actions);
+          // Local checks remain readable while an optional explanation is
+          // pending. Only the final/fallback result is saved as a completed turn.
+          setMessages([...submittedMessages, { role: 'assistant', content: local.answer, actions: local.actions,
+            pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }]);
+        },
+      });
+      if (currentRequest()) {
+        registerPriceContexts(answer.actions);
         const nextMessages: DividendAdvisorMessage[] = [...submittedMessages, { role: 'assistant', content: answer.answer, actions: answer.actions,
           pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }];
         setSnapshot(context);

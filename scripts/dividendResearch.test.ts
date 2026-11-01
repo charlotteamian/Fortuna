@@ -227,9 +227,12 @@ test('research service keeps individual source failures unknown and bounds candi
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('a failed Tencent primary recovers daily and monthly evidence through its verified public proxy', async () => {
+test('a failed Tencent primary recovers daily and monthly evidence through its verified public proxy', async context => {
   const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
   const f = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-public-2026-10-21.json', import.meta.url), 'utf8'));
+  // Archived feeds must be evaluated at their capture time: later calendar
+  // months must not turn a partial month complete or age the fixture's quote.
+  context.mock.timers.enable({ apis: ['Date'], now: new Date(f.capturedAt) });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async input => {
     const url = String(input);
@@ -278,9 +281,10 @@ test('both Tencent hosts failing retain the HTTP status, original request URL an
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('a short monthly response retries expanded prices without manufacturing verified dividend-yield months', async () => {
+test('a short monthly response retries expanded prices without manufacturing verified dividend-yield months', async context => {
   const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
   const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-history-cmb-2026-10-22.json',import.meta.url),'utf8'));
+  context.mock.timers.enable({ apis: ['Date'], now: new Date(f.capturedAt) });
   const originalFetch=globalThis.fetch, monthlyRequests:string[]=[];
   globalThis.fetch=async input => {
     const url=String(input);
@@ -315,9 +319,10 @@ test('a short monthly response retries expanded prices without manufacturing ver
   } finally { globalThis.fetch=originalFetch; }
 });
 
-test('genuinely short listing history keeps the actual current price and explains the missing anchor after bounded retry', async () => {
+test('genuinely short listing history keeps the actual current price and explains the missing anchor after bounded retry', async context => {
   const { fetchDividendResearch } = await import('../src/services/dividendResearchService.ts');
   const f=JSON.parse(readFileSync(new URL('./fixtures/dividend-history-cmb-2026-10-22.json',import.meta.url),'utf8'));
+  context.mock.timers.enable({ apis: ['Date'], now: new Date(f.capturedAt) });
   const originalFetch=globalThis.fetch;
   globalThis.fetch=async input => {
     const url=String(input);

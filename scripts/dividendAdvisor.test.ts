@@ -189,7 +189,9 @@ test('the assistant cannot turn missing or contradicted valuation inputs into ex
     data: response('openai', `资料检查。\n\`\`\`fortuna-actions\n${JSON.stringify([{ id: 'grid', code: stock.code, reason: 'Review', buyPaused: true, buyLevels }])}\n\`\`\``) }) });
   assert.deepEqual((await run()).actions, []);
   data.research!.stocks[0].pricing = verifiedPricing;
-  assert.deepEqual((await run()).actions[0].buyLevels, levels);
+  assert.deepEqual((await run()).actions, [], 'even a matching model draft cannot originate a local confirmation action');
+  const explicit = await askDividendAdvisorWithActions(null, data, '重新生成网格计划');
+  assert.deepEqual(explicit.actions[0].buyLevels, levels, 'an explicit request uses the verified local plan without a model');
   assert.equal((await run([{ ...levels[0], priceMinor: 401 }, ...levels.slice(1)])).actions.length, 0);
   assert.equal((await run(levels.map((level, index) => ({ ...level, portionBps: index === 0 ? 9000 : 500 })))).actions.length, 0);
   // Bypass the cache deliberately: persisted or caller-supplied obsolete math
@@ -261,8 +263,11 @@ test('regeneration supplies a verified ladder without changing manual pause stat
   const merged = await askDividendAdvisorWithActions(config(), data, '复核', [], { transport: async () => ({ status: 200,
     data: response('openai', `\`\`\`fortuna-actions\n${JSON.stringify([modelDraft])}\n\`\`\``) }) });
   const { isDividendPlanProposal } = await import('../src/lib/dividendAdvisorActions.ts');
-  assert.equal(merged.actions[0].buyLevels?.length, 4);
-  assert.equal(isDividendPlanProposal(merged.actions[0]), true);
+  assert.deepEqual(merged.actions, [], 'provider drafts and their long reasons cannot originate an adjustment');
+  const localDraft = await run('重新生成美的集团网格计划');
+  assert.equal(localDraft.actions[0].buyLevels?.length, 4);
+  assert.equal(isDividendPlanProposal(localDraft.actions[0]), true);
+  assert.doesNotMatch(localDraft.actions[0].reason, /复核复核复核/);
 });
 
 test('pricing questions use verified recent batches, selected tax and directional rounding without automatic financial pauses', async () => {
@@ -297,11 +302,11 @@ test('pricing questions use verified recent batches, selected tax and directiona
   assert.deepEqual(fabricated.actions,[]);
 });
 
-for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} converts a JSON-fenced pause draft to an action while retaining pricing verification`, async () => {
+for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${protocol} explicit pause produces a local preview while ignoring provider pause drafts`, async () => {
   const draft = { id: 'pause_bank_buy', code: stock.code, reason: '等待现金流覆盖改善后复核。', buyPaused: true };
-  const result = await askDividendAdvisorWithActions(config(protocol), context(), '暂停现有计划加仓', [], { transport: async () => ({ status: 200,
+  const result = await askDividendAdvisorWithActions(config(protocol), context(), '暂停现有股票计划加仓', [], { transport: async () => ({ status: 200,
     data: response(protocol, `建议暂停现有计划加仓。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });
-  assert.deepEqual(result.actions, [{ ...draft, reason: '已准备暂停草案；预览并确认后才会修改计划。' }]);
+  assert.deepEqual(result.actions, [{ ...draft, id: `pause-${stock.code}`, reason: '已准备暂停草案；预览并确认后才会修改计划。' }]);
   assert.match(result.answer, /预览并确认后才会修改计划/);
   const advisory = await askDividendAdvisorWithActions(config(protocol), context(), '复核计划', [], { transport: async () => ({ status: 200,
     data: response(protocol, `现金流风险。\n\n\`\`\`json\n${JSON.stringify([draft])}\n\`\`\``) }) });
