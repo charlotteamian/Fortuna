@@ -1,0 +1,100 @@
+{
+  "verifiedAt": "2026-11-03T00:55:44.285729+00:00",
+  "date": "2026-11-03",
+  "version": "5.0.2",
+  "androidVersionCode": 39,
+  "branch": "codex/release-5.0.2",
+  "releaseCommit": "2c3caf6a86e0806753cac04f210182cbeae3d9f6",
+  "tag": "v5.0.2",
+  "github": {
+    "workflowRunId": 41555796119,
+    "workflowUrl": "https://github.com/charlotteamian/Fortuna/actions/runs/41555796119",
+    "workflowConclusion": "success",
+    "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v5.0.2",
+    "publishedAt": "2026-11-03T00:54:43Z",
+    "latestReleaseVerified": true,
+    "assetName": "Fortuna-5.0.2-release.apk",
+    "assetSize": 6037733,
+    "assetDigest": "sha256:95cd08e5a1aea309ef9ef6a017545634569e4db56d070b5cd26839f891f8640a",
+    "downloadUrl": "https://github.com/charlotteamian/Fortuna/releases/download/v5.0.2/Fortuna-5.0.2-release.apk"
+  },
+  "apk": {
+    "localPath": "/Users/restartday/Documents/Fortuna/build/releases/v5.0.2/Fortuna-5.0.2-release.apk",
+    "package": "com.fortuna.wealthtracker",
+    "versionName": "5.0.2",
+    "versionCode": 39,
+    "size": 6037733,
+    "sha256": "95cd08e5a1aea309ef9ef6a017545634569e4db56d070b5cd26839f891f8640a",
+    "certificateSha256": "b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c",
+    "signatureMatchesPinnedLongTermCertificate": true,
+    "downloadMatchesGitHubDigest": true,
+    "webFiles": 48,
+    "webMismatches": [],
+    "webAssetsMatchTestedProductionBuild": true,
+    "capacitorBridgeFilesMatched": 2,
+    "debuggable": false
+  },
+  "validation": {
+    "date": "2026-11-03",
+    "version": "5.0.2",
+    "androidVersionCode": 39,
+    "iosMetadataBuildNumber": 39,
+    "baseline": "5a1f62108e1bfb4c98b0e679fdb0e8e1f6c12449",
+    "branch": "codex/release-5.0.2",
+    "sourceBranch": "workbuddy/main-ce1e4e2e",
+    "sourceFiles": 6,
+    "tests": {
+      "baseline": 809,
+      "total": 813,
+      "passed": 813,
+      "added": 4,
+      "failed": 0
+    },
+    "browser": {
+      "newChecks": 8,
+      "stage3RegressionChecks": 16,
+      "newLayouts": 12,
+      "stage3Layouts": 4,
+      "pageErrors": 0
+    },
+    "nativeUpdaterTests": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0
+    },
+    "lintPassed": true,
+    "productionBuildPassed": true,
+    "androidSyncCompleted": true,
+    "protectedFilesUnchanged": {
+      "src/db.ts": true,
+      "src/lib/dividendPricing.ts": true,
+      "src/lib/dividendPricingPlan.ts": true,
+      "src/lib/dividendLedger.ts": true,
+      "src/lib/dividendFundPlan.ts": true,
+      "src/lib/excelBackup.ts": true,
+      "docs/dividend-pricing-method.md": true,
+      "src/services/dividendDailyCheckService.ts": true,
+      "src/services/dividendDailyAdviceService.ts": true
+    },
+    "limitations": [
+      "No physical-device installation or upgrade-data verification",
+      "No real user database, live market-service or real-model acceptance",
+      "iOS version metadata updated; no installable iOS delivery"
+    ]
+  },
+  "limitations": [
+    "No physical-device installation or upgrade-data verification",
+    "No real user database, live market-service or real-model acceptance",
+    "iOS version metadata updated; no installable iOS delivery"
+  ],
+  "updater": {
+    "previousVersionsRecognized": [
+      "5.0.0",
+      "5.0.1"
+    ],
+    "offeredVersion": "5.0.2",
+    "assetName": "Fortuna-5.0.2-release.apk",
+    "alreadyCurrentOffersUpdate": false,
+    "usesActualLatestReleasePayload": true
+  }
+}

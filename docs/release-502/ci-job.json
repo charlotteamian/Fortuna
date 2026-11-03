@@ -1,0 +1,174 @@
+[
+  {
+    "id": 125654242009,
+    "run_id": 41555796119,
+    "workflow_name": "Android APK Release",
+    "head_branch": "v5.0.2",
+    "run_url": "https://api.github.com/repos/charlotteamian/Fortuna/actions/runs/41555796119",
+    "run_attempt": 1,
+    "node_id": "CR_kwDOSwGIYc8AAAAdQZOS2Q",
+    "head_sha": "2c3caf6a86e0806753cac04f210182cbeae3d9f6",
+    "url": "https://api.github.com/repos/charlotteamian/Fortuna/actions/jobs/125654242009",
+    "html_url": "https://github.com/charlotteamian/Fortuna/actions/runs/41555796119/job/125654242009",
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-03T00:51:19Z",
+    "started_at": "2026-11-03T00:51:22Z",
+    "completed_at": "2026-11-03T00:54:50Z",
+    "name": "Build signed release APK",
+    "steps": [
+      {
+        "name": "Set up job",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 1,
+        "started_at": "2026-11-03T00:51:23Z",
+        "completed_at": "2026-11-03T00:51:24Z"
+      },
+      {
+        "name": "Checkout",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 2,
+        "started_at": "2026-11-03T00:51:24Z",
+        "completed_at": "2026-11-03T00:51:28Z"
+      },
+      {
+        "name": "Set up Node.js",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 3,
+        "started_at": "2026-11-03T00:51:28Z",
+        "completed_at": "2026-11-03T00:51:29Z"
+      },
+      {
+        "name": "Set up Java",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 4,
+        "started_at": "2026-11-03T00:51:29Z",
+        "completed_at": "2026-11-03T00:51:29Z"
+      },
+      {
+        "name": "Set up Android SDK",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 5,
+        "started_at": "2026-11-03T00:51:29Z",
+        "completed_at": "2026-11-03T00:51:40Z"
+      },
+      {
+        "name": "Restore long-term signing key",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 6,
+        "started_at": "2026-11-03T00:51:40Z",
+        "completed_at": "2026-11-03T00:51:40Z"
+      },
+      {
+        "name": "Install dependencies",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 7,
+        "started_at": "2026-11-03T00:51:40Z",
+        "completed_at": "2026-11-03T00:52:22Z"
+      },
+      {
+        "name": "Test data and update behavior",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 8,
+        "started_at": "2026-11-03T00:52:22Z",
+        "completed_at": "2026-11-03T00:52:31Z"
+      },
+      {
+        "name": "Lint and build web app",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 9,
+        "started_at": "2026-11-03T00:52:31Z",
+        "completed_at": "2026-11-03T00:52:49Z"
+      },
+      {
+        "name": "Test updater connections and build Android signed release APK",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 10,
+        "started_at": "2026-11-03T00:52:49Z",
+        "completed_at": "2026-11-03T00:54:36Z"
+      },
+      {
+        "name": "Verify release signature identity",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 11,
+        "started_at": "2026-11-03T00:54:36Z",
+        "completed_at": "2026-11-03T00:54:37Z"
+      },
+      {
+        "name": "Prepare APK artifact",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 12,
+        "started_at": "2026-11-03T00:54:37Z",
+        "completed_at": "2026-11-03T00:54:37Z"
+      },
+      {
+        "name": "Upload APK artifact",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 13,
+        "started_at": "2026-11-03T00:54:37Z",
+        "completed_at": "2026-11-03T00:54:39Z"
+      },
+      {
+        "name": "Create or update GitHub Release",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 14,
+        "started_at": "2026-11-03T00:54:39Z",
+        "completed_at": "2026-11-03T00:54:43Z"
+      },
+      {
+        "name": "Post Set up Java",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 26,
+        "started_at": "2026-11-03T00:54:43Z",
+        "completed_at": "2026-11-03T00:54:43Z"
+      },
+      {
+        "name": "Post Set up Node.js",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 27,
+        "started_at": "2026-11-03T00:54:43Z",
+        "completed_at": "2026-11-03T00:54:47Z"
+      },
+      {
+        "name": "Post Checkout",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 28,
+        "started_at": "2026-11-03T00:54:47Z",
+        "completed_at": "2026-11-03T00:54:47Z"
+      },
+      {
+        "name": "Complete job",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 29,
+        "started_at": "2026-11-03T00:54:47Z",
+        "completed_at": "2026-11-03T00:54:47Z"
+      }
+    ],
+    "check_run_url": "https://api.github.com/repos/charlotteamian/Fortuna/check-runs/125654242009",
+    "labels": [
+      "ubuntu-latest"
+    ],
+    "runner_id": 1000000254,
+    "runner_name": "GitHub Actions 1000000254",
+    "runner_group_id": 0,
+    "runner_group_name": "GitHub Actions"
+  }
+]

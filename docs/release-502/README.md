@@ -18,3 +18,7 @@
 正式发布说明位于 `release/github/v5.0.2.md`。iOS 只同步版本元数据为 5.0.2/build 39，本次不交付 iOS 安装包。实体设备安装及升级保留数据、真实市场服务及真实模型均未验收。
 
 复跑：启动 `npm run dev -- --host 127.0.0.1 --port 5192 --strictPort`，再执行 `node docs/release-502/validate-browser.mjs` 及 `FORTUNA_STAGE3_ORIGIN=http://127.0.0.1:5192 node docs/release-502/stage3/validate-browser.mjs`。
+
+发布已完成：标签 `v5.0.2` 指向 `2c3caf6`，代码推送至 `codex/release-5.0.2`；[GitHub 签名构建](https://github.com/charlotteamian/Fortuna/actions/runs/41555796119)成功，[正式发布页](https://github.com/charlotteamian/Fortuna/releases/tag/v5.0.2)已成为 latest。未合并 main，原 WorkBuddy 工作区未改写。
+
+下载 APK 为 6,037,733 字节，SHA-256 为 `95cd08e5a1aea309ef9ef6a017545634569e4db56d070b5cd26839f891f8640a`。包名、5.0.2/versionCode 39、长期证书均一致；48 个网页文件和两个 Capacitor 桥接文件与本地已验证构建逐字节相同。应用原更新解析器使用实际发布数据，可从 5.0.0/5.0.1 识别更新，5.0.2 不重复提示。完整证据见 `release-verification.json`。
