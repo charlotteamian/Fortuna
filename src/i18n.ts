@@ -13,13 +13,14 @@ import { dividendLedgerV5En, dividendLedgerV5Zh } from './i18n/dividendLedgerV5T
 import { dividendBatchEn, dividendBatchZh } from './i18n/dividendBatchTranslations';
 import { dividendCheckEn, dividendCheckZh } from './i18n/dividendCheckTranslations';
 import { dividendDailyCheckEn, dividendDailyCheckZh } from './i18n/dividendDailyCheckTranslations';
+import { dividendClassicStrategyEn, dividendClassicStrategyZh } from './i18n/dividendClassicStrategyTranslations';
 
 i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: { ...en, ...dividendAiWorkspaceEn, ...dividendHomeEn, ...dividendGridEn, ...dividendReviewEn, ...dividendSimplifiedEn, ...dividendFinancialV5En, ...dividendLedgerV5En, ...dividendBatchEn, ...dividendCheckEn, ...dividendDailyCheckEn } },
-      zh: { translation: { ...zh, ...dividendAiWorkspaceZh, ...dividendHomeZh, ...dividendGridZh, ...dividendReviewZh, ...dividendSimplifiedZh, ...dividendFinancialV5Zh, ...dividendLedgerV5Zh, ...dividendBatchZh, ...dividendCheckZh, ...dividendDailyCheckZh } }
+      en: { translation: { ...en, ...dividendAiWorkspaceEn, ...dividendHomeEn, ...dividendGridEn, ...dividendReviewEn, ...dividendSimplifiedEn, ...dividendFinancialV5En, ...dividendLedgerV5En, ...dividendBatchEn, ...dividendCheckEn, ...dividendDailyCheckEn, ...dividendClassicStrategyEn } },
+      zh: { translation: { ...zh, ...dividendAiWorkspaceZh, ...dividendHomeZh, ...dividendGridZh, ...dividendReviewZh, ...dividendSimplifiedZh, ...dividendFinancialV5Zh, ...dividendLedgerV5Zh, ...dividendBatchZh, ...dividendCheckZh, ...dividendDailyCheckZh, ...dividendClassicStrategyZh } }
     },
     lng: 'zh', // Will be overridden by settings
     fallbackLng: 'en',

@@ -9,6 +9,8 @@ import { defaultDividendFundPlan } from '../lib/dividendFundPlan';
 import { enrichDividendPaymentDates, isDividendDataV2 } from '../lib/dividendForecast';
 import { previewDividendRiskRemoval } from './dividendAdvisorActionsService';
 import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
+import { buildClassicStockPlan, type ClassicTaxRateBps } from '../lib/dividendClassicStrategy';
+import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
 
 export async function loadDividendWorkbench() {
   await initializeSettings();
@@ -94,6 +96,18 @@ export async function saveDividendStockGroup(code: string, group: DividendStock[
   const updated = await db.dividendStocks.update(code, { group });
   if (!updated) throw new Error('DIVIDEND_STOCK_MISSING');
   requestPortableSnapshot('dividend-stock-group');
+}
+/** Fast weight-only edit for the unfunded list; keeps grids, quotes and notes intact. */
+export async function saveDividendStockWeight(code: string, weightBps: number) {
+  if (mainlandCode(code) !== code || !Number.isSafeInteger(weightBps) || weightBps < 0 || weightBps > 10000) throw new Error('INVALID_DIVIDEND_STOCK');
+  await db.transaction('rw', db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    if (!stocks.some(stock => stock.code === code)) throw new Error('DIVIDEND_STOCK_MISSING');
+    const allocated = stocks.reduce((sum, stock) => sum + (stock.code === code ? weightBps : stock.weightBps), 0);
+    if (allocated > 10000) throw new Error('DIVIDEND_IMPORT_OVER_BUDGET');
+    await db.dividendStocks.update(code, { weightBps });
+  });
+  requestPortableSnapshot('dividend-stock-weight');
 }
 export async function deleteDividendStock(code: string, redistribute = true) {
   await db.transaction('rw', db.dividendStocks, db.holdings, db.holdingTxns, async () => {
@@ -255,4 +269,50 @@ export async function refreshDividendTrend(code: string): Promise<boolean> {
     await db.dividendStocks.update(code, { trendFailedAt: Date.now() });
     return false;
   }
+}
+
+export async function applyClassicDividendGrid(code: string, taxBps: ClassicTaxRateBps = 1000): Promise<void> {
+  if (mainlandCode(code) !== code) throw new Error('INVALID_DIVIDEND_STOCK');
+  await db.transaction('rw', db.dividendStocks, async () => {
+    const current = await db.dividendStocks.get(code);
+    if (!current) throw new Error('DIVIDEND_STOCK_MISSING');
+    const plan = buildClassicStockPlan(current, { taxBps });
+    await db.dividendStocks.update(code, {
+      buyLevels: plan.classicBuyLevels,
+      sellLevels: plan.classicSellLevels,
+      gridProvenance: {
+        generatedAt: Date.now(),
+        grossDpsMicros: plan.base.grossDpsMicros,
+        taxBps,
+        parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION,
+        basisKind: 'recent_batches',
+      },
+    });
+  });
+  requestPortableSnapshot('dividend-classic-grid-applied');
+}
+
+export async function applyAllClassicDividendGrids(taxBps: ClassicTaxRateBps = 1000): Promise<number> {
+  let updatedCount = 0;
+  await db.transaction('rw', db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    const generatedAt = Date.now();
+    for (const stock of stocks) {
+      const plan = buildClassicStockPlan(stock, { taxBps });
+      await db.dividendStocks.update(stock.code, {
+        buyLevels: plan.classicBuyLevels,
+        sellLevels: plan.classicSellLevels,
+        gridProvenance: {
+          generatedAt,
+          grossDpsMicros: plan.base.grossDpsMicros,
+          taxBps,
+          parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION,
+          basisKind: 'recent_batches',
+        },
+      });
+      updatedCount++;
+    }
+  });
+  if (updatedCount) requestPortableSnapshot('dividend-classic-grids-batch');
+  return updatedCount;
 }
