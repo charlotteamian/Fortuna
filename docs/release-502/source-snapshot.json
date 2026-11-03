@@ -1,0 +1,12 @@
+{
+  "sourceBranch": "workbuddy/main-ce1e4e2e",
+  "sourceHead": "3163b70ae2add7f00dbc9e01c63f0ab7fa1f2c1f",
+  "files": {
+    "src/components/DividendAdvisor.css": "06e130a0015a51a8ade00a63dafe452b2f3476544e82f3d0ad3fc7a823a5be4c",
+    "src/components/DividendAdvisorPricing.tsx": "41f13d43087c52cd8280f24ec0c72ffd79fb0ef39b0a67924e420cd5c713f44d",
+    "src/i18n/dividendSimplifiedTranslations.ts": "a425fa7ddd7ec8a3c370633c55ae41af405be17e6b420edffaf0e14a5f14c965",
+    "src/pages/DividendPage.css": "4b03ce803a9eb34a213d3cd169daff0cacfce7a72e76ba65a0b0ad841fc741f4",
+    "src/pages/DividendPage.tsx": "e566e810b4db8fa0b0a995c6dc00a0ac9c133a502b03e17b71de9ea6c5fbb2f6",
+    "src/services/dividendService.ts": "0f7c214dd1b404f38b55d03f7eca1bb13ec864ebf405d24a9c8e8d3d7344d69e"
+  }
+}

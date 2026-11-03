@@ -1,0 +1,5 @@
+
+> fortuna-wealth-tracker@5.0.2 ios:sync-version
+> node scripts/ios-release.mjs sync
+
+Synced iOS version 5.0.2 (39)

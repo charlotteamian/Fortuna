@@ -278,3 +278,22 @@
 .div-daily-result .div-advisor-markdown h1, .div-daily-result .div-advisor-markdown h2, .div-daily-result .div-advisor-markdown h3 { font-size: .95rem; }
 .div-ai-research-card > header .div-ai-research-toggle { min-height: 44px; font-size: .75rem; }
 .div-ai-research-card .div-check-status-evidence > summary { min-height: 44px; font-size: .75rem; }
+
+/* 定价锚点：净分红 ÷ 固定收益率 = 价格 的公式可视化 */
+.div-pricing-anchor { margin: 4px 0 14px; padding: 12px; border: 1px solid color-mix(in srgb, var(--asset-color) 24%, var(--border)); border-radius: 11px; background: color-mix(in srgb, var(--asset-color) 4%, var(--bg-card)); }
+.div-pricing-anchor-label { display: block; margin-bottom: 10px; color: var(--text-muted); font-size: .68rem; letter-spacing: .04em; }
+.div-pricing-anchor-formula { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+.div-pricing-anchor-step { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; padding: 7px 10px; border-radius: 8px; background: var(--bg-secondary); }
+.div-pricing-anchor-step > span { color: var(--text-muted); font-size: .62rem; white-space: nowrap; }
+.div-pricing-anchor-step > strong { font-size: .9rem; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--text-primary); }
+.div-pricing-anchor-step.div-pricing-anchor-result { background: color-mix(in srgb, var(--asset-color) 14%, var(--bg-card)); }
+.div-pricing-anchor-step.div-pricing-anchor-result > strong { color: var(--asset-color); }
+.div-pricing-anchor-op { display: grid; place-items: center; padding: 0 2px; color: var(--text-secondary); font-size: .8rem; font-weight: 600; }
+.div-pricing-anchor > .div-ai-muted { margin: 9px 0 0; font-size: .68rem; }
+.div-check-grid-table tbody tr.div-grid-row-triggered { background: var(--asset-dim); }
+.div-check-grid-table .div-grid-cell-triggered { color: var(--asset-color); font-size: .72rem; }
+.div-check-grid-table .div-grid-cell-waiting { color: var(--text-muted); font-size: .72rem; }
+.div-pricing-reference { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.div-pricing-reference > summary { cursor: pointer; color: var(--text-secondary); font-size: .72rem; min-height: 28px; padding: 4px 0; }
+.div-pricing-reference .div-ai-metrics { margin: 12px 0 6px; }
+.div-pricing-reference > .div-ai-muted { font-size: .68rem; }

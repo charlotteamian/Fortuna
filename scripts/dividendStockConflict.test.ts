@@ -20,7 +20,7 @@ registerHooks({
 });
 
 const { db, initializeSettings, updateSettings, exportData } = await import('../src/db.ts');
-const { dividendStockEditFingerprint, saveDividendStock } = await import('../src/services/dividendService.ts');
+const { dividendStockEditFingerprint, saveDividendStock, saveDividendStockWeight } = await import('../src/services/dividendService.ts');
 const { loadDividendWorkbench, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
 
 const stock = (): DividendStock => ({ code: '000001', name: 'Synthetic stock', group: 'core', weightBps: 5000,
@@ -40,6 +40,45 @@ beforeEach(async () => {
   await db.holdingTxns.put({ id: 'synthetic-buy', holdingId: 'synthetic-holding', accountId: 'synthetic-account', date: '2020-01-01', kind: 'buy', shares: 100, price: 10, createdAt: 1 });
 });
 after(() => db.close());
+
+test('inline allocation changes only the selected weight and preserves the entire saved ledger', async () => {
+  const original = { ...stock(), weightBps: 0, quote: { priceMinor: 950, date: '2026-11-03 10:00:00', fetchedAt: 1 } };
+  await db.dividendStocks.put(original);
+  await db.dividendStocks.put({ ...stock(), code: '000002', weightBps: 6000 });
+  const before = await state();
+  await saveDividendStockWeight(original.code, 2500);
+  assert.deepEqual(await state(), { ...before, dividendStocks: before.dividendStocks.map((row: DividendStock) => row.code === original.code ? { ...original, weightBps: 2500 } : row) });
+});
+
+test('inline allocation rejects invalid, missing and over-budget writes without changing data', async () => {
+  await db.dividendStocks.put({ ...stock(), code: '000002', weightBps: 5000 });
+  const before = await state();
+  for (const weight of [-1, 1.5, NaN, Infinity, 10001]) await assert.rejects(saveDividendStockWeight('000001', weight), /INVALID_DIVIDEND_STOCK/);
+  await assert.rejects(saveDividendStockWeight('bad-code', 1000), /INVALID_DIVIDEND_STOCK/);
+  await assert.rejects(saveDividendStockWeight('000003', 1000), /DIVIDEND_STOCK_MISSING/);
+  await assert.rejects(saveDividendStockWeight('000001', 5001), /DIVIDEND_IMPORT_OVER_BUDGET/);
+  assert.deepEqual(await state(), before);
+});
+
+test('concurrent inline allocations cannot spend the same remaining budget twice', async () => {
+  await db.dividendStocks.put({ ...stock(), weightBps: 6000 });
+  await db.dividendStocks.bulkPut(['000002', '000003'].map(code => ({ ...stock(), code, weightBps: 0 })));
+  const outcomes = await Promise.allSettled(['000002', '000003'].map(code => saveDividendStockWeight(code, 3000)));
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  const failure = outcomes.find(result => result.status === 'rejected');
+  assert.ok(failure?.status === 'rejected' && /DIVIDEND_IMPORT_OVER_BUDGET/.test(String(failure.reason)));
+  const stocks = await db.dividendStocks.toArray();
+  assert.equal(stocks.reduce((sum, row) => sum + row.weightBps, 0), 9000);
+  assert.equal(stocks.filter(row => row.weightBps === 3000).length, 1);
+});
+
+test('an editor opened before inline allocation cannot restore the previous weight', async () => {
+  const original = stock(), expectedFingerprint = dividendStockEditFingerprint(original);
+  await saveDividendStockWeight(original.code, 6000);
+  const allocated = await state();
+  await assert.rejects(saveDividendStock({ ...original, note: 'Stale draft' }, { expectedFingerprint }), /DIVIDEND_STOCK_CHANGED/);
+  assert.deepEqual(await state(), allocated);
+});
 
 test('absent homepage preferences default closed without writes; explicit expanded preferences survive reload', async () => {
   const before = await state();

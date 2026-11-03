@@ -95,6 +95,18 @@ export async function saveDividendStockGroup(code: string, group: DividendStock[
   if (!updated) throw new Error('DIVIDEND_STOCK_MISSING');
   requestPortableSnapshot('dividend-stock-group');
 }
+/** Fast weight-only edit for the unfunded list; keeps grids, quotes and notes intact. */
+export async function saveDividendStockWeight(code: string, weightBps: number) {
+  if (mainlandCode(code) !== code || !Number.isSafeInteger(weightBps) || weightBps < 0 || weightBps > 10000) throw new Error('INVALID_DIVIDEND_STOCK');
+  await db.transaction('rw', db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    if (!stocks.some(stock => stock.code === code)) throw new Error('DIVIDEND_STOCK_MISSING');
+    const allocated = stocks.reduce((sum, stock) => sum + (stock.code === code ? weightBps : stock.weightBps), 0);
+    if (allocated > 10000) throw new Error('DIVIDEND_IMPORT_OVER_BUDGET');
+    await db.dividendStocks.update(code, { weightBps });
+  });
+  requestPortableSnapshot('dividend-stock-weight');
+}
 export async function deleteDividendStock(code: string, redistribute = true) {
   await db.transaction('rw', db.dividendStocks, db.holdings, db.holdingTxns, async () => {
     if ((await previewDividendRiskRemoval([code])).protected.length) throw new Error('DIVIDEND_STOCK_HELD');

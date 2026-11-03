@@ -4,7 +4,7 @@ import { dividendCheckSummary } from '../lib/dividendCheckSummary';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BUY_LEVELS, SELL_LEVELS, dateInChina, latestReportDividend, forecastHoldingYearDividends, fundedDividendStocks, mainlandCode, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, type DividendStock, type GridLevel, type LinkedDividendPosition } from '../lib/dividendWorkbench';
-import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, dividendStockEditFingerprint, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup } from '../services/dividendService';
+import { addLinkedDividendStocks, allocateDividendBudget, deleteDividendStock, dividendStockEditFingerprint, loadDividendWorkbench, refreshDividendStocks, saveDividendBudget, saveDividendHomeCollapse, saveDividendStock, saveDividendStockGroup, saveDividendStockWeight } from '../services/dividendService';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendFundHomePlan from '../components/DividendFundHomePlan';
@@ -140,6 +140,20 @@ export default function DividendPage() {
     catch { setError(t('div_save_error')); }
     finally { setGroupSaving(false); }
   };
+  const removeStock = async (code: string) => {
+    if (busy.current) return;
+    const before = data.stocks;
+    const hadWeight = before.some(stock => stock.code === code && stock.weightBps > 0);
+    busy.current = true; setError('');
+    try {
+      await deleteDividendStock(code, true);
+      const next = await load();
+      setAllocationResult(hadWeight ? { before, after: next.stocks } : null);
+      setMessage(t(hadWeight ? 'div_deleted_redistributed' : 'div_deleted_unallocated'));
+    } catch (cause) {
+      setError(t(cause instanceof Error && cause.message === 'DIVIDEND_STOCK_HELD' ? 'div_v2_held_delete_blocked' : 'div_save_error'));
+    } finally { busy.current = false; }
+  };
   const openStockPlan = async (code: string) => {
     if (data.strategy !== 'stocks') await changeStrategy('stocks');
     setManagerSearch(''); setFocusedPlanCode(code); setOpenPlanRequest(value => value + 1);
@@ -155,7 +169,9 @@ export default function DividendPage() {
     collapseState.current = next; setCollapsedCodes(next);
     void saveDividendHomeCollapse(code, collapsed).catch(() => { if (alive.current) setError(t('div_save_error')); });
   };
-  const openCheckItem = (item: DividendDailyItem) => {
+  const openCheckItem = async (item: DividendDailyItem) => {
+    const strategy = item.kind === 'stock' ? 'stocks' : 'funds';
+    if (data.strategy !== strategy) await changeStrategy(strategy);
     setReadFilter('all'); setSearch('');
     setGroup(item.kind === 'stock' && data.stocks.find(stock => stock.code === item.code)?.group === 'hidden' ? 'hidden' : 'all');
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -171,6 +187,9 @@ export default function DividendPage() {
   const forecasts = held.map(stock => forecastHoldingYearDividends(stock, today, sharesFor(stock)));
   const covered = forecasts.filter(forecast => forecast.amountMinor !== undefined);
   const forecastTotal = covered.reduce((sum, forecast) => sum + forecast.amountMinor!, 0);
+  const heldChecks = held.map(stock => checks.stocks[stock.code] ?? dividendCheckSummary({ stock, totalBudgetMinor: data.budgetConfigured ? data.budgetMinor : undefined, shares: sharesFor(stock), asOf: today }));
+  const triggeredBuys = heldChecks.filter(check => check.trigger.buy === 'triggered').length;
+  const triggeredSells = heldChecks.filter(check => check.trigger.sell === 'triggered').length;
   const weight = data.stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
   const untracked = [...data.positions.values()].filter(position => !data.stocks.some(stock => stock.code === position.code)).sort((a, b) => a.code.localeCompare(b.code));
   const displayed = sortDividendStocks(data.stocks.filter(stock => (group === 'all' ? stock.group !== 'hidden' || sharesFor(stock) > 0 : group === 'held' ? sharesFor(stock) > 0 : stock.group === group)
@@ -190,6 +209,7 @@ export default function DividendPage() {
           <input id="div-budget" inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0" max="1000000000000" step="0.01" placeholder={t('div_budget_placeholder')} value={budgetInput} disabled={budgetSaving} onChange={event => setBudgetInput(event.target.value)} />
           <button type="submit" className="btn btn-primary" disabled={budgetSaving}>{t(budgetSaving ? 'loading' : 'save')}</button></div></form>
         <p className="div-muted">{t('div_allocated', { percent: numeric(weight / 100), remaining: money(Math.max(0, data.budgetMinor - stockBudgetMinor(data.budgetMinor, weight))) })}</p>
+        <div className="div-budget-meter" role="progressbar" aria-valuenow={weight} aria-valuemin={0} aria-valuemax={10000} aria-label={t('div_allocated', { percent: numeric(weight / 100), remaining: '' })}><span style={{ width: `${Math.min(100, weight / 100)}%` }} className={weight > 10000 ? 'over' : ''} /></div>
         {weight > 10000 && <p className="div-warning">{t('div_over_budget')}</p>}<p className="div-muted">{t('div_allocation_rule')}</p>
         <button className="btn btn-secondary" disabled={Boolean(progress) || weight <= 0 || weight >= 10000} onClick={() => setAllocationOpen(true)}>{t('div_allocate_unused')}</button>
       </details>
@@ -207,17 +227,19 @@ export default function DividendPage() {
             {(['buy', 'sell'] as const).filter(side => plan[`${side}TriggeredLevel`] > 0).map(side => <span className="div-grid-trigger-status is-triggered" key={side}>{t(`div_home_${side}`)} · {t('div_grid_triggered_level', { level: plan[`${side}TriggeredLevel`] })}</span>)}</summary>
           <label className="div-plan-stock-group">{t('div_group')}<select value={stock.group} aria-label={`${stock.name} ${t('div_group')}`} disabled={groupSaving} onChange={event => void changeStockGroup(stock.code, event.target.value as DividendStock['group'])}>{(['core', 'watch', 'hidden'] as const).map(value => <option key={value} value={value}>{t(`div_group_${value}`)}</option>)}</select></label>
           <div className="div-budget-line"><span>{t('div_stock_weight')} <strong>{numeric(stock.weightBps / 100)}%</strong></span><span>{t('div_stock_budget')} <strong>{money(stockBudgetMinor(data.budgetMinor, stock.weightBps))}</strong></span></div>
-          <button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
+          <div className="div-actions"><button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
+            <InlineDeleteButton disabled={Boolean(progress) || strategySaving} onConfirm={() => removeStock(stock.code)} /></div>
           {stock.buyPaused && <p className="div-warning">{t('div_buy_paused_note')}</p>}
           <DividendCheckStatus summary={check} />
           {(['buy', 'sell'] as const).map(side => <DividendPlanGrid key={side} plan={plan} side={side} amountVisible={amountVisible} tierIndices={check.grid[side === 'buy' ? 'buyTierIndices' : 'sellTierIndices']} />)}
         </details>; })}</div>
         {fundedPlans.length === 0 && <p className="div-muted">{t('div_no_funded_plans')}</p>}
         {unfundedPlans.length > 0 && <details className="div-unfunded-stocks" open={unfundedPlans.some(stock => stock.code === focusedPlanCode)}><summary>{t('div_unfunded_stocks', { count: unfundedPlans.length })}</summary>
-          <div className="div-unfunded-stock-list">{unfundedPlans.map(stock => <div key={stock.code}
-            ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }}>
-            <span>{stock.name}<small>{stock.code}</small></span><button className="btn btn-secondary" onClick={() => { setIsNew(false); setEditor(stock); }}>{t('div_edit')}</button>
-          </div>)}</div>
+          <p className="div-muted">{t('div_unfunded_allocate_hint')}</p>
+          <div className="div-unfunded-stock-list">{unfundedPlans.map(stock => <UnfundedStockRow key={stock.code}
+            stock={stock} remainingBps={Math.max(0, 10000 - weight)} disabled={Boolean(progress) || strategySaving}
+            onAllocated={load} onRemoved={() => removeStock(stock.code)} onEdit={() => { setIsNew(false); setEditor(stock); }}
+            ref={element => { if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) { scrolledPlanRequest.current = openPlanRequest; element.scrollIntoView({ block: 'start' }); } }} />)}</div>
         </details>}
       </details>
     </>}
@@ -236,8 +258,9 @@ export default function DividendPage() {
     }} />}
     <div className="page-header"><div><h1 className="page-title">{t('div_title')}</h1><small className="div-active-strategy">{t('div_home_all_plans')}</small></div>
       <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>{t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}</button></div>
+    <div className="div-home-tabs" role="tablist" aria-label={t('div_strategy')}>{(['stocks', 'funds'] as const).map(strategy => <button key={strategy} role="tab" aria-selected={data.strategy === strategy} className={data.strategy === strategy ? 'active' : ''} disabled={strategySaving || budgetSaving || Boolean(progress)} onClick={() => void changeStrategy(strategy)}>{t(`div_strategy_${strategy}`)}</button>)}</div>
     <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planManagement={planManagement} planKey={dailyPlanKey} openPlanRequest={openPlanRequest} onOpenCheckItem={openCheckItem} />
-    <section className="div-quote-status" aria-label={t('div_auto_quotes')}><div role="status"><strong>{t(quotes.refreshing ? 'div_quotes_updating' : 'div_auto_quotes')}</strong>
+    <section className="div-quote-status" aria-label={t('div_auto_quotes')}><div role="status"><strong>{quotes.refreshing ? t('div_quotes_updating') : progress ? t('div_refresh_progress', progress) : t('div_auto_quotes')}</strong>
       {quotes.result && <small>{t('div_quotes_result', { done: quotes.result.done - quotes.result.failed, total: quotes.result.done, time: new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) })}</small>}
       {(quotes.failed || Boolean(quotes.result?.failed)) && <p className="div-warning">{t('div_quotes_failed')}</p>}
     </div><button className="btn btn-secondary" disabled={quotes.refreshing || Boolean(progress) || !quoteTargets} onClick={() => void quotes.refresh(true)}>{t('div_refresh_quotes')}</button></section>
@@ -246,8 +269,13 @@ export default function DividendPage() {
       <DividendReadFilters value={readFilter} onChange={setReadFilter} />
       <div className="div-filters" aria-label={t('div_group')}>{['all', 'held', 'core', 'watch', 'hidden'].map(value => <button key={value} className={group === value ? 'selected' : ''} aria-pressed={group === value} onClick={() => setGroup(value)}>{t(`div_group_${value}`)}</button>)}</div>
     </details>
-    <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} asOf={today} collapsedCodes={collapsedCodes} onToggle={toggleStock} readFilter={readFilter} search={search} onEdit={() => void openFundPlan()} />
+    {data.strategy === 'funds' ? <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} asOf={today} collapsedCodes={collapsedCodes} onToggle={toggleStock} readFilter={readFilter} search={search} onEdit={() => void openFundPlan()} /> :
     <section className="div-stock-home" aria-labelledby="div-stock-home-title"><div className="div-section-heading"><h2 id="div-stock-home-title">{t('div_home_stock_plans')}</h2><button type="button" className="div-advisor-text-button" onClick={() => void openStockPlan('')}>{t('div_manage_stocks')}</button></div>
+      <div className="div-summary-strip">
+        <span><strong>{held.length}</strong><small>{t('div_summary_held')}</small></span>
+        <span className={triggeredBuys > 0 ? 'is-triggered' : ''}><strong>{triggeredBuys}</strong><small>{t('div_summary_buy_triggered')}</small></span>
+        <span className={triggeredSells > 0 ? 'is-triggered' : ''}><strong>{triggeredSells}</strong><small>{t('div_summary_sell_triggered')}</small></span>
+      </div>
       {message && <p className="div-notice" role="status">{message}</p>}{error && <p className="div-warning" role="alert">{error}</p>}
       <div className="div-stock-list">{displayed.map(stock => {
         const shares = sharesFor(stock), latest = latestReportDividend(stock), forecast = forecastHoldingYearDividends(stock, today, shares);
@@ -291,7 +319,58 @@ export default function DividendPage() {
         <section className="div-hero div-forecast-hero"><div className="div-estimate"><span>{t('div_v2_holding_forecast')}</span><strong>{held.length > covered.length ? '—' : money(forecastTotal)}</strong><small>{t('div_coverage', { count: covered.length, total: held.length })}</small></div><p className="div-muted">{t('div_v2_forecast_basis')}</p></section>
       </details>
       <div className="div-actions div-toolbar"><button className="btn btn-secondary" disabled={Boolean(progress) || quotes.refreshing} onClick={() => void refresh(data.stocks.map(stock => stock.code))}>{progress ? t('div_refresh_progress', progress) : t('div_v2_refresh_disclosures')}</button></div>
-    </section>
+    </section>}
+  </div>;
+}
+
+/** Point-twice delete: the first tap arms confirmation, the second within a few seconds removes. */
+function InlineDeleteButton({ disabled, onConfirm }: { disabled: boolean; onConfirm: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), 3500);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+  const onClick = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    if (busy) return;
+    setBusy(true);
+    try { await onConfirm(); setConfirming(false); }
+    catch { setConfirming(false); }
+    finally { setBusy(false); }
+  };
+  return <button type="button" className={confirming ? 'btn btn-danger' : 'btn btn-secondary'} disabled={disabled || busy} onClick={() => void onClick()}>{t(confirming ? 'div_confirm_remove' : 'delete')}</button>;
+}
+
+/** Unfunded row: allocate a weight inline, or remove the target without opening the full editor. */
+function UnfundedStockRow({ stock, remainingBps, disabled, onAllocated, onRemoved, onEdit, ref }: { stock: DividendStock; remainingBps: number; disabled: boolean; onAllocated: () => Promise<unknown>; onRemoved: () => Promise<unknown>; onEdit: () => void; ref?: React.Ref<HTMLDivElement> }) {
+  const { t } = useTranslation();
+  const [weight, setWeight] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    const value = Number(weight);
+    if (!weight.trim() || !Number.isFinite(value) || value <= 0 || Math.round(value * 100) > remainingBps) { setError(t('div_allocate_weight_invalid', { remaining: numeric(remainingBps / 100) })); return; }
+    setBusy(true); setError('');
+    try { await saveDividendStockWeight(stock.code, Math.round(value * 100)); setWeight(''); await onAllocated(); }
+    catch { setError(t('div_save_error')); }
+    finally { setBusy(false); }
+  };
+  return <div className="div-unfunded-stock-row" ref={ref}>
+    <span className="div-unfunded-stock-name">{stock.name}<small>{stock.code}</small></span>
+    <form className="div-unfunded-allocate" onSubmit={e => void submit(e)}>
+      <span className="div-alloc-input-wrap"><input type="number" inputMode="decimal" min="0.01" step="0.01" placeholder={t('div_allocate_weight_placeholder')} value={weight} disabled={busy || disabled} onChange={e => setWeight(e.target.value)} aria-label={`${stock.name} ${t('div_allocate_weight')}`} /><span className="div-alloc-pct">%</span></span>
+      <button type="submit" className="btn btn-secondary" disabled={busy || disabled}>{t('div_allocate_weight')}</button>
+    </form>
+    <div className="div-unfunded-row-actions">
+      <button type="button" className="btn btn-secondary" disabled={disabled} onClick={onEdit}>{t('div_edit')}</button>
+      <InlineDeleteButton disabled={disabled} onConfirm={async () => { await onRemoved(); }} />
+    </div>
+    {error && <p className="div-warning" role="alert">{error}</p>}
   </div>;
 }
 
@@ -331,6 +410,7 @@ function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClo
   const { t } = useTranslation();
   const dialog = useRef<HTMLDialogElement>(null);
   const deletePreview = useRef<HTMLElement>(null);
+  const [step, setStep] = useState<1 | 2>(1);
   const [stock, setStock] = useState(initial);
   const [openedFingerprint] = useState(() => dividendStockEditFingerprint(initial));
   const [dps, setDps] = useState(initial.manualDpsMicros === undefined ? '' : String(initial.manualDpsMicros / 1e6));
@@ -342,11 +422,16 @@ function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClo
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => { if (confirmDelete) deletePreview.current?.scrollIntoView({ block: 'start' }); }, [confirmDelete]);
   const patch = (value: Partial<DividendStock>) => setStock(s => ({ ...s, ...value }));
+  const basicValid = () => {
+    const code = mainlandCode(stock.code);
+    return Boolean(code && (isNew ? !stocks.some(s => s.code === code) : true) && stock.name.trim());
+  };
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (step === 1) { if (!basicValid()) { setError(t('div_invalid_stock')); return; } setError(''); setStep(2); return; }
     const code = mainlandCode(stock.code);
     if (saving) return;
-    if (!code || (isNew && stocks.some(s => s.code === code)) || !stock.name.trim() || (dps !== '' && (!Number.isFinite(Number(dps)) || Number(dps) < 0))) { setError(t('div_invalid_stock')); return; }
+    if (!code || !stock.name.trim() || (dps !== '' && (!Number.isFinite(Number(dps)) || Number(dps) < 0))) { setError(t('div_invalid_stock')); return; }
     setSaving(true);
     try {
       await saveDividendStock({ ...stock, code, name: stock.name.trim(), manualDpsMicros: dps === '' ? undefined : Math.round(Number(dps) * 1e6) },
@@ -365,34 +450,50 @@ function StockEditor({ initial, isNew, stocks, budgetMinor, amountVisible, onClo
     try { await deleteDividendStock(initial.code, redistribute); await onSaved(redistribute ? 'redistributed' : 'deleted'); } catch (cause) { setError(t(cause instanceof Error && cause.message === 'DIVIDEND_STOCK_HELD' ? 'div_v2_held_delete_blocked' : 'div_save_error')); }
     finally { setSaving(false); }
   };
+  const gridEditor = (side: 'buy' | 'sell') => {
+    const key = side === 'buy' ? 'buyLevels' : 'sellLevels';
+    const levels = stock[key] ?? (side === 'buy' ? BUY_LEVELS : SELL_LEVELS);
+    const change = (i: number, field: keyof GridLevel, value: string) => patch({ [key]: levels.map((level, index) => index === i ? { ...level, [field]: value === '' && field === 'priceMinor' ? undefined : Math.round(Number(value) * 100) } : level) });
+    return <div key={side}><h3>{t(`div_grid_${side}`)}</h3><div className="div-table-scroll"><table><thead><tr><th>{t('div_grid_yield')} %</th><th>{t('div_portion')} %</th><th>{t('div_override_price')}</th></tr></thead><tbody>{levels.map((level, i) => <tr key={i}>
+      <td><input aria-label={`${t(`div_grid_${side}`)} ${i + 1} ${t('div_grid_yield')}`} type="number" required min="0.01" max="100" step="0.01" value={level.yieldBps / 100} onChange={e => change(i, 'yieldBps', e.target.value)} /></td>
+      <td><input aria-label={`${t(`div_grid_${side}`)} ${i + 1} ${t('div_portion')}`} type="number" required min="0" max="100" step="0.01" value={level.portionBps / 100} onChange={e => change(i, 'portionBps', e.target.value)} /></td>
+      <td><input aria-label={`${t(`div_grid_${side}`)} ${i + 1} ${t('div_override_price')}`} type="number" min="0.01" step="0.01" placeholder={t('div_auto')} value={level.priceMinor === undefined ? '' : level.priceMinor / 100} onChange={e => change(i, 'priceMinor', e.target.value)} /></td>
+    </tr>)}</tbody></table></div></div>;
+  };
   return <dialog className="div-dialog" ref={dialog} onCancel={e => { if (saving) e.preventDefault(); else onClose(); }} aria-labelledby="div-editor-title"><form onSubmit={e => void save(e)}>
     <div className="div-stock-heading"><h2 id="div-editor-title">{t(isNew ? 'div_add' : 'div_edit')}</h2><button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('close')}</button></div>
-    <div className="div-form-fields">
-      <label>{t('div_code')}<input required disabled={!isNew} value={stock.code} onChange={e => patch({ code: e.target.value, ...(isNew ? { lotSize: e.target.value.replace(/\D/g, '').startsWith('68') ? 200 : 100 } : {}) })} /></label>
-      <label>{t('name')}<input required maxLength={80} value={stock.name} onChange={e => patch({ name: e.target.value })} /></label>
-      <label>{t('div_group')}<select value={stock.group} onChange={e => patch({ group: e.target.value as DividendStock['group'] })}>{['core', 'watch', 'hidden'].map(g => <option key={g} value={g}>{t(`div_group_${g}`)}</option>)}</select></label>
-      <label>{t('div_weight')}<input required type="number" inputMode="decimal" min="0" max="100" step="0.01" value={stock.weightBps / 100} onChange={e => patch({ weightBps: Math.round(Number(e.target.value) * 100) })} /></label>
-      <label>{t('div_share_mode')}<select value={stock.shareMode} onChange={e => patch({ shareMode: e.target.value as DividendStock['shareMode'] })}><option value="linked">{t('div_linked')}</option><option value="manual">{t('div_manual')}</option></select></label>
-      {stock.shareMode === 'manual' && <label>{t('div_shares')}<input required type="number" inputMode="decimal" min="0" step="0.0001" value={stock.manualShares} onChange={e => patch({ manualShares: Number(e.target.value) })} /></label>}
-      <label>{t('div_v2_manual_grid_annual')}<input type="number" inputMode="decimal" min="0" step="0.000001" placeholder={t('div_auto_dps')} value={dps} onChange={e => setDps(e.target.value)} /></label>
-      <label>{t('div_lot_size')}<input required type="number" min="1" max="10000" step="1" value={stock.lotSize} onChange={e => patch({ lotSize: Number(e.target.value) })} /></label>
-    </div><p className="div-muted">{t('div_v2_manual_grid_note')}</p>
-    <label className="div-form-note">{t('div_note')}<textarea maxLength={2000} rows={3} value={stock.note ?? ''} onChange={e => patch({ note: e.target.value })} /></label>
-    <details className="div-method"><summary>{t('div_edit_grid')}</summary><p>{t('div_edit_grid_note')}</p><p>{t('div_v2_grid_forecast_basis')}</p>
-      <label className="div-linked-all"><input type="checkbox" checked={stock.buyPaused ?? false} onChange={e => patch({ buyPaused: e.target.checked })} />{t('div_buy_paused')}</label>
-      {(['buy', 'sell'] as const).map(side => {
-      const key = side === 'buy' ? 'buyLevels' : 'sellLevels';
-      const levels = stock[key] ?? (side === 'buy' ? BUY_LEVELS : SELL_LEVELS);
-      const change = (i: number, field: keyof GridLevel, value: string) => patch({ [key]: levels.map((level, index) => index === i ? { ...level, [field]: value === '' && field === 'priceMinor' ? undefined : Math.round(Number(value) * 100) } : level) });
-      return <div key={side}><h3>{t(`div_grid_${side}`)}</h3><div className="div-table-scroll"><table><thead><tr><th>{t('div_grid_yield')} %</th><th>{t('div_portion')} %</th><th>{t('div_override_price')}</th></tr></thead><tbody>{levels.map((level, i) => <tr key={i}>
-        <td><input aria-label={`${t(`div_grid_${side}`)} ${i + 1} ${t('div_grid_yield')}`} type="number" required min="0.01" max="100" step="0.01" value={level.yieldBps / 100} onChange={e => change(i, 'yieldBps', e.target.value)} /></td>
-        <td><input aria-label={`${t(`div_grid_${side}`)} ${i + 1} ${t('div_portion')}`} type="number" required min="0" max="100" step="0.01" value={level.portionBps / 100} onChange={e => change(i, 'portionBps', e.target.value)} /></td>
-        <td><input aria-label={`${t(`div_grid_${side}`)} ${i + 1} ${t('div_override_price')}`} type="number" min="0.01" step="0.01" placeholder={t('div_auto')} value={level.priceMinor === undefined ? '' : level.priceMinor / 100} onChange={e => change(i, 'priceMinor', e.target.value)} /></td>
-      </tr>)}</tbody></table></div></div>;
-    })}<button type="button" className="btn btn-secondary" onClick={() => patch({ buyLevels: undefined, sellLevels: undefined })}>{t('div_reset_grid')}</button></details>
+    <div className="div-editor-steps" role="tablist" aria-label={t('div_editor_step_of', { current: step, total: 2 })}>
+      <button type="button" role="tab" aria-selected={step === 1} className={step === 1 ? 'active' : ''} onClick={() => setStep(1)}>{t('div_editor_step_basic')}</button>
+      <button type="button" role="tab" aria-selected={step === 2} className={step === 2 ? 'active' : ''} onClick={() => { if (basicValid()) { setError(''); setStep(2); } }}>{t('div_editor_step_grid')}</button>
+    </div>
+    <p className="div-muted div-editor-step-hint">{t('div_editor_step_of', { current: step, total: 2 })}</p>
+    {step === 1 ? <>
+      <div className="div-form-fields">
+        <label>{t('div_code')}<input required disabled={!isNew} value={stock.code} onChange={e => patch({ code: e.target.value, ...(isNew ? { lotSize: e.target.value.replace(/\D/g, '').startsWith('68') ? 200 : 100 } : {}) })} /></label>
+        <label>{t('name')}<input required maxLength={80} value={stock.name} onChange={e => patch({ name: e.target.value })} /></label>
+        <label>{t('div_group')}<select value={stock.group} onChange={e => patch({ group: e.target.value as DividendStock['group'] })}>{['core', 'watch', 'hidden'].map(g => <option key={g} value={g}>{t(`div_group_${g}`)}</option>)}</select></label>
+        <label>{t('div_weight')}<input required type="number" inputMode="decimal" min="0" max="100" step="0.01" value={stock.weightBps / 100} onChange={e => patch({ weightBps: Math.round(Number(e.target.value) * 100) })} /></label>
+        <label>{t('div_share_mode')}<select value={stock.shareMode} onChange={e => patch({ shareMode: e.target.value as DividendStock['shareMode'] })}><option value="linked">{t('div_linked')}</option><option value="manual">{t('div_manual')}</option></select></label>
+        {stock.shareMode === 'manual' && <label>{t('div_shares')}<input required type="number" inputMode="decimal" min="0" step="0.0001" value={stock.manualShares} onChange={e => patch({ manualShares: Number(e.target.value) })} /></label>}
+        <label>{t('div_lot_size')}<input required type="number" min="1" max="10000" step="1" value={stock.lotSize} onChange={e => patch({ lotSize: Number(e.target.value) })} /></label>
+      </div>
+      <label className="div-form-note">{t('div_note')}<textarea maxLength={2000} rows={3} value={stock.note ?? ''} onChange={e => patch({ note: e.target.value })} /></label>
+    </> : <>
+      <label className="div-form-fields div-form-fields-single">{t('div_v2_manual_grid_annual')}<input type="number" inputMode="decimal" min="0" step="0.000001" placeholder={t('div_auto_dps')} value={dps} onChange={e => setDps(e.target.value)} /></label>
+      <p className="div-muted">{t('div_v2_manual_grid_note')}</p>
+      <div className="div-method"><p>{t('div_edit_grid_note')}</p><p>{t('div_v2_grid_forecast_basis')}</p>
+        <label className="div-linked-all"><input type="checkbox" checked={stock.buyPaused ?? false} onChange={e => patch({ buyPaused: e.target.checked })} />{t('div_buy_paused')}</label>
+        {(['buy', 'sell'] as const).map(gridEditor)}
+        <button type="button" className="btn btn-secondary" onClick={() => patch({ buyLevels: undefined, sellLevels: undefined })}>{t('div_reset_grid')}</button>
+      </div>
+    </>}
     {error && <p className="div-warning" role="alert">{error}</p>}
-    <div className="div-actions"><button type="submit" className="btn btn-primary" disabled={saving}>{t('save')}</button><button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('cancel')}</button>
-      {!isNew && <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => setConfirmDelete(true)}>{t('delete')}</button>}</div>
+    <div className="div-actions">
+      {step === 2 && <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => setStep(1)}>{t('div_editor_step_back')}</button>}
+      <button type="submit" className="btn btn-primary" disabled={saving}>{step === 1 ? t('div_editor_step_next') : t('save')}</button>
+      <button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('cancel')}</button>
+      {!isNew && <button type="button" className="btn btn-secondary" disabled={saving} onClick={() => setConfirmDelete(true)}>{t('delete')}</button>}
+    </div>
     {confirmDelete && <section className="div-delete-preview" ref={deletePreview}><p className="div-warning">{t('div_delete_confirm', { name: initial.name })}</p>
       <label className="div-linked-all"><input type="checkbox" checked={redistribute} disabled={saving} onChange={e => setRedistribute(e.target.checked)} />{t('div_delete_redistribute')}</label>
       <p className="div-muted">{t(redistribute ? 'div_redistribute_note' : 'div_delete_keep_unused')}</p>

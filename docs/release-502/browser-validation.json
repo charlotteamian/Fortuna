@@ -1,0 +1,113 @@
+{
+  "success": true,
+  "scope": "Fresh isolated Chrome, fixed synthetic data and mocked services; no real user database, external services or device installation.",
+  "checks": [
+    {
+      "name": "stock/fund tabs switch the saved view while keeping the unified daily-check entry",
+      "passed": true
+    },
+    {
+      "name": "holding and trigger totals use the same verified quote summaries as the existing checks",
+      "passed": true
+    },
+    {
+      "name": "pricing formula shows gross/net dividend and the 5% reference; four buy/four sell levels and folded reference metrics preserve the saved plan",
+      "passed": true
+    },
+    {
+      "name": "inline allocation rejects excess weight, then updates only the selected stock weight",
+      "passed": true
+    },
+    {
+      "name": "list removal requires two clicks and removing an unfunded stock preserves other allocations",
+      "passed": true
+    },
+    {
+      "name": "the existing holding guard still blocks removal from the new list shortcut",
+      "passed": true
+    },
+    {
+      "name": "the two-step editor preserves conflict rejection and cannot overwrite a newer plan",
+      "passed": true
+    },
+    {
+      "name": "back/next retains the draft and a normal save preserves grids, quote, shares and pause",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "layouts": [
+    {
+      "name": "stock-home",
+      "width": 320,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "name": "stock-home",
+      "width": 320,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "name": "stock-home",
+      "width": 390,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "name": "stock-home",
+      "width": 390,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "name": "pricing",
+      "width": 320,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "name": "pricing",
+      "width": 320,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "name": "pricing",
+      "width": 390,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "name": "pricing",
+      "width": 390,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "name": "editor",
+      "width": 320,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "name": "editor",
+      "width": 320,
+      "scale": 1.3,
+      "overflow": []
+    },
+    {
+      "name": "editor",
+      "width": 390,
+      "scale": 1,
+      "overflow": []
+    },
+    {
+      "name": "editor",
+      "width": 390,
+      "scale": 1.3,
+      "overflow": []
+    }
+  ]
+}

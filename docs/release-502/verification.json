@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-03",
+  "version": "5.0.2",
+  "androidVersionCode": 39,
+  "iosMetadataBuildNumber": 39,
+  "baseline": "5a1f62108e1bfb4c98b0e679fdb0e8e1f6c12449",
+  "branch": "codex/release-5.0.2",
+  "sourceBranch": "workbuddy/main-ce1e4e2e",
+  "sourceFiles": 6,
+  "tests": {
+    "baseline": 809,
+    "total": 813,
+    "passed": 813,
+    "added": 4,
+    "failed": 0
+  },
+  "browser": {
+    "newChecks": 8,
+    "stage3RegressionChecks": 16,
+    "newLayouts": 12,
+    "stage3Layouts": 4,
+    "pageErrors": 0
+  },
+  "nativeUpdaterTests": {
+    "tests": 16,
+    "failures": 0,
+    "errors": 0
+  },
+  "lintPassed": true,
+  "productionBuildPassed": true,
+  "androidSyncCompleted": true,
+  "protectedFilesUnchanged": {
+    "src/db.ts": true,
+    "src/lib/dividendPricing.ts": true,
+    "src/lib/dividendPricingPlan.ts": true,
+    "src/lib/dividendLedger.ts": true,
+    "src/lib/dividendFundPlan.ts": true,
+    "src/lib/excelBackup.ts": true,
+    "docs/dividend-pricing-method.md": true,
+    "src/services/dividendDailyCheckService.ts": true,
+    "src/services/dividendDailyAdviceService.ts": true
+  },
+  "limitations": [
+    "No physical-device installation or upgrade-data verification",
+    "No real user database, live market-service or real-model acceptance",
+    "iOS version metadata updated; no installable iOS delivery"
+  ]
+}

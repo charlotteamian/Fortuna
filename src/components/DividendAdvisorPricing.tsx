@@ -106,7 +106,10 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
   const pricing = invalidateOutdatedDividendPricing(sourcePricing);
   const plan = check ? check.currentPlan : dividendPricingPlan(pricing);
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
-  const pct = (value: number) => `${Number((value / 100).toFixed(2))}%`;
+  const dps = (value?: number) => value === undefined ? '—' : `¥${(value / 1e6).toFixed(6)}`;
+  const pct = (value?: number) => value === undefined ? '—' : `${Number((value / 100).toFixed(2))}%`;
+  const base = pricing.dividendBase;
+  const currentPriceMinor = check?.trigger.quote.status === 'current' ? check.trigger.quote.priceMinor : undefined;
   const proposal: DividendPlanProposal | null = plan ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: `¥${((pricing.d1Micros ?? 0) / 1e6).toFixed(6)}`, price: yuan(pricing.theoreticalPriceMinor) }), ...plan,
     gridProvenance: dividendPricingProvenance(pricing, generatedAt),
@@ -115,15 +118,41 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
     <h3>{t('div_check_grid_title')}</h3>
     {pricing.blockers.includes('pricing_calculation_stale') ? <p className="div-warning">{t('div_v2_pricing_model_stale')}</p> : <>
       <p className="div-ai-muted">{t('div_check_grid_caption')}</p>
-      {plan && <><p className="div-ai-muted">{t('div_batch_columns_note', { tax: pct(pricing.taxBps ?? 0) })}</p>
+      {plan && <>
+        <div className="div-pricing-anchor">
+          <span className="div-pricing-anchor-label">{t('div_pricing_anchor')}</span>
+          <div className="div-pricing-anchor-formula">
+            <div className="div-pricing-anchor-step"><span>{t('div_classic_gross_dividend')}</span><strong>{dps(base?.dpsMicros)}</strong></div>
+            <span className="div-pricing-anchor-op">{t('div_pricing_tax', { tax: pct(pricing.taxBps ?? 0) })}</span>
+            <div className="div-pricing-anchor-step"><span>{t('div_classic_net_dividend')}</span><strong>{dps(pricing.d1Micros)}</strong></div>
+            <span className="div-pricing-anchor-op">÷</span>
+            <div className="div-pricing-anchor-step"><span>{t('div_pricing_fixed_yield')}</span><strong>{pct(pricing.anchors.selectedBps ?? 500)}</strong></div>
+            <span className="div-pricing-anchor-op">=</span>
+            <div className="div-pricing-anchor-step div-pricing-anchor-result"><span>{t('div_pricing_neutral_price')}</span><strong>{yuan(pricing.theoreticalPriceMinor)}</strong></div>
+          </div>
+          <small className="div-ai-muted">{t('div_classic_dividend_basis', { tax: pct(pricing.taxBps) })}</small>
+        </div>
         {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)}</caption><thead><tr>
-          <th scope="col">{t('div_grid_level_column')}</th><th scope="col">{t('div_batch_gross_price')}</th><th scope="col">{t('div_batch_net_price')}</th>
+          <th scope="col">{t('div_grid_level_column')}</th><th scope="col">{t('div_pricing_price_yield')}</th><th scope="col">{t('div_grid_status')}</th>
         </tr></thead><tbody>{plan[side === 'buy' ? 'buyLevels' : 'sellLevels'].map((level, index) => {
-          const gross = BigInt(pricing.dividendBase!.dpsMicros!), divisor = BigInt(level.yieldBps);
-          const grossMinor = Number(side === 'buy' ? gross / divisor : (gross + divisor - 1n) / divisor);
-          return <tr key={level.yieldBps}><th scope="row">{index + 1}<small>{pct(level.yieldBps)}</small></th>
-            <td>{yuan(grossMinor)}</td><td><strong>{yuan(level.priceMinor)}</strong></td></tr>;
-        })}</tbody></table>)}</>}
+          const reached = level.priceMinor !== undefined && currentPriceMinor !== undefined
+            && (side === 'buy' ? currentPriceMinor <= level.priceMinor : currentPriceMinor >= level.priceMinor);
+          return <tr key={level.yieldBps} className={reached ? 'div-grid-row-triggered' : undefined}><th scope="row">{index + 1}</th>
+            <td><strong>{yuan(level.priceMinor)}</strong><small>{pct(level.yieldBps)}</small></td>
+            <td>{currentPriceMinor === undefined ? <span className="div-grid-cell-pending">{t('div_grid_quote_pending')}</span> : reached ? <span className="div-grid-cell-triggered">{t('div_grid_price_triggered')}</span> : <span className="div-grid-cell-waiting">{t('div_grid_row_waiting')}</span>}</td></tr>;
+        })}</tbody></table>)}
+        <details className="div-pricing-reference"><summary>{t('div_pricing_reference_toggle')}</summary>
+          <dl className="div-ai-metrics">
+            <div><dt>{t('div_pricing_gordon_price')}</dt><dd>{yuan(pricing.gordonPriceMinor)}</dd></div>
+            <div><dt>{t('div_pricing_pb_bridge')}</dt><dd>{yuan(pricing.pbBridgePriceMinor)}</dd></div>
+            <div><dt>{t('div_pricing_margin')}</dt><dd>{yuan(pricing.marginPriceMinor)}</dd></div>
+            <div><dt>{t('div_classic_roe')}</dt><dd>{pct(pricing.meanRoeBps)}</dd></div>
+            <div><dt>{t('div_classic_spread')}</dt><dd>{pct(pricing.currentSpreadBps)}</dd></div>
+            <div><dt>{t('div_v2_pricing_spread_percentile')}</dt><dd>{pricing.spreadPercentileBps === undefined ? '—' : pct(pricing.spreadPercentileBps)}</dd></div>
+          </dl>
+          <p className="div-ai-muted">{t('div_pricing_reference_note')}</p>
+        </details>
+      </>}
       {!plan && <p className="div-warning">{t('div_check_grid_unavailable')}{pricing.blockers.map(issue => t(`div_v2_pricing_gap_${issue}`)).join('；')}</p>}
       {!plan && check?.grid.origin === 'saved' && <><p className="div-warning">{t('div_check_saved_grid_kept')}</p>
         {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)} · {t('div_check_origin_saved')}</caption>
