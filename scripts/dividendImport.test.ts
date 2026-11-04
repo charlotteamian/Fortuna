@@ -242,6 +242,27 @@ test('allocation can repair an overcommitted plan and rolls back on write failur
   assert.deepEqual((await db.dividendStocks.toArray()).map(row => row.weightBps), [5455, 4545]);
 });
 
+test('proportional allocation rejects changed budget or weights from its preview but permits quote-only refreshes', async () => {
+  const stocks = [stock('000001', 1000), { ...stock('600036', 2000), note: 'retain', buyPaused: true }, stock('600900', 0)];
+  await db.settings.update('main', { dividendBudgetMinor: 10000000 });
+  await db.dividendStocks.bulkAdd(stocks);
+  const expectedFingerprint = dividendBudgetAllocationFingerprint(stocks, 10000000);
+  await db.settings.update('main', { dividendBudgetMinor: 11000000 });
+  await assert.rejects(allocateDividendBudget({ expectedFingerprint }), /DIVIDEND_BUDGET_CHANGED/);
+  assert.deepEqual(await db.dividendStocks.toArray(), stocks);
+  await db.settings.update('main', { dividendBudgetMinor: 10000000 });
+  await db.dividendStocks.update('000001', { weightBps: 1200 });
+  await assert.rejects(allocateDividendBudget({ expectedFingerprint }), /DIVIDEND_BUDGET_CHANGED/);
+  assert.deepEqual(await db.dividendStocks.toArray(), [{ ...stocks[0], weightBps: 1200 }, stocks[1], stocks[2]]);
+  await db.dividendStocks.put(stocks[0]);
+  const quote = { priceMinor: 1234, date: '2026-11-04', fetchedAt: 2 };
+  await db.dividendStocks.update('600036', { quote });
+  await allocateDividendBudget({ expectedFingerprint });
+  assert.deepEqual(await db.dividendStocks.toArray(), [
+    { ...stocks[0], weightBps: 3333 }, { ...stocks[1], weightBps: 6667, quote }, stocks[2],
+  ]);
+});
+
 test('delete redistribution gives released budget to previously unallocated stocks while preserving unused budget and plan data', async () => {
   const first = stock('000001', 2000);
   const retained = { ...stock('600036', 1000), group: 'hidden' as const, note: 'retain', buyPaused: true };

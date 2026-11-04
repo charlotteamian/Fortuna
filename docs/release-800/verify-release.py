@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
 BUILD = ROOT / 'build' / 'release-800'
 BUILD.mkdir(parents=True, exist_ok=True)
-VERSION = '8.0.0'
+VERSION = '8.0.1'
 TAG = f'v{VERSION}'
 ASSET = f'Fortuna-{VERSION}-release.apk'
 REPO = 'charlotteamian/Fortuna'
@@ -43,7 +43,7 @@ assert certificate == pinned
 badging = run(str(TOOLS / 'aapt'), 'dump', 'badging', str(apk))
 (OUT / 'apk-badging.txt').write_text(badging)
 package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging)
-assert package.groups() == ('com.fortuna.wealthtracker', '44', VERSION)
+assert package.groups() == ('com.fortuna.wealthtracker', '45', VERSION)
 assert 'application-debuggable' not in badging
 with zipfile.ZipFile(apk) as archive:
     resources = [file for file in (ROOT / 'dist').rglob('*') if file.is_file()]
@@ -58,7 +58,7 @@ result = {
     'verifiedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     'releaseUrl': release['html_url'], 'tag': TAG, 'commit': commit, 'asset': ASSET,
     'sha256': digest, 'githubDigestMatches': True, 'package': package.group(1),
-    'versionName': VERSION, 'versionCode': 44, 'debuggable': False,
+    'versionName': VERSION, 'versionCode': 45, 'debuggable': False,
     'certificateSha256': certificate, 'pinnedCertificateMatches': True,
     'webBuildResourcesMatched': len(resources), 'capacitorBridgeResourcesMatched': len(bridges),
     'physicalDeviceTested': False, 'emulatorTested': False,

@@ -163,9 +163,13 @@ export async function deleteDividendStock(code: string, redistribute = true) {
 }
 
 /** Assign the available budget in the existing proportions, with exact basis-point rounding. */
-export async function allocateDividendBudget(): Promise<void> {
-  await db.transaction('rw', db.dividendStocks, async () => {
-    const stocks = await db.dividendStocks.toArray();
+export async function allocateDividendBudget(options?: { expectedFingerprint: string }): Promise<void> {
+  if (options !== undefined && (!options || typeof options.expectedFingerprint !== 'string' || !options.expectedFingerprint)) throw new Error('INVALID_DIVIDEND_ALLOCATION');
+  await db.transaction('rw', db.settings, db.dividendStocks, async () => {
+    const [stocks, settings] = await Promise.all([db.dividendStocks.toArray(), db.settings.get('main')]);
+    if (options && dividendBudgetAllocationFingerprint(stocks, settings?.dividendBudgetMinor ?? 0, settings?.dividendBudgetMinor !== undefined) !== options.expectedFingerprint) {
+      throw new Error('DIVIDEND_BUDGET_CHANGED');
+    }
     const total = stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
     if (total <= 0) throw new Error('NO_DIVIDEND_WEIGHTS');
     await updateDividendWeights(stocks, new Map(scaleDividendWeights(stocks).map(stock => [stock.code, stock.weightBps])));

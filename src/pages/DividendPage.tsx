@@ -1370,7 +1370,7 @@ function AllocationDialog({
     setSaving(true);
     try {
       if (mode === 'equal') await reallocateDividendBudget({ expectedFingerprint: preview.fingerprint });
-      else await allocateDividendBudget();
+      else await allocateDividendBudget({ expectedFingerprint: preview.fingerprint });
       await onSaved();
     } catch (cause) {
       setError(t(cause instanceof Error && cause.message === 'DIVIDEND_BUDGET_CHANGED' ? 'div_experience_allocation_changed' : 'div_save_error'));

@@ -16,6 +16,10 @@
       "passed": true
     },
     {
+      "name": "A concurrent weight edit refuses the frozen proportional allocation preview and preserves the newer weights without reallocating",
+      "passed": true
+    },
+    {
       "name": "Deleting with redistribution selected gives released allocation to zero-weight stocks and retains the previous 10% unallocated share",
       "passed": true
     },
@@ -49,6 +53,10 @@
     },
     {
       "name": "Fund evidence remains available on demand; reading and changing viewport do not modify the plan",
+      "passed": true
+    },
+    {
+      "name": "Two distinct special-dividend events keep their own report, announcement and verification dates and both original source links in the UI",
       "passed": true
     }
   ],
@@ -247,5 +255,25 @@
   "expandedDisclosures": {
     "total": 10,
     "open": 10
-  }
+  },
+  "specialEventMetadata": [
+    {
+      "id": "special_dividend_review:browser-special-one",
+      "sources": [
+        "https://example.com/browser-special-one"
+      ],
+      "period": "2026-09-30",
+      "published": "2026-10-01",
+      "verified": "2026-10-03"
+    },
+    {
+      "id": "special_dividend_review:browser-special-two",
+      "sources": [
+        "https://example.com/browser-special-two"
+      ],
+      "period": "2026-10-01",
+      "published": "2026-10-04",
+      "verified": "2026-10-06"
+    }
+  ]
 }

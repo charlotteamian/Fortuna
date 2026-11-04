@@ -38,14 +38,8 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
               : code.startsWith('annual_') || code.startsWith('fcf_') || code.includes('earnings') || code.includes('payout') || code === 'financial_sector_review' ? 'financial' : 'unknown');
     return translated(`div_check_help_${group}`, 'div_check_help_unknown');
   };
-  const riskByReason = new Map<string, DividendCheckRisk & { group: keyof DividendCheckSummary['risk'] }>();
-  for (const group of ['blocking', 'evidenceInsufficient', 'attention'] as const) {
-    for (const item of summary.risk[group]) {
-      const code = dividendCheckReasonCode(item.reason);
-      if (!riskByReason.has(code)) riskByReason.set(code, { ...item, group });
-    }
-  }
-  const allRisks = [...riskByReason.values()];
+  const allRisks = (['blocking', 'evidenceInsufficient', 'attention'] as const)
+    .flatMap(group => summary.risk[group].map(item => ({ ...item, group })));
   const reasons = [...new Map([
     ...summary.actionCheck.buy.reasons.filter(reason => reason === 'manual_pause'),
     ...summary.risk.blocking.map(item => item.reason), ...summary.eligibility.reasons,

@@ -110,6 +110,27 @@ try {
   check('Confirming equal allocation funds the previously zero-weight stock and preserves prices, grids, pause status, fund plan and holdings');
 
   await page.evaluate(async () => (await import('/src/db.ts')).db.dividendStocks.update('000005', { weightBps: 0 }));
+  await openHome();
+  await page.locator('.div-wb-overview').getByRole('button', { name: '预算与分配', exact: true }).click();
+  await topDialog().getByRole('button', { name: '分配剩余预算', exact: true }).click();
+  const proportional = topDialog();
+  await proportional.locator('#div-allocation-title').waitFor();
+  const proportionalBefore = await stocks();
+  assert.deepEqual(await stocks(), proportionalBefore, 'Opening a proportional preview must not write weights');
+  await page.evaluate(async () => (await import('/src/db.ts')).db.dividendStocks.update('000001', { weightBps: 0 }));
+  const concurrentWeights = await stocks();
+  await proportional.getByRole('button', { name: '确认重新分配', exact: true }).click();
+  await proportional.getByRole('alert').waitFor();
+  assert.match(await proportional.getByRole('alert').innerText(), /已变化/);
+  assert.deepEqual(await stocks(), concurrentWeights, 'A stale proportional preview must preserve the concurrent user edit');
+  await proportional.screenshot({ path: `${output}budget-proportional-conflict-390.png` });
+  await proportional.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.locator('.div-wb-dialog[open] .div-wb-dialog-header button').click();
+  await page.evaluate(async () => (await import('/src/db.ts')).db.dividendStocks.update('000001', { weightBps: 1000 }));
+  await openHome();
+  check('A concurrent weight edit refuses the frozen proportional allocation preview and preserves the newer weights without reallocating');
+
+  await page.evaluate(async () => (await import('/src/db.ts')).db.dividendStocks.update('000005', { weightBps: 0 }));
   await openSelection();
   assert.equal(await reader.getByRole('button', { name: '自动补齐资料并检查', exact: true }).count(), 1);
   assert.equal(await reader.locator('.div-selection-actions').getByRole('button', { name: '一键重新分配预算', exact: true }).count(), 1);
@@ -220,6 +241,48 @@ try {
   for (const [width, scale] of sizes.filter(([width]) => width < 1000)) await layout(page.locator('.dividend-page'), 'fund expanded evidence', width, scale);
   assert.deepEqual(await page.evaluate(async () => (await (await import('/src/db.ts')).db.settings.get('main')).dividendFundPlan), fundBefore);
   check('Fund evidence remains available on demand; reading and changing viewport do not modify the plan');
+
+  const specialMetadata = await page.evaluate(async () => {
+    const { db } = await import('/src/db.ts');
+    const { default: Dexie } = await import('/node_modules/dexie/dist/dexie.mjs');
+    const { loadDividendWorkbench } = await import('/src/services/dividendService.ts');
+    const { loadDividendCheckSummaries } = await import('/src/services/dividendCheckSummaryService.ts');
+    const evidenceStore = new Dexie('FortunaDividendLedger');
+    evidenceStore.version(1).stores({ documents: 'url', ledgers: 'code' });
+    const ledger = await evidenceStore.table('ledgers').get('000001');
+    const first = { ...ledger.events[0], id: 'browser-special-one', batchId: 'browser-special-one', period: 'special',
+      reportDate: '2026-09-30', announcementDate: '2026-10-01', exDate: '2026-10-02', implemented: true, shareFactor: 1.1,
+      verification: 'verified', sources: [{ provider: 'issuer', url: 'https://example.com/browser-special-one', verifiedAt: '2026-10-03' }] };
+    const second = { ...first, id: 'browser-special-two', batchId: 'browser-special-two', reportDate: '2026-10-01',
+      announcementDate: '2026-10-04', exDate: '2026-10-05',
+      sources: [{ provider: 'issuer', url: 'https://example.com/browser-special-two', verifiedAt: '2026-10-06' }] };
+    await evidenceStore.table('ledgers').put({ ...ledger, events: [...ledger.events, first, second] });
+    evidenceStore.close();
+    await db.settings.update('main', { dividendStrategy: 'stocks' });
+    const inspection = await loadDividendCheckSummaries(await loadDividendWorkbench());
+    return inspection.stocks['000001'].risk.evidenceInsufficient.filter(item => item.reason === 'special_dividend_review')
+      .map(item => ({ id: item.id, sources: item.sources, period: item.reportPeriod, published: item.publishedAt, verified: item.verifiedAt }));
+  });
+  assert.deepEqual(specialMetadata, [
+    { id: 'special_dividend_review:browser-special-one', sources: ['https://example.com/browser-special-one'], period: '2026-09-30', published: '2026-10-01', verified: '2026-10-03' },
+    { id: 'special_dividend_review:browser-special-two', sources: ['https://example.com/browser-special-two'], period: '2026-10-01', published: '2026-10-04', verified: '2026-10-06' },
+  ], 'The real check engine must retain both supported special-event records before testing their UI');
+  await openHome(); await openSelection();
+  const specialCard = stockCard('000001');
+  await specialCard.locator('.div-check-status-evidence > summary').click();
+  const specialEvidence = specialCard.locator('.div-check-status-evidence');
+  await specialEvidence.getByText(/查看全部观察与资料缺口/).click();
+  const eventRows = specialEvidence.locator('li').filter({ hasText: '本次基数或比较涉及特别分红' });
+  assert.equal(await eventRows.count(), 2, 'Distinct special events must retain separate metadata rows');
+  assert.match(await eventRows.nth(0).innerText(), /2026-09-30[\s\S]*2026-10-01[\s\S]*2026-10-03/);
+  assert.match(await eventRows.nth(1).innerText(), /2026-10-01[\s\S]*2026-10-04[\s\S]*2026-10-06/);
+  await specialEvidence.getByText('原始来源与日期', { exact: true }).click();
+  assert.equal(await specialEvidence.locator('a[href="https://example.com/browser-special-one"]').count(), 1);
+  assert.equal(await specialEvidence.locator('a[href="https://example.com/browser-special-two"]').count(), 1);
+  await assertTranslated(specialEvidence);
+  await captureTarget(page, specialEvidence, `${output}distinct-special-event-evidence-390.png`);
+  result.specialEventMetadata = specialMetadata;
+  check('Two distinct special-dividend events keep their own report, announcement and verification dates and both original source links in the UI');
 
   assert.deepEqual(result.errors, []);
   result.success = true;
