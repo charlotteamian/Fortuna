@@ -1,0 +1,64 @@
+{
+  "environment": "New isolated Android36.1 arm64 AVD fortuna700isolated/emulator-5582; signed6.0.1 cover-upgraded; synthetic account UI only; no physical-device evidence",
+  "checks": [
+    {
+      "name": "Signed6.0.1/41 to7.0.0/43 cover-install",
+      "passed": true
+    },
+    {
+      "name": "Synthetic account, USD currency and exact123456 minor-unit balance retained",
+      "passed": true
+    },
+    {
+      "page": "home",
+      "required": [
+        "FORTUNA700_SYNTHETIC_CASH",
+        "Main navigation"
+      ],
+      "passed": true,
+      "beforeVisibleLabels": 38,
+      "afterVisibleLabels": 38,
+      "pidBefore": "7732",
+      "pidAfter": "7732"
+    },
+    {
+      "page": "dividend",
+      "required": [
+        "Refresh All Quotes & Dividends",
+        "Open Q&A"
+      ],
+      "passed": true,
+      "beforeVisibleLabels": 54,
+      "afterVisibleLabels": 54,
+      "pidBefore": "7732",
+      "pidAfter": "7732"
+    },
+    {
+      "page": "selection",
+      "required": [
+        "New chat",
+        "Review current plan",
+        "Batch Import"
+      ],
+      "passed": true,
+      "beforeVisibleLabels": 403,
+      "afterVisibleLabels": 403,
+      "pidBefore": "7732",
+      "pidAfter": "7732"
+    },
+    {
+      "page": "chat",
+      "required": [
+        "Chat history",
+        "FORTUNA700_DRAFT_KEEP",
+        "Send"
+      ],
+      "passed": true,
+      "beforeVisibleLabels": 22,
+      "afterVisibleLabels": 22,
+      "pidBefore": "7732",
+      "pidAfter": "7732"
+    }
+  ],
+  "success": true
+}

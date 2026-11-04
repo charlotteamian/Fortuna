@@ -1,0 +1,135 @@
+Activity Resolver Table:
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        8906a12 com.fortuna.wealthtracker/.MainActivity filter 1bad5e3
+          Action: "android.intent.action.MAIN"
+          Category: "android.intent.category.LAUNCHER"
+
+Receiver Resolver Table:
+  Non-Data Actions:
+      androidx.profileinstaller.action.SAVE_PROFILE:
+        a4a6be0 com.fortuna.wealthtracker/androidx.profileinstaller.ProfileInstallReceiver filter 13aed3f
+          Action: "androidx.profileinstaller.action.SAVE_PROFILE"
+      androidx.profileinstaller.action.INSTALL_PROFILE:
+        a4a6be0 com.fortuna.wealthtracker/androidx.profileinstaller.ProfileInstallReceiver filter dce5e99
+          Action: "androidx.profileinstaller.action.INSTALL_PROFILE"
+      androidx.profileinstaller.action.SKIP_FILE:
+        a4a6be0 com.fortuna.wealthtracker/androidx.profileinstaller.ProfileInstallReceiver filter 507155e
+          Action: "androidx.profileinstaller.action.SKIP_FILE"
+      androidx.profileinstaller.action.BENCHMARK_OPERATION:
+        a4a6be0 com.fortuna.wealthtracker/androidx.profileinstaller.ProfileInstallReceiver filter 81a660c
+          Action: "androidx.profileinstaller.action.BENCHMARK_OPERATION"
+
+Domain verification status:
+
+Permissions:
+  Permission [com.fortuna.wealthtracker.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION] (f08e714):
+    sourcePackage=com.fortuna.wealthtracker
+    uid=10224 gids=[] type=0 prot=signature
+    perm=PermissionInfo{aaaabbd com.fortuna.wealthtracker.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION}
+    flags=0x0
+
+Registered ContentProviders:
+  com.fortuna.wealthtracker/androidx.startup.InitializationProvider:
+    Provider{c2ce5b2 com.fortuna.wealthtracker/androidx.startup.InitializationProvider}
+  com.fortuna.wealthtracker/androidx.core.content.FileProvider:
+    Provider{6c63903 com.fortuna.wealthtracker/androidx.core.content.FileProvider}
+
+ContentProvider Authorities:
+  [com.fortuna.wealthtracker.fileprovider]:
+    Provider{6c63903 com.fortuna.wealthtracker/androidx.core.content.FileProvider}
+      applicationInfo=ApplicationInfo{3176080 com.fortuna.wealthtracker}
+  [com.fortuna.wealthtracker.androidx-startup]:
+    Provider{c2ce5b2 com.fortuna.wealthtracker/androidx.startup.InitializationProvider}
+      applicationInfo=ApplicationInfo{35b46b9 com.fortuna.wealthtracker}
+
+Key Set Manager:
+  [com.fortuna.wealthtracker]
+      Signing KeySets: 63
+
+Packages:
+  Package [com.fortuna.wealthtracker] (97faafe):
+    appId=10224
+    pkg=Package{fe9625f com.fortuna.wealthtracker}
+    codePath=/data/app/~~MqvZsL8zPfJJ6t0hZ7Jedw==/com.fortuna.wealthtracker-wMg7wwoXP-mNo0mO_9W0Rw==
+    resourcePath=/data/app/~~MqvZsL8zPfJJ6t0hZ7Jedw==/com.fortuna.wealthtracker-wMg7wwoXP-mNo0mO_9W0Rw==
+    legacyNativeLibraryDir=/data/app/~~MqvZsL8zPfJJ6t0hZ7Jedw==/com.fortuna.wealthtracker-wMg7wwoXP-mNo0mO_9W0Rw==/lib
+    extractNativeLibs=false
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    cpuAbiOverride=null
+    versionCode=43 minSdk=24 targetSdk=36
+    minExtensionVersions=[]
+    versionName=7.0.0
+    hiddenApiEnforcementPolicy=2
+    usesNonSdkApi=false
+    splits=[base]
+    apkSigningVersion=2
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP KILL_AFTER_RESTORE ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    forceQueryable=false
+    pageSizeCompat=0
+    scannedAsStoppedSystemApp=false
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2026-11-04 16:59:56
+    lastUpdateTime=2026-11-04 16:59:56
+    installerPackageName=null
+    installerPackageUid=-1
+    initiatingPackageName=com.android.shell
+    originatingPackageName=null
+    packageSource=1
+    appMetadataFilePath=null
+    appMetadataSource=0
+    signatures=PackageSignatures{5e9ed8 version:2, signatures:[a855365f], past signatures:[]}
+    installPermissionsFixed=false
+    pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP KILL_AFTER_RESTORE ]
+    privatePkgFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    apexModuleName=null
+    declared permissions:
+      com.fortuna.wealthtracker.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION: prot=signature
+    requested permissions:
+      android.permission.READ_CALENDAR
+      android.permission.INTERNET
+      com.fortuna.wealthtracker.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+      android.permission.WRITE_CALENDAR
+      android.permission.REQUEST_INSTALL_PACKAGES
+    install permissions:
+      android.permission.INTERNET: granted=true
+      com.fortuna.wealthtracker.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION: granted=true
+    User 0: ceDataInode=360540 deDataInode=57956 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false quarantined=false
+      installReason=0
+      dataDir=/data/user/0/com.fortuna.wealthtracker
+      firstInstallTime=2026-11-04 16:55:37
+      uninstallReason=0
+      overlay paths:
+        /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk
+        /data/resource-cache/com.android.systemui-neutral-N2w3.frro
+        /data/resource-cache/com.android.systemui-accent-Z8w6.frro
+        /data/resource-cache/com.android.systemui-dynamic-0D1T.frro
+      legacy overlay paths:
+        /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk
+      gids=[3003]
+      runtime permissions:
+        android.permission.READ_CALENDAR: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+        android.permission.WRITE_CALENDAR: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+
+Queries:
+  system apps queryable: false
+  queries via forceQueryable:
+  queries via package name:
+  queries via component:
+    com.google.android.as:
+      com.fortuna.wealthtracker
+    com.google.android.settings.intelligence:
+      com.fortuna.wealthtracker
+    com.google.android.apps.accessibility.voiceaccess:
+      com.fortuna.wealthtracker
+  queryable via interaction:
+    User 0:
+  queryable via uses-library:
+
+Dexopt state:
+  [com.fortuna.wealthtracker]
+    path: /data/app/~~MqvZsL8zPfJJ6t0hZ7Jedw==/com.fortuna.wealthtracker-wMg7wwoXP-mNo0mO_9W0Rw==/base.apk
+      arm64: [status=verify] [reason=install] [primary-abi]
+        [location is /data/app/~~MqvZsL8zPfJJ6t0hZ7Jedw==/com.fortuna.wealthtracker-wMg7wwoXP-mNo0mO_9W0Rw==/oat/arm64/base.odex]

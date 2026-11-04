@@ -1,0 +1,19 @@
+{
+  "compatiblePreviousVersions": [
+    "5.0.0",
+    "5.0.1",
+    "5.0.2",
+    "6.0.1",
+    "6.0.2"
+  ],
+  "checkedAt": "2026-11-04T09:00:06.560Z",
+  "previousVersion": "6.0.1",
+  "previousOffersVersion": "7.0.0",
+  "currentVersion": "7.0.0",
+  "currentHasUpdate": false,
+  "assetName": "Fortuna-7.0.0-release.apk",
+  "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v7.0.0",
+  "downloadUrl": "https://github.com/charlotteamian/Fortuna/releases/download/v7.0.0/Fortuna-7.0.0-release.apk",
+  "releaseUrlStatus": 206,
+  "downloadUrlStatus": 206
+}

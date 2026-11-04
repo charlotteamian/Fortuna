@@ -1,0 +1,30 @@
+{
+  "android": {
+    "conclusion": "success",
+    "databaseId": 41803366260,
+    "headBranch": "v7.0.0",
+    "headSha": "c253c0509b332ebb3b4e8f3b27ede0d526f2a156",
+    "status": "completed",
+    "url": "https://github.com/charlotteamian/Fortuna/actions/runs/41803366260",
+    "workflowName": "Android APK Release"
+  },
+  "ios": {
+    "conclusion": "success",
+    "databaseId": 41803372660,
+    "headBranch": "codex/release-7.0.0",
+    "headSha": "c253c0509b332ebb3b4e8f3b27ede0d526f2a156",
+    "status": "completed",
+    "url": "https://github.com/charlotteamian/Fortuna/actions/runs/41803372660",
+    "workflowName": "iOS Release Readiness"
+  },
+  "supportPages": {
+    "conclusion": "success",
+    "databaseId": 41803572822,
+    "headBranch": "main",
+    "headSha": "3163b70ae2add7f00dbc9e01c63f0ab7fa1f2c1f",
+    "status": "completed",
+    "url": "https://github.com/charlotteamian/Fortuna/actions/runs/41803572822",
+    "workflowName": "App Store Support Pages"
+  },
+  "supportPagesPolicy": "Only main may deploy; public/ is byte-identical between main and v7.0.0. First release-branch dispatch was denied by environment policy, then main dispatch succeeded without changing policy."
+}
