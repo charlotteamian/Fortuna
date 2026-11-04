@@ -1,7 +1,7 @@
 import { parseTencentDividendTrend } from '../lib/dividendTrend';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { db, initializeSettings } from '../db';
-import { dateInChina, defaultDividendStocks, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, previewDividendWeightChanges, quoteSymbol, redistributeDividendWeights, scaleDividendWeights, suggestedDividendStockWeight, type DividendStock } from '../lib/dividendWorkbench';
+import { dateInChina, defaultDividendStocks, equalDividendWeights, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, previewDividendWeightChanges, quoteSymbol, redistributeDividendWeights, scaleDividendWeights, suggestedDividendStockWeight, type DividendStock } from '../lib/dividendWorkbench';
 import type { DividendImportRow } from '../lib/dividendImport';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
@@ -171,6 +171,28 @@ export async function allocateDividendBudget(): Promise<void> {
     await updateDividendWeights(stocks, new Map(scaleDividendWeights(stocks).map(stock => [stock.code, stock.weightBps])));
   });
   requestPortableSnapshot('dividend-budget-allocated');
+}
+
+/** Bind an allocation preview to user-owned budget inputs, excluding asynchronously refreshed market data. */
+export function dividendBudgetAllocationFingerprint(stocks: readonly Pick<DividendStock, 'code' | 'weightBps'>[], budgetMinor: number, budgetConfigured = true): string {
+  return JSON.stringify({ budgetMinor, budgetConfigured, stocks: [...stocks]
+    .sort((a, b) => a.code.localeCompare(b.code)).map(({ code, weightBps }) => ({ code, weightBps })) });
+}
+
+/** Apply a confirmed equal-allocation preview atomically, preserving all other plan and holding fields. */
+export async function reallocateDividendBudget({ expectedFingerprint }: { expectedFingerprint: string }): Promise<void> {
+  if (typeof expectedFingerprint !== 'string' || !expectedFingerprint) throw new Error('INVALID_DIVIDEND_ALLOCATION');
+  await db.transaction('rw', db.settings, db.dividendStocks, async () => {
+    const [stocks, settings] = await Promise.all([db.dividendStocks.toArray(), db.settings.get('main')]);
+    const budgetMinor = settings?.dividendBudgetMinor ?? 0;
+    if (dividendBudgetAllocationFingerprint(stocks, budgetMinor, settings?.dividendBudgetMinor !== undefined) !== expectedFingerprint) {
+      throw new Error('DIVIDEND_BUDGET_CHANGED');
+    }
+    if (!Number.isSafeInteger(budgetMinor) || budgetMinor <= 0) throw new Error('INVALID_BUDGET');
+    if (!stocks.length) throw new Error('NO_DIVIDEND_STOCKS');
+    await updateDividendWeights(stocks, new Map(equalDividendWeights(stocks).map(stock => [stock.code, stock.weightBps])));
+  });
+  requestPortableSnapshot('dividend-budget-reallocated');
 }
 
 /** Apply selected stock fields and rebalance if needed, preserving holdings and saved grids. */

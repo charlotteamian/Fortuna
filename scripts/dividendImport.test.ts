@@ -22,7 +22,7 @@ registerHooks({
 });
 
 const { db, initializeSettings } = await import('../src/db.ts');
-const { importDividendStocks, loadDividendWorkbench, allocateDividendBudget, deleteDividendStock, saveDividendStockGroup, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
+const { importDividendStocks, loadDividendWorkbench, allocateDividendBudget, deleteDividendStock, saveDividendStockGroup, saveDividendHomeCollapse, dividendBudgetAllocationFingerprint, reallocateDividendBudget } = await import('../src/services/dividendService.ts');
 
 function workbook(sheets: Record<string, XLSX.WorkSheet>, bookType: 'xlsx' | 'xls' | 'csv' = 'xlsx'): ArrayBuffer {
   const book = XLSX.utils.book_new();
@@ -240,4 +240,73 @@ test('allocation can repair an overcommitted plan and rolls back on write failur
   } finally { db.dividendStocks.hook('updating').unsubscribe(failUpdate); }
   await allocateDividendBudget();
   assert.deepEqual((await db.dividendStocks.toArray()).map(row => row.weightBps), [5455, 4545]);
+});
+
+test('delete redistribution gives released budget to previously unallocated stocks while preserving unused budget and plan data', async () => {
+  const first = stock('000001', 2000);
+  const retained = { ...stock('600036', 1000), group: 'hidden' as const, note: 'retain', buyPaused: true };
+  const unallocated = stock('600900', 0);
+  await db.dividendStocks.bulkAdd([first, retained, unallocated]);
+  await deleteDividendStock(first.code, true);
+  assert.deepEqual(await db.dividendStocks.toArray(), [{ ...retained, weightBps: 2000 }, { ...unallocated, weightBps: 1000 }]);
+  assert.equal((await db.dividendStocks.toArray()).reduce((sum, row) => sum + row.weightBps, 0), 3000);
+});
+
+test('confirmed equal allocation funds zero-weight stocks and preserves concurrent quote updates, settings and holdings', async () => {
+  const stocks = [stock('000001', 10000), { ...stock('600036', 0), group: 'hidden' as const, note: 'retain', buyPaused: true,
+    buyLevels: [{ yieldBps: 550, priceMinor: 1636, portionBps: 10000 }], sellLevels: [{ yieldBps: 450, priceMinor: 2000, portionBps: 10000 }] }, stock('600900', 0)];
+  await db.settings.update('main', { dividendBudgetMinor: 12000000 });
+  await db.dividendStocks.bulkAdd(stocks);
+  await db.accounts.add({ id: 'allocation-account', name: 'Stocks', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, createdAt: 1, sortOrder: 0 });
+  await db.holdings.add({ id: 'allocation-holding', accountId: 'allocation-account', name: 'Held stock', symbol: '600036', market: 'A股', createdAt: 1, sortOrder: 0 });
+  await db.holdingTxns.add({ id: 'allocation-buy', accountId: 'allocation-account', holdingId: 'allocation-holding', date: '2026-10-01', kind: 'buy', shares: 200, price: 20, createdAt: 1 });
+  const holdingsBefore = await db.holdings.toArray();
+  const tradesBefore = await db.holdingTxns.toArray();
+  const settingsBefore = await db.settings.get('main');
+  const expectedFingerprint = dividendBudgetAllocationFingerprint(stocks, 12000000);
+  const quote = { priceMinor: 1234, date: '2026-11-04', fetchedAt: 2 };
+  await db.dividendStocks.update('600036', { quote });
+  await reallocateDividendBudget({ expectedFingerprint });
+  assert.deepEqual(await db.dividendStocks.toArray(), [
+    { ...stocks[0], weightBps: 3334 }, { ...stocks[1], weightBps: 3333, quote }, { ...stocks[2], weightBps: 3333 },
+  ]);
+  assert.deepEqual(await db.settings.get('main'), settingsBefore);
+  assert.deepEqual(await db.holdings.toArray(), holdingsBefore);
+  assert.deepEqual(await db.holdingTxns.toArray(), tradesBefore);
+});
+
+test('equal allocation refuses a changed preview before any writes and rolls back on write failure', async () => {
+  const stocks = [stock('000001', 10000), stock('600036', 0)];
+  await db.settings.update('main', { dividendBudgetMinor: 10000000 });
+  await db.dividendStocks.bulkAdd(stocks);
+  const fingerprint = dividendBudgetAllocationFingerprint(stocks, 10000000);
+  await db.settings.update('main', { dividendBudgetMinor: 20000000 });
+  await assert.rejects(reallocateDividendBudget({ expectedFingerprint: fingerprint }), /DIVIDEND_BUDGET_CHANGED/);
+  assert.deepEqual(await db.dividendStocks.toArray(), stocks);
+  const expectedFingerprint = dividendBudgetAllocationFingerprint(stocks, 20000000);
+  await db.dividendStocks.update('000001', { weightBps: 8000 });
+  await assert.rejects(reallocateDividendBudget({ expectedFingerprint }), /DIVIDEND_BUDGET_CHANGED/);
+  await db.dividendStocks.put(stocks[0]);
+  await db.dividendStocks.add(stock('600900', 0));
+  await assert.rejects(reallocateDividendBudget({ expectedFingerprint }), /DIVIDEND_BUDGET_CHANGED/);
+  await db.dividendStocks.delete('600900');
+  const failUpdate = (_changes: unknown, key: string) => { if (key === '600036') throw new Error('simulated equal allocation failure'); };
+  db.dividendStocks.hook('updating', failUpdate);
+  try {
+    await assert.rejects(reallocateDividendBudget({ expectedFingerprint }), /simulated equal allocation failure/);
+    assert.deepEqual(await db.dividendStocks.toArray(), stocks);
+  } finally { db.dividendStocks.hook('updating').unsubscribe(failUpdate); }
+  await reallocateDividendBudget({ expectedFingerprint });
+  assert.deepEqual((await db.dividendStocks.toArray()).map(row => row.weightBps), [5000, 5000]);
+});
+
+test('equal allocation supports an all-zero portfolio and requires a configured positive budget', async () => {
+  const stocks = [stock('000001', 0), stock('600036', 0)];
+  await db.dividendStocks.bulkAdd(stocks);
+  await assert.rejects(reallocateDividendBudget({ expectedFingerprint: dividendBudgetAllocationFingerprint(stocks, 0, false) }), /INVALID_BUDGET/);
+  await db.settings.update('main', { dividendBudgetMinor: 5000000 });
+  await reallocateDividendBudget({ expectedFingerprint: dividendBudgetAllocationFingerprint(stocks, 5000000) });
+  assert.deepEqual((await db.dividendStocks.toArray()).map(row => row.weightBps), [5000, 5000]);
+  await db.dividendStocks.clear();
+  await assert.rejects(reallocateDividendBudget({ expectedFingerprint: dividendBudgetAllocationFingerprint([], 5000000) }), /NO_DIVIDEND_STOCKS/);
 });

@@ -132,7 +132,8 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
   const symbol = quoteSymbol(stock.code);
   const asOf = dateInChina(), cashUrl = dividendCashFlowSourceUrl(stock.code), monthUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},month,,,120,`;
   const distributionTask = downloadSource('dividend', dividendResearchDistributionUrl(stock.code), raw => ({...parseDividendDistributionResearch(raw, stock.code), pricingRaw:raw}));
-  const ledgerTask = distributionTask.then(value => value.data ? researchDividendLedger(value.data.pricingRaw, stock.code, asOf, control) : undefined);
+  const ledgerTask = distributionTask.then(value => value.data ? researchDividendLedger(value.data.pricingRaw, stock.code, asOf,
+    { ...control, retryFailedDocuments: true, maxEvidencePasses: 3 }) : undefined);
   const [technical, financial, distributions, cash, monthly, treasury, opportunity, ledger] = await Promise.all([
     downloadSource('technical', dividendTechnicalSourceUrl(symbol), raw => parseDividendTechnicalResearch(raw, stock.code, symbol)),
     downloadSource('financial', dividendFinancialSourceUrl(stock.code), raw => ({...parseDividendFinancialResearch(raw, stock.code), pricingRaw:raw})),

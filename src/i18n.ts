@@ -20,13 +20,16 @@ import { dividendClassicStrategyEn, dividendClassicStrategyZh } from './i18n/div
 import { dividendFocusEn, dividendFocusZh } from './i18n/dividendFocusTranslations';
 import { dividendFundFocusEn, dividendFundFocusZh } from './i18n/dividendFundFocusTranslations';
 import { dividendReaderEn, dividendReaderZh } from './i18n/dividendReaderTranslations';
+import { dividendPricingGuideEn, dividendPricingGuideZh } from './i18n/dividendPricingGuideTranslations';
+import { dividendFundTodayEn, dividendFundTodayZh } from './i18n/dividendFundTodayTranslations';
+import { dividendExperienceEn, dividendExperienceZh } from './i18n/dividendExperienceTranslations';
 
 i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: { ...en, ...homeAssetEn, ...dividendAiWorkspaceEn, ...dividendHomeEn, ...dividendGridEn, ...dividendReviewEn, ...dividendSimplifiedEn, ...dividendFinancialV5En, ...dividendLedgerV5En, ...dividendBatchEn, ...dividendCheckEn, ...dividendDailyCheckEn, ...dividendClassicStrategyEn, ...dividendWorkbenchEn, ...dividendFocusEn, ...dividendFundFocusEn, ...dividendReaderEn } },
-      zh: { translation: { ...zh, ...homeAssetZh, ...dividendAiWorkspaceZh, ...dividendHomeZh, ...dividendGridZh, ...dividendReviewZh, ...dividendSimplifiedZh, ...dividendFinancialV5Zh, ...dividendLedgerV5Zh, ...dividendBatchZh, ...dividendCheckZh, ...dividendDailyCheckZh, ...dividendClassicStrategyZh, ...dividendWorkbenchZh, ...dividendFocusZh, ...dividendFundFocusZh, ...dividendReaderZh } }
+      en: { translation: { ...en, ...homeAssetEn, ...dividendAiWorkspaceEn, ...dividendHomeEn, ...dividendGridEn, ...dividendReviewEn, ...dividendSimplifiedEn, ...dividendFinancialV5En, ...dividendLedgerV5En, ...dividendBatchEn, ...dividendCheckEn, ...dividendDailyCheckEn, ...dividendClassicStrategyEn, ...dividendWorkbenchEn, ...dividendFocusEn, ...dividendFundFocusEn, ...dividendReaderEn, ...dividendExperienceEn, ...dividendPricingGuideEn, ...dividendFundTodayEn } },
+      zh: { translation: { ...zh, ...homeAssetZh, ...dividendAiWorkspaceZh, ...dividendHomeZh, ...dividendGridZh, ...dividendReviewZh, ...dividendSimplifiedZh, ...dividendFinancialV5Zh, ...dividendLedgerV5Zh, ...dividendBatchZh, ...dividendCheckZh, ...dividendDailyCheckZh, ...dividendClassicStrategyZh, ...dividendWorkbenchZh, ...dividendFocusZh, ...dividendFundFocusZh, ...dividendReaderZh, ...dividendExperienceZh, ...dividendPricingGuideZh, ...dividendFundTodayZh } }
     },
     lng: 'zh', // Will be overridden by settings
     fallbackLng: 'en',

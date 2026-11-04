@@ -1,0 +1,251 @@
+{
+  "success": true,
+  "origin": "http://127.0.0.1:5200",
+  "scope": "Isolated Chrome profiles and synthetic data. External API traffic is blocked. No real user database, live market/research service, APK installation or physical device is exercised.",
+  "checks": [
+    {
+      "name": "Equal allocation is available even at 100% total and opens a before/after preview without changing saved weights",
+      "passed": true
+    },
+    {
+      "name": "A concurrent budget edit refuses the stale preview with an actionable message and no weight writes",
+      "passed": true
+    },
+    {
+      "name": "Confirming equal allocation funds the previously zero-weight stock and preserves prices, grids, pause status, fund plan and holdings",
+      "passed": true
+    },
+    {
+      "name": "Deleting with redistribution selected gives released allocation to zero-weight stocks and retains the previous 10% unallocated share",
+      "passed": true
+    },
+    {
+      "name": "Selection controls and collapsed cards fit 320/390px, enlarged fonts and a desktop viewport without overlap, clipping or raw translation keys",
+      "passed": true
+    },
+    {
+      "name": "A stock with malformed current ledger evidence displays its blocked pricing state without a fallback apply action",
+      "passed": true
+    },
+    {
+      "name": "Blocked pricing offers a single automatic retry, explains the dividend/tax/yield calculation and retains preview/confirmation before saving",
+      "passed": true
+    },
+    {
+      "name": "Opening the main evidence keeps repeated source links collapsed under one entrance and keeps ordinary content below 5000 CSS pixels",
+      "passed": true
+    },
+    {
+      "name": "Expanded evidence, source links, historical prices and pricing grids fit narrow and enlarged-font layouts with no untranslated keys",
+      "passed": true
+    },
+    {
+      "name": "The single-stock retry completes with synthetic research, preserves saved prices/budgets/holdings and keeps the other plans visible",
+      "passed": true
+    },
+    {
+      "name": "Fund home presents Today’s actions and per-fund arrangements with the old daily batch audit hidden",
+      "passed": true
+    },
+    {
+      "name": "Fund evidence remains available on demand; reading and changing viewport do not modify the plan",
+      "passed": true
+    }
+  ],
+  "layouts": [
+    {
+      "name": "selection",
+      "width": 320,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "selection",
+      "width": 320,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "selection",
+      "width": 390,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "selection",
+      "width": 390,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "selection",
+      "width": 1280,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "pricing explanation",
+      "width": 320,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "pricing explanation",
+      "width": 320,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "pricing explanation",
+      "width": 390,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "pricing explanation",
+      "width": 390,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "expanded evidence and pricing",
+      "width": 320,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "expanded evidence and pricing",
+      "width": 320,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "expanded evidence and pricing",
+      "width": 390,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "expanded evidence and pricing",
+      "width": 390,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "expanded evidence and pricing",
+      "width": 1280,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund today",
+      "width": 320,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund today",
+      "width": 320,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund today",
+      "width": 390,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund today",
+      "width": 390,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund today",
+      "width": 1280,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund expanded evidence",
+      "width": 320,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund expanded evidence",
+      "width": 320,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund expanded evidence",
+      "width": 390,
+      "scale": 1,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    },
+    {
+      "name": "fund expanded evidence",
+      "width": 390,
+      "scale": 1.3,
+      "outside": [],
+      "clippedButtons": [],
+      "overlaps": []
+    }
+  ],
+  "errors": [],
+  "ordinaryEvidence": {
+    "height": 1164.578125,
+    "sourceListsVisible": 0,
+    "sourceDisclosures": 1
+  },
+  "expandedDisclosures": {
+    "total": 10,
+    "open": 10
+  }
+}

@@ -509,7 +509,7 @@ test('stock removal and reallocation commit together, persist on re-entry and pr
   assert.equal(reloaded.stocks.reduce((sum, stock) => sum + stock.weightBps, 0), 10000);
   assert.ok(reloaded.stocks.find(stock => stock.code === '600036')!.weightBps > 1000);
   assert.ok(reloaded.stocks.find(stock => stock.group === 'hidden')!.weightBps > 400);
-  assert.equal(reloaded.stocks.find(stock => stock.code === '600900')!.weightBps, 0);
+  assert.ok(reloaded.stocks.find(stock => stock.code === '600900')!.weightBps > 0);
   assert.equal(reloaded.budgetMinor, 32000000);
   assert.equal(await db.holdings.count(), 3);
   assert.equal(await db.holdingTxns.count(), 3);

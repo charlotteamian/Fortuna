@@ -264,6 +264,36 @@
 .div-ai-grid-side > h4 > span { color: var(--text-muted); font-size: .7rem; font-weight: 400; }
 .div-ai-pricing-evidence .div-ai-metrics dd { overflow-wrap: anywhere; }
 
+.div-selection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0; }
+.div-selection-toolbar { display: contents; }
+.div-selection-toolbar > button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.div-selection-actions .btn { min-width: 0; width: 100%; min-height: 44px; height: auto; padding: .65rem .5rem; font-size: .8rem; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.div-selection-actions > .btn-primary { grid-column: 1 / -1; }
+.div-ai-workspace-panels .div-repair-note { margin: .35rem 0 .8rem; }
+.div-ai-research-card > header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(6rem, auto); align-items: start; gap: .5rem; padding: .75rem; }
+.div-ai-research-card > header > span:first-child { display: grid; gap: .15rem; }
+.div-ai-research-card > header small { margin: 0; font-size: .72rem; line-height: 1.5; overflow-wrap: anywhere; }
+.div-ai-research-card > header .div-ai-research-toggle { min-width: 0; max-width: 9rem; min-height: 44px; padding: .45rem .65rem; white-space: normal; font-size: .75rem; line-height: 1.5; }
+.div-ai-research-card > .div-focus-card-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; margin: .6rem .75rem .75rem; }
+.div-focus-card-actions .btn { min-width: 0; min-height: 44px; white-space: normal; font-size: .8rem; line-height: 1.5; }
+.div-ai-research-card > [id^="div-ai-stock-"] > .div-warning { margin: .65rem .75rem; }
+.div-ai-research-card-body { padding: .5rem 0; }
+.div-ai-research-card-body > details > summary, .div-check-status-evidence details > summary, .div-saved-grid > summary { min-height: 44px; padding: .6rem 0; line-height: 1.5; cursor: pointer; }
+.div-ai-research-card-body > details { padding-top: .25rem; }
+.div-check-grid-table caption { padding: .75rem 0 .45rem; text-align: left; font-weight: 600; }
+.div-check-grid-table :is(th, td) { vertical-align: middle; overflow-wrap: anywhere; }
+.div-check-grid-table td { font-size: .82rem; }
+.div-check-grid-table th:first-child { width: 23%; }
+.div-check-grid-table small { font-size: .72rem; }
+.div-advisor-reader .div-compact-quote { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .25rem .65rem; margin: .25rem 0 .65rem; }
+.div-advisor-reader .div-compact-quote > strong { line-height: 1.4; }
+.div-advisor-reader .div-compact-targets { gap: .65rem; padding: .55rem 0; border-block: 1px solid var(--border); }
+.div-advisor-reader .div-compact-targets dd { display: grid; gap: .15rem; margin-top: .2rem; }
+@media (max-width: 360px) {
+  .div-ai-research-card > header { grid-template-columns: minmax(0, 1fr) 6.5rem; }
+  .div-advisor-reader .div-compact-quote { grid-template-columns: 1fr; gap: .15rem; }
+}
+
 .div-daily-advice { grid-column: 1 / -1; min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
 .div-daily-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .div-daily-heading > div { flex: 1 1 180px; min-width: 0; }

@@ -1,0 +1,220 @@
+{
+  "asOf": "2026-11-04",
+  "origin": "http://127.0.0.1:5200",
+  "isolatedFreshContext": true,
+  "attemptCount": 1,
+  "verificationPurpose": "Verify bounded continuation fix after the prior real run stopped on cached historical parse gaps",
+  "syntheticDataSeeded": false,
+  "savedGridWrites": false,
+  "outcome": "ready",
+  "researchGeneratedAt": 1793775600000,
+  "stock": {
+    "code": "000001",
+    "status": "unknown"
+  },
+  "sources": [
+    {
+      "kind": "technical",
+      "provider": "Tencent",
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000001,day,,,250,qfq",
+      "asOf": "2026-11-04"
+    },
+    {
+      "kind": "financial",
+      "provider": "Eastmoney",
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "asOf": "2026-09-30"
+    },
+    {
+      "kind": "dividend",
+      "provider": "Eastmoney",
+      "url": "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "asOf": "2026-11-04"
+    },
+    {
+      "kind": "financial",
+      "provider": "Eastmoney",
+      "url": "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "asOf": "2026-09-30"
+    },
+    {
+      "kind": "technical",
+      "provider": "Tencent",
+      "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000001,month,,,120,",
+      "asOf": "2026-11-04"
+    }
+  ],
+  "issues": [],
+  "indices": [
+    {
+      "code": "sh000001",
+      "technicalAvailable": true,
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,250,qfq",
+          "asOf": "2026-11-04"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "code": "sh000300",
+      "technicalAvailable": true,
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000300,day,,,250,qfq",
+          "asOf": "2026-11-04"
+        }
+      ],
+      "issues": []
+    },
+    {
+      "code": "sz399006",
+      "technicalAvailable": true,
+      "sources": [
+        {
+          "kind": "technical",
+          "provider": "Tencent",
+          "url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz399006,day,,,250,qfq",
+          "asOf": "2026-11-04"
+        }
+      ],
+      "issues": []
+    }
+  ],
+  "macroAvailable": true,
+  "opportunityAvailable": true,
+  "pricing": {
+    "status": "ready",
+    "canApply": true,
+    "blockers": [],
+    "warnings": [],
+    "pricingBasis": "recent_batches",
+    "calculationVersion": 5,
+    "sourceUrls": [
+      "https://data.eastmoney.com/yjfp/detail/000001.html",
+      "https://static.cninfo.com.cn/finalpage/2026-09-17/1225568476.PDF",
+      "https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF",
+      "https://static.cninfo.com.cn/finalpage/2025-09-30/1224693497.PDF",
+      "https://static.cninfo.com.cn/finalpage/2025-06-05/1223765073.PDF",
+      "https://static.cninfo.com.cn/finalpage/2024-09-26/1221290895.PDF",
+      "https://static.cninfo.com.cn/finalpage/2024-06-06/1220273257.PDF",
+      "https://static.cninfo.com.cn/finalpage/2023-06-07/1217003232.PDF",
+      "https://static.cninfo.com.cn/finalpage/2022-07-15/1214044313.PDF",
+      "https://static.cninfo.com.cn/finalpage/2021-05-07/1209935489.PDF",
+      "https://static.cninfo.com.cn/finalpage/2020-05-22/1207843688.PDF",
+      "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "https://datacenter.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_FN_CASHFLOW&columns=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&pageNumber=1&pageSize=48&sortColumns=REPORT_DATE&sortTypes=-1",
+      "https://datacenter.eastmoney.com/securities/api/data/get?type=RPT_SHAREBONUS_DET&sty=ALL&filter=%28SECURITY_CODE%3D%22000001%22%29&p=1&ps=500&sr=-1&st=EX_DIVIDEND_DATE&source=HSF10&client=PC",
+      "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sz000001,month,,,120,",
+      "https://data.eastmoney.com/cjsj/zmgzsyl.html",
+      "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/000922indicator.xls"
+    ],
+    "dividendBase": {
+      "asOf": "2026-11-04",
+      "frequency": "semiannual",
+      "requiredBatches": 2,
+      "selectedBatchIds": [
+        "000001:2026-06-30:2026-09-24:interim",
+        "000001:2025-12-31:2026-06-12:annual"
+      ],
+      "verified": true,
+      "flags": [],
+      "dpsMicros": 609000,
+      "reportPeriods": [
+        "2026-06-30",
+        "2025-12-31"
+      ],
+      "latestExDate": "2026-09-24",
+      "crosscheckDpsMicros": 561591,
+      "crosscheckDeviationBps": 778
+    },
+    "selectedEvents": [
+      {
+        "batchId": "000001:2026-06-30:2026-09-24:interim",
+        "reportDate": "2026-06-30",
+        "exDate": "2026-09-24",
+        "cashPer10Micros": 2490000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "normalizedDpsMicros": 249000,
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2026-09-17"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-09-17/1225568476.PDF",
+            "announcementDate": "2026-09-17",
+            "verifiedAt": "2026-11-04"
+          }
+        ]
+      },
+      {
+        "batchId": "000001:2025-12-31:2026-06-12:annual",
+        "reportDate": "2025-12-31",
+        "exDate": "2026-06-12",
+        "cashPer10Micros": 3600000,
+        "bonusPer10Bps": 0,
+        "transferPer10Bps": 0,
+        "normalizedDpsMicros": 360000,
+        "verification": "verified",
+        "sources": [
+          {
+            "provider": "eastmoney",
+            "url": "https://data.eastmoney.com/yjfp/detail/000001.html",
+            "announcementDate": "2026-06-05"
+          },
+          {
+            "provider": "cninfo",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF",
+            "announcementDate": "2026-06-05",
+            "verifiedAt": "2026-11-04"
+          }
+        ]
+      }
+    ],
+    "ledger": {
+      "asOf": "2026-11-04",
+      "complete": true,
+      "issues": [
+        "ANNOUNCEMENT_FIELDS_UNVERIFIED"
+      ],
+      "eventCount": 29,
+      "verifiedEventCount": 10
+    }
+  },
+  "arithmetic": {
+    "grossDpsMicros": 609000,
+    "taxBps": 1000,
+    "netDpsMicros": 548100,
+    "netTaxesOnce": true,
+    "exactlyFourEach": true,
+    "buyRoundedDownMatches": true,
+    "sellRoundedUpMatches": true,
+    "buyStrictlyDescending": true,
+    "sellStrictlyAscending": true,
+    "buyPricesMinor": [
+      996,
+      953,
+      913,
+      843
+    ],
+    "sellPricesMinor": [
+      1142,
+      1218,
+      1305,
+      1371
+    ]
+  },
+  "elapsedMs": 5776,
+  "pageErrorCount": 0,
+  "pageErrors": []
+}

@@ -77,6 +77,136 @@ test('an empty official list or unparseable PDF does not create a verified divid
   assert.equal(cachedFailure.events.length, 0); assert.ok(cachedFailure.issues.includes('ANNOUNCEMENT_FIELDS_UNVERIFIED'), 'same-day cached extraction gaps must remain visible');
 });
 
+test('explicit recovery retries a failed same-day extraction and preserves every successful document', async () => {
+  const partial = transport();
+  const extract = partial.options.extractPdf;
+  partial.options.extractPdf = async bytes => {
+    const url = new TextDecoder().decode(bytes).replace('%PDF-ISOLATED:', '');
+    return url === fixtures[0].sourceUrl ? extract(bytes) : 'Temporarily unparseable implementation notice';
+  };
+  const first = await fetchDividendOfficialEvidence('000001', scope, partial.options);
+  assert.equal(first.events.length, 1);
+  const savedSuccess = await stored.table('documents').get(fixtures[0].sourceUrl);
+  const retry = transport();
+  const recovered = await fetchDividendOfficialEvidence('000001', scope, { ...retry.options, retryFailedDocuments: true });
+  assert.equal(recovered.events.length, 2);
+  assert.deepEqual(recovered.issues, []);
+  assert.deepEqual(retry.downloads, [fixtures[1].sourceUrl]);
+  assert.deepEqual(await stored.table('documents').get(fixtures[0].sourceUrl), savedSuccess,
+    'successful hash, facts and original verification date remain immutable');
+});
+
+test('a bounded explicit ledger request continues older-document verification without a second user action', async () => {
+  const run = transport(), request = run.options.post;
+  run.options.post = async (path, fields) => {
+    const response = await request(path, fields);
+    if (Array.isArray(response)) return response;
+    return { ...response, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
+      announcementTitle: '权益分派实施公告', adjunctUrl: `finalpage/2026-10-29/continue-${index}.PDF`,
+      announcementTime: Date.parse(`${fixtures[0].announcementDate}T00:00:00+08:00`) })) };
+  };
+  run.options.extractPdf = async () => fixtures[0].text;
+  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3, retryFailedDocuments: true });
+  assert.equal(run.downloads.length, 26);
+  assert.equal(new Set(run.downloads).size, 26, 'completed PDFs are reused within the same request');
+  assert.equal(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'), false);
+});
+
+test('unsupported historical layouts do not prevent continuation or block the verified latest cash batches', async () => {
+  const run = transport(), request = run.options.post, extract = run.options.extractPdf;
+  run.options.post = async (path, fields) => {
+    const response = await request(path, fields);
+    if (Array.isArray(response)) return response;
+    return { ...response, announcements: [...response.announcements, ...Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
+      announcementTitle: '历史权益分派实施公告', adjunctUrl: `finalpage/2017-06-01/historical-${index}.PDF`,
+      announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }))] };
+  };
+  run.options.extractPdf = async bytes => new TextDecoder().decode(bytes).includes('historical-') ? 'Unsupported historical layout' : extract(bytes);
+  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3, retryFailedDocuments: true });
+  assert.equal(run.downloads.length, 28);
+  assert.equal(new Set(run.downloads).size, 28, 'unsupported cached PDFs never consume another slot in the same request');
+  assert.ok(ledger.issues.includes('ANNOUNCEMENT_FIELDS_UNVERIFIED'), 'the historical field gap remains visible');
+  assert.equal(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'), false);
+  assert.equal(dividendEvidenceStatus(ledger, scope).usable, true);
+  const base = dividendLedgerBase(ledger, scope);
+  assert.equal(base.verified, true);
+  assert.equal(base.dpsMicros, 609000);
+  assert.deepEqual(new Set(base.reportPeriods), new Set(['2025-12-31', '2026-06-30']));
+});
+
+test('completing old-document coverage cannot approve an unsupported latest required batch', async () => {
+  const run = transport(), request = run.options.post, extract = run.options.extractPdf;
+  run.options.post = async (path, fields) => {
+    const response = await request(path, fields);
+    if (Array.isArray(response)) return response;
+    return { ...response, announcements: [...response.announcements, ...Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
+      announcementTitle: '历史权益分派实施公告', adjunctUrl: `finalpage/2017-06-01/older-${index}.PDF`,
+      announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }))] };
+  };
+  run.options.extractPdf = async bytes => {
+    const content = new TextDecoder().decode(bytes);
+    return content.includes('older-') || content.includes(fixtures[0].sourceUrl) ? 'Unsupported implementation layout' : extract(bytes);
+  };
+  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
+  assert.equal(run.downloads.length, 28);
+  assert.equal(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'), false);
+  const base = dividendLedgerBase(ledger, scope);
+  assert.equal(base.verified, false);
+  assert.equal(base.dpsMicros, undefined);
+  assert.ok(base.flags.includes('ANNOUNCEMENT_UNVERIFIED'));
+});
+
+test('an incomplete official list stops automatic continuation even when some PDF fields remain unsupported', async () => {
+  const run = transport(), request = run.options.post;
+  run.options.post = async (path, fields) => {
+    const response = await request(path, fields);
+    if (Array.isArray(response)) return response;
+    return { ...response, hasMore: true, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
+      announcementTitle: '历史权益分派实施公告', adjunctUrl: `finalpage/2017-06-01/partial-list-${index}.PDF`,
+      announcementTime: Date.parse('2017-06-01T00:00:00+08:00') })) };
+  };
+  run.options.extractPdf = async () => 'Unsupported older layout';
+  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
+  assert.equal(run.downloads.length, 12);
+  assert.ok(ledger.issues.includes('ANNOUNCEMENT_LIST_PARTIAL'));
+  assert.equal(ledger.complete, false);
+  assert.equal(dividendLedgerBase(ledger, scope).verified, false);
+});
+
+test('automatic continuation stops on real PDF download failures rather than repeating the same failed batch', async () => {
+  const run = transport(), request = run.options.post;
+  run.options.post = async (path, fields) => {
+    const response = await request(path, fields);
+    if (Array.isArray(response)) return response;
+    return { ...response, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
+      announcementTitle: '权益分派实施公告', adjunctUrl: `finalpage/2026-10-29/failed-${index}.PDF`,
+      announcementTime: Date.parse(`${fixtures[0].announcementDate}T00:00:00+08:00`) })) };
+  };
+  run.options.readPdf = async url => { run.downloads.push(url); throw new Error('SYNTHETIC_OFFLINE'); };
+  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
+  assert.equal(run.downloads.length, 12);
+  assert.ok(ledger.issues.includes('ANNOUNCEMENT_DOWNLOAD_FAILED'));
+  assert.equal(ledger.complete, false);
+});
+
+test('a slow first verification batch leaves the remainder for a later request', async context => {
+  const run = transport(), request = run.options.post;
+  let now = Date.now();
+  context.mock.method(Date, 'now', () => now);
+  run.options.post = async (path, fields) => {
+    const response = await request(path, fields);
+    if (Array.isArray(response)) return response;
+    return { ...response, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
+      announcementTitle: '权益分派实施公告', adjunctUrl: `finalpage/2026-10-29/slow-${index}.PDF`,
+      announcementTime: Date.parse(`${fixtures[0].announcementDate}T00:00:00+08:00`) })) };
+  };
+  run.options.extractPdf = async () => { now += 2000; return fixtures[0].text; };
+  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
+  assert.equal(run.downloads.length, 12);
+  assert.ok(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'));
+  assert.equal(ledger.complete, false);
+});
+
 test('failed requests preserve earlier document facts; invalid provider input cannot erase a saved ledger', async () => {
   const saved = await researchDividendLedger(raw, '000001', scope, transport().options);
   const documents = await stored.table('documents').toArray();

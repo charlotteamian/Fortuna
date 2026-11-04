@@ -10,6 +10,7 @@ import {
   suggestedDividendStockWeight,
   redistributeDividendWeights,
   scaleDividendWeights,
+  equalDividendWeights,
   sortDividendStocks,
   stockBudgetMinor,
   type DividendStock,
@@ -19,6 +20,8 @@ import {
 import {
   addLinkedDividendStocks,
   allocateDividendBudget,
+  reallocateDividendBudget,
+  dividendBudgetAllocationFingerprint,
   applyAllClassicDividendGrids,
   applyClassicDividendGrid,
   classicDividendGridFingerprint,
@@ -83,6 +86,7 @@ export default function DividendPage() {
   const [linkedPickerOpen, setLinkedPickerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [allocationOpen, setAllocationOpen] = useState(false);
+  const [allocationMode, setAllocationMode] = useState<'proportional' | 'equal'>('proportional');
   const [allocationResult, setAllocationResult] = useState<{ before: DividendStock[]; after: DividendStock[] } | null>(null);
   const allocationResultRef = useRef<HTMLElement>(null);
   const [collapsedCodes, setCollapsedCodes] = useState<string[]>([]);
@@ -489,11 +493,13 @@ export default function DividendPage() {
           {progress ? t('div_refresh_progress', progress) : t(quotes.refreshing ? 'div_quotes_updating' : 'div_cs_toolbar_refresh_all')}
         </button>
       </section>
-      <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={data.strategy === 'funds'}
+      <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={false}
         onManageStock={code => { const stock = data.stocks.find(value => value.code === code); if (stock) { setIsNew(false); setEditor(stock); } }}
-        selectionTools={<div className="div-actions">
+        selectionTools={<div className="div-selection-toolbar">
           <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>{t('div_cs_toolbar_import')}</button>
           <button type="button" className="btn btn-secondary" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
+          <button type="button" className="btn btn-secondary" disabled={!data.stocks.length || data.budgetMinor <= 0}
+            onClick={() => { setAllocationMode('equal'); setAllocationOpen(true); }}>{t('div_experience_reallocate')}</button>
           {untracked.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => setLinkedPickerOpen(true)}>{t('div_cs_toolbar_linked', { count: untracked.length })}</button>}
         </div>}
         />
@@ -603,10 +609,12 @@ export default function DividendPage() {
         <p className="div-muted">{t('div_new_weights_rule')}</p>
         <div className="div-actions">
           <button type="button" className="btn btn-secondary" disabled={budgetSaving || totalWeightBps === 0 || totalWeightBps === 10000}
-            onClick={() => setAllocationOpen(true)}>{t(totalWeightBps > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</button>
+            onClick={() => { setAllocationMode('proportional'); setAllocationOpen(true); }}>{t(totalWeightBps > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</button>
+          <button type="button" className="btn btn-primary" disabled={budgetSaving || !data.stocks.length || data.budgetMinor <= 0}
+            onClick={() => { setAllocationMode('equal'); setAllocationOpen(true); }}>{t('div_experience_reallocate')}</button>
         </div>
         <ul className="div-wb-weights">
-          {data.stocks.filter(stock => stock.weightBps > 0).sort((a, b) => b.weightBps - a.weightBps).map(stock =>
+          {data.stocks.slice().sort((a, b) => b.weightBps - a.weightBps).map(stock =>
             <li key={stock.code}>
               <button type="button" className="div-wb-stock-row" onClick={() => { setIsNew(false); setEditor(stock); }}>
                 <span className="div-wb-stock-name"><strong>{stock.name}</strong><small>{stock.code} · {t(`div_group_${stock.group}`)}</small></span>
@@ -732,8 +740,11 @@ export default function DividendPage() {
       , document.body)}
       {allocationOpen && createPortal(
         <AllocationDialog
+          key={allocationMode}
+          mode={allocationMode}
           stocks={data.stocks}
           budgetMinor={data.budgetMinor}
+          budgetConfigured={data.budgetConfigured}
           amountVisible={amountVisible}
           onClose={() => setAllocationOpen(false)}
           onSaved={async () => {
@@ -741,7 +752,7 @@ export default function DividendPage() {
             const next = await load();
             setAllocationResult({ before: data.stocks, after: next.stocks });
             setError('');
-            setMessage(t('div_allocation_done'));
+            setMessage(t(allocationMode === 'equal' ? 'div_experience_reallocate_done' : 'div_allocation_done'));
           }}
         />
       , document.body)}
@@ -1245,7 +1256,7 @@ function StockEditor({
               />
               {t('div_delete_redistribute')}
             </label>
-            <p className="div-muted">{t(redistribute ? 'div_redistribute_note' : 'div_delete_keep_unused')}</p>
+            <p className="div-muted">{t(redistribute ? 'div_experience_deleted_allocation' : 'div_delete_keep_unused')}</p>
             <AllocationPreview
               before={stocks.filter(s => s.code !== initial.code)}
               after={afterDelete}
@@ -1284,7 +1295,7 @@ function AllocationPreview({
   return (
     <div className="div-allocation-preview">
       <p className="div-muted">
-        {oldTotal > 0 && t('div_allocation_formula', { before: numeric(oldTotal / 100), after: numeric(newTotal / 100) })}
+        {oldTotal > 0 && t('div_experience_allocation_formula', { before: numeric(oldTotal / 100), after: numeric(newTotal / 100) })}
       </p>
       <p className="div-muted">
         {t('div_allocation_remaining', {
@@ -1330,14 +1341,18 @@ function AllocationPreview({
 }
 
 function AllocationDialog({
+  mode,
   stocks,
   budgetMinor,
+  budgetConfigured,
   amountVisible,
   onClose,
   onSaved,
 }: {
+  mode: 'proportional' | 'equal';
   stocks: DividendStock[];
   budgetMinor: number;
+  budgetConfigured: boolean;
   amountVisible: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -1349,14 +1364,16 @@ function AllocationDialog({
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
+  const [preview] = useState(() => ({ stocks: structuredClone(stocks), budgetMinor, fingerprint: dividendBudgetAllocationFingerprint(stocks, budgetMinor, budgetConfigured) }));
   const apply = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      await allocateDividendBudget();
+      if (mode === 'equal') await reallocateDividendBudget({ expectedFingerprint: preview.fingerprint });
+      else await allocateDividendBudget();
       await onSaved();
-    } catch {
-      setError(t('div_save_error'));
+    } catch (cause) {
+      setError(t(cause instanceof Error && cause.message === 'DIVIDEND_BUDGET_CHANGED' ? 'div_experience_allocation_changed' : 'div_save_error'));
     } finally {
       setSaving(false);
     }
@@ -1372,16 +1389,16 @@ function AllocationDialog({
       }}
     >
       <div className="div-stock-heading">
-        <h2 id="div-allocation-title">{t(stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</h2>
+        <h2 id="div-allocation-title">{t(mode === 'equal' ? 'div_experience_reallocate' : preview.stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</h2>
         <button className="btn btn-secondary" disabled={saving} onClick={onClose}>
           {t('close')}
         </button>
       </div>
-      <p className="div-muted">{t(stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000 ? 'div_new_weights_rule' : 'div_allocate_unused_note')}</p>
+      <p className="div-muted">{t(mode === 'equal' ? 'div_experience_reallocate_note' : preview.stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000 ? 'div_new_weights_rule' : 'div_allocate_unused_note')}</p>
       <AllocationPreview
-        before={stocks}
-        after={scaleDividendWeights(stocks)}
-        budgetMinor={budgetMinor}
+        before={preview.stocks}
+        after={mode === 'equal' ? equalDividendWeights(preview.stocks) : scaleDividendWeights(preview.stocks)}
+        budgetMinor={preview.budgetMinor}
         amountVisible={amountVisible}
       />
       {error && (

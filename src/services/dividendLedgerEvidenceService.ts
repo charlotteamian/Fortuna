@@ -9,6 +9,10 @@ export interface DividendOfficialEvidenceOptions extends DividendRequestControl 
   post?: (path: string, fields: Record<string, string>) => Promise<unknown>;
   readPdf?: (url: string) => Promise<Uint8Array>;
   extractPdf?: (bytes: Uint8Array) => Promise<string>;
+  /** An explicit recovery request may retry failed extraction on the same day. */
+  retryFailedDocuments?: boolean;
+  /** Continue cached-document pagination within one bounded explicit request. */
+  maxEvidencePasses?: number;
 }
 
 interface DocumentEvidence { url: string; sha256: string; checkedAt: string; event?: DividendOfficialEvent; issue?: string }
@@ -111,7 +115,7 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
       assertDividendRequestCurrent(options);
       const url = new URL(item.adjunctUrl!, 'https://static.cninfo.com.cn/').href;
       const saved = await documents.get(url);
-      if (saved?.event || saved?.checkedAt === asOf) { if (saved.issue) issues.push(saved.issue); continue; }
+      if (saved?.event || saved?.checkedAt === asOf && !options.retryFailedDocuments) { if (saved.issue) issues.push(saved.issue); continue; }
       pending.push(item);
     }
     // Continue through older uncached documents on subsequent checks; completed evidence remains immutable.
@@ -159,7 +163,21 @@ export async function researchDividendLedger(raw: unknown, code: string, asOf: s
   const current = claimDividendRequest(`ledger:${code}`);
   const control = { ...options, isCurrent: () => current() && (options.isCurrent?.() ?? true) };
   let evidence: Awaited<ReturnType<typeof fetchDividendOfficialEvidence>>;
-  try { evidence = await fetchDividendOfficialEvidence(code, asOf, control); }
+  try {
+    const startedAt = Date.now();
+    evidence = await fetchDividendOfficialEvidence(code, asOf, control);
+    const passes = Number.isSafeInteger(options.maxEvidencePasses) ? Math.max(1, Math.min(3, options.maxEvidencePasses!)) : 1;
+    for (let pass = 1; pass < passes && Date.now() - startedAt < 20_000
+      && evidence.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL')
+      && evidence.issues.every(issue => ['ANNOUNCEMENT_VERIFICATION_PARTIAL', 'ANNOUNCEMENT_FIELDS_UNVERIFIED'].includes(issue)); pass++) {
+      assertDividendRequestCurrent(control);
+      // Successful documents are immutable. Further passes only advance into
+      // uncached older PDFs; cached unsupported layouts do not consume another
+      // slot. Stop on list/download failures or a slow first batch. A remaining
+      // field gap is still checked against the required cash/share batches below.
+      evidence = await fetchDividendOfficialEvidence(code, asOf, { ...control, retryFailedDocuments: false });
+    }
+  }
   catch (error) {
     await beforeDividendCacheWrite(control);
     await rememberFailedLedgerAttempt(code, asOf, [error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED', 'ANNOUNCEMENT_REFRESH_FAILED'], control);

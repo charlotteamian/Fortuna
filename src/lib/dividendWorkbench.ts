@@ -154,14 +154,17 @@ export function sortDividendStocks(stocks: DividendStock[], sharesFor: (stock: D
     || groupOrder[a.group] - groupOrder[b.group] || b.weightBps - a.weightBps || a.code.localeCompare(b.code));
 }
 
-/** Reassign a removed allocation proportionally, preserving unallocated budget and zero weights. */
+/** Share only the removed allocation equally across every remaining stock, including zero weights. */
 export function redistributeDividendWeights(stocks: DividendStock[], removedCode: string): DividendStock[] {
   const removed = stocks.find(stock => stock.code === removedCode);
   const remaining = stocks.filter(stock => stock.code !== removedCode);
   const remainingWeight = remaining.reduce((sum, stock) => sum + stock.weightBps, 0);
-  if (!removed?.weightBps || remainingWeight === 0) return remaining;
+  if (!removed?.weightBps || !remaining.length) return remaining;
   const targetWeight = Math.min(10000, remainingWeight + removed.weightBps);
-  return scaleDividendWeights(remaining, targetWeight);
+  // Legacy overflow still needs a bounded total; ordinary deletions retain any previously unused share.
+  if (remainingWeight > targetWeight) return scaleDividendWeights(remaining, targetWeight);
+  const additions = new Map(equalDividendWeights(remaining, targetWeight - remainingWeight).map(stock => [stock.code, stock.weightBps]));
+  return remaining.map(stock => ({ ...stock, weightBps: stock.weightBps + additions.get(stock.code)! }));
 }
 
 type DividendWeight = Pick<DividendStock, 'code' | 'weightBps'>;
@@ -180,6 +183,11 @@ export function scaleDividendWeights<T extends DividendWeight>(stocks: readonly 
   const ranked = [...allocations].sort((a, b) => b.remainder - a.remainder || a.stock.code.localeCompare(b.stock.code));
   for (let i = 0; i < leftover; i++) ranked[i].weightBps++;
   return allocations.map(({ stock, weightBps }) => ({ ...stock, weightBps }));
+}
+
+/** Explicitly start again with equal weights, including stocks that previously had no allocation. */
+export function equalDividendWeights<T extends DividendWeight>(stocks: readonly T[], targetWeight = 10000): T[] {
+  return scaleDividendWeights(stocks.map(stock => ({ ...stock, weightBps: 1 })), targetWeight);
 }
 
 /** Interpret explicit weight inputs as relative weights when their combined total exceeds 100%. */

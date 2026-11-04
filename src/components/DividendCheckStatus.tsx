@@ -38,7 +38,14 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
               : code.startsWith('annual_') || code.startsWith('fcf_') || code.includes('earnings') || code.includes('payout') || code === 'financial_sector_review' ? 'financial' : 'unknown');
     return translated(`div_check_help_${group}`, 'div_check_help_unknown');
   };
-  const allRisks = (['blocking', 'attention', 'evidenceInsufficient'] as const).flatMap(group => summary.risk[group].map(item => ({ ...item, group })));
+  const riskByReason = new Map<string, DividendCheckRisk & { group: keyof DividendCheckSummary['risk'] }>();
+  for (const group of ['blocking', 'evidenceInsufficient', 'attention'] as const) {
+    for (const item of summary.risk[group]) {
+      const code = dividendCheckReasonCode(item.reason);
+      if (!riskByReason.has(code)) riskByReason.set(code, { ...item, group });
+    }
+  }
+  const allRisks = [...riskByReason.values()];
   const reasons = [...new Map([
     ...summary.actionCheck.buy.reasons.filter(reason => reason === 'manual_pause'),
     ...summary.risk.blocking.map(item => item.reason), ...summary.eligibility.reasons,
@@ -52,7 +59,9 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     : reasons;
   const focusReasons = [...new Set(rankedReasons)].filter(reason => !routine.has(dividendCheckReasonCode(reason)));
   const primaryReasons = mode === 'full' ? reasons : mode === 'row' ? focusReasons.slice(0, 2) : reasons.slice(0, 3);
-  const remainingReasons = mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [];
+  const riskReasons = new Set(allRisks.map(item => dividendCheckReasonCode(item.reason)));
+  const remainingReasons = (mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [])
+    .filter(reason => !riskReasons.has(dividendCheckReasonCode(reason)) && !primaryReasons.includes(reason) && !routine.has(dividendCheckReasonCode(reason)));
   const dates = summary.freshness;
   const dateTime = (timestamp: number) => new Date(timestamp).toLocaleString(i18n.language);
   const quote = summary.trigger.quote;
@@ -64,10 +73,13 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
   const reasonItems = (items: string[]) => <ul className="div-check-status-reasons">{items.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong><span>{reasonHelp(reason)}</span></li>)}</ul>;
   const evidence = (item: DividendCheckRisk & { group: keyof DividendCheckSummary['risk'] }) => <li key={`${item.group}:${item.id}`}>
     <strong>{t(`div_check_risk_${item.group}`)} · {reasonLabel(item.reason)}</strong>
-    <span>{t(`div_check_impact_${item.impact}`)} · {t(item.autoRepair && item.unresolvedAction === 'retry' ? 'div_check_repair_retry' : 'div_check_repair_review')}</span>
+    <span>{t(dividendCheckReasonCode(item.reason) === 'saved_evidence_snapshot_missing' ? 'div_experience_evidence_history'
+      : item.group === 'attention' || item.impact === 'information' ? 'div_experience_evidence_advisory'
+        : item.autoRepair && item.unresolvedAction === 'retry' ? 'div_experience_evidence_auto'
+        : item.impact === 'new_price' ? 'div_experience_evidence_blocked'
+          : item.impact === 'new_buy' ? 'div_experience_evidence_operation' : 'div_experience_evidence_advisory')}</span>
     <span>{item.reportPeriod ? t('div_check_report_period', { date: item.reportPeriod }) : t('div_check_date_unknown')}
       {item.publishedAt && ` · ${t('div_check_notice_date', { date: item.publishedAt })}`}{item.verifiedAt && ` · ${t('div_check_verified_date', { date: item.verifiedAt })}`}</span>
-    {sourceLinks(item.sources)}
   </li>;
   const gridKey = summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
   return <section className={`div-check-status${mode === 'row' ? ' div-check-status-row' : ''}`} aria-label={t('div_check_status_title')}>
@@ -79,7 +91,7 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
       <div><dt>{t('div_check_action')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side} className="div-check-status-observation">{t(`div_check_${side}`)} · {t(`div_check_action_${summary.actionCheck[side].status}`)}</span>)}</dd></div>
     </dl>}
     {primaryReasons.length > 0 && (mode === 'row' ? <ul className="div-check-primary-reasons">{primaryReasons.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong></li>)}</ul> : reasonItems(primaryReasons))}
-    {mode === 'row' && summary.eligibility.status !== 'pass' && <p className="div-check-status-note">{t(`div_focus_next_${summary.eligibility.status}`)}</p>}
+    {mode === 'row' && summary.kind === 'stock' && summary.eligibility.status !== 'pass' && <p className="div-check-status-note">{t('div_experience_check_next')}</p>}
     {mode !== 'row' && <p className="div-check-status-note">{t('div_check_observation_note')}</p>}
     <details className="div-check-status-evidence"><summary>{t(mode === 'row' ? 'div_read_evidence' : 'div_check_evidence')}</summary>
       {mode === 'row' && <dl className="div-check-status-main"><div><dt>{t('div_check_grid')}</dt><dd>{t(gridKey)}</dd></div>
@@ -94,7 +106,8 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
       {dates.reportPeriod && <p>{t('div_check_report_period', { date: dates.reportPeriod })}</p>}
       {dates.noticeDate && <p>{t('div_check_notice_date', { date: dates.noticeDate })}</p>}
       {dates.evidenceVerifiedDates.length > 0 && <p>{t('div_check_verified_date', { date: dates.evidenceVerifiedDates.join(' · ') })}</p>}
-      {allRisks.length > 0 ? <div><h4>{t('div_check_risk_evidence')}</h4><ul className="div-check-status-reasons">{allRisks.map(evidence)}</ul></div> : sourceLinks(dates.sources)}
+      {allRisks.length > 0 && <details><summary>{t('div_experience_observations_details', { count: allRisks.length })}</summary><ul className="div-check-status-reasons">{allRisks.map(evidence)}</ul></details>}
+      <details><summary>{t('div_experience_sources')}</summary>{sourceLinks([...dates.sources, ...allRisks.flatMap(item => item.sources)])}</details>
       {children}
     </details>
   </section>;

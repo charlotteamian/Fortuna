@@ -24,7 +24,7 @@ async function restoreHistory(value: DividendAdvisorHistoryState) {
   return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
 }
 
-export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, showDailyCheck = true, openPlanRequest = 0, onManageStock, selectionTools }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number; showDailyCheck?: boolean; onManageStock?: (code: string) => void; selectionTools?: ReactNode }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, showDailyCheck = false, openPlanRequest = 0, onManageStock, selectionTools }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number; showDailyCheck?: boolean; onManageStock?: (code: string) => void; selectionTools?: ReactNode }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);

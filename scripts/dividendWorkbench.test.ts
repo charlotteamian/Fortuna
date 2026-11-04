@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUY_LEVELS, buildDividendHomePlan, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, fundedDividendStocks, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
+import { BUY_LEVELS, buildDividendHomePlan, buildGrid, dateInChina, defaultDividendStocks, dividendEstimateMinor, effectiveDps, equalDividendWeights, fundedDividendStocks, gridAnnualDps, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, redistributeDividendWeights, scaleDividendWeights, sortDividendStocks, stockBudgetMinor, trailingYearStart } from '../src/lib/dividendWorkbench.ts';
 import { repairPlanReferences } from '../src/lib/planReferences.ts';
 import type { Account, Holding, HoldingTxn, PlanItem, PlanTarget } from '../src/db.ts';
 const row = (date: string, bonus: number, extra = {}) => ({ SECURITY_CODE: '601398', EX_DIVIDEND_DATE: date, REPORT_DATE: date, NOTICE_DATE: date, PRETAX_BONUS_RMB: bonus, ASSIGN_PROGRESS: '实施分配', ...extra });
@@ -134,16 +134,29 @@ test('grid tier price triggers include exact boundaries and remain distinct from
   }
 });
 
-test('deleting an allocation redistributes proportionally, including hidden stocks but preserving zero weights', () => {
+test('deleting shares the released allocation across all remaining stocks, including hidden and zero-weight stocks', () => {
   const stocks = defaultDividendStocks().slice(0, 4).map((stock, i) => ({ ...stock, weightBps: [5000, 3000, 2000, 0][i], ...(i === 1 ? { group: 'hidden' as const, note: 'keep', manualShares: 123 } : {}) }));
   const remaining = redistributeDividendWeights(stocks, stocks[2].code);
-  assert.deepEqual(remaining.map(stock => stock.weightBps), [6250, 3750, 0]);
+  assert.deepEqual(remaining.map(stock => stock.weightBps), [5666, 3667, 667]);
   assert.equal(remaining[1].note, 'keep');
   assert.equal(remaining[1].manualShares, 123);
   assert.ok(remaining.every(isDividendStock));
-  assert.equal(stockBudgetMinor(32000000, remaining[0].weightBps), 20000000);
+  assert.equal(stockBudgetMinor(32000000, remaining[2].weightBps), 2134400);
   assert.equal(stocks[0].weightBps, 5000);
   assert.deepEqual(redistributeDividendWeights(stocks, stocks[3].code).map(stock => stock.weightBps), [5000, 3000, 2000]);
+});
+
+test('explicit equal allocation includes every zero-weight stock, is stable across ordering and keeps plan fields', () => {
+  const stocks = defaultDividendStocks().slice(0, 3).map((stock, i) => ({ ...stock, weightBps: i === 0 ? 10000 : 0, buyPaused: true, note: 'keep' }));
+  const allocated = equalDividendWeights(stocks);
+  assert.deepEqual(allocated.map(stock => stock.weightBps), [3333, 3334, 3333]);
+  assert.equal(allocated.reduce((sum, stock) => sum + stock.weightBps, 0), 10000);
+  assert.ok(allocated.every(stock => stock.buyPaused && stock.note === 'keep'));
+  assert.deepEqual(equalDividendWeights([...stocks].reverse()).reverse(), allocated);
+  assert.deepEqual(equalDividendWeights(stocks.map(stock => ({ ...stock, weightBps: 0 }))), allocated);
+  assert.deepEqual(stocks.map(stock => stock.weightBps), [10000, 0, 0]);
+  assert.deepEqual(equalDividendWeights([]), []);
+  assert.throws(() => equalDividendWeights(stocks, -1), /INVALID_DIVIDEND_WEIGHT/);
 });
 
 test('allocating unused budget keeps relative weights, hidden allocations and exact rounded totals', () => {
@@ -164,7 +177,7 @@ test('redistribution keeps exact basis-point totals, unallocated budget and safe
   assert.equal(rounded.reduce((sum, stock) => sum + stock.weightBps, 0), 4);
   const underallocated = stocks.slice(0, 3).map((stock, i) => ({ ...stock, weightBps: [2000, 1000, 1000][i] }));
   assert.deepEqual(redistributeDividendWeights(underallocated, underallocated[0].code).map(stock => stock.weightBps), [2000, 2000]);
-  assert.deepEqual(redistributeDividendWeights([{ ...stocks[0], weightBps: 10000 }, { ...stocks[1], weightBps: 0 }], stocks[0].code).map(stock => stock.weightBps), [0]);
+  assert.deepEqual(redistributeDividendWeights([{ ...stocks[0], weightBps: 10000 }, { ...stocks[1], weightBps: 0 }], stocks[0].code).map(stock => stock.weightBps), [10000]);
   assert.deepEqual(redistributeDividendWeights([stocks[0]], stocks[0].code), []);
   assert.deepEqual(redistributeDividendWeights(stocks, 'missing'), stocks);
   const overallocated = stocks.map(stock => ({ ...stock, weightBps: 6000 }));

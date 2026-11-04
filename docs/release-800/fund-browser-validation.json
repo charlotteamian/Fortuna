@@ -1,0 +1,68 @@
+{
+  "success": true,
+  "scope": "Isolated synthetic fund plan; external traffic blocked, no real data or device.",
+  "layouts": [
+    {
+      "width": 320,
+      "scale": 1,
+      "themeMode": "dark",
+      "overflow": [],
+      "screenshot": "fund-after-320-1-dark.png"
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "themeMode": "light",
+      "overflow": [],
+      "screenshot": "fund-after-320-1-light.png"
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "themeMode": "dark",
+      "overflow": [],
+      "screenshot": "fund-after-320-1.3-dark.png"
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "themeMode": "light",
+      "overflow": [],
+      "screenshot": "fund-after-320-1.3-light.png"
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "themeMode": "dark",
+      "overflow": [],
+      "screenshot": "fund-after-390-1-dark.png"
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "themeMode": "light",
+      "overflow": [],
+      "screenshot": "fund-after-390-1-light.png"
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "themeMode": "dark",
+      "overflow": [],
+      "screenshot": "fund-after-390-1.3-dark.png"
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "themeMode": "light",
+      "overflow": [],
+      "screenshot": "fund-after-390-1.3-light.png"
+    }
+  ],
+  "checks": [
+    "hidden amounts mask allocated budgets and linked holdings",
+    "swing exit reference respects the known linked holding and evidence opens separately",
+    "8 width/font/theme layouts have no fund overflow or untranslated keys; evidence is closed and old daily audit is absent"
+  ],
+  "errors": []
+}
