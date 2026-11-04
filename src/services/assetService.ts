@@ -35,6 +35,25 @@ export async function updateAccount(id: string, updates: Partial<Account>): Prom
   await db.accounts.update(id, updates);
   requestPortableSnapshot('account-updated');
 }
+
+/** Save the visible homepage order without replacing account metadata or balances. */
+export async function saveAccountOrder(orderedIds: string[]): Promise<void> {
+  if (new Set(orderedIds).size !== orderedIds.length) throw new Error('INVALID_ACCOUNT_ORDER');
+  await db.transaction('rw', db.accounts, async () => {
+    const accounts = await db.accounts.orderBy('sortOrder').toArray();
+    const visible = accounts.filter(account => !account.archivedAt && !isAccountHidden(account));
+    const visibleIds = new Set(visible.map(account => account.id));
+    if (orderedIds.length !== visible.length || orderedIds.some(id => !visibleIds.has(id))) {
+      throw new Error('ACCOUNT_ORDER_CHANGED');
+    }
+    const byId = new Map(accounts.map(account => [account.id, account]));
+    const next = [...orderedIds, ...accounts.filter(account => !visibleIds.has(account.id)).map(account => account.id)];
+    for (const [sortOrder, id] of next.entries()) {
+      if (byId.get(id)?.sortOrder !== sortOrder) await db.accounts.update(id, { sortOrder });
+    }
+  });
+  requestPortableSnapshot('account-order-updated');
+}
 export async function archiveAccount(id: string): Promise<void> {
   await db.accounts.update(id, { archivedAt: Date.now() });
   requestPortableSnapshot('account-archived');

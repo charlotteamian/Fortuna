@@ -1,0 +1,109 @@
+{
+  "environment": "Isolated Chrome profile and synthetic local data; external APIs blocked. Browser events simulate app background/resume; not a native-device lifecycle test.",
+  "checks": [
+    {
+      "name": "assistant has a single selection-and-plan tab with no duplicate plan tab",
+      "passed": true
+    },
+    {
+      "name": "background, pagehide and foreground events preserve current reader route, panel and scroll",
+      "passed": true
+    },
+    {
+      "name": "question draft survives tab changes and background/resume",
+      "passed": true
+    },
+    {
+      "name": "chat composer stays readable without button wrapping or horizontal overflow at 320/390 pixels and font scaling",
+      "passed": true
+    },
+    {
+      "name": "unconfigured local chat still returns a readable explanation after navigation changes",
+      "passed": true
+    },
+    {
+      "name": "explicit Back still closes the reader",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "layouts": [
+    {
+      "width": 320,
+      "scale": 1,
+      "textarea": {
+        "left": 14,
+        "right": 238,
+        "width": 224,
+        "height": 64
+      },
+      "button": {
+        "left": 246,
+        "right": 306,
+        "width": 60,
+        "height": 44
+      },
+      "viewportWidth": 320,
+      "readerWidth": 320,
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "scale": 1.3,
+      "textarea": {
+        "left": 14,
+        "right": 238,
+        "width": 224,
+        "height": 64
+      },
+      "button": {
+        "left": 246,
+        "right": 306,
+        "width": 60,
+        "height": 44
+      },
+      "viewportWidth": 320,
+      "readerWidth": 320,
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "textarea": {
+        "left": 14,
+        "right": 308,
+        "width": 294,
+        "height": 64
+      },
+      "button": {
+        "left": 316,
+        "right": 376,
+        "width": 60,
+        "height": 44
+      },
+      "viewportWidth": 390,
+      "readerWidth": 390,
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "scale": 1.3,
+      "textarea": {
+        "left": 14,
+        "right": 308,
+        "width": 294,
+        "height": 64
+      },
+      "button": {
+        "left": 316,
+        "right": 376,
+        "width": 60,
+        "height": 44
+      },
+      "viewportWidth": 390,
+      "readerWidth": 390,
+      "horizontalOverflow": false
+    }
+  ],
+  "success": true
+}

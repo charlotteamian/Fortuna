@@ -379,3 +379,12 @@ table.div-grid-table th:last-child, table.div-grid-table td:last-child { padding
   .dividend-page { gap: .65rem; }
   .div-wb-overview, .div-wb-daily { padding: .65rem .75rem; }
 }
+
+.div-focus-top-tools { display: flex; flex-wrap: wrap; margin: .6rem 0; gap: .5rem; }
+.div-focus-top-tools .btn { white-space: normal; text-align: left; }
+.div-focus-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 0; }
+.div-focus-selection-tools { display: grid; gap: .6rem; margin: 1rem 0; }
+.div-focus-check-title { margin: .4rem 0; font-weight: 650; }
+.div-check-primary-reasons li > span { display: block; color: var(--text-secondary); font-size: .8rem; }
+.div-check-primary-reasons { list-style: none; padding-left: 0; gap: .5rem; }
+.div-focus-saved-stock header small { display: block; color: var(--text-secondary); }

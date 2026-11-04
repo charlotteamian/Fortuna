@@ -12,7 +12,6 @@ import DividendDailyAdvice from './DividendDailyAdvice';
 import { archiveDividendAdvisorConversation, createDividendAdvisorConversation, deleteDividendAdvisorConversation, loadDividendAdvisorHistory,
   recoverDividendAdvisorHistory, resumeDividendAdvisorConversation, saveDividendAdvisorConversation, type DividendAdvisorHistoryState } from '../services/dividendAdvisorHistoryService';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch';
-import { addPortableSnapshotBackgroundListener } from '../native/portableSnapshot';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import { validateDividendPricingProposal, type DividendPriceProposalContext } from '../services/dividendAdvisorActionsService';
@@ -25,7 +24,7 @@ async function restoreHistory(value: DividendAdvisorHistoryState) {
   return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
 }
 
-export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, showDailyCheck = true, openPlanRequest = 0 }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number; showDailyCheck?: boolean }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, showDailyCheck = true, openPlanRequest = 0, onManageStock, selectionTools }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number; showDailyCheck?: boolean; onManageStock?: (code: string) => void; selectionTools?: ReactNode }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +40,8 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
   const [snapshot, setSnapshot] = useState<DividendAdvisorContext | null>(null);
   const [error, setError] = useState('');
   const [readerOpen, setReaderOpen] = useState(() => window.location.hash === DIVIDEND_ADVISOR_READER_HASH);
-  const [initialPanel, setInitialPanel] = useState<'chat' | 'plan' | 'research'>('chat');
+  const [initialPanel, setInitialPanel] = useState<'chat' | 'research' | 'principles'>('chat');
+  const handledPlanRequest = useRef(openPlanRequest);
   const mounted = useRef(false);
   const session = useRef({ generation: 0, open: window.location.hash === DIVIDEND_ADVISOR_READER_HASH, conversationId: undefined as string | undefined });
   const lock = useRef(false);
@@ -83,7 +83,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
   }, [t]);
 
   const openReader = useCallback((panel: 'chat' | 'plan' | 'research' = 'chat') => {
-    setInitialPanel(panel);
+    setInitialPanel(panel === 'plan' ? 'research' : panel);
     if (window.location.hash !== DIVIDEND_ADVISOR_READER_HASH) {
       const scroller = entryRef.current?.closest('.app-content');
       if (scroller) originScroll.current = { element: scroller, top: scroller.scrollTop };
@@ -93,7 +93,10 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     session.current.open = true; setReaderOpen(true);
   }, []);
   useEffect(() => {
-    if (openPlanRequest) openReader('plan');
+    // A request is an event, not a route to replay on resume or remount.
+    if (openPlanRequest <= handledPlanRequest.current) return;
+    handledPlanRequest.current = openPlanRequest;
+    openReader('research');
   }, [openPlanRequest, openReader]);
   const endSession = useCallback(() => {
     const generation = ++session.current.generation;
@@ -129,26 +132,18 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       else if (open) { session.current.open = true; setReaderOpen(true); }
       if (!open && originScroll.current) originScroll.current.element.scrollTop = originScroll.current.top;
     };
-    const background = () => { if (session.current.open) closeReader(); };
-    const visibility = () => { if (document.visibilityState === 'hidden') background(); };
-    let disposed = false;
-    let nativeListener: Awaited<ReturnType<typeof addPortableSnapshotBackgroundListener>> = null;
+    // Backgrounding is a pause in the same visit. Preserve the portal, current
+    // tab, scroll position, question draft and in-flight explanation until an
+    // explicit back/navigation event closes it.
     window.addEventListener('popstate', syncRoute); window.addEventListener('hashchange', syncRoute);
-    window.addEventListener('pagehide', background); document.addEventListener('visibilitychange', visibility);
     syncRoute();
-    void addPortableSnapshotBackgroundListener(background).then(listener => {
-      if (disposed) void listener?.remove(); else nativeListener = listener;
-    }).catch(() => undefined);
     return () => {
-      disposed = true;
       window.removeEventListener('popstate', syncRoute); window.removeEventListener('hashchange', syncRoute);
-      window.removeEventListener('pagehide', background); document.removeEventListener('visibilitychange', visibility);
-      void nativeListener?.remove();
       // Every submitted question was saved before research/network work starts.
       // Archiving on unmount only clears selection and never deletes a saved turn.
       if (session.current.open) endSession();
     };
-  }, [closeReader, endSession]);
+  }, [endSession]);
   const openSettings = () => {
     if (readerOpen) closeReader();
     window.dispatchEvent(new CustomEvent(DIVIDEND_AI_SETTINGS_REQUEST_EVENT));
@@ -277,11 +272,11 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       onResumeConversation={id => void changeConversation(() => resumeDividendAdvisorConversation(id))}
       onDeleteConversation={id => void changeConversation(() => deleteDividendAdvisorConversation(id))}
       onRetrySave={pendingSave ? () => void changeConversation(loadDividendAdvisorHistory) : undefined}
-      initialPanel={initialPanel} planManagement={planManagement}
+      initialPanel={initialPanel} onPanelChange={setInitialPanel} planManagement={planManagement}
       renderActions={message => message.actions?.length ? <>{message.actions.map(action => <DividendAdvisorPlanActions key={action.id} proposals={[action]} initiallyExpanded disabled={busy || historyBusy} onUpdated={onUpdated}
         beforePreview={() => validateDividendPricingProposal(action, priceContexts.current.get(action))}
         beforeApply={() => validateDividendPricingProposal(action, priceContexts.current.get(action))} />)}</> : null}
-      workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
+      workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} onManageStock={onManageStock} selectionTools={selectionTools} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
         onDiscuss={(stock, research) => { showChat(); void ask(t('div_ai_discuss_stock_question', { name: stock.name, code: stock.code }), { ...research, stocks: [stock] }); }} />}
       onClear={() => void changeConversation(createDividendAdvisorConversation)} />}
   </>;

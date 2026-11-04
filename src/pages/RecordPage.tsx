@@ -12,6 +12,8 @@ import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPrefer
 import { DEFAULT_ARCHIVE_FILTERS, queryArchive } from '../lib/archiveQuery';
 import ArchiveControls from '../components/ArchiveControls';
 import PriceMonitorPanel from '../components/PriceMonitorPanel';
+import HomeAssetOrderDialog from '../components/HomeAssetOrderDialog';
+import './RecordPage.css';
 
 interface Props { onOpenAccount: (id: string) => void; onRefresh: () => void; }
 
@@ -37,6 +39,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [editingAcct, setEditingAcct] = useState<Account | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [orderingOpen, setOrderingOpen] = useState(false);
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ acctId: string; x: number; y: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -384,6 +387,11 @@ export default function RecordPage({ onOpenAccount }: Props) {
   return (
     <>
       {toast && <div className={`toast ${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'} aria-live="polite">{toast.msg}</div>}
+      {!loading && !loadError && <section className="home-monitors" aria-labelledby="home-monitors-title">
+        <h2 id="home-monitors-title">{t('home_monitor_group')}</h2>
+        <PriceMonitorPanel kind="security" />
+        <PriceMonitorPanel kind="gold" />
+      </section>}
       <div className="page-header">
         <div>
           <h1 className="page-title">Fortuna</h1>
@@ -454,7 +462,8 @@ export default function RecordPage({ onOpenAccount }: Props) {
           )}
           {assetAccounts.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '1rem 0 0.5rem', color: theme.assetColor }}>{t('assets')}</h2>
+              <div className="home-order-heading"><h2 style={{ color: theme.assetColor }}>{t('assets')}</h2>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => setOrderingOpen(true)}>{t('home_sort_accounts')}</button></div>
               {Object.entries(assetAccounts.reduce((acc, acct) => {
                 if (!acc[acct.category]) acc[acct.category] = [];
                 acc[acct.category].push(acct);
@@ -470,8 +479,6 @@ export default function RecordPage({ onOpenAccount }: Props) {
                       <div style={{ fontFamily: 'var(--font-mono)' }}>{masked(fmt(subtotal))}</div>
                     </div>
                     {items.map(acct => renderEntryItem(acct))}
-                    {category === assetAccounts.find(acct => ['股票/ETF', '股票'].includes(acct.category))?.category && <PriceMonitorPanel kind="security" />}
-                    {category === assetAccounts.find(acct => acct.metalType === 'XAU')?.category && <PriceMonitorPanel kind="gold" />}
                   </div>
                 );
               })}
@@ -480,7 +487,8 @@ export default function RecordPage({ onOpenAccount }: Props) {
           
           {liabilityAccounts.length > 0 && (
             <div style={{ marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '1rem 0 0.5rem', color: theme.liabilityColor }}>{t('liabilities')}</h2>
+              <div className="home-order-heading"><h2 style={{ color: theme.liabilityColor }}>{t('liabilities')}</h2>
+                {!assetAccounts.length && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setOrderingOpen(true)}>{t('home_sort_accounts')}</button>}</div>
               {Object.entries(liabilityAccounts.reduce((acc, acct) => {
                 if (!acc[acct.category]) acc[acct.category] = [];
                 acc[acct.category].push(acct);
@@ -534,8 +542,9 @@ export default function RecordPage({ onOpenAccount }: Props) {
         </>
       )}
 
-      {!loading && !loadError && !assetAccounts.some(acct => ['股票/ETF', '股票'].includes(acct.category)) && <PriceMonitorPanel kind="security" />}
-      {!loading && !loadError && !assetAccounts.some(acct => acct.metalType === 'XAU') && <PriceMonitorPanel kind="gold" />}
+      {orderingOpen && <HomeAssetOrderDialog accounts={accounts} onClose={() => setOrderingOpen(false)} onSaved={async () => {
+        await load(false); setOrderingOpen(false); showToast(t('home_sort_saved'));
+      }} />}
 
       {showExportMenu && (
         <div className="modal-overlay" onClick={() => setShowExportMenu(false)} role="presentation">

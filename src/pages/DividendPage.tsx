@@ -2,6 +2,7 @@ import { loadDividendCheckSummaries } from '../services/dividendCheckSummaryServ
 import { loadDividendFundPositions } from '../services/dividendAdvisorContextService';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
 import {
   dateInChina,
   mainlandCode,
@@ -482,6 +483,21 @@ export default function DividendPage() {
         ))}
       </div>
 
+      <section className="div-focus-top-tools" aria-label={t('div_focus_data_tools')}>
+        <button type="button" className="btn btn-secondary" disabled={!canRefresh || !quoteTargets}
+          onClick={() => void refreshMarket(data.stocks.map(stock => stock.code))}>
+          {progress ? t('div_refresh_progress', progress) : t(quotes.refreshing ? 'div_quotes_updating' : 'div_cs_toolbar_refresh_all')}
+        </button>
+      </section>
+      <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={data.strategy === 'funds'}
+        onManageStock={code => { const stock = data.stocks.find(value => value.code === code); if (stock) { setIsNew(false); setEditor(stock); } }}
+        selectionTools={<div className="div-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>{t('div_cs_toolbar_import')}</button>
+          <button type="button" className="btn btn-secondary" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
+          {untracked.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => setLinkedPickerOpen(true)}>{t('div_cs_toolbar_linked', { count: untracked.length })}</button>}
+        </div>}
+        />
+
       {!panel && feedback}
       {!panel && allocationResult && <details className="div-wb-disclosure">
         <summary>{t('div_allocation_result')}</summary>
@@ -560,33 +576,12 @@ export default function DividendPage() {
           </ul>
           {!visiblePlans.length && <p className="div-muted">{t('div_read_no_match')}</p>}
 
-          <details className="div-wb-disclosure">
-            <summary>{t('div_new_stock_tools')}</summary>
-            <div className="div-actions">
-              {untracked.length > 0 && <button type="button" className="btn btn-secondary"
-                onClick={() => setLinkedPickerOpen(true)}>{t('div_cs_toolbar_linked', { count: untracked.length })}</button>}
-              <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>{t('div_cs_toolbar_import')}</button>
-              <button type="button" className="btn btn-secondary" disabled={!canRefresh}
-                onClick={() => void refreshMarket(data.stocks.map(stock => stock.code))}>{t('div_cs_toolbar_refresh_all')}</button>
-            </div>
-          </details>
         </section>
       </> : (
         <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible}
           asOf={today} collapsedCodes={collapsedCodes} onToggle={toggleFundCollapse}
           readFilter="all" search="" onEdit={() => setPanel('fund')} />
       )}
-
-      <details className="div-wb-disclosure">
-        <summary>{t('div_cs_ai_deep_btn')}</summary>
-        <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={data.strategy === 'funds'}
-          planManagement={data.strategy === 'funds'
-            ? <DividendFundWorkbench plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} onSaved={load} />
-            : <div className="div-actions">{checkedPlans.map(({ plan }) =>
-              <button type="button" key={plan.code} className="btn btn-secondary" onClick={() => openStock(plan.code)}>
-                {plan.name} · {plan.code}
-              </button>)}</div>} />
-      </details>
 
       {panel === 'budget' && <WorkbenchDialog title={t('div_budget_manage')} onClose={closePanel}>
         {feedback}
@@ -682,7 +677,7 @@ export default function DividendPage() {
         </div>
       </WorkbenchDialog>}
 
-      {editor && (
+      {editor && createPortal(
         <StockEditor
           initial={editor}
           isNew={isNew}
@@ -718,8 +713,8 @@ export default function DividendPage() {
             );
           }}
         />
-      )}
-      {importOpen && (
+      , document.body)}
+      {importOpen && createPortal(
         <DividendImportDialog
           stocks={data.stocks}
           budgetMinor={data.budgetMinor}
@@ -734,8 +729,8 @@ export default function DividendPage() {
             setMessage(t('div_import_done', result));
           }}
         />
-      )}
-      {allocationOpen && (
+      , document.body)}
+      {allocationOpen && createPortal(
         <AllocationDialog
           stocks={data.stocks}
           budgetMinor={data.budgetMinor}
@@ -749,8 +744,8 @@ export default function DividendPage() {
             setMessage(t('div_allocation_done'));
           }}
         />
-      )}
-      {linkedPickerOpen && (
+      , document.body)}
+      {linkedPickerOpen && createPortal(
         <LinkedStockPicker
           positions={untracked}
           hasBudget={data.budgetMinor > 0}
@@ -765,7 +760,7 @@ export default function DividendPage() {
             setError('');
           }}
         />
-      )}
+      , document.body)}
 
     </div>
   );
@@ -1020,6 +1015,14 @@ function StockEditor({
             {t('close')}
           </button>
         </div>
+          <label className="div-linked-all">
+            <input
+              type="checkbox"
+              checked={stock.buyPaused ?? false}
+              onChange={e => patch({ buyPaused: e.target.checked })}
+            />
+            {t('div_buy_paused')}
+          </label>
         <div className="div-form-fields">
           <label>
             {t('div_code')}
@@ -1086,6 +1089,8 @@ function StockEditor({
               />
             </label>
           )}
+        </div>
+        <details className="div-method"><summary>{t('div_focus_advanced')}</summary><div className="div-form-fields">
           <label>
             {t('div_v2_manual_grid_annual')}
             <input
@@ -1110,12 +1115,11 @@ function StockEditor({
               onChange={e => patch({ lotSize: Number(e.target.value) })}
             />
           </label>
-        </div>
+        </div><p className="div-muted">{t('div_v2_manual_grid_note')}</p></details>
         {weightPreview.requestedTotalBps > 10000 && <p className="div-notice">
           {t('div_new_weight_preview', { percent: numeric((weightPreview.weights.get(previewCode) ?? 0) / 100) })}
         </p>}
         {isNew && budgetMinor > 0 && <p className="div-muted">{t('div_new_weight_default')}</p>}
-        <p className="div-muted">{t('div_v2_manual_grid_note')}</p>
         <label className="div-form-note">
           {t('div_note')}
           <textarea
@@ -1128,14 +1132,6 @@ function StockEditor({
         <details className="div-method">
           <summary>{t('div_edit_grid')}</summary>
           <p>{t('div_edit_grid_note')}</p>
-          <label className="div-linked-all">
-            <input
-              type="checkbox"
-              checked={stock.buyPaused ?? false}
-              onChange={e => patch({ buyPaused: e.target.checked })}
-            />
-            {t('div_buy_paused')}
-          </label>
           {(['buy', 'sell'] as const).map(side => {
             const key = side === 'buy' ? 'buyLevels' : 'sellLevels';
             const levels =

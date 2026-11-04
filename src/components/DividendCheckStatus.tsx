@@ -21,7 +21,13 @@ const adviceKeys: Record<string, string> = {
 export default function DividendCheckStatus({ summary, mode = 'compact', children }: { summary: DividendCheckSummary; mode?: 'compact' | 'full' | 'row'; children?: ReactNode }) {
   const { t, i18n } = useTranslation();
   const translated = (key: string, fallback: string) => i18n.exists(key) ? t(key) : t(fallback);
-  const reasonLabel = (reason: string) => dividendCheckReasonLabel(reason, summary.eligibility, t, key => i18n.exists(key));
+  const reasonLabel = (reason: string) => {
+    const label = dividendCheckReasonLabel(reason, summary.eligibility, t, key => i18n.exists(key));
+    const rule = reason.startsWith('rule_') ? summary.eligibility.checks.find(check => check.rule === reason.slice(5)) : undefined;
+    if (rule?.value === undefined || rule.threshold === undefined) return label;
+    const format = (value: number) => rule.rule === 'dividendYears' ? String(value) : `${value / 100}%`;
+    return `${label} · ${t('div_ai_research_value', { value: format(rule.value), threshold: format(rule.threshold) })}`;
+  };
   const reasonHelp = (reason: string) => {
     const code = dividendCheckReasonCode(reason);
     const group = reason.startsWith('rule_') ? 'rule' : adviceKeys[code]
@@ -39,7 +45,13 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     ...summary.risk.evidenceInsufficient.map(item => item.reason), ...summary.actionCheck.buy.reasons,
     ...summary.risk.attention.map(item => item.reason), ...summary.actionCheck.sell.reasons, ...summary.grid.reasons,
   ].map(reason => [dividendCheckReasonCode(reason), reason])).values()];
-  const primaryReasons = mode === 'full' ? reasons : reasons.slice(0, 3);
+  const routine = new Set(['no_holding', 'cash_fees_liquidity_unverified', 'fees_liquidity_unverified', 'execution_session_unverified', 'covered', 'below_lot']);
+  const failedRule = summary.eligibility.reasons.find(reason => reason.startsWith('rule_') && summary.eligibility.checks.some(check => check.rule === reason.slice(5) && check.status === 'risk'));
+  const rankedReasons = summary.eligibility.status === 'fail'
+    ? [failedRule ?? summary.eligibility.reasons[0], ...reasons.filter(reason => reason === 'manual_pause'), ...summary.eligibility.reasons, ...reasons].filter((reason): reason is string => !!reason)
+    : reasons;
+  const focusReasons = [...new Set(rankedReasons)].filter(reason => !routine.has(dividendCheckReasonCode(reason)));
+  const primaryReasons = mode === 'full' ? reasons : mode === 'row' ? focusReasons.slice(0, 2) : reasons.slice(0, 3);
   const remainingReasons = mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [];
   const dates = summary.freshness;
   const dateTime = (timestamp: number) => new Date(timestamp).toLocaleString(i18n.language);
@@ -59,15 +71,20 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
   </li>;
   const gridKey = summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
   return <section className={`div-check-status${mode === 'row' ? ' div-check-status-row' : ''}`} aria-label={t('div_check_status_title')}>
-    <dl className="div-check-status-main"><div><dt>{t(summary.kind === 'fund' ? 'div_check_fund_eligibility' : 'div_check_eligibility')}</dt>
+    {mode === 'row' && <p className={`div-focus-check-title is-${summary.eligibility.status}`}>{t(`div_focus_eligibility_${summary.eligibility.status}`)}</p>}
+    {mode !== 'row' && <dl className="div-check-status-main"><div><dt>{t(summary.kind === 'fund' ? 'div_check_fund_eligibility' : 'div_check_eligibility')}</dt>
       <dd className={`is-${summary.eligibility.status}`}>{t(`div_check_${summary.kind === 'fund' ? 'fund_' : ''}eligibility_${summary.eligibility.status}`)}</dd></div>
       <div><dt>{t('div_check_grid')}</dt><dd>{t(gridKey)} <small>· {t(`div_check_origin_${summary.grid.origin}`)}</small></dd></div>
       <div><dt>{t(quote.status === 'current' ? 'div_check_observation_today' : 'div_check_observation_unknown')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side} className={`div-check-status-observation is-${summary.trigger[side]}`}>{t(`div_check_${side}`)} · {t(`div_check_trigger_${summary.trigger[side]}`)}</span>)}</dd></div>
       <div><dt>{t('div_check_action')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side} className="div-check-status-observation">{t(`div_check_${side}`)} · {t(`div_check_action_${summary.actionCheck[side].status}`)}</span>)}</dd></div>
-    </dl>
-    {primaryReasons.length > 0 && (mode === 'row' ? <ul className="div-check-primary-reasons">{primaryReasons.map(reason => <li key={reason}>{reasonLabel(reason)}</li>)}</ul> : reasonItems(primaryReasons))}
-    <p className="div-check-status-note">{t(mode === 'row' ? 'div_read_observation_note' : 'div_check_observation_note')}</p>
+    </dl>}
+    {primaryReasons.length > 0 && (mode === 'row' ? <ul className="div-check-primary-reasons">{primaryReasons.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong></li>)}</ul> : reasonItems(primaryReasons))}
+    {mode === 'row' && summary.eligibility.status !== 'pass' && <p className="div-check-status-note">{t(`div_focus_next_${summary.eligibility.status}`)}</p>}
+    {mode !== 'row' && <p className="div-check-status-note">{t('div_check_observation_note')}</p>}
     <details className="div-check-status-evidence"><summary>{t(mode === 'row' ? 'div_read_evidence' : 'div_check_evidence')}</summary>
+      {mode === 'row' && <dl className="div-check-status-main"><div><dt>{t('div_check_grid')}</dt><dd>{t(gridKey)}</dd></div>
+        <div><dt>{t(quote.status === 'current' ? 'div_check_observation_today' : 'div_check_observation_unknown')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side}>{t(`div_check_${side}`)} · {t(`div_check_trigger_${summary.trigger[side]}`)}</span>)}</dd></div>
+        <div><dt>{t('div_check_action')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side}>{t(`div_check_${side}`)} · {t(`div_check_action_${summary.actionCheck[side].status}`)}</span>)}</dd></div></dl>}
       {remainingReasons.length > 0 && <div><h4>{t('div_check_more_reasons')}</h4>{reasonItems(remainingReasons)}</div>}
       <p>{quote.status === 'unknown' ? t('div_check_quote_unknown') : t(quote.status === 'current' ? 'div_check_current_quote' : 'div_check_last_quote', { price: publicPrice, date: dates.quoteSourceAt ?? quote.date ?? t('div_check_date_unknown') })}</p>
       {quote.status !== 'current' && summary.trigger.lastAvailable && <p>{t('div_check_last_observation', { date: summary.trigger.lastAvailable.date,

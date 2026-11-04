@@ -7,6 +7,7 @@ import DividendCheckStatus from './DividendCheckStatus';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { deleteDividendFund, saveDividendFund, saveDividendFundConfig } from '../services/dividendFundService';
 import DividendFundComparison from './DividendFundComparison';
+import DividendFundPlanSummary from './DividendFundPlanSummary';
 
 const number = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
 const optionalNumber = (value: number | undefined, scale: number) => value === undefined ? '' : String(value / scale);
@@ -51,9 +52,10 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
         <div className="df-budget-summary"><dt>{t('df_planned_budget')}</dt><dd><span>{plan.budgetMinor === undefined ? '—' : money(plan.budgetMinor)}</span><small>{t('div_allocation_short', { percent: number(allocation.totalWeightBps / 100) })}</small></dd></div>
         <div className="df-mode-summary"><dt>{t('df_mode')}</dt><dd>{t(`df_mode_${plan.mode}`)}</dd></div>
         {plan.mode === 'rebalance' && <>
-          <div className="df-summary-amount"><dt>{t('df_equity_budget')}</dt><dd>{money(allocation.fundBudgetMinor)}</dd></div>
-          <div className="df-summary-amount"><dt>{t('df_bond_budget')}</dt><dd>{money(allocation.bondBudgetMinor)}</dd></div>
+          <div className="df-summary-amount"><dt>{t('df_equity_budget')}</dt><dd>{plan.budgetMinor === undefined ? '—' : money(allocation.fundBudgetMinor)}</dd></div>
+          <div className="df-summary-amount"><dt>{t('df_bond_budget')}</dt><dd>{plan.budgetMinor === undefined ? '—' : money(allocation.bondBudgetMinor)}</dd></div>
         </>}
+        <div className="df-summary-amount"><dt>{t('df_focus_unallocated')}</dt><dd>{plan.budgetMinor === undefined ? '—' : money(allocation.unallocatedMinor)}</dd></div>
       </dl>
       <details className="div-details div-plan-details df-plan-settings"><summary>{t(plan.budgetMinor === undefined ? 'df_setup_plan' : 'df_edit_plan')}</summary><form onSubmit={event => void persist(event)} className="div-budget df-config">
         <fieldset disabled={saving}>
@@ -82,16 +84,12 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
       const priceMicros = dividendFundPriceMicros(fund);
       return <article className="div-stock" key={fund.id}>
         <div className="div-stock-heading"><div><h2>{fund.name}</h2><small>{t(`df_index_${fund.indexKind}`)}{fund.code ? ` · ${fund.code}` : ''}</small></div><button className="btn btn-secondary" disabled={saving} onClick={() => setEditor(fund)}>{t('edit')}</button></div>
-        <div className="div-budget-line"><span>{t('df_weight')} <strong>{number(fund.weightBps / 100)}%</strong></span><span>{t('df_target_amount')} <strong>{plan.budgetMinor === undefined ? '—' : money(allocation.amounts.get(fund.id) ?? 0)}</strong></span></div>
-        <DividendCheckStatus summary={check} />
-        <div className="div-metrics div-key-metrics">
-            <div><span>{t(fund.quote ? 'df_exchange_price' : 'div_check_manual_price_label')}</span><strong>{priceMicros === undefined ? '—' : `¥${number(priceMicros / 1e6, 6)}`}</strong></div>
-            <div><span>{t('df_current_drawdown')}</span><strong>{reference.drawdownBps === undefined ? '—' : `${number(reference.drawdownBps / 100)}%`}</strong></div>
-        </div>
-        <p className={`df-signal ${reference.status === 'met' ? 'div-notice' : 'div-muted'}`}>{reference.status === 'update' || reference.status === 'incomplete' ? reference.issues.map(issue => t(`div_check_reason_${issue}`)).join(' · ') : t(`df_signal_${reference.status}`)}</p>
-        <details className="div-details"><summary>{t('df_reference_details')}</summary>
+        <DividendFundPlanSummary plan={plan} fund={fund} check={check} amountVisible={amountVisible} />
+        <details className="df-focus-evidence"><summary>{t('df_focus_evidence')}</summary>
           {fund.note && <div className="div-note"><span>{t('div_note')}</span><p>{fund.note}</p></div>}
+          <DividendCheckStatus summary={check} />
           <div className="div-metrics">
+            <div><span>{t('df_current_drawdown')}</span><strong>{!amountVisible ? '••••' : reference.drawdownBps === undefined ? '—' : `${number(reference.drawdownBps / 100)}%`}</strong></div>
             <div><span>{t('df_index_yield')}</span><strong>{fund.reference?.indexYieldBps === undefined ? '—' : `${number(fund.reference.indexYieldBps / 100)}%`}</strong></div>
             <div><span>{t('df_entry_price', { percent: number(plan.drawdownBps / 100) })}</span><strong>{reference.targetPriceMicros === undefined ? '—' : `¥${number(reference.targetPriceMicros / 1e6, 6)}`}</strong></div>
             {plan.mode === 'swing' && <div><span>{t('df_exit_price')}</span><strong>{fund.reference?.highMicros === undefined ? '—' : `¥${number(fund.reference.highMicros / 1e6, 6)}`}</strong></div>}
@@ -107,10 +105,10 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
     })}</div>
     {funds.length === 0 && <p className="div-notice">{t(plan.funds.length ? 'df_no_match' : 'df_empty')}</p>}
     <details className="div-method"><summary>{t('df_method')}</summary><p>{t('div_strategy_preserved')}</p><p>{t('div_auto_quotes_note')}</p><p>{t('df_method_modes')}</p><p>{t('df_method_types')}</p><p>{t('df_method_selection')}</p><p>{t('df_method_returns')}</p><p>{t('df_method_cost')}</p></details>
-    <DividendFundComparison plan={plan} disabled={saving} onSelect={fund => {
+    <details className="div-details"><summary>{t('df_focus_compare')}</summary><DividendFundComparison plan={plan} disabled={saving} onSelect={fund => {
       setMessage('');
       setEditor(plan.funds.find(row => row.code === fund.code) ?? { id: crypto.randomUUID(), name: t(fund.nameKey), code: fund.code, indexKind: fund.indexKind, weightBps: 0 });
-    }} />
+    }} /></details>
     {editor && <FundEditor initial={editor} plan={plan} amountVisible={amountVisible} onClose={() => setEditor(null)} onSaved={async () => { setEditor(null); await onSaved(); setError(''); setMessage(t('div_saved')); }} />}
   </>;
 }

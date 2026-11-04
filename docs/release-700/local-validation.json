@@ -1,0 +1,19 @@
+{
+  "version": "7.0.0",
+  "androidVersionCode": 43,
+  "iosBuild": 43,
+  "baseTag": "v6.0.1",
+  "tests": 833,
+  "androidTests": 16,
+  "androidFailures": 0,
+  "lint": "passed",
+  "productionBuild": "passed",
+  "capacitorAndroidSync": "passed",
+  "capacitorIosSync": "passed",
+  "iosMetadataAndAssets": "passed",
+  "isolatedBrowserChecks": 23,
+  "mobileLayouts": 16,
+  "browserPageErrors": 0,
+  "userDatabaseTouched": false,
+  "physicalDeviceTested": false
+}

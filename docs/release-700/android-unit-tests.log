@@ -1,0 +1,181 @@
+Starting a Gradle Daemon (subsequent builds will be faster)
+
+> Configure project :app
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Configure project :capacitor-cordova-android-plugins
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+The Kotlin Gradle plugin was loaded multiple times in different subprojects, which is not supported and may break the build.
+This might happen in subprojects that apply the Kotlin plugins with the Gradle 'plugins { ... }' DSL if they specify explicit versions, even if the versions are equal.
+Please add the Kotlin plugin to the common parent project or the root project, then remove the versions in the subprojects.
+If the parent project does not need the plugin, add 'apply false' to the plugin line.
+See: https://docs.gradle.org/current/userguide/plugins.html#sec:subprojects_plugins_dsl
+The Kotlin plugin was loaded in the following projects: ':capacitor-filesystem', ':ebarooni-capacitor-calendar'
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :capacitor-android:preBuild UP-TO-DATE
+> Task :capacitor-android:preDebugBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preDebugBuild UP-TO-DATE
+> Task :app:javaPreCompileDebug
+> Task :capacitor-cordova-android-plugins:writeDebugAarMetadata
+> Task :capacitor-android:writeDebugAarMetadata
+> Task :capacitor-filesystem:preBuild UP-TO-DATE
+> Task :capacitor-filesystem:preDebugBuild UP-TO-DATE
+> Task :capacitor-filesystem:writeDebugAarMetadata
+> Task :capacitor-share:preBuild UP-TO-DATE
+> Task :capacitor-share:preDebugBuild UP-TO-DATE
+> Task :ebarooni-capacitor-calendar:preBuild UP-TO-DATE
+> Task :capacitor-share:writeDebugAarMetadata
+> Task :ebarooni-capacitor-calendar:preDebugBuild UP-TO-DATE
+> Task :ebarooni-capacitor-calendar:writeDebugAarMetadata
+> Task :capacitor-android:processDebugNavigationResources
+> Task :capacitor-cordova-android-plugins:processDebugNavigationResources
+> Task :capacitor-filesystem:processDebugNavigationResources
+> Task :capacitor-share:processDebugNavigationResources
+> Task :ebarooni-capacitor-calendar:processDebugNavigationResources
+> Task :app:checkDebugAarMetadata
+> Task :app:processDebugNavigationResources
+> Task :app:generateDebugResValues
+> Task :capacitor-android:generateDebugResValues
+> Task :app:compileDebugNavigationResources
+> Task :capacitor-android:generateDebugResources
+> Task :capacitor-android:packageDebugResources
+> Task :capacitor-cordova-android-plugins:generateDebugResValues
+> Task :capacitor-cordova-android-plugins:generateDebugResources
+> Task :capacitor-cordova-android-plugins:packageDebugResources
+> Task :capacitor-filesystem:generateDebugResValues
+> Task :capacitor-filesystem:generateDebugResources
+> Task :capacitor-filesystem:packageDebugResources
+> Task :capacitor-share:generateDebugResValues
+> Task :capacitor-share:generateDebugResources
+> Task :capacitor-share:packageDebugResources
+> Task :ebarooni-capacitor-calendar:generateDebugResValues
+> Task :ebarooni-capacitor-calendar:generateDebugResources
+> Task :ebarooni-capacitor-calendar:packageDebugResources
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :capacitor-android:extractDeepLinksDebug
+> Task :capacitor-cordova-android-plugins:extractDeepLinksDebug
+> Task :capacitor-filesystem:extractDeepLinksDebug
+> Task :capacitor-share:extractDeepLinksDebug
+> Task :ebarooni-capacitor-calendar:extractDeepLinksDebug
+> Task :capacitor-cordova-android-plugins:compileDebugLibraryResources
+> Task :capacitor-android:parseDebugLocalResources
+> Task :capacitor-android:compileDebugLibraryResources
+> Task :app:parseDebugLocalResources
+> Task :ebarooni-capacitor-calendar:processDebugManifest
+> Task :capacitor-cordova-android-plugins:processDebugManifest
+> Task :capacitor-share:processDebugManifest
+> Task :capacitor-cordova-android-plugins:parseDebugLocalResources
+> Task :capacitor-filesystem:processDebugManifest
+> Task :capacitor-android:processDebugManifest
+> Task :app:mergeDebugResources
+> Task :capacitor-android:generateDebugRFile
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :capacitor-filesystem:compileDebugLibraryResources
+> Task :app:processDebugManifestForPackage
+> Task :capacitor-cordova-android-plugins:generateDebugRFile
+> Task :capacitor-share:compileDebugLibraryResources
+> Task :capacitor-filesystem:parseDebugLocalResources
+> Task :ebarooni-capacitor-calendar:compileDebugLibraryResources
+> Task :capacitor-filesystem:generateDebugRFile
+> Task :capacitor-share:parseDebugLocalResources
+> Task :ebarooni-capacitor-calendar:parseDebugLocalResources
+> Task :capacitor-android:javaPreCompileDebug
+> Task :capacitor-cordova-android-plugins:javaPreCompileDebug
+> Task :capacitor-share:generateDebugRFile
+> Task :ebarooni-capacitor-calendar:generateDebugRFile
+
+> Task :capacitor-android:compileDebugJavaWithJavac
+注: 某些输入文件使用了未经检查或不安全的操作。
+注: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+
+> Task :capacitor-cordova-android-plugins:compileDebugJavaWithJavac NO-SOURCE
+> Task :capacitor-filesystem:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :capacitor-filesystem:javaPreCompileDebug
+> Task :ebarooni-capacitor-calendar:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :capacitor-share:javaPreCompileDebug
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :ebarooni-capacitor-calendar:javaPreCompileDebug
+> Task :capacitor-cordova-android-plugins:bundleLibCompileToJarDebug
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:processDebugJavaRes NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes NO-SOURCE
+> Task :capacitor-android:processDebugJavaRes NO-SOURCE
+> Task :capacitor-cordova-android-plugins:processDebugJavaRes NO-SOURCE
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarDebug
+> Task :capacitor-share:processDebugJavaRes NO-SOURCE
+> Task :capacitor-android:preDebugUnitTestBuild UP-TO-DATE
+> Task :capacitor-android:bundleLibRuntimeToJarDebug
+> Task :capacitor-android:bundleLibCompileToJarDebug
+> Task :capacitor-android:generateDebugUnitTestStubRFile
+> Task :app:processDebugResources
+> Task :capacitor-share:compileDebugJavaWithJavac
+> Task :capacitor-share:bundleLibCompileToJarDebug
+> Task :capacitor-share:bundleLibRuntimeToJarDebug
+> Task :capacitor-android:processDebugUnitTestJavaRes NO-SOURCE
+> Task :capacitor-android:javaPreCompileDebugUnitTest
+> Task :capacitor-android:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :capacitor-android:testDebugUnitTest NO-SOURCE
+> Task :capacitor-cordova-android-plugins:preDebugUnitTestBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:processDebugUnitTestJavaRes NO-SOURCE
+> Task :capacitor-filesystem:preDebugUnitTestBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:javaPreCompileDebugUnitTest
+> Task :capacitor-share:preDebugUnitTestBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:generateDebugUnitTestStubRFile
+> Task :capacitor-filesystem:javaPreCompileDebugUnitTest
+> Task :capacitor-filesystem:generateDebugUnitTestStubRFile
+> Task :capacitor-cordova-android-plugins:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :capacitor-cordova-android-plugins:testDebugUnitTest NO-SOURCE
+> Task :capacitor-share:javaPreCompileDebugUnitTest
+> Task :capacitor-share:processDebugUnitTestJavaRes NO-SOURCE
+> Task :ebarooni-capacitor-calendar:preDebugUnitTestBuild UP-TO-DATE
+> Task :capacitor-share:generateDebugUnitTestStubRFile
+> Task :ebarooni-capacitor-calendar:generateDebugUnitTestStubRFile
+> Task :capacitor-share:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :capacitor-share:testDebugUnitTest NO-SOURCE
+> Task :ebarooni-capacitor-calendar:javaPreCompileDebugUnitTest
+
+> Task :capacitor-filesystem:compileDebugKotlin
+w: file:///Users/restartday/Documents/Fortuna-release-7.0.0/node_modules/@capacitor/filesystem/android/src/main/kotlin/com/capacitorjs/plugins/filesystem/FilesystemPlugin.kt:335:31 'fun downloadFile(call: PluginCall): Unit' is deprecated. Use @capacitor/file-transfer plugin instead.
+w: file:///Users/restartday/Documents/Fortuna-release-7.0.0/node_modules/@capacitor/filesystem/android/src/main/kotlin/com/capacitorjs/plugins/filesystem/LegacyFilesystemImplementation.kt:66:29 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+
+> Task :capacitor-filesystem:compileDebugJavaWithJavac NO-SOURCE
+> Task :capacitor-filesystem:bundleLibCompileToJarDebug
+> Task :capacitor-filesystem:bundleLibRuntimeToJarDebug
+> Task :capacitor-filesystem:processDebugJavaRes
+> Task :capacitor-filesystem:compileDebugUnitTestKotlin NO-SOURCE
+> Task :capacitor-filesystem:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :capacitor-filesystem:processDebugUnitTestJavaRes NO-SOURCE
+> Task :capacitor-filesystem:testDebugUnitTest NO-SOURCE
+> Task :ebarooni-capacitor-calendar:compileDebugKotlin
+> Task :ebarooni-capacitor-calendar:compileDebugJavaWithJavac NO-SOURCE
+> Task :ebarooni-capacitor-calendar:bundleLibCompileToJarDebug
+> Task :ebarooni-capacitor-calendar:processDebugJavaRes
+> Task :ebarooni-capacitor-calendar:bundleLibRuntimeToJarDebug
+
+> Task :app:compileDebugJavaWithJavac
+注: /Users/restartday/Documents/Fortuna-release-7.0.0/android/app/src/main/java/com/fortuna/wealthtracker/AppUpdaterPlugin.java使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+
+> Task :ebarooni-capacitor-calendar:compileDebugUnitTestKotlin NO-SOURCE
+> Task :ebarooni-capacitor-calendar:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :ebarooni-capacitor-calendar:processDebugUnitTestJavaRes NO-SOURCE
+> Task :ebarooni-capacitor-calendar:testDebugUnitTest NO-SOURCE
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:compileDebugUnitTestJavaWithJavac
+> Task :app:testDebugUnitTest
+w: Detected multiple Kotlin daemon sessions at
+
+[Incubating] Problems report is available at: file:///Users/restartday/Documents/Fortuna-release-7.0.0/android/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 13s
+103 actionable tasks: 103 executed

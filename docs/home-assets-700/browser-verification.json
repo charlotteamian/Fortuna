@@ -1,0 +1,31 @@
+{
+  "scope": "Isolated synthetic Chrome profile; external requests blocked; no user data or device.",
+  "checks": [
+    "Both monitors appear once together before asset summary and categories.",
+    "Category/account reorder survives reload with balance and record unchanged."
+  ],
+  "errors": [],
+  "layouts": [
+    {
+      "width": 390,
+      "fontSize": 16,
+      "overflow": 0
+    },
+    {
+      "width": 390,
+      "fontSize": 20.8,
+      "overflow": 0
+    },
+    {
+      "width": 320,
+      "fontSize": 16,
+      "overflow": 0
+    },
+    {
+      "width": 320,
+      "fontSize": 20.8,
+      "overflow": 0
+    }
+  ],
+  "success": true
+}

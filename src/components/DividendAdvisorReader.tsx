@@ -31,7 +31,8 @@ interface Props {
   onRetrySave?: () => void;
   renderActions?: (message: DividendAdvisorMessage, index: number) => ReactNode;
   workspacePanel?: (tab: 'chat' | 'research' | 'principles', showChat: () => void) => ReactNode;
-  initialPanel?: 'chat' | 'plan' | 'research';
+  initialPanel?: 'chat' | 'plan' | 'research' | 'principles';
+  onPanelChange: (panel: 'chat' | 'research' | 'principles') => void;
   planManagement?: ReactNode;
 }
 
@@ -39,9 +40,12 @@ const QUICK_QUESTIONS = ['actions', 'allocation', 'explain'] as const;
 
 export default function DividendAdvisorReader({ messages, amountVisible, question, busy, loading, configured, phase, error, retryQuestion,
   checkedAt, refreshLimited, onQuestion, onAsk, onCancel, onClear, onBack, onOpenSettings, conversations = [], activeConversationId,
-  onResumeConversation, onDeleteConversation, onRetrySave, renderActions, workspacePanel, initialPanel = 'chat', planManagement }: Props) {
+  onResumeConversation, onDeleteConversation, onRetrySave, renderActions, workspacePanel, initialPanel = 'chat', onPanelChange, planManagement }: Props) {
   const { t, i18n } = useTranslation();
-  const [tab, setTab] = useState<'chat' | 'research' | 'principles' | 'plan'>(initialPanel);
+  const tab = initialPanel === 'plan' ? 'research' : initialPanel;
+  const scrollRef = useRef<HTMLElement>(null);
+  const panelScroll = useRef<Partial<Record<typeof tab, number>>>({});
+  const setTab = onPanelChange;
   const [deletingId, setDeletingId] = useState('');
   const pageRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
@@ -64,8 +68,12 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
   }, []);
 
   useEffect(() => {
-    if (messages.length) latestRef.current?.scrollIntoView({ block: 'start' });
+    if (tab === 'chat' && messages.length) latestRef.current?.scrollIntoView({ block: 'start' });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = panelScroll.current[tab] ?? 0;
+  }, [tab]);
 
   return createPortal(<div className="div-advisor-reader" ref={pageRef} role="dialog" aria-modal="true" aria-labelledby="div-advisor-reader-title"
     onKeyDown={event => {
@@ -93,10 +101,10 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
       <button type="button" className="div-advisor-text-button" disabled={busy || loading} onClick={() => { onClear(); setTab('chat'); }}>{t('div_ai_new_chat')}</button>
     </header>
     <nav className="div-advisor-workspace-tabs" aria-label={t('div_ai_workspace_label')}>
-      {(['chat', 'research', ...(planManagement ? ['plan'] as const : []), 'principles'] as const).map(value => <button type="button" key={value} aria-current={tab === value ? 'page' : undefined}
+      {(['chat', 'research', 'principles'] as const).map(value => <button type="button" key={value} aria-current={tab === value ? 'page' : undefined}
         className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{t(`div_ai_tab_${value}`)}</button>)}
     </nav>
-    <main className="div-advisor-reader-scroll" aria-label={t('div_ai_conversation')}>
+    <main className="div-advisor-reader-scroll" ref={scrollRef} onScroll={event => { panelScroll.current[tab] = event.currentTarget.scrollTop; }} aria-label={t('div_ai_conversation')}>
       <div className="div-advisor-reader-column">
         {tab === 'chat' && <>
         <details className="div-ai-history"><summary>{t('div_ai_history')} <span>{conversations.length}</span></summary>
@@ -130,8 +138,8 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
         {checkedAt && <p className="div-advisor-answer-date">{t('div_ai_answer_date', { time: new Date(checkedAt).toLocaleString(i18n.language) })}</p>}
         {refreshLimited && <p className="div-advisor-reading-note">{t('div_ai_refresh_limited')}</p>}
         </>}
-        {workspacePanel?.(tab === 'plan' ? 'chat' : tab, () => setTab('chat'))}
-        {tab === 'plan' && planManagement}
+        {workspacePanel?.(tab, () => setTab('chat'))}
+        {tab === 'research' && planManagement}
         {phase && <div className="div-advisor-reading-progress" role="status"><span className="div-advisor-thinking-dot" aria-hidden="true" /><p>{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>
           <button type="button" className="div-advisor-text-button" onClick={onCancel}>{t('div_ai_cancel')}</button></div>}
         {error && <div className="div-warning div-advisor-reading-error" role="alert"><p>{error}</p><div className="div-actions">
@@ -145,8 +153,8 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
     {tab === 'chat' && <footer className="div-advisor-reader-compose"><form className="div-advisor-compose-column" onSubmit={event => { event.preventDefault(); onAsk(); }}>
       <label htmlFor="div-ai-reader-question">{t('div_ai_question_label')}</label>
       <div className="div-advisor-compose-row"><textarea className="form-input" id="div-ai-reader-question" rows={2} maxLength={2000} disabled={busy || loading} value={question}
-        placeholder={t('div_ai_question_placeholder')} onChange={event => onQuestion(event.target.value)} />
-        <button type="submit" className="btn btn-primary" disabled={busy || loading || !question.trim()}>{t('div_ai_send')}</button></div>
+        placeholder={t('div_chat_placeholder')} onChange={event => onQuestion(event.target.value)} />
+        <button type="submit" className="btn btn-primary" disabled={busy || loading || !question.trim()}>{t('div_chat_send')}</button></div>
     </form></footer>}
   </div>, document.body);
 }

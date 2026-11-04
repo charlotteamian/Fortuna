@@ -1,0 +1,22 @@
+.df-focus-plan { padding: .2rem 0 .5rem; }
+.div-fund-home-card > .div-stock-heading > span { display: grid; gap: .25rem; min-width: 0; }
+.div-fund-home-card > .div-stock-heading .div-stock-title { overflow-wrap: anywhere; }
+.df-focus-leading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem 1rem; padding: .5rem 0 1rem; }
+.df-focus-leading > div { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.df-focus-leading span, .df-focus-targets dt { font-size: .76rem; color: var(--text-secondary); line-height: 1.5; }
+.df-focus-leading strong { font-size: 1.35rem; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.df-focus-price strong { font-size: 1.7rem; color: var(--text-primary); }
+.df-focus-amount strong { color: var(--asset-color); }
+.df-focus-plan small { display: block; color: var(--text-secondary); font-size: .72rem; line-height: 1.6; overflow-wrap: anywhere; }
+.df-focus-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin: 0; padding: .8rem 0 .2rem; border-top: 1px solid var(--border); }
+.df-focus-targets > div { min-width: 0; }
+.df-focus-targets dd { margin: .3rem 0; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.df-focus-plan .df-focus-signal.is-triggered { color: var(--asset-color); font-weight: 600; }
+.df-focus-plan .df-focus-signal.is-unknown { color: var(--text-secondary); }
+.df-focus-evidence { margin-top: .5rem; border-top: 1px solid var(--border); padding-top: .6rem; }
+.df-focus-evidence > summary { color: var(--text-secondary); font-size: .8rem; cursor: pointer; min-height: 36px; align-content: center; }
+.df-focus-evidence-toggle { min-height: 44px; }
+.df-focus-allocation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin: .8rem 0 1rem; }
+.df-focus-allocation > div { display: flex; flex-direction: column; gap: .3rem; padding: .7rem; border-radius: .7rem; background: var(--bg-secondary); min-width: 0; }
+.df-focus-allocation span { color: var(--text-secondary); font-size: .75rem; line-height: 1.5; }
+.df-focus-allocation strong { font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
