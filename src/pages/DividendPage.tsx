@@ -1,14 +1,12 @@
 import { loadDividendCheckSummaries } from '../services/dividendCheckSummaryService';
 import { loadDividendFundPositions } from '../services/dividendAdvisorContextService';
-import { dividendCheckSummary } from '../lib/dividendCheckSummary';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   dateInChina,
-  forecastHoldingYearDividends,
-  fundedDividendStocks,
-  latestReportDividend,
   mainlandCode,
+  previewDividendWeightChanges,
+  suggestedDividendStockWeight,
   redistributeDividendWeights,
   scaleDividendWeights,
   sortDividendStocks,
@@ -22,14 +20,15 @@ import {
   allocateDividendBudget,
   applyAllClassicDividendGrids,
   applyClassicDividendGrid,
+  classicDividendGridFingerprint,
   deleteDividendStock,
   dividendStockEditFingerprint,
   loadDividendWorkbench,
   refreshDividendStocks,
+  repairOverallocatedDividendWeights,
   saveDividendBudget,
   saveDividendHomeCollapse,
   saveDividendStock,
-  saveDividendStockGroup,
 } from '../services/dividendService';
 import {
   buildClassicStockPlan,
@@ -43,15 +42,11 @@ import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import DividendFundHomePlan from '../components/DividendFundHomePlan';
 import DividendAdvisor from '../components/DividendAdvisor';
-import DividendAdvisorMarkdown from '../components/DividendAdvisorMarkdown';
-import DividendCheckStatus from '../components/DividendCheckStatus';
-import DividendPlanGrid from '../components/DividendPlanGrid';
 import { saveDividendStrategy } from '../services/dividendFundService';
 import type { DividendStrategy } from '../lib/dividendFundPlan';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { loadDividendDailyAdvicePlanKey } from '../services/dividendDailyAdviceScopeService';
-import './DividendPage.css';
 import type { DividendDailyItem } from '../lib/dividendDailyCheck';
 import { dividendBackgroundRefreshPaused } from '../services/dividendRequestControl';
 
@@ -59,6 +54,14 @@ type Workbench = Awaited<ReturnType<typeof loadDividendWorkbench>>;
 type StockSelectorFilter = 'all' | 'triggered' | 'held' | 'core' | 'watch' | 'hidden';
 
 const numeric = (value: number, max = 2) => value.toLocaleString(undefined, { maximumFractionDigits: max });
+
+import { dividendHomeCollapsed } from '../lib/dividendReading';
+import { getClassicAdviceFacts } from '../lib/dividendClassicAdvice';
+import DividendClassicAdviceResult from '../components/DividendClassicAdviceResult';
+import DividendClassicGrid from '../components/DividendClassicGrid';
+import './DividendPage.css';
+
+type Dialog = 'budget' | 'stock' | 'advice' | 'fund' | null;
 
 export default function DividendPage() {
   const { t, i18n } = useTranslation();
@@ -70,7 +73,9 @@ export default function DividendPage() {
   const [selectedCode, setSelectedCode] = useState<string>('');
   const [selectorFilter, setSelectorFilter] = useState<StockSelectorFilter>('all');
   const [search, setSearch] = useState('');
-  const [budgetPanelOpen, setBudgetPanelOpen] = useState(false);
+  const [panel, setPanel] = useState<Dialog>(null);
+  const [adviceCode, setAdviceCode] = useState<string>();
+  const [batchConfirm, setBatchConfirm] = useState(false);
   const [budgetInput, setBudgetInput] = useState('');
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [strategySaving, setStrategySaving] = useState(false);
@@ -79,23 +84,17 @@ export default function DividendPage() {
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [allocationResult, setAllocationResult] = useState<{ before: DividendStock[]; after: DividendStock[] } | null>(null);
   const allocationResultRef = useRef<HTMLElement>(null);
-  const detailSectionRef = useRef<HTMLElement>(null);
   const [collapsedCodes, setCollapsedCodes] = useState<string[]>([]);
   const collapseLoaded = useRef(false);
   const collapseState = useRef<string[]>([]);
-  const [managerSearch, setManagerSearch] = useState('');
-  const [focusedPlanCode, setFocusedPlanCode] = useState('');
-  const [openPlanRequest, setOpenPlanRequest] = useState(0);
-  const scrolledPlanRequest = useRef(0);
-  const [groupSaving, setGroupSaving] = useState(false);
   const [gridApplying, setGridApplying] = useState(false);
   const [editor, setEditor] = useState<DividendStock | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [weightsRepaired, setWeightsRepaired] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // Inline AI Daily Advice state
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiOutput, setAiOutput] = useState<ClassicAiAdviceOutput | null>(null);
@@ -109,15 +108,20 @@ export default function DividendPage() {
 
   const load = useCallback(async () => {
     const id = ++loadId.current;
-    const [next, pricingMethod] = await Promise.all([
+    const [workbench, pricingMethod] = await Promise.all([
       loadDividendWorkbench(),
       loadDividendPricingMethod().catch(() => null),
     ]);
+    const repair = workbench.stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000
+      ? await repairOverallocatedDividendWeights()
+      : undefined;
+    const next = repair ? await loadDividendWorkbench() : workbench;
     const fundPositions = await loadDividendFundPositions(next.fundPlan.funds);
     const inspection = await loadDividendCheckSummaries(next, { fundPositions });
     const planKey = await loadDividendDailyAdvicePlanKey(next, inspection);
     if (alive.current && id === loadId.current) {
       setData(next);
+      if (repair?.rebalanced) setWeightsRepaired(true);
       setChecks(inspection);
       setDailyPlanKey(planKey);
       if (pricingMethod) {
@@ -206,7 +210,6 @@ export default function DividendPage() {
   }, [data, quotes.refreshing, load, t]);
 
   const money = (minor: number) => (amountVisible ? `¥${numeric(minor / 100)}` : '••••');
-  const quantity = (shares: number) => (amountVisible ? numeric(shares, 4) : '••••');
 
   const refresh = async (codes: string[]) => {
     if (busy.current || quotes.refreshing || dividendBackgroundRefreshPaused()) return;
@@ -238,13 +241,13 @@ export default function DividendPage() {
     setBudgetSaving(true);
     try {
       const budget = Math.round(amount * 100);
-      await saveDividendBudget(budget);
+      const result = await saveDividendBudget(budget);
       await load();
       setAllocationResult(null);
       if (alive.current) {
         setBudgetInput(String(budget / 100));
         setError('');
-        setMessage(t('div_saved'));
+        setMessage(t(result.rebalanced ? 'div_new_weights_rebalanced' : 'div_saved'));
       }
     } catch {
       if (alive.current) setError(t('div_save_error'));
@@ -260,13 +263,13 @@ export default function DividendPage() {
       const holdingPeriod = nextTax === 0 ? 'over_year' : nextTax === 2000 ? 'up_to_month' : 'month_to_year';
       await saveDividendPricingMethod({ ...currentMethod, strategy: 'recent_batches', holdingPeriod });
     } catch {
-      // Keep local state responsive even if settings write fails
+      setError(t('div_save_error'));
+      await load().catch(() => undefined);
     }
   };
 
   const today = dateInChina();
 
-  // Compute Classic Plans for all stocks
   const classicPlans = useMemo<ClassicStockPlan[]>(() => {
     if (!data) return [];
     const sharesFor = (stock: DividendStock) =>
@@ -282,44 +285,60 @@ export default function DividendPage() {
     );
   }, [data, taxBps, today]);
 
-  const planByCode = useMemo(() => new Map(classicPlans.map(p => [p.code, p])), [classicPlans]);
 
-  // Filter stocks for selector
-  const filteredPlans = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return classicPlans.filter(plan => {
-      if (query && !`${plan.name} ${plan.code} ${plan.sector}`.toLowerCase().includes(query)) return false;
-      if (selectorFilter === 'triggered') return plan.todayAction.triggeredBuyLevel > 0 || plan.todayAction.triggeredSellLevel > 0;
-      if (selectorFilter === 'held') return plan.shares > 0;
-      if (selectorFilter === 'core') return plan.group === 'core';
-      if (selectorFilter === 'watch') return plan.group === 'watch';
-      if (selectorFilter === 'hidden') return plan.group === 'hidden';
-      return plan.group !== 'hidden' || plan.shares > 0;
-    });
-  }, [classicPlans, search, selectorFilter]);
-
-  // Keep selectedCode valid
-  const activeSelectedCode = useMemo(() => {
-    if (selectedCode && planByCode.has(selectedCode)) return selectedCode;
-    return filteredPlans[0]?.code ?? classicPlans[0]?.code ?? '';
-  }, [selectedCode, planByCode, filteredPlans, classicPlans]);
-
-  const selectedPlan = activeSelectedCode ? planByCode.get(activeSelectedCode) : undefined;
-  const selectedStock = data?.stocks.find(s => s.code === activeSelectedCode);
+  const checkedPlans = useMemo(
+    () => classicPlans.map(plan => ({ plan, facts: getClassicAdviceFacts(plan, today) })),
+    [classicPlans, today],
+  );
+  const selected = checkedPlans.find(({ plan }) => plan.code === selectedCode);
+  const selectedStock = data?.stocks.find(stock => stock.code === selectedCode);
+  const matchesFilter = ({ plan, facts }: (typeof checkedPlans)[number], filter: StockSelectorFilter) => {
+    switch (filter) {
+      case 'triggered': return facts.status === 'buy' || facts.status === 'sell';
+      case 'held': return plan.shares > 0;
+      case 'core': return plan.group === 'core';
+      case 'watch': return plan.group === 'watch';
+      case 'hidden': return plan.group === 'hidden';
+      default: return plan.group !== 'hidden' || plan.shares > 0;
+    }
+  };
 
   if (!data) return <div role="status">{error || t('loading')}</div>;
 
-  const sharesFor = (stock: DividendStock) =>
-    stock.shareMode === 'manual' ? stock.manualShares : data.positions.get(stock.code)?.shares ?? 0;
+  const totalWeightBps = data.stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
+  const annualDividendMinor = classicPlans.reduce(
+    (sum, plan) => sum + Math.round((plan.shares * plan.base.grossDpsMicros) / 10000), 0,
+  );
+  const homePlans = checkedPlans.filter(item => matchesFilter(item, 'all'));
+  const buyCount = homePlans.filter(({ facts }) => facts.status === 'buy').length;
+  const sellCount = homePlans.filter(({ facts }) => facts.status === 'sell').length;
+  const unverifiedCount = homePlans.filter(({ facts }) => !facts.quoteCurrent).length;
+  const heldCount = classicPlans.filter(plan => plan.shares > 0).length;
+  const query = search.trim().toLowerCase();
+  const visiblePlans = checkedPlans.filter(item => matchesFilter(item, selectorFilter) &&
+    (!query || `${item.plan.name} ${item.plan.code}`.toLowerCase().includes(query)));
+  const untracked = [...data.positions.values()]
+    .filter(position => !data.stocks.some(stock => stock.code === position.code))
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const adviceTarget = checkedPlans.find(({ plan }) => plan.code === adviceCode)?.plan;
+  const canRefresh = !progress && !quotes.refreshing;
+  const remainingMinor = Math.max(0, data.budgetMinor - stockBudgetMinor(data.budgetMinor, totalWeightBps));
+
+  const closePanel = () => {
+    aiAbortRef.current?.abort();
+    setPanel(null);
+    setBatchConfirm(false);
+  };
 
   const changeStrategy = async (strategy: DividendStrategy) => {
-    if (strategySaving) return;
+    if (strategySaving || strategy === data.strategy) return;
     setStrategySaving(true);
     setError('');
     try {
       await saveDividendStrategy(strategy);
-      await load();
+      setSearch('');
       setMessage('');
+      await load();
     } catch {
       setError(t('div_save_error'));
     } finally {
@@ -327,85 +346,86 @@ export default function DividendPage() {
     }
   };
 
-  const changeStockGroup = async (code: string, value: DividendStock['group']) => {
-    if (groupSaving) return;
-    setGroupSaving(true);
-    setError('');
-    try {
-      await saveDividendStockGroup(code, value);
-      await load();
-      setMessage(t('div_saved'));
-    } catch {
-      setError(t('div_save_error'));
-    } finally {
-      setGroupSaving(false);
-    }
-  };
-
-  const saveSingleClassicGrid = async (code: string) => {
+  const applyGrid = async (code?: string) => {
     if (gridApplying) return;
     setGridApplying(true);
     setError('');
+    setMessage('');
     try {
-      await applyClassicDividendGrid(code, taxBps);
+      if (code && selected && selectedStock) {
+        await applyClassicDividendGrid(code, taxBps, {
+          asOf: today,
+          stockFingerprint: dividendStockEditFingerprint(selectedStock),
+          gridFingerprint: classicDividendGridFingerprint(selected.plan),
+        });
+      } else if (!code) {
+        await applyAllClassicDividendGrids(taxBps);
+      }
       await load();
+      setBatchConfirm(false);
       setMessage(t('div_saved'));
-    } catch {
-      setError(t('div_save_error'));
+    } catch (cause) {
+      const changed = cause instanceof Error && cause.message === 'DIVIDEND_REVIEW_CHANGED';
+      if (changed) await load().catch(() => undefined);
+      setError(t(changed ? 'div_new_grid_preview_changed' : 'div_save_error'));
     } finally {
       setGridApplying(false);
     }
   };
 
-  const saveAllClassicGrids = async () => {
-    if (gridApplying) return;
-    setGridApplying(true);
+  const openStock = (code: string) => {
+    setSelectedCode(code);
+    setMessage('');
     setError('');
-    try {
-      await applyAllClassicDividendGrids(taxBps);
-      await load();
-      setMessage(t('div_saved'));
-    } catch {
-      setError(t('div_save_error'));
-    } finally {
-      setGridApplying(false);
-    }
+    setPanel('stock');
   };
 
-  const askAiToday = async (options: { targetCode?: string; customQuestion?: string } = {}) => {
+  const startAdd = () => {
+    setIsNew(true);
+    setEditor({
+      code: '',
+      name: '',
+      group: 'watch',
+      weightBps: suggestedDividendStockWeight(data.stocks, data.budgetMinor),
+      shareMode: 'linked',
+      manualShares: 0,
+      lotSize: 100,
+    });
+  };
+
+  const refreshMarket = async (codes: string[]) => {
+    if (!canRefresh) return;
+    await quotes.refresh(true);
+    if (codes.length) await refresh(codes);
+  };
+
+  const askAiToday = async (targetCode?: string, question?: string) => {
     aiAbortRef.current?.abort();
     const controller = new AbortController();
     aiAbortRef.current = controller;
     setAiBusy(true);
-    const targetStock = options.targetCode ? planByCode.get(options.targetCode) : undefined;
-    setAiTargetLabel(
-      options.customQuestion?.trim()
-        ? options.customQuestion.trim()
-        : targetStock
-          ? `${targetStock.name} (${targetStock.code})`
-          : t('div_cs_ai_btn_all'),
-    );
+    setAiOutput(null);
+    const target = checkedPlans.find(({ plan }) => plan.code === targetCode)?.plan;
+    setAiTargetLabel(question || (target ? `${target.name} (${target.code})` : t('div_new_daily')));
     try {
       const output = await generateClassicDividendAdvice({
         plans: classicPlans,
-        selectedCode: options.targetCode,
+        selectedCode: targetCode,
         totalBudgetMinor: data.budgetConfigured ? data.budgetMinor : undefined,
-        question: options.customQuestion,
+        question,
         language: i18n.language,
         asOf: today,
         signal: controller.signal,
         onLocalReady: localMarkdown => {
-          if (alive.current && aiAbortRef.current === controller) {
-            setAiOutput({ localMarkdown, configured: true });
-          }
+          if (alive.current && aiAbortRef.current === controller) setAiOutput({ localMarkdown, configured: true });
         },
       });
       if (alive.current && aiAbortRef.current === controller) {
         setAiOutput(output);
-        if (options.customQuestion) setAiQuestion('');
+        if (question) setAiQuestion('');
       }
     } catch {
-      // Ignore abort errors
+      if (!controller.signal.aborted && alive.current) setError(t('div_ai_error_network'));
     } finally {
       if (aiAbortRef.current === controller) {
         aiAbortRef.current = null;
@@ -414,18 +434,18 @@ export default function DividendPage() {
     }
   };
 
-  const openFundPlan = async () => {
-    if (data.strategy !== 'funds') await changeStrategy('funds');
-    setFocusedPlanCode('');
-    setOpenPlanRequest(value => value + 1);
+  const openAdvice = (code?: string) => {
+    setAdviceCode(code);
+    setAiQuestion('');
+    setError('');
+    setPanel('advice');
+    void askAiToday(code);
   };
 
   const toggleFundCollapse = (code: string) => {
-    const collapsed = !collapseState.current.includes(code);
-    const key = code.startsWith('fund:') ? `open:${code}` : code;
-    const next = (code.startsWith('fund:') ? !collapsed : collapsed)
-      ? [...collapseState.current, key]
-      : collapseState.current.filter(value => value !== key);
+    const collapsed = !dividendHomeCollapsed(code, collapseState.current);
+    const key = `open:${code}`;
+    const next = collapsed ? collapseState.current.filter(value => value !== key) : [...collapseState.current, key];
     collapseState.current = next;
     setCollapsedCodes(next);
     void saveDividendHomeCollapse(code, collapsed).catch(() => {
@@ -433,125 +453,235 @@ export default function DividendPage() {
     });
   };
 
-  const openCheckItem = (item: DividendDailyItem) => {
+  const onOpenCheckItem = (item: DividendDailyItem) => {
     if (item.kind === 'stock' && item.code) {
-      setSelectorFilter('all');
-      setSearch('');
-      setSelectedCode(item.code);
-      requestAnimationFrame(() => {
-        detailSectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      });
+      openStock(item.code);
+    } else if (item.kind === 'fund') {
+      void changeStrategy('funds');
     }
   };
 
-  // Portfolio metrics
-  const heldPlans = classicPlans.filter(p => p.shares > 0);
-  const annualDividendMinorTotal = heldPlans.reduce(
-    (sum, p) => sum + Math.round((p.shares * p.base.grossDpsMicros) / 10000),
-    0,
-  );
-  const buyTriggeredCount = classicPlans.filter(p => p.todayAction.triggeredBuyLevel > 0).length;
-  const sellTriggeredCount = classicPlans.filter(p => p.todayAction.triggeredSellLevel > 0).length;
-  const totalWeightBps = data.stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
-  const untracked = [...data.positions.values()]
-    .filter(position => !data.stocks.some(stock => stock.code === position.code))
-    .sort((a, b) => a.code.localeCompare(b.code));
-
-  // Filter counts
-  const filterCounts: Record<StockSelectorFilter, number> = {
-    all: classicPlans.filter(p => p.group !== 'hidden' || p.shares > 0).length,
-    triggered: classicPlans.filter(p => p.todayAction.triggeredBuyLevel > 0 || p.todayAction.triggeredSellLevel > 0).length,
-    held: heldPlans.length,
-    core: classicPlans.filter(p => p.group === 'core').length,
-    watch: classicPlans.filter(p => p.group === 'watch').length,
-    hidden: classicPlans.filter(p => p.group === 'hidden').length,
-  };
-
-  // Secondary planManagement node for DividendAdvisor modal compatibility
-  const fundedCodes = new Set(
-    fundedDividendStocks(data.stocks, data.budgetConfigured ? data.budgetMinor : undefined).map(stock => stock.code),
-  );
-  const managedStocks = sortDividendStocks(
-    data.stocks.filter(stock => `${stock.name} ${stock.code}`.toLowerCase().includes(managerSearch.trim().toLowerCase())),
-    sharesFor,
-  );
-  const fundedPlans = managedStocks.filter(stock => fundedCodes.has(stock.code));
-  const planManagement = (
-    <div className="div-plan-manager">
-      <h2 className="div-ai-panel-title">{t('div_ai_tab_plan')}</h2>
-      {data.strategy === 'funds' ? (
-        <DividendFundWorkbench plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} onSaved={load} />
-      ) : (
-        <div className="div-plan-manager-list">
-          <input
-            aria-label={t('div_search')}
-            placeholder={t('div_search')}
-            value={managerSearch}
-            onChange={event => setManagerSearch(event.target.value)}
-          />
-          {fundedPlans.map(stock => {
-            const check =
-              checks.stocks[stock.code] ??
-              dividendCheckSummary({
-                stock,
-                totalBudgetMinor: data.budgetConfigured ? data.budgetMinor : undefined,
-                shares: sharesFor(stock),
-                asOf: today,
-              });
-            const plan = check.displayPlan;
-            return (
-              <details
-                key={stock.code}
-                open={stock.code === focusedPlanCode}
-                ref={element => {
-                  if (element && stock.code === focusedPlanCode && scrolledPlanRequest.current !== openPlanRequest) {
-                    scrolledPlanRequest.current = openPlanRequest;
-                    element.scrollIntoView({ block: 'start' });
-                  }
-                }}
-              >
-                <summary>
-                  <strong>{stock.name}</strong>
-                  <span>
-                    {stock.code} · {t(`div_group_${stock.group}`)}
-                  </span>
-                </summary>
-                <DividendCheckStatus summary={check} />
-                {(['buy', 'sell'] as const).map(side => (
-                  <DividendPlanGrid
-                    key={side}
-                    plan={plan}
-                    side={side}
-                    amountVisible={amountVisible}
-                    tierIndices={check.grid[side === 'buy' ? 'buyTierIndices' : 'sellTierIndices']}
-                  />
-                ))}
-              </details>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-
-  // Price ruler position percentage for selectedPlan
-  const rulerPositionPct = (() => {
-    if (!selectedPlan?.quotePriceMinor) return 50;
-    const minBuy = selectedPlan.buyRows.at(-1)?.priceMinor ?? selectedPlan.neutralPriceMinor * 0.75;
-    const maxSell = selectedPlan.sellRows.at(-1)?.priceMinor ?? selectedPlan.neutralPriceMinor * 1.25;
-    const low = Math.min(minBuy * 0.92, selectedPlan.quotePriceMinor);
-    const high = Math.max(maxSell * 1.08, selectedPlan.quotePriceMinor);
-    if (high <= low) return 50;
-    return Math.max(4, Math.min(96, Math.round(((selectedPlan.quotePriceMinor - low) / (high - low)) * 100)));
-  })();
-
-  const latestReport = selectedStock ? latestReportDividend(selectedStock) : undefined;
-  const holdingForecast = selectedStock && selectedPlan
-    ? forecastHoldingYearDividends(selectedStock, today, selectedPlan.shares)
-    : undefined;
+  const feedback = <>
+    {message && <p className="div-notice" role="status">{message}</p>}
+    {error && <p className="div-warning" role="alert">{error}</p>}
+  </>;
 
   return (
     <div className="dividend-page">
+      <header className="div-wb-header">
+        <h1 className="page-title">{t('div_title')}</h1>
+        <button type="button" className="btn btn-secondary" onClick={() => setAmountVisible(value => !value)}>
+          {t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}
+        </button>
+      </header>
+
+      <div className="div-wb-segment" role="group" aria-label={t('div_strategy')}>
+        {(['stocks', 'funds'] as const).map(strategy => (
+          <button type="button" key={strategy} aria-pressed={data.strategy === strategy} disabled={strategySaving}
+            onClick={() => void changeStrategy(strategy)}>{t(`div_cs_mode_${strategy}`)}</button>
+        ))}
+      </div>
+
+      {!panel && feedback}
+      {!panel && allocationResult && <details className="div-wb-disclosure">
+        <summary>{t('div_allocation_result')}</summary>
+        <AllocationPreview {...allocationResult} budgetMinor={data.budgetMinor} amountVisible={amountVisible} />
+      </details>}
+      {data.strategy === 'stocks' ? <>
+        <section className="div-wb-overview" aria-label={t('div_new_overview')}>
+          <div className="div-wb-heading">
+            <div>
+              <span>{t('div_cs_summary_budget')}</span>
+              <strong>{data.budgetConfigured ? money(data.budgetMinor) : '—'}</strong>
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={() => { setMessage(''); setError(''); setWeightsRepaired(false); setPanel('budget'); }}>{t('div_budget_manage')}</button>
+          </div>
+          <p className={totalWeightBps > 10000 ? 'div-warning' : 'div-muted'}>
+            {totalWeightBps > 10000
+              ? t('div_new_weights_over', { percent: numeric(totalWeightBps / 100) })
+              : t('div_allocated', { percent: numeric(totalWeightBps / 100), remaining: money(remainingMinor) })}
+          </p>
+          {weightsRepaired && <p className="div-muted" role="status">{t('div_new_weights_repaired')}</p>}
+          <dl className="div-wb-overview-meta">
+            <div><dt>{t('div_cs_summary_held')}</dt><dd>{heldCount} / {classicPlans.length}</dd></div>
+            <div><dt>{t('div_new_gross_annual')}</dt><dd>{money(annualDividendMinor)}</dd></div>
+          </dl>
+        </section>
+
+        <section className="div-wb-daily" aria-labelledby="div-wb-daily-title">
+          <div className="div-wb-heading">
+            <div>
+              <h2 id="div-wb-daily-title">{t('div_new_daily')}</h2>
+              <p>{t('div_cs_summary_triggers_val', { buy: buyCount, sell: sellCount })}
+                {unverifiedCount > 0 && <small> · {t('div_new_unverified_count', { count: unverifiedCount })}</small>}
+              </p>
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={() => openAdvice()}>{t('div_new_daily_open')}</button>
+          </div>
+          {(progress || quotes.refreshing || quotes.failed) && <p className="div-muted" role="status">
+            {progress ? t('div_refresh_progress', progress) : t(quotes.refreshing ? 'div_quotes_updating' : 'div_new_quote_failed')}
+          </p>}
+        </section>
+
+        <section className="div-wb-stocks" aria-labelledby="div-wb-stocks-title">
+          <div className="div-wb-heading">
+            <h2 id="div-wb-stocks-title">{t('div_new_stocks')}</h2>
+            <button type="button" className="btn btn-primary" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
+          </div>
+          <div className="div-wb-list-tools">
+            <input type="search" aria-label={t('div_search')} placeholder={t('div_search')} value={search}
+              onChange={event => setSearch(event.target.value)} />
+            <select aria-label={t('div_new_stock_filter')} value={selectorFilter}
+              onChange={event => setSelectorFilter(event.target.value as StockSelectorFilter)}>
+              {(['all', 'triggered', 'held', 'core', 'watch', 'hidden'] as const).map(filter =>
+                <option value={filter} key={filter}>{t(`div_cs_filter_${filter}`, {
+                  count: checkedPlans.filter(item => matchesFilter(item, filter)).length,
+                })}</option>,
+              )}
+            </select>
+          </div>
+
+          <ul className="div-wb-stock-list">
+            {visiblePlans.map(({ plan, facts }) => (
+              <li key={plan.code}>
+                <button type="button" className="div-wb-stock-row" onClick={() => openStock(plan.code)}>
+                  <span className="div-wb-stock-name">
+                    <strong>{plan.name}</strong>
+                    <small>{plan.code} · {t(`div_group_${plan.group}`)}</small>
+                  </span>
+                  <span className="div-wb-stock-data">
+                    <strong>{plan.quotePriceMinor === undefined ? '—' : `¥${(plan.quotePriceMinor / 100).toFixed(2)}`}</strong>
+                    <small className={`is-${facts.status}`}>{t(`div_new_status_${facts.status}`)}</small>
+                  </span>
+                  <span className="div-wb-chevron" aria-hidden="true">›</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!visiblePlans.length && <p className="div-muted">{t('div_read_no_match')}</p>}
+
+          <details className="div-wb-disclosure">
+            <summary>{t('div_new_stock_tools')}</summary>
+            <div className="div-actions">
+              {untracked.length > 0 && <button type="button" className="btn btn-secondary"
+                onClick={() => setLinkedPickerOpen(true)}>{t('div_cs_toolbar_linked', { count: untracked.length })}</button>}
+              <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>{t('div_cs_toolbar_import')}</button>
+              <button type="button" className="btn btn-secondary" disabled={!canRefresh}
+                onClick={() => void refreshMarket(data.stocks.map(stock => stock.code))}>{t('div_cs_toolbar_refresh_all')}</button>
+            </div>
+          </details>
+        </section>
+      </> : (
+        <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible}
+          asOf={today} collapsedCodes={collapsedCodes} onToggle={toggleFundCollapse}
+          readFilter="all" search="" onEdit={() => setPanel('fund')} />
+      )}
+
+      <details className="div-wb-disclosure">
+        <summary>{t('div_cs_ai_deep_btn')}</summary>
+        <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={data.strategy === 'funds'}
+          planManagement={data.strategy === 'funds'
+            ? <DividendFundWorkbench plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} onSaved={load} />
+            : <div className="div-actions">{checkedPlans.map(({ plan }) =>
+              <button type="button" key={plan.code} className="btn btn-secondary" onClick={() => openStock(plan.code)}>
+                {plan.name} · {plan.code}
+              </button>)}</div>} />
+      </details>
+
+      {panel === 'budget' && <WorkbenchDialog title={t('div_budget_manage')} onClose={closePanel}>
+        {feedback}
+        <form className="div-wb-budget" onSubmit={event => { event.preventDefault(); void persistBudget(); }}>
+          <label htmlFor="div-budget">{t('div_budget')}</label>
+          <div className="div-wb-list-tools">
+            <input id="div-budget" inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0"
+              max="1000000000000" step="0.01" value={budgetInput} disabled={budgetSaving}
+              onChange={event => setBudgetInput(event.target.value)} />
+            <button type="submit" className="btn btn-primary" disabled={budgetSaving}>{t(budgetSaving ? 'loading' : 'save')}</button>
+          </div>
+        </form>
+        <label className="div-wb-budget" htmlFor="div-cs-tax-select">
+          {t('div_cs_tax_label')}
+          <select id="div-cs-tax-select" value={taxBps} onChange={event => void changeTaxRate(Number(event.target.value) as ClassicTaxRateBps)}>
+            {([0, 1000, 2000] as const).map(rate => <option key={rate} value={rate}>{t(`div_cs_tax_${rate}`)}</option>)}
+          </select>
+        </label>
+        <p className="div-muted">{t('div_new_weights_rule')}</p>
+        <div className="div-actions">
+          <button type="button" className="btn btn-secondary" disabled={budgetSaving || totalWeightBps === 0 || totalWeightBps === 10000}
+            onClick={() => setAllocationOpen(true)}>{t(totalWeightBps > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</button>
+        </div>
+        <ul className="div-wb-weights">
+          {data.stocks.filter(stock => stock.weightBps > 0).sort((a, b) => b.weightBps - a.weightBps).map(stock =>
+            <li key={stock.code}>
+              <button type="button" className="div-wb-stock-row" onClick={() => { setIsNew(false); setEditor(stock); }}>
+                <span className="div-wb-stock-name"><strong>{stock.name}</strong><small>{stock.code} · {t(`div_group_${stock.group}`)}</small></span>
+                <span className="div-wb-stock-data"><strong>{numeric(stock.weightBps / 100)}%</strong>
+                  <small>{money(stockBudgetMinor(data.budgetMinor, stock.weightBps))}</small></span>
+                <span className="div-wb-chevron" aria-hidden="true">›</span>
+              </button>
+            </li>)}
+        </ul>
+        <details className="div-wb-disclosure">
+          <summary>{t('div_new_grid_method')}</summary>
+          {([1, 2] as const).map(index => <p className="div-muted" key={index}>{t(`div_cs_method_rule_${index}_body`)}</p>)}
+          {batchConfirm ? <>
+            <p className="div-warning">{t('div_new_batch_overwrite', { count: data.stocks.length })}</p>
+            <div className="div-actions">
+              <button type="button" className="btn btn-primary" disabled={gridApplying} onClick={() => void applyGrid()}>{t('div_new_confirm_grid')}</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setBatchConfirm(false)}>{t('cancel')}</button>
+            </div>
+          </> : <button type="button" className="btn btn-secondary" disabled={!data.stocks.length || gridApplying}
+            onClick={() => setBatchConfirm(true)}>{t('div_cs_batch_apply_all')}</button>}
+        </details>
+        {allocationResult && <section className="div-allocation-result" ref={allocationResultRef}>
+          <h3>{t('div_allocation_result')}</h3>
+          <AllocationPreview {...allocationResult} budgetMinor={data.budgetMinor} amountVisible={amountVisible} />
+        </section>}
+      </WorkbenchDialog>}
+
+      {panel === 'stock' && selected && selectedStock && <WorkbenchDialog key={selectedCode}
+        title={selected.plan.name} subtitle={`${selected.plan.code} · ${t(`div_group_${selected.plan.group}`)}`} onClose={closePanel}>
+        {feedback}
+        <DividendClassicGrid plan={selected.plan} facts={selected.facts} amountVisible={amountVisible} busy={gridApplying}
+          onSaveGrid={() => void applyGrid(selected.plan.code)} />
+        <div className="div-actions div-wb-detail-actions">
+          <button type="button" className="btn btn-primary" onClick={() => { setIsNew(false); setEditor(selectedStock); }}>
+            {t('div_new_edit_stock')}
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={!canRefresh}
+            onClick={() => void refreshMarket([selectedStock.code])}>{t('div_cs_refresh_single_btn')}</button>
+          <button type="button" className="btn btn-secondary" onClick={() => openAdvice(selected.plan.code)}>{t('div_new_daily_open')}</button>
+        </div>
+        {(progress || quotes.refreshing) && <p className="div-muted" role="status">
+          {progress ? t('div_refresh_progress', progress) : t('div_quotes_updating')}
+        </p>}
+      </WorkbenchDialog>}
+
+      {panel === 'fund' && <WorkbenchDialog title={t('div_home_fund_plans')} onClose={closePanel}>
+        <DividendFundWorkbench plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} onSaved={load} />
+      </WorkbenchDialog>}
+
+      {panel === 'advice' && <WorkbenchDialog title={t('div_new_daily')} subtitle={adviceTarget?.name}
+        onClose={() => { closePanel(); if (adviceCode) setPanel('stock'); }}>
+        {feedback}
+        {aiOutput && <DividendClassicAdviceResult output={aiOutput} targetLabel={aiTargetLabel} amountVisible={amountVisible} />}
+        {aiBusy && <p className="div-muted" role="status">{t('div_new_ai_working')}</p>}
+        <div className="div-wb-advice-tools">
+          <form className="div-wb-list-tools" onSubmit={event => {
+            event.preventDefault();
+            if (aiQuestion.trim()) void askAiToday(adviceCode, aiQuestion.trim());
+          }}>
+            <input aria-label={t('div_new_ai_question')} placeholder={t('div_new_ai_question')} value={aiQuestion}
+              onChange={event => setAiQuestion(event.target.value)} />
+            <button type="submit" className="btn btn-primary" disabled={aiBusy || !aiQuestion.trim()}>{t('div_cs_ai_ask_btn')}</button>
+          </form>
+          <button type="button" className="btn btn-secondary" onClick={() => {
+            closePanel();
+            window.dispatchEvent(new CustomEvent(DIVIDEND_AI_SETTINGS_REQUEST_EVENT));
+          }}>{t('div_cs_ai_config_btn')}</button>
+        </div>
+      </WorkbenchDialog>}
+
       {editor && (
         <StockEditor
           initial={editor}
@@ -563,18 +693,23 @@ export default function DividendPage() {
           onConflict={load}
           onClose={() => setEditor(null)}
           onSaved={async action => {
-            const before = data.stocks.filter(stock => stock.code !== editor.code);
+            const before = data.stocks;
             setEditor(null);
             const next = await load();
+            if (action === 'deleted' || action === 'redistributed') {
+              if (panel === 'stock') closePanel();
+            }
             setAllocationResult(
-              action === 'redistributed' && before.some(stock => stock.weightBps > 0)
+              action === 'rebalanced' || action === 'redistributed' && before.some(stock => stock.weightBps > 0)
                 ? { before, after: next.stocks }
                 : null,
             );
             setError('');
             setMessage(
               t(
-                action === 'redistributed'
+                action === 'rebalanced'
+                  ? 'div_new_weights_rebalanced'
+                  : action === 'redistributed'
                   ? 'div_deleted_redistributed'
                   : action === 'deleted'
                     ? 'div_deleted_unallocated'
@@ -592,8 +727,9 @@ export default function DividendPage() {
           onClose={() => setImportOpen(false)}
           onSaved={async result => {
             setImportOpen(false);
-            await load();
-            setAllocationResult(null);
+            const next = await load();
+            const changed = data.stocks.some(stock => next.stocks.find(saved => saved.code === stock.code)?.weightBps !== stock.weightBps);
+            setAllocationResult(changed ? { before: data.stocks, after: next.stocks } : null);
             setError('');
             setMessage(t('div_import_done', result));
           }}
@@ -617,838 +753,56 @@ export default function DividendPage() {
       {linkedPickerOpen && (
         <LinkedStockPicker
           positions={untracked}
+          hasBudget={data.budgetMinor > 0}
           amountVisible={amountVisible}
           onClose={() => setLinkedPickerOpen(false)}
           onSaved={async count => {
             setLinkedPickerOpen(false);
-            await load();
-            setAllocationResult(null);
-            setMessage(t('div_linked_added', { count }));
+            const next = await load();
+            const changed = data.stocks.some(stock => next.stocks.find(saved => saved.code === stock.code)?.weightBps !== stock.weightBps);
+            setAllocationResult(changed ? { before: data.stocks, after: next.stocks } : null);
+            setMessage(t('div_linked_added', { count }) + (changed ? ` · ${t('div_new_weights_rebalanced')}` : ''));
             setError('');
           }}
         />
       )}
 
-      {/* Page Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t('div_title')}</h1>
-          <small className="div-active-strategy">{t('div_cs_subtitle')}</small>
-        </div>
-        <div className="div-actions">
-          <div className="div-cs-mode-switch" role="group" aria-label={t('div_strategy')}>
-            <button
-              type="button"
-              className={data.strategy === 'stocks' ? 'selected' : ''}
-              aria-pressed={data.strategy === 'stocks'}
-              disabled={strategySaving}
-              onClick={() => void changeStrategy('stocks')}
-            >
-              {t('div_cs_mode_stocks')}
-            </button>
-            <button
-              type="button"
-              className={data.strategy === 'funds' ? 'selected' : ''}
-              aria-pressed={data.strategy === 'funds'}
-              disabled={strategySaving}
-              onClick={() => void changeStrategy('funds')}
-            >
-              {t('div_cs_mode_funds')}
-            </button>
-          </div>
-          <button className="btn btn-secondary" onClick={() => setAmountVisible(!amountVisible)}>
-            {t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}
-          </button>
-        </div>
-      </div>
-
-      {/* Top 4 Summary Cards */}
-      <section className="div-cs-kpi-grid" aria-label={t('div_title')}>
-        <div className="div-cs-kpi-card" onClick={() => setBudgetPanelOpen(v => !v)} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setBudgetPanelOpen(v => !v); }}>
-          <span>{t('div_cs_summary_budget')}</span>
-          <strong>{data.budgetConfigured && data.budgetMinor > 0 ? money(data.budgetMinor) : t('div_cs_summary_budget_unset')}</strong>
-          <small>{t('div_allocated', { percent: numeric(totalWeightBps / 100), remaining: money(Math.max(0, data.budgetMinor - stockBudgetMinor(data.budgetMinor, totalWeightBps))) })}</small>
-        </div>
-        <div className="div-cs-kpi-card">
-          <span>{t('div_cs_summary_held')}</span>
-          <strong>{t('div_cs_summary_held_val', { held: heldPlans.length, total: classicPlans.length })}</strong>
-          <small>{untracked.length > 0 ? t('div_add_linked', { count: untracked.length }) : t('div_group_core') + ` ${filterCounts.core}`}</small>
-        </div>
-        <div className="div-cs-kpi-card">
-          <span>{t('div_cs_summary_forecast')}</span>
-          <strong>{money(annualDividendMinorTotal)}</strong>
-          <small>{t(`div_cs_tax_${taxBps}`)}</small>
-        </div>
-        <div className={`div-cs-kpi-card${buyTriggeredCount > 0 ? ' is-buy-active' : sellTriggeredCount > 0 ? ' is-sell-active' : ''}`}>
-          <span>{t('div_cs_summary_triggers')}</span>
-          <strong>{t('div_cs_summary_triggers_val', { buy: buyTriggeredCount, sell: sellTriggeredCount })}</strong>
-          <small>
-            {quotes.refreshing
-              ? t('div_quotes_updating')
-              : quotes.result
-                ? new Date(quotes.result.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-                : today}
-          </small>
-        </div>
-      </section>
-
-      {/* Collapsible Budget & Tax Settings Bar */}
-      {budgetPanelOpen && (
-        <section className="div-cs-budget-drawer">
-          <div className="div-stock-heading">
-            <h3>{t('div_cs_toolbar_budget')}</h3>
-            <button type="button" className="btn btn-secondary" onClick={() => setBudgetPanelOpen(false)}>
-              {t('close')}
-            </button>
-          </div>
-          <form
-            className="div-budget"
-            onSubmit={event => {
-              event.preventDefault();
-              void persistBudget();
-            }}
-          >
-            <label htmlFor="div-budget">{t('div_budget')}</label>
-            <div className="div-actions">
-              <input
-                id="div-budget"
-                inputMode="decimal"
-                type={amountVisible ? 'number' : 'password'}
-                min="0"
-                max="1000000000000"
-                step="0.01"
-                placeholder={t('div_budget_placeholder')}
-                value={budgetInput}
-                disabled={budgetSaving}
-                onChange={event => setBudgetInput(event.target.value)}
-              />
-              <button type="submit" className="btn btn-primary" disabled={budgetSaving}>
-                {t(budgetSaving ? 'loading' : 'save')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={Boolean(progress) || totalWeightBps <= 0 || totalWeightBps >= 10000}
-                onClick={() => setAllocationOpen(true)}
-              >
-                {t('div_allocate_unused')}
-              </button>
-            </div>
-          </form>
-          {totalWeightBps > 10000 && <p className="div-warning">{t('div_over_budget')}</p>}
-          <p className="div-muted">{t('div_allocation_rule')}</p>
-        </section>
-      )}
-
-      {allocationResult && (
-        <section className="div-allocation-result" ref={allocationResultRef}>
-          <div className="div-stock-heading">
-            <h2>{t('div_allocation_result')}</h2>
-            <button className="btn btn-secondary" onClick={() => setAllocationResult(null)}>
-              {t('close')}
-            </button>
-          </div>
-          <AllocationPreview
-            before={allocationResult.before}
-            after={allocationResult.after}
-            budgetMinor={data.budgetMinor}
-            amountVisible={amountVisible}
-          />
-        </section>
-      )}
-
-      {message && (
-        <p className="div-notice" role="status">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p className="div-warning" role="alert">
-          {error}
-        </p>
-      )}
-
-      {/* Inline AI Daily Grid Operation Advisor */}
-      <section className="div-cs-ai-panel" aria-labelledby="div-cs-ai-heading">
-        <div className="div-cs-ai-header">
-          <div className="div-cs-ai-title-wrap">
-            <span className="div-advisor-badge" aria-hidden="true">AI</span>
-            <div>
-              <h2 id="div-cs-ai-heading">{t('div_cs_ai_bar_title')}</h2>
-              <p className="div-muted">{t('div_cs_ai_bar_desc')}</p>
-            </div>
-          </div>
-          <div className="div-cs-ai-quick-links">
-            <button
-              type="button"
-              className="div-advisor-text-button"
-              onClick={() => window.dispatchEvent(new CustomEvent(DIVIDEND_AI_SETTINGS_REQUEST_EVENT))}
-            >
-              {t('div_cs_ai_config_btn')}
-            </button>
-          </div>
-        </div>
-
-        <div className="div-cs-ai-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={aiBusy}
-            onClick={() => void askAiToday()}
-          >
-            ✨ {t('div_cs_ai_btn_all')}
-          </button>
-          {selectedPlan && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={aiBusy}
-              onClick={() => void askAiToday({ targetCode: selectedPlan.code })}
-            >
-              🎯 {t('div_cs_ai_btn_selected', { name: selectedPlan.name })}
-            </button>
-          )}
-          <form
-            className="div-cs-ai-form"
-            onSubmit={e => {
-              e.preventDefault();
-              if (aiQuestion.trim()) void askAiToday({ targetCode: selectedPlan?.code, customQuestion: aiQuestion });
-            }}
-          >
-            <input
-              type="text"
-              placeholder={t('div_cs_ai_input_placeholder')}
-              value={aiQuestion}
-              disabled={aiBusy}
-              onChange={e => setAiQuestion(e.target.value)}
-            />
-            <button type="submit" className="btn btn-secondary" disabled={aiBusy || !aiQuestion.trim()}>
-              {t('div_cs_ai_ask_btn')}
-            </button>
-          </form>
-        </div>
-
-        {aiBusy && (
-          <p className="div-advisor-status" role="status">
-            {t('div_cs_ai_thinking')}
-          </p>
-        )}
-
-        {aiOutput && (
-          <div className="div-cs-ai-result">
-            <div className="div-cs-ai-result-bar">
-              <strong>{aiTargetLabel}</strong>
-              <button type="button" className="div-advisor-text-button" onClick={() => setAiOutput(null)}>
-                {t('div_cs_ai_collapse')}
-              </button>
-            </div>
-            {aiOutput.modelMarkdown && (
-              <div className="div-cs-ai-block is-model">
-                <span className="div-cs-ai-chip">{t('div_cs_ai_model_badge')}</span>
-                <DividendAdvisorMarkdown language={i18n.language}>{aiOutput.modelMarkdown}</DividendAdvisorMarkdown>
-              </div>
-            )}
-            <div className="div-cs-ai-block is-local">
-              <span className="div-cs-ai-chip">{t('div_cs_ai_local_badge')}</span>
-              <DividendAdvisorMarkdown language={i18n.language}>{aiOutput.localMarkdown}</DividendAdvisorMarkdown>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {data.strategy === 'funds' ? (
-        <DividendFundHomePlan
-          plan={data.fundPlan}
-          checks={checks.funds}
-          amountVisible={amountVisible}
-          asOf={today}
-          collapsedCodes={collapsedCodes}
-          onToggle={toggleFundCollapse}
-          readFilter="all"
-          search={search}
-          onEdit={() => void openFundPlan()}
-        />
-      ) : (
-        <>
-          {/* Quick Action & Tax Toolbar */}
-          <section className="div-cs-toolbar">
-            <div className="div-cs-tax-selector">
-              <label htmlFor="div-cs-tax-select">{t('div_cs_tax_label')}</label>
-              <select
-                id="div-cs-tax-select"
-                value={taxBps}
-                onChange={e => void changeTaxRate(Number(e.target.value) as ClassicTaxRateBps)}
-              >
-                <option value={0}>{t('div_cs_tax_0')}</option>
-                <option value={1000}>{t('div_cs_tax_1000')}</option>
-                <option value={2000}>{t('div_cs_tax_2000')}</option>
-              </select>
-            </div>
-            <div className="div-cs-toolbar-btns">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={Boolean(progress)}
-                onClick={() => {
-                  setIsNew(true);
-                  setEditor({
-                    code: '',
-                    name: '',
-                    group: 'watch',
-                    weightBps: 0,
-                    shareMode: 'linked',
-                    manualShares: 0,
-                    lotSize: 100,
-                  });
-                }}
-              >
-                {t('div_cs_toolbar_add')}
-              </button>
-              {untracked.length > 0 && (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={Boolean(progress)}
-                  onClick={() => setLinkedPickerOpen(true)}
-                >
-                  {t('div_cs_toolbar_linked', { count: untracked.length })}
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={Boolean(progress)}
-                onClick={() => setImportOpen(true)}
-              >
-                {t('div_cs_toolbar_import')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={Boolean(progress)}
-                onClick={() => setBudgetPanelOpen(v => !v)}
-              >
-                {t('div_cs_toolbar_budget')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={gridApplying || Boolean(progress)}
-                onClick={() => void saveAllClassicGrids()}
-              >
-                {t('div_cs_batch_apply_all')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={Boolean(progress) || quotes.refreshing}
-                onClick={() => {
-                  void quotes.refresh(true);
-                  void refresh(data.stocks.map(s => s.code));
-                }}
-              >
-                {progress ? t('div_refresh_progress', progress) : t('div_cs_toolbar_refresh_all')}
-              </button>
-            </div>
-          </section>
-
-          {/* Stock Selector Section */}
-          <section className="div-cs-selector-section" aria-labelledby="div-cs-selector-heading">
-            <div className="div-cs-selector-header">
-              <h2 id="div-cs-selector-heading">{t('div_cs_selector_title')}</h2>
-              <input
-                className="div-cs-search-input"
-                aria-label={t('div_search')}
-                placeholder={t('div_search')}
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-
-            <div className="div-cs-filter-pills" role="tablist" aria-label={t('div_group')}>
-              {(['all', 'triggered', 'held', 'core', 'watch', 'hidden'] as const).map(f => (
-                <button
-                  key={f}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectorFilter === f}
-                  className={selectorFilter === f ? 'selected' : ''}
-                  onClick={() => setSelectorFilter(f)}
-                >
-                  {t(`div_cs_filter_${f}`, { count: filterCounts[f] })}
-                </button>
-              ))}
-            </div>
-
-            <div className="div-cs-stock-chips" role="listbox" aria-label={t('div_cs_selector_title')}>
-              {filteredPlans.map(plan => {
-                const isSelected = plan.code === activeSelectedCode;
-                const buyLv = plan.todayAction.triggeredBuyLevel;
-                const sellLv = plan.todayAction.triggeredSellLevel;
-                const gapPct =
-                  plan.todayAction.nextBuyGapBps !== undefined
-                    ? (plan.todayAction.nextBuyGapBps / 100).toFixed(1)
-                    : undefined;
-                const statusClass =
-                  plan.buyPaused && buyLv > 0
-                    ? 'is-paused'
-                    : sellLv > 0 && plan.shares > 0
-                      ? 'is-sell-triggered'
-                      : buyLv > 0 && plan.todayAction.type === 'buy'
-                        ? 'is-buy-triggered'
-                        : buyLv > 0
-                          ? 'is-covered'
-                          : 'is-waiting';
-
-                return (
-                  <button
-                    key={plan.code}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`div-cs-stock-chip ${statusClass}${isSelected ? ' is-selected' : ''}`}
-                    onClick={() => setSelectedCode(plan.code)}
-                  >
-                    <div className="div-cs-chip-top">
-                      <strong>{plan.name}</strong>
-                      <small>{plan.code}</small>
-                    </div>
-                    <div className="div-cs-chip-mid">
-                      <span className="div-cs-chip-price">
-                        {plan.quotePriceMinor ? `¥${(plan.quotePriceMinor / 100).toFixed(2)}` : '—'}
-                      </span>
-                      <span className="div-cs-chip-yield">
-                        {plan.currentNetYieldBps ? `${(plan.currentNetYieldBps / 100).toFixed(2)}%` : '—'}
-                      </span>
-                    </div>
-                    <div className="div-cs-chip-badges">
-                      {plan.buyPaused && buyLv > 0 ? (
-                        <span className="div-cs-badge is-paused">{t('div_cs_badge_paused')}</span>
-                      ) : sellLv > 0 && plan.shares > 0 ? (
-                        <span className="div-cs-badge is-sell">{t('div_cs_badge_sell', { level: sellLv })}</span>
-                      ) : buyLv > 0 && plan.todayAction.type === 'buy' ? (
-                        <span className="div-cs-badge is-buy">{t('div_cs_badge_buy', { level: buyLv })}</span>
-                      ) : buyLv > 0 ? (
-                        <span className="div-cs-badge is-covered">{t('div_cs_badge_covered', { level: buyLv })}</span>
-                      ) : gapPct !== undefined ? (
-                        <span className="div-cs-badge is-wait">{t('div_cs_badge_wait', { gap: gapPct })}</span>
-                      ) : null}
-                      {plan.shares > 0 && (
-                        <span className="div-cs-badge is-held">
-                          {t('div_cs_badge_held', { shares: amountVisible ? numeric(plan.shares, 0) : '••' })}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-              {filteredPlans.length === 0 && <p className="div-muted">{t('div_empty')}</p>}
-            </div>
-          </section>
-
-          {/* Selected Stock Detail Workbench */}
-          {selectedPlan && selectedStock && (
-            <section
-              className="div-cs-workbench"
-              ref={detailSectionRef}
-              aria-labelledby="div-cs-workbench-title"
-            >
-              {/* Workbench Header */}
-              <div className="div-cs-workbench-header">
-                <div className="div-cs-workbench-title-group">
-                  <div className="div-cs-title-row">
-                    <h2 id="div-cs-workbench-title">{selectedPlan.name}</h2>
-                    <span className="div-cs-code-pill">{selectedPlan.code}</span>
-                    <span className="div-cs-sector-pill">{selectedPlan.sector}</span>
-                    <span className="div-cs-tier-pill">{t(`div_cs_tier_${selectedPlan.base.tier}`)}</span>
-                    <span className="div-cs-origin-pill">{t(`div_cs_origin_${selectedPlan.gridOrigin}`)}</span>
-                  </div>
-                  <div className="div-cs-group-inline">
-                    <label>
-                      {t('div_group')}:
-                      <select
-                        value={selectedStock.group}
-                        disabled={groupSaving}
-                        onChange={e =>
-                          void changeStockGroup(selectedStock.code, e.target.value as DividendStock['group'])
-                        }
-                      >
-                        {(['core', 'watch', 'hidden'] as const).map(g => (
-                          <option key={g} value={g}>
-                            {t(`div_group_${g}`)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="div-cs-workbench-actions">
-                  {(selectedPlan.gridOrigin === 'classic_auto' || selectedPlan.hasCustomPriceDiff) && (
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={gridApplying}
-                      onClick={() => void saveSingleClassicGrid(selectedPlan.code)}
-                    >
-                      {t(
-                        selectedPlan.hasCustomPriceDiff
-                          ? 'div_cs_Sync_classic_btn'
-                          : 'div_cs_apply_classic_btn',
-                      )}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setIsNew(false);
-                      setEditor(selectedStock);
-                    }}
-                  >
-                    {t('div_cs_edit_stock_btn')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={Boolean(progress) || quotes.refreshing}
-                    onClick={() => void refresh([selectedStock.code])}
-                  >
-                    {t('div_cs_refresh_single_btn')}
-                  </button>
-                </div>
-              </div>
-
-              {/* Today's Trigger Conclusion Banner */}
-              <div className={`div-cs-action-banner is-${selectedPlan.todayAction.type}`}>
-                <div className="div-cs-action-banner-main">
-                  <strong>
-                    {i18n.language.startsWith('zh')
-                      ? selectedPlan.todayAction.headlineZh
-                      : selectedPlan.todayAction.headlineEn}
-                  </strong>
-                  <p>
-                    {i18n.language.startsWith('zh')
-                      ? selectedPlan.todayAction.detailZh
-                      : selectedPlan.todayAction.detailEn}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={aiBusy}
-                  onClick={() => void askAiToday({ targetCode: selectedPlan.code })}
-                >
-                  🎯 {t('div_cs_ai_btn_selected', { name: selectedPlan.name })}
-                </button>
-              </div>
-
-              {/* 6 Key Metrics Strip */}
-              <div className="div-cs-metrics-grid">
-                <div className="div-cs-metric-box">
-                  <span>{t('div_cs_detail_quote')}</span>
-                  <strong>
-                    {selectedPlan.quotePriceMinor
-                      ? `¥${(selectedPlan.quotePriceMinor / 100).toFixed(2)}`
-                      : '—'}
-                  </strong>
-                  <small>
-                    {selectedPlan.quoteChangePercent !== undefined && (
-                      <span
-                        className={
-                          selectedPlan.quoteChangePercent > 0
-                            ? 'is-up'
-                            : selectedPlan.quoteChangePercent < 0
-                              ? 'is-down'
-                              : ''
-                        }
-                      >
-                        {selectedPlan.quoteChangePercent > 0 ? '+' : ''}
-                        {selectedPlan.quoteChangePercent.toFixed(2)}% ·{' '}
-                      </span>
-                    )}
-                    {selectedPlan.quoteDate ?? '—'}
-                  </small>
-                </div>
-
-                <div className="div-cs-metric-box">
-                  <span>{t('div_cs_detail_yield')}</span>
-                  <strong className="is-accent">
-                    {selectedPlan.currentNetYieldBps
-                      ? `${(selectedPlan.currentNetYieldBps / 100).toFixed(2)}%`
-                      : '—'}
-                  </strong>
-                  <small>
-                    {t('div_cs_detail_pretax_yield', {
-                      yield: selectedPlan.currentGrossYieldBps
-                        ? (selectedPlan.currentGrossYieldBps / 100).toFixed(2)
-                        : '—',
-                    })}
-                  </small>
-                </div>
-
-                <div className="div-cs-metric-box">
-                  <span>{t('div_cs_detail_anchor')}</span>
-                  <strong>¥{(selectedPlan.neutralPriceMinor / 100).toFixed(2)}</strong>
-                  <small>
-                    {t('div_cs_detail_anchor_sub', {
-                      price: (selectedPlan.grossNeutralPriceMinor / 100).toFixed(2),
-                    })}
-                  </small>
-                </div>
-
-                <div className="div-cs-metric-box">
-                  <span>{t('div_cs_detail_dps')}</span>
-                  <strong>¥{(selectedPlan.base.grossDpsMicros / 1e6).toFixed(4)}</strong>
-                  <small>
-                    {t('div_cs_detail_dps_sub', {
-                      net: (selectedPlan.base.netDpsMicros / 1e6).toFixed(4),
-                      period: selectedPlan.base.periodLabel,
-                    })}
-                  </small>
-                </div>
-
-                <div className="div-cs-metric-box">
-                  <span>{t('div_cs_detail_holding')}</span>
-                  <strong>{quantity(selectedPlan.shares)}</strong>
-                  <small>
-                    {selectedStock.shareMode === 'manual'
-                      ? t('div_manual')
-                      : data.positions
-                          .get(selectedStock.code)
-                          ?.sources.map(s => `${s.accountName} ${quantity(s.shares)}`)
-                          .join(' · ') || t('div_no_link')}
-                  </small>
-                </div>
-
-                <div className="div-cs-metric-box">
-                  <span>
-                    {t('div_cs_detail_budget', { weight: numeric(selectedPlan.weightBps / 100) })}
-                  </span>
-                  <strong>
-                    {selectedPlan.budgetMinor !== undefined ? money(selectedPlan.budgetMinor) : '—'}
-                  </strong>
-                  <small>
-                    {holdingForecast?.amountMinor !== undefined && selectedPlan.shares > 0
-                      ? `${t('div_v2_holding_forecast')} ${money(holdingForecast.amountMinor)}`
-                      : latestReport?.dpsMicros !== undefined
-                        ? `${t('div_v2_latest_report_dividend')} ¥${(latestReport.dpsMicros / 1e6).toFixed(4)}`
-                        : `${selectedPlan.lotSize} ${t('div_one_share')}/lot`}
-                  </small>
-                </div>
-              </div>
-
-              {/* Visual Price Ladder Ruler */}
-              <div className="div-cs-ruler-card">
-                <div className="div-cs-ruler-header">
-                  <span>{t('div_cs_ladder_ruler_title')}</span>
-                  <small>
-                    {t('div_cs_buy_tier_name', { level: 4 })} ¥
-                    {((selectedPlan.buyRows.at(-1)?.priceMinor ?? 0) / 100).toFixed(2)} ←{' '}
-                    {t('div_cs_ladder_neutral')} ¥{(selectedPlan.neutralPriceMinor / 100).toFixed(2)} →{' '}
-                    {t('div_cs_sell_tier_name', { level: 4 })} ¥
-                    {((selectedPlan.sellRows.at(-1)?.priceMinor ?? 0) / 100).toFixed(2)}
-                  </small>
-                </div>
-                <div className="div-cs-ruler-track">
-                  <div className="div-cs-ruler-zone is-buy-zone">{t('div_cs_ladder_buy_zone')}</div>
-                  <div className="div-cs-ruler-zone is-neutral-zone">{t('div_cs_ladder_neutral')}</div>
-                  <div className="div-cs-ruler-zone is-sell-zone">{t('div_cs_ladder_sell_zone')}</div>
-                  {selectedPlan.quotePriceMinor && (
-                    <div
-                      className="div-cs-ruler-pin"
-                      style={{ insetInlineStart: `${rulerPositionPct}%` }}
-                    >
-                      <span>¥{(selectedPlan.quotePriceMinor / 100).toFixed(2)}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="div-cs-ruler-stops">
-                  {[...selectedPlan.buyRows].reverse().map(r => (
-                    <span key={`b-${r.level}`} className={r.touched ? 'is-active-buy' : ''}>
-                      B{r.level} ¥{(r.priceMinor / 100).toFixed(2)}
-                    </span>
-                  ))}
-                  <span className="is-anchor">5% ¥{(selectedPlan.neutralPriceMinor / 100).toFixed(2)}</span>
-                  {selectedPlan.sellRows.map(r => (
-                    <span key={`s-${r.level}`} className={r.touched ? 'is-active-sell' : ''}>
-                      S{r.level} ¥{(r.priceMinor / 100).toFixed(2)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* 4-Buy & 4-Sell Grid Tables */}
-              <div className="div-cs-tables-grid">
-                {/* Buy Ladder Table */}
-                <div className="div-cs-table-card is-buy-card">
-                  <h3>{t('div_cs_buy_table_title')}</h3>
-                  <div className="div-table-scroll">
-                    <table className="div-cs-grid-table">
-                      <thead>
-                        <tr>
-                          <th>{t('div_cs_col_tier')}</th>
-                          <th>{t('div_cs_col_yield')}</th>
-                          <th>{t('div_cs_col_trigger_price')}</th>
-                          <th>{t('div_cs_col_gross_price')}</th>
-                          <th>{t('div_cs_col_gap')}</th>
-                          <th>{t('div_cs_col_shares')}</th>
-                          <th>{t('div_cs_col_status')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedPlan.buyRows.map(row => (
-                          <tr key={row.level} className={row.touched ? 'is-triggered-buy' : ''}>
-                            <th scope="row">{t('div_cs_buy_tier_name', { level: row.level })}</th>
-                            <td>{(row.yieldBps / 100).toFixed(2)}%</td>
-                            <td className="div-cs-price-cell">
-                              <strong>¥{(row.priceMinor / 100).toFixed(2)}</strong>
-                            </td>
-                            <td className="div-muted">¥{(row.grossPriceMinor / 100).toFixed(2)}</td>
-                            <td className={row.touched ? 'is-up' : ''}>
-                              {row.gapFromQuoteBps === undefined
-                                ? '—'
-                                : `${row.gapFromQuoteBps > 0 ? '+' : ''}${(row.gapFromQuoteBps / 100).toFixed(2)}%`}
-                            </td>
-                            <td>
-                              {row.targetShares !== undefined
-                                ? t('div_cs_shares_buy_format', {
-                                    target: quantity(row.targetShares),
-                                    add: quantity(row.incrementalShares ?? 0),
-                                  })
-                                : t('div_cs_shares_portion_only', {
-                                    pct: numeric(row.cumulativePortionBps / 100),
-                                  })}
-                            </td>
-                            <td>
-                              <span className={`div-cs-status-pill is-${row.status}`}>
-                                {t(
-                                  row.status === 'triggered'
-                                    ? 'div_cs_row_triggered_buy'
-                                    : `div_cs_row_${row.status}`,
-                                )}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Sell Ladder Table */}
-                <div className="div-cs-table-card is-sell-card">
-                  <h3>{t('div_cs_sell_table_title')}</h3>
-                  <div className="div-table-scroll">
-                    <table className="div-cs-grid-table">
-                      <thead>
-                        <tr>
-                          <th>{t('div_cs_col_tier')}</th>
-                          <th>{t('div_cs_col_yield')}</th>
-                          <th>{t('div_cs_col_trigger_price')}</th>
-                          <th>{t('div_cs_col_gross_price')}</th>
-                          <th>{t('div_cs_col_gap')}</th>
-                          <th>{t('div_cs_col_shares')}</th>
-                          <th>{t('div_cs_col_status')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedPlan.sellRows.map(row => (
-                          <tr key={row.level} className={row.touched ? 'is-triggered-sell' : ''}>
-                            <th scope="row">{t('div_cs_sell_tier_name', { level: row.level })}</th>
-                            <td>{(row.yieldBps / 100).toFixed(2)}%</td>
-                            <td className="div-cs-price-cell">
-                              <strong>¥{(row.priceMinor / 100).toFixed(2)}</strong>
-                            </td>
-                            <td className="div-muted">¥{(row.grossPriceMinor / 100).toFixed(2)}</td>
-                            <td className={row.touched ? 'is-down' : ''}>
-                              {row.gapFromQuoteBps === undefined
-                                ? '—'
-                                : `${row.gapFromQuoteBps > 0 ? '+' : ''}${(row.gapFromQuoteBps / 100).toFixed(2)}%`}
-                            </td>
-                            <td>
-                              {row.sellShares !== undefined
-                                ? t('div_cs_shares_sell_format', {
-                                    sell: quantity(row.sellShares),
-                                    pct: numeric(row.cumulativePortionBps / 100),
-                                  })
-                                : t('div_cs_shares_portion_only', {
-                                    pct: numeric(row.cumulativePortionBps / 100),
-                                  })}
-                            </td>
-                            <td>
-                              <span className={`div-cs-status-pill is-${row.status}`}>
-                                {t(
-                                  row.status === 'triggered'
-                                    ? 'div_cs_row_triggered_sell'
-                                    : `div_cs_row_${row.status}`,
-                                )}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3-Item Classic Health & Auto-Fallback Check Strip */}
-              <div className="div-cs-health-grid">
-                {selectedPlan.healthChecks.map(h => (
-                  <div key={h.key} className={`div-cs-health-item is-${h.status}`}>
-                    <strong>{i18n.language.startsWith('zh') ? h.labelZh : h.labelEn}</strong>
-                    <p>{i18n.language.startsWith('zh') ? h.detailZh : h.detailEn}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Classic Dividend Strategy & Auto Missing-Data Rules Explanation Card */}
-          <details className="div-cs-method-card">
-            <summary>{t('div_cs_method_card_title')}</summary>
-            <div className="div-cs-method-body">
-              <div>
-                <h4>{t('div_cs_method_rule_1_title')}</h4>
-                <p>{t('div_cs_method_rule_1_body')}</p>
-              </div>
-              <div>
-                <h4>{t('div_cs_method_rule_2_title')}</h4>
-                <p>{t('div_cs_method_rule_2_body')}</p>
-              </div>
-              <div>
-                <h4>{t('div_cs_method_rule_3_title')}</h4>
-                <p>{t('div_cs_method_rule_3_body')}</p>
-              </div>
-            </div>
-          </details>
-        </>
-      )}
-
-      {/* Secondary Deep AI Workspace & History Drawer */}
-      <details className="div-cs-advanced-ai">
-        <summary>{t('div_cs_ai_deep_btn')}</summary>
-        <DividendAdvisor
-          onUpdated={load}
-          amountVisible={amountVisible}
-          planManagement={planManagement}
-          planKey={dailyPlanKey}
-          openPlanRequest={openPlanRequest}
-          onOpenCheckItem={openCheckItem}
-        />
-      </details>
     </div>
   );
 }
 
+function WorkbenchDialog({ title, subtitle, onClose, children }: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    return () => element?.close();
+  }, []);
+  return <dialog ref={dialog} aria-label={title} className="div-dialog div-wb-dialog"
+    onCancel={event => { event.preventDefault(); onClose(); }}>
+    <header className="div-wb-dialog-header">
+      <div><h2>{title}</h2>{subtitle && <small>{subtitle}</small>}</div>
+      <button type="button" className="btn btn-secondary" onClick={onClose}>{t('close')}</button>
+    </header>
+    <div className="div-wb-dialog-body">{children}</div>
+  </dialog>;
+}
+
 function LinkedStockPicker({
   positions,
+  hasBudget,
   amountVisible,
   onClose,
   onSaved,
 }: {
   positions: LinkedDividendPosition[];
+  hasBudget: boolean;
   amountVisible: boolean;
   onClose: () => void;
   onSaved: (count: number) => Promise<void>;
@@ -1456,6 +810,7 @@ function LinkedStockPicker({
   const { t } = useTranslation();
   const dialog = useRef<HTMLDialogElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [allocate, setAllocate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -1469,7 +824,7 @@ function LinkedStockPicker({
     if (saving || selectedCodes.length === 0) return;
     setSaving(true);
     try {
-      await onSaved(await addLinkedDividendStocks(selectedCodes));
+      await onSaved(await addLinkedDividendStocks(selectedCodes, allocate));
     } catch {
       setError(t('div_save_error'));
     } finally {
@@ -1494,6 +849,10 @@ function LinkedStockPicker({
           </button>
         </div>
         <p className="div-muted">{t('div_linked_select_note')}</p>
+        {hasBudget && <label className="div-linked-all">
+          <input type="checkbox" checked={allocate} disabled={saving} onChange={event => setAllocate(event.target.checked)} />
+          {t('div_new_allocate_linked')}
+        </label>}
         <label className="div-linked-all">
           <input
             type="checkbox"
@@ -1567,7 +926,7 @@ function StockEditor({
   taxBps: ClassicTaxRateBps;
   amountVisible: boolean;
   onClose: () => void;
-  onSaved: (action?: 'deleted' | 'redistributed') => Promise<void>;
+  onSaved: (action?: 'deleted' | 'redistributed' | 'rebalanced') => Promise<void>;
   onConflict: () => Promise<unknown>;
 }) {
   const { t } = useTranslation();
@@ -1583,6 +942,8 @@ function StockEditor({
   const afterDelete = redistribute
     ? redistributeDividendWeights(stocks, initial.code)
     : stocks.filter(s => s.code !== initial.code);
+  const weightPreview = previewDividendWeightChanges(stocks, [{ code: mainlandCode(stock.code) || stock.code, weightBps: stock.weightBps }]);
+  const previewCode = mainlandCode(stock.code) || stock.code;
   const classicFallback = useMemo(() => buildClassicStockPlan(stock, { taxBps }), [stock, taxBps]);
   useEffect(() => {
     dialog.current?.showModal();
@@ -1606,7 +967,7 @@ function StockEditor({
     }
     setSaving(true);
     try {
-      await saveDividendStock(
+      const result = await saveDividendStock(
         {
           ...stock,
           code,
@@ -1615,7 +976,7 @@ function StockEditor({
         },
         isNew ? { expectNew: true } : { expectedFingerprint: openedFingerprint },
       );
-      await onSaved();
+      await onSaved(result.rebalanced ? 'rebalanced' : undefined);
     } catch (cause) {
       const conflict = cause instanceof Error && cause.message === 'DIVIDEND_STOCK_CHANGED';
       setError(t(conflict ? 'div_check_stock_conflict' : 'div_invalid_stock'));
@@ -1750,6 +1111,10 @@ function StockEditor({
             />
           </label>
         </div>
+        {weightPreview.requestedTotalBps > 10000 && <p className="div-notice">
+          {t('div_new_weight_preview', { percent: numeric((weightPreview.weights.get(previewCode) ?? 0) / 100) })}
+        </p>}
+        {isNew && budgetMinor > 0 && <p className="div-muted">{t('div_new_weight_default')}</p>}
         <p className="div-muted">{t('div_v2_manual_grid_note')}</p>
         <label className="div-form-note">
           {t('div_note')}
@@ -1945,7 +1310,7 @@ function AllocationPreview({
             </tr>
           </thead>
           <tbody>
-            {fundedDividendStocks(after, budgetMinor).map(stock => (
+            {after.filter(stock => stock.weightBps > 0 || before.some(old => old.code === stock.code && old.weightBps > 0)).map(stock => (
               <tr key={stock.code}>
                 <td>
                   {stock.name}
@@ -2011,12 +1376,12 @@ function AllocationDialog({
       }}
     >
       <div className="div-stock-heading">
-        <h2 id="div-allocation-title">{t('div_allocate_unused')}</h2>
+        <h2 id="div-allocation-title">{t(stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</h2>
         <button className="btn btn-secondary" disabled={saving} onClick={onClose}>
           {t('close')}
         </button>
       </div>
-      <p className="div-muted">{t('div_allocate_unused_note')}</p>
+      <p className="div-muted">{t(stocks.reduce((sum, stock) => sum + stock.weightBps, 0) > 10000 ? 'div_new_weights_rule' : 'div_allocate_unused_note')}</p>
       <AllocationPreview
         before={stocks}
         after={scaleDividendWeights(stocks)}

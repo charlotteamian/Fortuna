@@ -11,8 +11,8 @@ import DividendAdvisorMarkdown from './DividendAdvisorMarkdown';
 import './DividendDailyAdvice.css';
 import { addPortableSnapshotBackgroundListener } from '../native/portableSnapshot';
 
-export default function DividendDailyAdvice({ config, disabled, amountVisible, planKey, onUpdated, onOpenSettings, onOpenItem }: {
-  config: DividendAdvisorConfig | null; disabled: boolean; amountVisible: boolean; planKey: string;
+export default function DividendDailyAdvice({ config, disabled, amountVisible, planKey, fundOnly = false, onUpdated, onOpenSettings, onOpenItem }: {
+  config: DividendAdvisorConfig | null; disabled: boolean; amountVisible: boolean; planKey: string; fundOnly?: boolean;
   onUpdated: () => Promise<unknown>; onOpenSettings: () => void; onOpenItem: (item: DividendDailyItem) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -29,9 +29,12 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
     let active = true; mounted.current = true;
     void Promise.all([loadDividendDailyChecks(), loadDividendDailyAdvice(), loadDividendDailyCheckSnapshot()]).then(([saved, old, snapshot]) => {
       if (!active) return;
-      const restored = saved.current?.status === 'running' ? { ...saved.current, status: 'partial' as const,
-        errors: [...saved.current.errors, 'interrupted'], sources: saved.current.sources.map(source => source.status === 'pending' ? { ...source, status: 'deferred' as const, detail: 'interrupted' } : source) } : saved.current;
-      setCurrent(restored); setCompleted(saved.completed); setLegacy(old); setLocal(snapshot.items);
+      const scoped = (check: DividendDailyCheck | null) => !fundOnly || check?.items.every(item => item.kind === 'fund') ? check : null;
+      const current = scoped(saved.current);
+      const restored = current?.status === 'running' ? { ...current, status: 'partial' as const,
+        errors: [...current.errors, 'interrupted'], sources: current.sources.map(source => source.status === 'pending' ? { ...source, status: 'deferred' as const, detail: 'interrupted' } : source) } : current;
+      setCurrent(restored); setCompleted(scoped(saved.completed)); setLegacy(fundOnly ? null : old);
+      setLocal(fundOnly ? snapshot.items.filter(item => item.kind === 'fund') : snapshot.items);
     }).catch(() => { if (active) setError(t('div_ai_error_storage')); }).finally(() => { if (active) setReady(true); });
     const stop = () => { checkController.current?.abort(); explanationController.current?.abort(); };
     const visibility = () => { if (document.visibilityState === 'hidden') stop(); };
@@ -39,7 +42,7 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
     void addPortableSnapshotBackgroundListener(stop).then(listener => { if (active) nativeListener = listener; else void listener?.remove(); }).catch(() => undefined);
     window.addEventListener('pagehide', stop); document.addEventListener('visibilitychange', visibility);
     return () => { active = false; mounted.current = false; stop(); void nativeListener?.remove(); window.removeEventListener('pagehide', stop); document.removeEventListener('visibilitychange', visibility); };
-  }, [t]);
+  }, [t, fundOnly]);
   useEffect(() => { if (disabled) { checkController.current?.abort(); explanationController.current?.abort(); } }, [disabled]);
   useEffect(() => {
     if (!amountVisible || explanationController.current && current?.planKey !== planKey) {
@@ -52,7 +55,7 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
     explanationController.current?.abort(); setExplanation(''); setError(''); setRunning(true);
     const active = () => mounted.current && checkController.current === request;
     try {
-      const result = await dividendDailyCheckRunner.run({ signal: request.signal,
+      const result = await dividendDailyCheckRunner.run({ signal: request.signal, fundOnly,
         previous: retryKey && current ? current : undefined, retryKeys: retryKey ? [retryKey] : undefined,
         onUpdate: value => { if (active()) setCurrent(value); } });
       if (active()) { setCurrent(result); if (result.status === 'completed') setCompleted(result); }
@@ -68,7 +71,7 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
       const snapshot = await loadDividendDailyCheckSnapshot();
       if (!active()) return;
       if (snapshot.planKey !== current.planKey || dividendDailyCheckIsStale(current, snapshot.planKey)) { setError(t('div_s3_stale')); return; }
-      const context = await loadDividendAdvisorContext();
+      const context = await loadDividendAdvisorContext(fundOnly);
       if (!active()) return;
       const result = await askDividendAdvisorWithActions(config, context, t('div_s3_explain_question'), [], { signal: request.signal, language: i18n.language,
         onLocalResult: result => { if (active()) setExplanation(result.answer); } });

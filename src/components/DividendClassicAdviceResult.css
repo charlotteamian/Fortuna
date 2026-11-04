@@ -1,0 +1,40 @@
+.div-classic-advice {
+  min-width: 0;
+}
+
+.div-classic-advice .div-advisor-markdown {
+  font-size: .9375rem;
+  line-height: 1.65;
+}
+
+.div-classic-advice .div-advisor-markdown h3 {
+  margin: 1em 0 .25em;
+  font-size: 1rem;
+}
+
+.div-classic-advice .div-advisor-markdown ul {
+  padding-inline-start: 1.1em;
+  margin: .25em 0 .75em;
+}
+
+.div-classic-advice .div-advisor-markdown li {
+  margin: .35em 0;
+}
+
+.div-classic-advice-explanation {
+  margin-block-start: 1rem;
+  padding-block-start: .75rem;
+  border-top: 1px solid var(--border);
+}
+
+.div-classic-advice-explanation summary {
+  cursor: pointer;
+  font-weight: 650;
+  padding-block: .35rem;
+  margin-block-end: .35rem;
+}
+
+.div-classic-advice-question {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}

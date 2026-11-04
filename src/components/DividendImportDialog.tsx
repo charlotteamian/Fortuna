@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Capacitor } from '@capacitor/core';
 import { parseDividendImport, type DividendImportResult } from '../lib/dividendImport';
-import { stockBudgetMinor, type DividendStock } from '../lib/dividendWorkbench';
+import { previewDividendWeightChanges, stockBudgetMinor, type DividendStock } from '../lib/dividendWorkbench';
 import { importDividendStocks } from '../services/dividendService';
 
 const numeric = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -62,16 +62,15 @@ export default function DividendImportDialog({ stocks, budgetMinor, amountVisibl
   };
   const rows = result?.rows ?? [];
   const selectedRows = rows.filter(row => selected.includes(row.code));
-  const replacements = new Map(selectedRows.map(row => [row.code, row]));
-  const finalWeight = stocks.reduce((sum, stock) => sum + (replacements.get(stock.code)?.weightBps ?? stock.weightBps), 0)
-    + selectedRows.filter(row => !stocks.some(stock => stock.code === row.code)).reduce((sum, row) => sum + row.weightBps, 0);
+  const { requestedTotalBps, weights } = previewDividendWeightChanges(stocks, selectedRows);
+  const rebalances = requestedTotalBps > 10000;
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
   const apply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy || selectedRows.length === 0 || finalWeight > 10000) return;
+    if (busy || selectedRows.length === 0) return;
     setBusy(true); setError('');
     try { await onSaved(await importDividendStocks(selectedRows)); }
-    catch (cause) { setError(t(cause instanceof Error && cause.message === 'DIVIDEND_IMPORT_OVER_BUDGET' ? 'div_import_over_budget' : 'div_save_error')); }
+    catch { setError(t('div_save_error')); }
     finally { setBusy(false); }
   };
   return <dialog ref={dialog} className="div-dialog" aria-labelledby="div-import-title" onCancel={e => { if (busy) e.preventDefault(); else onClose(); }}><form onSubmit={e => void apply(e)}>
@@ -87,16 +86,18 @@ export default function DividendImportDialog({ stocks, budgetMinor, amountVisibl
       <label className="div-linked-all"><input type="checkbox" checked={allSelected} disabled={busy || rows.length === 0} onChange={e => setSelected(e.target.checked ? rows.map(row => row.code) : [])} />{t('div_linked_select_all')}</label>
       <div className="div-linked-list">{rows.map(row => {
         const existing = stocks.find(stock => stock.code === row.code);
-        return <label className="div-linked-option" key={row.code}><input type="checkbox" checked={selected.includes(row.code)} disabled={busy} onChange={e => setSelected(codes => e.target.checked ? [...codes, row.code] : codes.filter(code => code !== row.code))} /><span>
+        const checked = selected.includes(row.code);
+        const effectiveWeightBps = checked ? weights.get(row.code) ?? row.weightBps : row.weightBps;
+        return <label className="div-linked-option" key={row.code}><input type="checkbox" checked={checked} disabled={busy} onChange={e => setSelected(codes => e.target.checked ? [...codes, row.code] : codes.filter(code => code !== row.code))} /><span>
           <strong>{row.name} <small>{row.code} · {t(existing ? 'div_import_update' : 'div_import_new')}</small></strong>
-          <small>{existing ? `${numeric(existing.weightBps / 100)}% → ` : ''}{numeric(row.weightBps / 100)}% · {amountVisible ? `¥${numeric(stockBudgetMinor(budgetMinor, row.weightBps) / 100)}` : '••••'} · {t(`div_group_${row.group ?? existing?.group ?? 'watch'}`)}</small>
+          <small>{existing ? `${numeric(existing.weightBps / 100)}% → ` : ''}{numeric(effectiveWeightBps / 100)}% · {amountVisible ? `¥${numeric(stockBudgetMinor(budgetMinor, effectiveWeightBps) / 100)}` : '••••'} · {t(`div_group_${row.group ?? existing?.group ?? 'watch'}`)}</small>
           {row.note && <small>{row.note}</small>}
         </span></label>;
       })}</div>
-      <p className={finalWeight > 10000 ? 'div-warning' : 'div-muted'}>{t('div_import_total', { percent: numeric(finalWeight / 100) })}</p>
-      {finalWeight > 10000 && <p className="div-warning">{t('div_import_over_budget')}</p>}
+      <p className="div-muted">{t('div_import_total', { percent: numeric(Math.min(10000, requestedTotalBps) / 100) })}</p>
+      {rebalances && selectedRows.length > 0 && <p className="div-warning">{t('div_import_over_budget')}</p>}
     </>}
     {error && <p role="alert" className="div-warning">{error}</p>}
-    <div className="div-actions"><button type="submit" className="btn btn-primary" disabled={busy || selectedRows.length === 0 || finalWeight > 10000}>{t(busy ? 'loading' : 'div_import_apply', { count: selectedRows.length })}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>{t('cancel')}</button></div>
+    <div className="div-actions"><button type="submit" className="btn btn-primary" disabled={busy || selectedRows.length === 0}>{t(busy ? 'loading' : 'div_import_apply', { count: selectedRows.length })}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>{t('cancel')}</button></div>
   </form></dialog>;
 }

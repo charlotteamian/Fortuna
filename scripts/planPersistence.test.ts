@@ -469,6 +469,34 @@ test('held-stock import adds only selected, still-held codes and preserves exist
   assert.equal(await db.holdingTxns.count(), 4);
 });
 
+test('funded held-stock import uses the average positive weight and supports observation-only additions', async () => {
+  const { addLinkedDividendStocks, loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
+  await seedLinkedStocks();
+  const { stocks: [first, second] } = await loadDividendWorkbench();
+  await db.dividendStocks.clear();
+  await db.dividendStocks.bulkAdd([{ ...first, weightBps: 7000 }, { ...second, weightBps: 3000 }]);
+  await saveDividendBudget(10000000);
+  const holdings = await db.holdings.toArray(), trades = await db.holdingTxns.toArray();
+  assert.equal(await addLinkedDividendStocks(['600519']), 1);
+  assert.deepEqual(await db.dividendStocks.get(first.code), { ...first, weightBps: 4667 });
+  assert.deepEqual(await db.dividendStocks.get(second.code), { ...second, weightBps: 2000 });
+  assert.equal((await db.dividendStocks.get('600519'))?.weightBps, 3333);
+  assert.equal(await addLinkedDividendStocks(['688981'], false), 1);
+  assert.equal((await db.dividendStocks.get('688981'))?.weightBps, 0);
+  assert.deepEqual(await db.holdings.toArray(), holdings);
+  assert.deepEqual(await db.holdingTxns.toArray(), trades);
+});
+
+test('the first linked stocks split an otherwise unassigned funded budget', async () => {
+  const { addLinkedDividendStocks, loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
+  await seedLinkedStocks();
+  await loadDividendWorkbench();
+  await db.dividendStocks.clear();
+  await saveDividendBudget(10000000);
+  assert.equal(await addLinkedDividendStocks(['600519', '688981']), 2);
+  assert.deepEqual((await db.dividendStocks.toArray()).map(stock => stock.weightBps), [5000, 5000]);
+});
+
 test('stock removal and reallocation commit together, persist on re-entry and preserve the ledger', async () => {
   const { deleteDividendStock, loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
   await seedLinkedStocks();

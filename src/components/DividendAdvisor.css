@@ -51,9 +51,9 @@
 .div-advisor-markdown pre { padding: 14px; overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); font-size: 13px; line-height: 1.7; }
 .div-advisor-markdown pre code { padding: 0; background: transparent; font-size: inherit; }
 .div-advisor-markdown hr { margin: 26px 0; border: 0; border-top: 1px solid var(--border); }
-.div-advisor-markdown-table { width: 100%; overflow-x: auto; }
-.div-advisor-markdown table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.div-advisor-markdown th, .div-advisor-markdown td { padding: 10px; border: 1px solid var(--border); text-align: left; }
+.div-advisor-markdown-table { max-width: 100%; overflow-x: auto; }
+.div-advisor-markdown table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 14px; }
+.div-advisor-markdown th, .div-advisor-markdown td { min-width: 5rem; max-width: 18rem; padding: 10px; border: 1px solid var(--border); text-align: left; }
 .div-advisor-answer-date, .div-advisor-reading-note { color: var(--text-secondary); font-size: 11px; line-height: 1.7; }
 .div-advisor-answer-date { margin: 24px 0 0; }
 .div-advisor-reading-note { margin: 4px 0 0; }

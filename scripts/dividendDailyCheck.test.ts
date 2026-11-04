@@ -51,7 +51,9 @@ beforeEach(async () => {
 after(() => { db.close(); stored.close(); ledgers.close(); research.close(); closeDividendDailyAdvice(); closeDividendLedgerEvidence(); closeDividendResearchCache(); });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
-const sourcesFor = (key: string): DividendDailySource[] => ['quote', 'disclosure', 'schedule', 'research', 'official', 'plan'].map(kind => ({ id: `${key}:${kind}`, itemKey: key,
+const sourcesFor = (key: string): DividendDailySource[] => (key.startsWith('fund:')
+  ? ['quote', 'reference', 'plan']
+  : ['quote', 'disclosure', 'schedule', 'research', 'official', 'plan']).map(kind => ({ id: `${key}:${kind}`, itemKey: key,
   stage: kind === 'quote' ? 'quotes' : kind === 'plan' ? 'plans' : 'evidence', provider: 'synthetic', status: 'success' }));
 const saveClaimedCheck = async (value: DividendDailyCheck) => {
   assert.equal(await claimDividendDailyCheckBatch(value.batchId, value.startedAt), true);
@@ -112,6 +114,18 @@ test('unconfigured deterministic runner completes every real stage and publishes
   assert.equal(result.status, 'completed'); assert.equal(result.checkedKeys.length, 2);
   assert.deepEqual([...new Set(h.updates.map(value => value.stage))], ['quotes', 'evidence', 'plans', 'result']);
   assert.equal(h.saved?.batchId, result.batchId); assert.equal(result.errors.length, 0);
+});
+
+test('a fund-only check refreshes, displays and saves only fund items from a mixed plan', async () => {
+  const h = harness();
+  const fund = { ...items()[0], key: 'fund:synthetic', id: 'synthetic', kind: 'fund' as const, name: 'Synthetic fund' };
+  h.rows = [...items(), fund];
+  const result = await h.runner.run({ ...h.options, fundOnly: true });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.checkedKeys, [fund.key]);
+  assert.ok(h.updates.every(update => update.items.every(item => item.key === fund.key)
+    && update.sources.every(source => source.itemKey === fund.key)));
+  assert.deepEqual(h.saved?.items.map(item => item.key), [fund.key]);
 });
 
 test('repeated clicks join the same active check and do not duplicate requests', async () => {

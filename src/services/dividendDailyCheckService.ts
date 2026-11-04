@@ -28,7 +28,7 @@ interface Dependencies {
   owner?: () => Promise<string | undefined>;
 }
 interface RunOptions {
-  signal?: AbortSignal; timeoutMs?: number; previous?: DividendDailyCheck; retryKeys?: string[];
+  signal?: AbortSignal; timeoutMs?: number; previous?: DividendDailyCheck; retryKeys?: string[]; fundOnly?: boolean;
   onUpdate?: (value: DividendDailyCheck) => void;
 }
 
@@ -99,8 +99,12 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
           assertDividendRequestCurrent(control);
         }
       };
-      const updateItems = async (checkedKeys: string[] = []) => {
+      const loadSnapshot = async () => {
         const snapshot = await awaitDividendRequest(deps.load(), control);
+        return options.fundOnly ? { ...snapshot, items: snapshot.items.filter(item => item.kind === 'fund') } : snapshot;
+      };
+      const updateItems = async (checkedKeys: string[] = []) => {
+        const snapshot = await loadSnapshot();
         if (snapshot.inputKey !== value.inputKey) {
           controller.abort(new Error('DIVIDEND_CHECK_INPUTS_CHANGED')); assertDividendRequestCurrent(control);
         }
@@ -128,7 +132,7 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
         return queue;
       };
       try {
-        const snapshot = await awaitDividendRequest(deps.load(), control);
+        const snapshot = await loadSnapshot();
         value = { ...value, inputKey: snapshot.inputKey, planKey: snapshot.planKey, items: snapshot.items };
         if (reservation) {
           if (current()) options.onUpdate?.(structuredClone(value));
@@ -144,7 +148,8 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
             stale: !retry.has(item.key) && (previous.inputKey !== snapshot.inputKey || !prior.has(item.key)
               || dividendDailyItemIsStale(prior.get(item.key)!) || prior.get(item.key)?.fingerprint !== item.fingerprint) }));
           const oldDay = dateInChina(new Date(previous.startedAt)) !== dateInChina();
-          value.sources = [...previous.sources.filter(source => !retry.has(source.itemKey) && snapshot.items.some(item => item.key === source.itemKey) || source.itemKey === 'market')
+          value.sources = [...previous.sources.filter(source => !retry.has(source.itemKey) && snapshot.items.some(item => item.key === source.itemKey)
+            || !options.fundOnly && source.itemKey === 'market')
             .map(source => oldDay || dividendDailySourceIsHistorical(source) ? { ...source, historical: true } : source),
             ...initialSources(value.items.filter(item => retry.has(item.key)))];
           value.checkedKeys = dividendDailyCheckedKeys(value.items);
@@ -152,7 +157,8 @@ export function createDividendDailyCheckRunner(deps: Dependencies) {
         await publish(true);
         if (!storageUnavailable) {
           await guardInputs();
-          await awaitDividendRequest(deps.refresh(() => undefined, { ...control, beforeWrite: guardInputs, itemKeys: options.retryKeys, onEvent }), control);
+          const itemKeys = options.retryKeys ?? (options.fundOnly ? snapshot.items.map(item => item.key) : undefined);
+          await awaitDividendRequest(deps.refresh(() => undefined, { ...control, beforeWrite: guardInputs, itemKeys, onEvent }), control);
           await queue;
           await guardInputs();
           await updateItems();

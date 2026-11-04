@@ -164,8 +164,10 @@ export function redistributeDividendWeights(stocks: DividendStock[], removedCode
   return scaleDividendWeights(remaining, targetWeight);
 }
 
+type DividendWeight = Pick<DividendStock, 'code' | 'weightBps'>;
+
 /** Allocate an explicit total in the existing proportions, keeping zero weights at zero. */
-export function scaleDividendWeights(stocks: DividendStock[], targetWeight = 10000): DividendStock[] {
+export function scaleDividendWeights<T extends DividendWeight>(stocks: readonly T[], targetWeight = 10000): T[] {
   if (!Number.isSafeInteger(targetWeight) || targetWeight < 0 || targetWeight > 10000) throw new Error('INVALID_DIVIDEND_WEIGHT');
   const remainingWeight = stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
   if (remainingWeight === 0) return stocks.map(stock => ({ ...stock }));
@@ -178,6 +180,25 @@ export function scaleDividendWeights(stocks: DividendStock[], targetWeight = 100
   const ranked = [...allocations].sort((a, b) => b.remainder - a.remainder || a.stock.code.localeCompare(b.stock.code));
   for (let i = 0; i < leftover; i++) ranked[i].weightBps++;
   return allocations.map(({ stock, weightBps }) => ({ ...stock, weightBps }));
+}
+
+/** Interpret explicit weight inputs as relative weights when their combined total exceeds 100%. */
+export function previewDividendWeightChanges(stocks: readonly DividendWeight[], changes: readonly DividendWeight[] = []) {
+  const proposed = new Map(stocks.map(stock => [stock.code, stock]));
+  for (const change of changes) proposed.set(change.code, change);
+  const rows = [...proposed.values()];
+  const requestedTotalBps = rows.reduce((sum, row) => sum + row.weightBps, 0);
+  const final = requestedTotalBps > 10000 ? scaleDividendWeights(rows) : rows;
+  return { requestedTotalBps, weights: new Map(final.map(row => [row.code, row.weightBps])) };
+}
+
+/** Suggest a new funded stock's weight from the average existing positive allocation. */
+export function suggestedDividendStockWeight(stocks: readonly DividendWeight[], budgetMinor: number): number {
+  if (budgetMinor <= 0) return 0;
+  const funded = stocks.filter(stock => stock.weightBps > 0);
+  return funded.length
+    ? Math.round(funded.reduce((sum, stock) => sum + stock.weightBps, 0) / funded.length)
+    : 10000;
 }
 
 export function buildGrid(stock: DividendStock, budgetMinor: number, shares: number, side: 'buy' | 'sell', asOf = dateInChina()) {

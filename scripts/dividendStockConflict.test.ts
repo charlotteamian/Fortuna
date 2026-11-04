@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import test, { after, beforeEach } from 'node:test';
-import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
+import { dateInChina, type DividendStock } from '../src/lib/dividendWorkbench.ts';
+import { buildClassicStockPlan } from '../src/lib/dividendClassicStrategy.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -20,8 +21,8 @@ registerHooks({
 });
 
 const { db, initializeSettings, updateSettings, exportData } = await import('../src/db.ts');
-const { dividendStockEditFingerprint, saveDividendStock, saveDividendStockWeight } = await import('../src/services/dividendService.ts');
-const { loadDividendWorkbench, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
+const { applyClassicDividendGrid, classicDividendGridFingerprint, dividendStockEditFingerprint, saveDividendStock, saveDividendStockWeight } = await import('../src/services/dividendService.ts');
+const { loadDividendWorkbench, loadDividendWorkbenchReadOnly, repairOverallocatedDividendWeights, saveDividendBudget, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
 
 const stock = (): DividendStock => ({ code: '000001', name: 'Synthetic stock', group: 'core', weightBps: 5000,
   shareMode: 'manual', manualShares: 100, manualDpsMicros: 609000, lotSize: 100, note: 'Original note', buyPaused: false,
@@ -50,26 +51,24 @@ test('inline allocation changes only the selected weight and preserves the entir
   assert.deepEqual(await state(), { ...before, dividendStocks: before.dividendStocks.map((row: DividendStock) => row.code === original.code ? { ...original, weightBps: 2500 } : row) });
 });
 
-test('inline allocation rejects invalid, missing and over-budget writes without changing data', async () => {
+test('inline allocation rejects invalid and missing writes without changing data', async () => {
   await db.dividendStocks.put({ ...stock(), code: '000002', weightBps: 5000 });
   const before = await state();
   for (const weight of [-1, 1.5, NaN, Infinity, 10001]) await assert.rejects(saveDividendStockWeight('000001', weight), /INVALID_DIVIDEND_STOCK/);
   await assert.rejects(saveDividendStockWeight('bad-code', 1000), /INVALID_DIVIDEND_STOCK/);
   await assert.rejects(saveDividendStockWeight('000003', 1000), /DIVIDEND_STOCK_MISSING/);
-  await assert.rejects(saveDividendStockWeight('000001', 5001), /DIVIDEND_IMPORT_OVER_BUDGET/);
   assert.deepEqual(await state(), before);
 });
 
-test('concurrent inline allocations cannot spend the same remaining budget twice', async () => {
+test('concurrent inline allocations rebalance against the latest saved weights', async () => {
   await db.dividendStocks.put({ ...stock(), weightBps: 6000 });
   await db.dividendStocks.bulkPut(['000002', '000003'].map(code => ({ ...stock(), code, weightBps: 0 })));
-  const outcomes = await Promise.allSettled(['000002', '000003'].map(code => saveDividendStockWeight(code, 3000)));
-  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
-  const failure = outcomes.find(result => result.status === 'rejected');
-  assert.ok(failure?.status === 'rejected' && /DIVIDEND_IMPORT_OVER_BUDGET/.test(String(failure.reason)));
-  const stocks = await db.dividendStocks.toArray();
-  assert.equal(stocks.reduce((sum, row) => sum + row.weightBps, 0), 9000);
-  assert.equal(stocks.filter(row => row.weightBps === 3000).length, 1);
+  const before = await state();
+  const results = await Promise.all(['000002', '000003'].map(code => saveDividendStockWeight(code, 3000)));
+  assert.equal(results.filter(result => result.rebalanced).length, 1);
+  assert.deepEqual(await state(), {
+    ...before, dividendStocks: before.dividendStocks.map((row: DividendStock, i: number) => ({ ...row, weightBps: [5000, 2500, 2500][i] })),
+  });
 });
 
 test('an editor opened before inline allocation cannot restore the previous weight', async () => {
@@ -196,6 +195,64 @@ test('new-stock saves reject any existing code inside the transaction and only c
   assert.deepEqual(await state(), created);
 });
 
+test('adding a weighted stock to a full portfolio scales positive weights and keeps observations unallocated', async () => {
+  const existing = { ...stock(), weightBps: 6000 };
+  const hidden = { ...stock(), code: '000002', group: 'hidden' as const, weightBps: 4000 };
+  const observation = { ...stock(), code: '000003', group: 'watch' as const, weightBps: 0 };
+  await db.dividendStocks.bulkPut([existing, hidden, observation]);
+  const before = await state();
+  const addition = { ...stock(), code: '000004', weightBps: 2000 };
+  delete addition.gridProvenance;
+  assert.deepEqual(await saveDividendStock(addition, { expectNew: true }), { rebalanced: true });
+  assert.deepEqual(await state(), {
+    ...before, dividendStocks: [
+      { ...existing, weightBps: 5000 }, { ...hidden, weightBps: 3333 }, observation, { ...addition, weightBps: 1667 },
+    ],
+  });
+  await assert.rejects(saveDividendStock({ ...hidden, note: 'Stale after redistribution' }, {
+    expectedFingerprint: dividendStockEditFingerprint(hidden),
+  }), /DIVIDEND_STOCK_CHANGED/);
+});
+
+test('a rebalance write failure rolls back the new stock and previous weights', async () => {
+  await db.dividendStocks.put({ ...stock(), code: '000002', weightBps: 5000 });
+  const before = await state();
+  const failUpdate = (_changes: unknown, key: string) => { if (key === '000002') throw new Error('simulated rebalance failure'); };
+  db.dividendStocks.hook('updating', failUpdate);
+  try {
+    await assert.rejects(saveDividendStock({ ...stock(), code: '000003', weightBps: 3000 }, { expectNew: true }), /simulated rebalance failure/);
+    assert.deepEqual(await state(), before);
+  } finally { db.dividendStocks.hook('updating').unsubscribe(failUpdate); }
+});
+
+test('budget save repairs legacy overflow in the same write while opening leaves saved weights intact', async () => {
+  await db.dividendStocks.bulkPut([{ ...stock(), weightBps: 7000 }, { ...stock(), code: '000002', weightBps: 5000 }]);
+  const before = await state();
+  assert.deepEqual((await loadDividendWorkbench()).stocks.map(row => row.weightBps), [7000, 5000]);
+  assert.deepEqual(await state(), before);
+  assert.deepEqual(await saveDividendBudget(2345678), { rebalanced: true });
+  assert.deepEqual(await state(), {
+    ...before, settings: [{ ...before.settings[0], dividendBudgetMinor: 2345678 }],
+    dividendStocks: before.dividendStocks.map((row: DividendStock, i: number) => ({ ...row, weightBps: [5833, 4167][i] })),
+  });
+});
+
+test('entry repair scales only saved overflow and never fills an allocation reduced by a concurrent write', async () => {
+  await db.dividendStocks.bulkPut([{ ...stock(), weightBps: 7000 }, { ...stock(), code: '000002', weightBps: 5000 }]);
+  const before = await state();
+  assert.deepEqual((await loadDividendWorkbenchReadOnly()).stocks.map(row => row.weightBps), [7000, 5000]);
+  assert.deepEqual(await state(), before);
+  assert.deepEqual(await repairOverallocatedDividendWeights(), { rebalanced: true });
+  assert.deepEqual(await state(), {
+    ...before, dividendStocks: before.dividendStocks.map((row: DividendStock, i: number) => ({ ...row, weightBps: [5833, 4167][i] })),
+  });
+  const edit = saveDividendStockWeight('000002', 2000);
+  const repair = repairOverallocatedDividendWeights();
+  assert.deepEqual(await edit, { rebalanced: false });
+  assert.deepEqual(await repair, { rebalanced: false });
+  assert.deepEqual((await loadDividendWorkbenchReadOnly()).stocks.map(row => row.weightBps), [5833, 2000]);
+});
+
 test('guarded manual price changes clear the old origin while preserving the opposite grid and pause', async () => {
   const original = { ...stock(), buyPaused: true };
   await db.dividendStocks.put(original);
@@ -204,4 +261,25 @@ test('guarded manual price changes clear the old origin while preserving the opp
   const withoutOrigin = { ...edited };
   delete withoutOrigin.gridProvenance;
   assert.deepEqual(await db.dividendStocks.get(original.code), withoutOrigin);
+});
+
+
+test('classic grid confirmation rejects a stale preview and stores the refreshed candidate exactly', async () => {
+  const original = stock();
+  const asOf = dateInChina();
+  const expected = (current: DividendStock) => ({
+    asOf,
+    stockFingerprint: dividendStockEditFingerprint(current),
+    gridFingerprint: classicDividendGridFingerprint(buildClassicStockPlan(current, { asOf, taxBps: 1000 })),
+  });
+  const changed = { ...original, manualDpsMicros: 888000 };
+  await db.dividendStocks.put(changed);
+  const before = await state();
+  await assert.rejects(applyClassicDividendGrid(original.code, 1000, expected(original)), /DIVIDEND_REVIEW_CHANGED/);
+  assert.deepEqual(await state(), before);
+  await applyClassicDividendGrid(changed.code, 1000, expected(changed));
+  const saved = await db.dividendStocks.get(changed.code);
+  const candidate = buildClassicStockPlan(changed, { asOf, taxBps: 1000 });
+  assert.deepEqual(saved?.buyLevels, candidate.classicBuyLevels);
+  assert.deepEqual(saved?.sellLevels, candidate.classicSellLevels);
 });

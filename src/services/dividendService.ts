@@ -1,7 +1,7 @@
 import { parseTencentDividendTrend } from '../lib/dividendTrend';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { db, initializeSettings, updateSettings } from '../db';
-import { defaultDividendStocks, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, quoteSymbol, redistributeDividendWeights, scaleDividendWeights, type DividendStock } from '../lib/dividendWorkbench';
+import { db, initializeSettings } from '../db';
+import { dateInChina, defaultDividendStocks, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, previewDividendWeightChanges, quoteSymbol, redistributeDividendWeights, scaleDividendWeights, suggestedDividendStockWeight, type DividendStock } from '../lib/dividendWorkbench';
 import type { DividendImportRow } from '../lib/dividendImport';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
@@ -9,7 +9,7 @@ import { defaultDividendFundPlan } from '../lib/dividendFundPlan';
 import { enrichDividendPaymentDates, isDividendDataV2 } from '../lib/dividendForecast';
 import { previewDividendRiskRemoval } from './dividendAdvisorActionsService';
 import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
-import { buildClassicStockPlan, type ClassicTaxRateBps } from '../lib/dividendClassicStrategy';
+import { buildClassicStockPlan, type ClassicStockPlan, type ClassicTaxRateBps } from '../lib/dividendClassicStrategy';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
 
 export async function loadDividendWorkbench() {
@@ -47,9 +47,41 @@ export async function saveDividendHomeCollapse(code: string, collapsed: boolean)
 }
 export async function saveDividendBudget(budgetMinor: number) {
   if (!Number.isSafeInteger(budgetMinor) || budgetMinor < 0 || budgetMinor > 1e14) throw new Error('INVALID_BUDGET');
-  await updateSettings({ dividendBudgetMinor: budgetMinor });
+  await initializeSettings();
+  const result = await db.transaction('rw', db.settings, db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    const { requestedTotalBps, weights } = previewDividendWeightChanges(stocks);
+    await updateDividendWeights(stocks, weights);
+    if (!await db.settings.update('main', { dividendBudgetMinor: budgetMinor })) throw new Error('SETTINGS_NOT_FOUND');
+    return { rebalanced: requestedTotalBps > 10000 };
+  });
   requestPortableSnapshot('dividend-budget');
+  return result;
 }
+
+/** Apply changed weights only, inside the caller's transaction. */
+async function updateDividendWeights(stocks: DividendStock[], weights: ReadonlyMap<string, number>) {
+  for (const stock of stocks) {
+    const weightBps = weights.get(stock.code);
+    if (weightBps !== undefined && weightBps !== stock.weightBps) {
+      await db.dividendStocks.update(stock.code, { weightBps });
+    }
+  }
+}
+
+/** Repair legacy overflow at workbench entry without assigning any unused budget. */
+export async function repairOverallocatedDividendWeights() {
+  const result = await db.transaction('rw', db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    const { requestedTotalBps, weights } = previewDividendWeightChanges(stocks);
+    const rebalanced = requestedTotalBps > 10000;
+    if (rebalanced) await updateDividendWeights(stocks, weights);
+    return { rebalanced };
+  });
+  if (result.rebalanced) requestPortableSnapshot('dividend-budget-rebalanced');
+  return result;
+}
+
 /** Bind an editor to user-owned fields; market refreshes must not invalidate a draft. */
 export function dividendStockEditFingerprint(stock: DividendStock): string {
   const levels = (value: DividendStock['buyLevels']) => value?.map(({ yieldBps, portionBps, priceMinor }) => ({ yieldBps, portionBps, priceMinor }));
@@ -72,12 +104,14 @@ export async function saveDividendStock(stock: DividendStock, options: DividendS
     || (options.expectedFingerprint !== undefined && (typeof options.expectedFingerprint !== 'string' || !options.expectedFingerprint))
     || (options.expectNew !== undefined && typeof options.expectNew !== 'boolean')
     || (options.expectNew && options.expectedFingerprint !== undefined)) throw new Error('INVALID_DIVIDEND_STOCK');
-  await db.transaction('rw', db.dividendStocks, async () => {
-    const current = await db.dividendStocks.get(stock.code);
+  const result = await db.transaction('rw', db.dividendStocks, async () => {
+    const stocks = await db.dividendStocks.toArray();
+    const current = stocks.find(row => row.code === stock.code);
     // Check inside the write transaction, before constructing or persisting any update.
     if ((options.expectNew && current) || (options.expectedFingerprint !== undefined
       && (!current || dividendStockEditFingerprint(current) !== options.expectedFingerprint))) throw new Error('DIVIDEND_STOCK_CHANGED');
-    const saved = { ...stock };
+    const { requestedTotalBps, weights } = previewDividendWeightChanges(stocks, [stock]);
+    const saved = { ...stock, weightBps: weights.get(stock.code)! };
     if (current && JSON.stringify(stock.buyLevels) === JSON.stringify(current.buyLevels)
       && JSON.stringify(stock.sellLevels) === JSON.stringify(current.sellLevels) && current.gridProvenance) saved.gridProvenance = current.gridProvenance;
     else delete saved.gridProvenance;
@@ -87,8 +121,11 @@ export async function saveDividendStock(stock: DividendStock, options: DividendS
       if (current && Object.hasOwn(current, key)) Object.assign(saved, { [key]: current[key] });
     }
     await db.dividendStocks.put(saved);
+    await updateDividendWeights(stocks.filter(row => row.code !== stock.code), weights);
+    return { rebalanced: requestedTotalBps > 10000 };
   });
   requestPortableSnapshot('dividend-stock');
+  return result;
 }
 /** Category changes must preserve any newer grid, quote or budget edits. */
 export async function saveDividendStockGroup(code: string, group: DividendStock['group']) {
@@ -97,17 +134,18 @@ export async function saveDividendStockGroup(code: string, group: DividendStock[
   if (!updated) throw new Error('DIVIDEND_STOCK_MISSING');
   requestPortableSnapshot('dividend-stock-group');
 }
-/** Fast weight-only edit for the unfunded list; keeps grids, quotes and notes intact. */
+/** Change a weight and rebalance an overcommitted portfolio without touching other stock fields. */
 export async function saveDividendStockWeight(code: string, weightBps: number) {
   if (mainlandCode(code) !== code || !Number.isSafeInteger(weightBps) || weightBps < 0 || weightBps > 10000) throw new Error('INVALID_DIVIDEND_STOCK');
-  await db.transaction('rw', db.dividendStocks, async () => {
+  const result = await db.transaction('rw', db.dividendStocks, async () => {
     const stocks = await db.dividendStocks.toArray();
     if (!stocks.some(stock => stock.code === code)) throw new Error('DIVIDEND_STOCK_MISSING');
-    const allocated = stocks.reduce((sum, stock) => sum + (stock.code === code ? weightBps : stock.weightBps), 0);
-    if (allocated > 10000) throw new Error('DIVIDEND_IMPORT_OVER_BUDGET');
-    await db.dividendStocks.update(code, { weightBps });
+    const { requestedTotalBps, weights } = previewDividendWeightChanges(stocks, [{ code, weightBps }]);
+    await updateDividendWeights(stocks, weights);
+    return { rebalanced: requestedTotalBps > 10000 };
   });
   requestPortableSnapshot('dividend-stock-weight');
+  return result;
 }
 export async function deleteDividendStock(code: string, redistribute = true) {
   await db.transaction('rw', db.dividendStocks, db.holdings, db.holdingTxns, async () => {
@@ -129,16 +167,13 @@ export async function allocateDividendBudget(): Promise<void> {
   await db.transaction('rw', db.dividendStocks, async () => {
     const stocks = await db.dividendStocks.toArray();
     const total = stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
-    if (total > 10000) throw new Error('DIVIDEND_IMPORT_OVER_BUDGET');
     if (total <= 0) throw new Error('NO_DIVIDEND_WEIGHTS');
-    for (const stock of scaleDividendWeights(stocks, 10000)) {
-      if (stock.weightBps !== stocks.find(original => original.code === stock.code)?.weightBps) await db.dividendStocks.update(stock.code, { weightBps: stock.weightBps });
-    }
+    await updateDividendWeights(stocks, new Map(scaleDividendWeights(stocks).map(stock => [stock.code, stock.weightBps])));
   });
   requestPortableSnapshot('dividend-budget-allocated');
 }
 
-/** Apply only selected rows; spreadsheet inputs cannot overwrite holdings or existing trading plans. */
+/** Apply selected stock fields and rebalance if needed, preserving holdings and saved grids. */
 export async function importDividendStocks(rows: DividendImportRow[]): Promise<{ added: number; updated: number }> {
   await initializeSettings();
   const result = await db.transaction('rw', db.dividendStocks, db.settings, async () => {
@@ -159,11 +194,13 @@ export async function importDividendStocks(rows: DividendImportRow[]): Promise<{
       changes.push({ stock, existing: !!previous, fields });
       current.set(row.code, stock);
     }
-    if ([...current.values()].reduce((sum, stock) => sum + stock.weightBps, 0) > 10000) throw new Error('DIVIDEND_IMPORT_OVER_BUDGET');
+    const { weights } = previewDividendWeightChanges([...current.values()]);
     for (const change of changes) {
-      if (change.existing) await db.dividendStocks.update(change.stock.code, change.fields);
-      else await db.dividendStocks.add(change.stock);
+      const weightBps = weights.get(change.stock.code)!;
+      if (change.existing) await db.dividendStocks.update(change.stock.code, { ...change.fields, weightBps });
+      else await db.dividendStocks.add({ ...change.stock, weightBps });
     }
+    await updateDividendWeights(stocks.filter(stock => !seen.has(stock.code)), weights);
     await db.settings.update('main', { dividendWorkbenchInitialized: true });
     const added = changes.filter(change => !change.existing).length;
     return { added, updated: changes.length - added };
@@ -172,21 +209,26 @@ export async function importDividendStocks(rows: DividendImportRow[]): Promise<{
   return result;
 }
 
-export async function addLinkedDividendStocks(codes: string[]): Promise<number> {
-  const count = await db.transaction('rw', db.dividendStocks, db.accounts, db.holdings, db.holdingTxns, async () => {
-    const [stocks, accounts, holdings, txns] = await Promise.all([
-      db.dividendStocks.toArray(), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
+export async function addLinkedDividendStocks(codes: string[], allocate = true): Promise<number> {
+  const count = await db.transaction('rw', [db.dividendStocks, db.accounts, db.holdings, db.holdingTxns, db.settings], async () => {
+    const [stocks, accounts, holdings, txns, settings] = await Promise.all([
+      db.dividendStocks.toArray(), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(), db.settings.get('main'),
     ]);
     const existing = new Set(stocks.map(stock => stock.code));
     const positions = linkedDividendPositions(accounts, holdings, txns);
+    const weightBps = allocate ? suggestedDividendStockWeight(stocks, settings?.dividendBudgetMinor ?? 0) : 0;
     const additions: DividendStock[] = [...new Set(codes)].flatMap(code => {
       const position = positions.get(code);
       return !existing.has(code) && position ? [{
-        code, name: position.name, group: 'watch', weightBps: 0, shareMode: 'linked', manualShares: 0,
+        code, name: position.name, group: 'watch', weightBps, shareMode: 'linked', manualShares: 0,
         lotSize: code.startsWith('68') ? 200 : 100,
       }] : [];
     });
-    if (additions.length) await db.dividendStocks.bulkAdd(additions);
+    if (additions.length) {
+      const { weights } = previewDividendWeightChanges(stocks, additions);
+      await db.dividendStocks.bulkAdd(additions.map(stock => ({ ...stock, weightBps: weights.get(stock.code)! })));
+      await updateDividendWeights(stocks, weights);
+    }
     return additions.length;
   });
   if (count) requestPortableSnapshot('dividend-linked-stocks-added');
@@ -271,12 +313,29 @@ export async function refreshDividendTrend(code: string): Promise<boolean> {
   }
 }
 
-export async function applyClassicDividendGrid(code: string, taxBps: ClassicTaxRateBps = 1000): Promise<void> {
+export function classicDividendGridFingerprint(plan: ClassicStockPlan): string {
+  return JSON.stringify([plan.base, plan.classicBuyLevels, plan.classicSellLevels]);
+}
+
+export async function applyClassicDividendGrid(code: string, taxBps: ClassicTaxRateBps = 1000, expected?: {
+  asOf: string;
+  stockFingerprint: string;
+  gridFingerprint: string;
+}): Promise<void> {
   if (mainlandCode(code) !== code) throw new Error('INVALID_DIVIDEND_STOCK');
-  await db.transaction('rw', db.dividendStocks, async () => {
+  await db.transaction('rw', db.dividendStocks, db.settings, async () => {
     const current = await db.dividendStocks.get(code);
     if (!current) throw new Error('DIVIDEND_STOCK_MISSING');
-    const plan = buildClassicStockPlan(current, { taxBps });
+    const asOf = expected ? dateInChina() : undefined;
+    const plan = buildClassicStockPlan(current, { taxBps, asOf });
+    if (expected) {
+      const method = (await db.settings.get('main'))?.dividendPricingMethod;
+      const period = method?.strategy === 'recent_batches' ? method.holdingPeriod : 'month_to_year';
+      const currentTax = period === 'over_year' ? 0 : period === 'up_to_month' ? 2000 : 1000;
+      if (asOf !== expected.asOf || taxBps !== currentTax
+        || dividendStockEditFingerprint(current) !== expected.stockFingerprint
+        || classicDividendGridFingerprint(plan) !== expected.gridFingerprint) throw new Error('DIVIDEND_REVIEW_CHANGED');
+    }
     await db.dividendStocks.update(code, {
       buyLevels: plan.classicBuyLevels,
       sellLevels: plan.classicSellLevels,

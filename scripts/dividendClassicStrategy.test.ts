@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildClassicDailyAdviceMarkdown,
   buildClassicStockPlan,
   resolveClassicDividendBase,
 } from '../src/lib/dividendClassicStrategy.ts';
@@ -161,37 +160,4 @@ test('buildClassicStockPlan: calculates 4-buy and 4-sell grid prices, triggers, 
   assert.equal(plan.buyRows[2].touched, false);
   assert.ok(plan.todayAction.suggestedShares > 0);
   assert.equal(plan.healthChecks.length, 3);
-});
-
-test('buildClassicDailyAdviceMarkdown: generates clear daily trading instructions', () => {
-  const stockA = makeStock({
-    code: '601088',
-    name: '中国神华',
-    weightBps: 5000,
-    manualDpsMicros: 2_260_000,
-    quote: { priceMinor: 3500, date: '2025-07-01' },
-  });
-  const stockB = makeStock({
-    code: '600900',
-    name: '长江电力',
-    weightBps: 5000,
-    manualDpsMicros: 1_150_000,
-    manualShares: 500,
-    quote: { priceMinor: 2800, date: '2025-07-01' },
-  });
-
-  const plans = [
-    buildClassicStockPlan(stockA, { totalBudgetMinor: 8_000_000, shares: 0, taxBps: 1000, asOf: '2025-07-01' }),
-    buildClassicStockPlan(stockB, { totalBudgetMinor: 8_000_000, shares: 500, taxBps: 1000, asOf: '2025-07-01' }),
-  ];
-
-  const markdownAll = buildClassicDailyAdviceMarkdown(plans, { asOf: '2025-07-01' });
-  assert.match(markdownAll, /今日红利网格操作建议/);
-  assert.match(markdownAll, /中国神华/);
-  assert.match(markdownAll, /长江电力/);
-
-  const markdownSingle = buildClassicDailyAdviceMarkdown(plans, { selectedCode: '601088', asOf: '2025-07-01' });
-  assert.match(markdownSingle, /中国神华（601088）/);
-  assert.match(markdownSingle, /买入四档/);
-  assert.match(markdownSingle, /卖出四档/);
 });

@@ -126,7 +126,17 @@ export async function askDividendAdvisor(config: DividendAdvisorConfig, context:
   const system = options.systemPrompt ?? dividendAdvisorSystemPrompt(options.language ?? 'zh');
   const previous = history.slice(-8).filter(message => ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
     .map(message => ({ role: message.role, content: message.content.slice(0, MAX_ANSWER_LENGTH) }));
-  const messages = [...previous, { role: 'user', content: `Current dividend snapshot (JSON data):\n${snapshot}\n\nUser question:\n${question.trim()}` }];
+  const messages = [...previous, { role: 'user' as const, content: `Current dividend snapshot (JSON data):\n${snapshot}\n\nUser question:\n${question.trim()}` }];
+  return sendDividendAdvisorRequest(normalized, system, messages, options);
+}
+
+export async function requestDividendAdvisor(config: DividendAdvisorConfig, system: string,
+  messages: Pick<DividendAdvisorMessage, 'role' | 'content'>[], options: DividendAdvisorOptions = {}): Promise<string> {
+  return sendDividendAdvisorRequest(validateDividendAdvisorConfig(config), system, messages, options);
+}
+
+async function sendDividendAdvisorRequest(normalized: DividendAdvisorConfig, system: string,
+  messages: Pick<DividendAdvisorMessage, 'role' | 'content'>[], options: DividendAdvisorOptions): Promise<string> {
   let body: Record<string, unknown>;
   if (normalized.protocol === 'openai') body = { model: normalized.model, stream: false, messages: [{ role: 'system', content: system }, ...messages], ...holdingRecognitionProviderBody(normalized) };
   else if (normalized.protocol === 'anthropic') body = { model: normalized.model, max_tokens: 4096, system, messages };

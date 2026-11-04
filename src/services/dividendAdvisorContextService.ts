@@ -22,16 +22,17 @@ import { loadDividendDailyAdvicePlanKey } from './dividendDailyAdviceScopeServic
 
 /** Explain only what is already stored. Unlike the refresh workflow below,
  * this must not initialise settings, seed a plan, redate evidence or download. */
-export async function loadDividendAdvisorContext() {
+export async function loadDividendAdvisorContext(fundOnly = false) {
   const [stocks, settings, accounts, holdings, txns, researchCache] = await Promise.all([
-    db.dividendStocks.toArray(), db.settings.get('main'), db.accounts.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(),
-    loadDividendResearchCache().catch(() => null),
+    fundOnly ? [] : db.dividendStocks.toArray(), db.settings.get('main'),
+    fundOnly ? [] : db.accounts.toArray(), fundOnly ? [] : db.holdings.toArray(), fundOnly ? [] : db.holdingTxns.toArray(),
+    fundOnly ? null : loadDividendResearchCache().catch(() => null),
   ]);
   const data = {
-    stocks, strategy: settings?.dividendStrategy ?? 'stocks',
+    stocks, strategy: fundOnly ? 'funds' as const : settings?.dividendStrategy ?? 'stocks',
     fundPlan: settings?.dividendFundPlan ?? defaultDividendFundPlan(),
-    budgetMinor: settings?.dividendBudgetMinor ?? 0,
-    budgetConfigured: settings?.dividendBudgetMinor !== undefined,
+    budgetMinor: fundOnly ? 0 : settings?.dividendBudgetMinor ?? 0,
+    budgetConfigured: !fundOnly && settings?.dividendBudgetMinor !== undefined,
     positions: linkedDividendPositions(accounts, holdings, txns),
   };
   const fundPositions = await loadDividendFundPositions(data.fundPlan.funds);

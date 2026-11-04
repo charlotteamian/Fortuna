@@ -184,10 +184,9 @@ test('target category changes preserve the latest stock plan, holdings and every
   assert.equal(await db.dividendStocks.count(), 2);
 });
 
-test('import validates selected rows and current final weight before any writes', async () => {
+test('import validates selected rows before any writes and keeps available allocation under 100%', async () => {
   await db.dividendStocks.bulkAdd([stock('000001', 6000), stock('600036', 3000)]);
   const before = await db.dividendStocks.toArray();
-  await assert.rejects(importDividendStocks([{ line: 2, code: '600900', name: '长江电力', weightBps: 2000 }]), /DIVIDEND_IMPORT_OVER_BUDGET/);
   await assert.rejects(importDividendStocks([{ line: 2, code: '000001', name: '平安银行', weightBps: 4000 }, { line: 3, code: '000001', name: '重复', weightBps: 1000 }]), /INVALID_DIVIDEND_IMPORT/);
   await assert.rejects(importDividendStocks([{ line: 2, code: '00700', name: '腾讯', weightBps: 0 }]), /INVALID_DIVIDEND_IMPORT/);
   await assert.rejects(importDividendStocks([{ line: 2, code: '600900', name: 'n'.repeat(81), weightBps: 0 }]), /INVALID_DIVIDEND_IMPORT/);
@@ -197,6 +196,16 @@ test('import validates selected rows and current final weight before any writes'
   assert.equal((await db.dividendStocks.toArray()).reduce((sum, row) => sum + row.weightBps, 0), 9000);
   await importDividendStocks([{ line: 2, code: '688981', name: '中芯国际', weightBps: 0 }]);
   assert.equal((await db.dividendStocks.get('688981'))?.lotSize, 200);
+});
+
+test('import scales an overcommitted selection and preserves fields on other stocks', async () => {
+  const first = { ...stock('000001', 6000), note: 'keep', manualDpsMicros: 1000 };
+  const second = { ...stock('600036', 3000), group: 'hidden' as const };
+  await db.dividendStocks.bulkAdd([first, second]);
+  assert.deepEqual(await importDividendStocks([{ line: 2, code: '600900', name: '长江电力', weightBps: 2000 }]), { added: 1, updated: 0 });
+  assert.deepEqual(await db.dividendStocks.toArray(), [
+    { ...first, weightBps: 5455 }, { ...second, weightBps: 2727 }, { ...stock('600900', 1818), name: '长江电力' },
+  ]);
 });
 
 test('a write failure rolls back both updated plans and additions', async () => {
@@ -219,11 +228,9 @@ test('delete can retain unallocated budget and later allocation preserves propor
   assert.equal((await db.dividendStocks.get('600900'))?.weightBps, 0);
 });
 
-test('allocation refuses an empty or overcommitted plan and rolls back on write failure', async () => {
+test('allocation can repair an overcommitted plan and rolls back on write failure', async () => {
   await assert.rejects(allocateDividendBudget(), /NO_DIVIDEND_WEIGHTS/);
   await db.dividendStocks.bulkAdd([stock('000001', 6000), stock('600036', 5000)]);
-  await assert.rejects(allocateDividendBudget(), /DIVIDEND_IMPORT_OVER_BUDGET/);
-  await db.dividendStocks.update('600036', { weightBps: 2000 });
   const before = await db.dividendStocks.toArray();
   const failUpdate = (_changes: unknown, key: string) => { if (key === '600036') throw new Error('simulated allocation failure'); };
   db.dividendStocks.hook('updating', failUpdate);
@@ -231,4 +238,6 @@ test('allocation refuses an empty or overcommitted plan and rolls back on write 
     await assert.rejects(allocateDividendBudget(), /simulated allocation failure/);
     assert.deepEqual(await db.dividendStocks.toArray(), before);
   } finally { db.dividendStocks.hook('updating').unsubscribe(failUpdate); }
+  await allocateDividendBudget();
+  assert.deepEqual((await db.dividendStocks.toArray()).map(row => row.weightBps), [5455, 4545]);
 });
