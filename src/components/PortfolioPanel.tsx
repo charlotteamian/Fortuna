@@ -1,4 +1,3 @@
-import type React from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Account, Holding, HoldingTxn } from '../db';
@@ -578,22 +577,22 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     const totalIn = hTxns.filter(tx => tx.balanceSnapshot == null && tx.kind === 'buy').reduce((s, tx) => s + tx.shares, 0);
     const totalOut = hTxns.filter(tx => tx.balanceSnapshot == null && tx.kind === 'sell').reduce((s, tx) => s + tx.shares, 0);
     return (
-      <div key={h.id} className={`holding-card${archived ? ' holding-card-archived' : ''}`} style={{ ...S.holdingCard, border: `1px solid ${expanded ? 'var(--border-active)' : 'var(--border)'}` }}>
+      <div key={h.id} className={`holding-card holding-card-inner${archived ? ' holding-card-archived' : ''}`} style={{ borderColor: expanded ? 'var(--border-active)' : 'var(--border)' }}>
         <div role="button" tabIndex={0} aria-expanded={expanded} aria-label={h.name} style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expanded ? null : h.id)} onKeyDown={event => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpandedId(expanded ? null : h.id); }
         }}>
-          <div className="holding-card-summary" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="holding-card-name" style={{ fontSize: '0.875rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</span>
-            {!archived && h.symbol && <span style={S.badge}>{optionContract ? formatUsOptionLabel(optionContract) : h.symbol}</span>}
-            {h.market && <span style={S.badge}>{h.market}</span>}
-            {archived && <span style={S.archivedBadge}>{t('archived_holding_badge')}</span>}
+          <div className="holding-card-summary" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <span className="holding-card-name" style={{ fontSize: 'var(--fs-lg)', fontWeight: 'var(--fw-semibold)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</span>
+            {!archived && h.symbol && <span className="holding-badge">{optionContract ? formatUsOptionLabel(optionContract) : h.symbol}</span>}
+            {h.market && <span className="holding-badge">{h.market}</span>}
+            {archived && <span className="holding-badge holding-badge-archived">{t('archived_holding_badge')}</span>}
             <span className="holding-card-spacer" style={{ flex: 1 }} />
-            <span className="holding-card-amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9375rem', whiteSpace: 'nowrap', color: archived && !holdingIsBalance ? pnlColor(h.position.realizedPnl) : undefined }}>
+            <span className="holding-card-amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-xl)', whiteSpace: 'nowrap', color: archived && !holdingIsBalance ? pnlColor(h.position.realizedPnl) : undefined }}>
               {archived && !holdingIsBalance && <span className="holding-archived-result">{t('realized_pnl')} </span>}
               {masked(archived && !holdingIsBalance ? `${h.position.realizedPnl >= 0 ? '+' : ''}${fmtFull(h.position.realizedPnl)}` : fmt(h.marketValue))}
             </span>
           </div>
-          <div className="holding-card-detail" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+          <div className="holding-card-detail" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'var(--sp-1)', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
             <span className={archived && !holdingIsBalance ? 'holding-archived-period' : undefined} style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {holdingIsBalance
                 ? `${t(balanceFlow?.balanceLabelKey ?? 'current_balance')} ${masked(h.marketValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))} ${account.currency}`
@@ -601,15 +600,15 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 : `${masked(h.position.shares.toLocaleString('en-US', { maximumFractionDigits: 4 }))} ${t(optionContract ? 'option_contracts_unit' : 'shares_unit')} · ${t('last_price')} ${h.lastPrice > 0 ? masked(h.lastPrice.toFixed(3)) : '—'}${h.priceDate ? ` (${h.priceDate.slice(5)})` : ''}`}
             </span>
             {!archived && !holdingIsBalance && hasPnl && (
-              <span className="holding-card-pnl" style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontWeight: 600, color: pnlColor(h.totalPnl), whiteSpace: 'nowrap' }}>
+              <span className="holding-card-pnl" style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', color: pnlColor(h.totalPnl), whiteSpace: 'nowrap' }}>
                 {masked(`${signed(h.totalPnl)}${pnlRateText}`)}
               </span>
             )}
           </div>
           {productMeta.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-1)', marginTop: 'var(--sp-1)' }}>
               {productMeta.map(({ field, value }) => (
-                <span key={field.key} style={S.badge}>{t(field.labelKey)} {value}</span>
+                <span key={field.key} className="holding-badge">{t(field.labelKey)} {value}</span>
               ))}
             </div>
           )}
@@ -636,33 +635,33 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 {review.adjustmentCount > 0 && <p className="holding-review-hint">{t('holding_review_adjustment_hint', { count: review.adjustmentCount })}</p>}
               </>
             ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-2)' }}>
               {holdingIsBalance ? (
                 <>
                   {productMeta.map(({ field, value }) => (
-                    <div style={S.posCell} key={field.key}><span style={S.posKey}>{t(field.labelKey)}</span><span style={S.posVal}>{value}</span></div>
+                    <div className="holding-pos-cell" key={field.key}><span className="holding-pos-key">{t(field.labelKey)}</span><span className="holding-pos-val">{value}</span></div>
                   ))}
-                  <div style={S.posCell}><span style={S.posKey}>{t(balanceFlow?.balanceLabelKey ?? 'current_balance')}</span><span style={S.posVal}>{masked(fmt(h.marketValue))}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t('txn_history')}</span><span style={S.posVal}>{hTxns.length}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t(balanceFlow?.totalIncreaseLabelKey ?? 'total_buy_amount')}</span><span style={S.posVal}>{totalIn > 0 ? masked(fmt(totalIn)) : '—'}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t(balanceFlow?.totalDecreaseLabelKey ?? 'total_sell_amount')}</span><span style={S.posVal}>{totalOut > 0 ? masked(fmt(totalOut)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t(balanceFlow?.balanceLabelKey ?? 'current_balance')}</span><span className="holding-pos-val">{masked(fmt(h.marketValue))}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('txn_history')}</span><span className="holding-pos-val">{hTxns.length}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t(balanceFlow?.totalIncreaseLabelKey ?? 'total_buy_amount')}</span><span className="holding-pos-val">{totalIn > 0 ? masked(fmt(totalIn)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t(balanceFlow?.totalDecreaseLabelKey ?? 'total_sell_amount')}</span><span className="holding-pos-val">{totalOut > 0 ? masked(fmt(totalOut)) : '—'}</span></div>
                 </>
               ) : (
                 <>
-                  <div style={S.posCell}><span style={S.posKey}>{t('diluted_cost')}</span><span style={S.posVal}>{h.position.shares > 1e-9 ? masked(h.position.dilutedCost.toFixed(3)) : '—'}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t('avg_buy_cost')}</span><span style={S.posVal}>{h.position.avgCost > 0 ? masked(h.position.avgCost.toFixed(3)) : '—'}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t('total_pnl')}</span><span style={{ ...S.posVal, color: hasPnl ? pnlColor(h.totalPnl) : 'var(--text-muted)' }}>{hasPnl ? masked(signed(h.totalPnl)) : '—'}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t('holding_cost')}</span><span style={S.posVal}>{h.position.costBasis > 0 ? masked(fmt(h.position.costBasis)) : '—'}</span></div>
-                  {optionContract && <div style={S.posCell}><span style={S.posKey}>{t('option_multiplier')}</span><span style={S.posVal}>× {multiplier}</span></div>}
-                  <div style={S.posCell}><span style={S.posKey}>{t('unrealized_pnl')}</span><span style={{ ...S.posVal, color: h.position.costBasis > 0 ? pnlColor(h.unrealizedPnl) : 'var(--text-muted)' }}>{h.position.costBasis > 0 ? masked(signed(h.unrealizedPnl)) : '—'}</span></div>
-                  <div style={S.posCell}><span style={S.posKey}>{t('realized_pnl')}</span><span style={{ ...S.posVal, color: Math.abs(h.position.realizedPnl) > 0.005 ? pnlColor(h.position.realizedPnl) : 'var(--text-muted)' }}>{Math.abs(h.position.realizedPnl) > 0.005 ? masked(signed(h.position.realizedPnl)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('diluted_cost')}</span><span className="holding-pos-val">{h.position.shares > 1e-9 ? masked(h.position.dilutedCost.toFixed(3)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('avg_buy_cost')}</span><span className="holding-pos-val">{h.position.avgCost > 0 ? masked(h.position.avgCost.toFixed(3)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('total_pnl')}</span><span className="holding-pos-val" style={{ color: hasPnl ? pnlColor(h.totalPnl) : 'var(--text-muted)' }}>{hasPnl ? masked(signed(h.totalPnl)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('holding_cost')}</span><span className="holding-pos-val">{h.position.costBasis > 0 ? masked(fmt(h.position.costBasis)) : '—'}</span></div>
+                  {optionContract && <div className="holding-pos-cell"><span className="holding-pos-key">{t('option_multiplier')}</span><span className="holding-pos-val">× {multiplier}</span></div>}
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('unrealized_pnl')}</span><span className="holding-pos-val" style={{ color: h.position.costBasis > 0 ? pnlColor(h.unrealizedPnl) : 'var(--text-muted)' }}>{h.position.costBasis > 0 ? masked(signed(h.unrealizedPnl)) : '—'}</span></div>
+                  <div className="holding-pos-cell"><span className="holding-pos-key">{t('realized_pnl')}</span><span className="holding-pos-val" style={{ color: Math.abs(h.position.realizedPnl) > 0.005 ? pnlColor(h.position.realizedPnl) : 'var(--text-muted)' }}>{Math.abs(h.position.realizedPnl) > 0.005 ? masked(signed(h.position.realizedPnl)) : '—'}</span></div>
                 </>
               )}
             </div>
             )}
             <div className="holding-management-actions">
-              <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }} onClick={() => openTxn(h, 'buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
-              {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: 'var(--theme-on-liability)', fontWeight: 700 }} onClick={() => openTxn(h, 'sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>}
+              <button className="btn btn-sm btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 'var(--fw-bold)' }} onClick={() => openTxn(h, 'buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
+              {!archived && <button className="btn btn-sm btn-block" style={{ background: theme.liabilityColor, color: 'var(--theme-on-liability)', fontWeight: 'var(--fw-bold)' }} onClick={() => openTxn(h, 'sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>}
               {holdingIsBalance && usesDerivedBalance && (
                 <button className="btn btn-sm btn-secondary btn-block" onClick={() => openBalanceAdjustment(h)}>
                   {t('balance_adjustment')}
@@ -708,7 +707,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         <div style={{
           height: refreshing || quoteMsg ? 30 : pullDy,
           overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.72rem', color: 'var(--text-muted)', gap: 6,
+          fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', gap: 'var(--sp-1)',
           transition: pullDy > 0 ? 'none' : 'height 0.2s ease',
         }}>
           {refreshing ? (
@@ -722,30 +721,30 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         <div className="stat-label">{t('total_market_value')}</div>
         <div className="latest-value" style={{ color: theme.assetColor, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <div style={{ whiteSpace: 'nowrap' }}>{masked(fmtFull(totalValue))}</div>
-          <div className="latest-value-currency" style={{ fontSize: '0.875rem', marginTop: 4 }}>{account.currency}</div>
+          <div className="latest-value-currency" style={{ fontSize: 'var(--fs-lg)', marginTop: 'var(--sp-1)' }}>{account.currency}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12, width: '100%' }}>
-          <div style={S.posCell}><span style={S.posKey}>{isBalancePortfolio ? t('product_balance_total') : t('position_value')}</span><span style={S.posVal}>{masked(fmt(positionValue))}</span></div>
-          <div style={{ ...S.posCell, cursor: 'pointer' }} onClick={openCash}>
-            <span style={S.posKey}>{t('cash_balance')} ✏️</span>
-            <span style={S.posVal}>{masked(fmt(cash))}</span>
+          <div className="holding-pos-cell"><span className="holding-pos-key">{isBalancePortfolio ? t('product_balance_total') : t('position_value')}</span><span className="holding-pos-val">{masked(fmt(positionValue))}</span></div>
+          <div className="holding-pos-cell holding-pos-cell-action" onClick={openCash}>
+            <span className="holding-pos-key">{t('cash_balance')} ✏️</span>
+            <span className="holding-pos-val">{masked(fmt(cash))}</span>
           </div>
           {isBalancePortfolio ? (
             <>
-              <div style={S.posCell}><span style={S.posKey}>{t('active_products')}</span><span style={S.posVal}>{activeHoldings.length}</span></div>
-              <div style={S.posCell}><span style={S.posKey}>{t('archived_products_title')}</span><span style={S.posVal}>{archivedHoldings.length}</span></div>
+              <div className="holding-pos-cell"><span className="holding-pos-key">{t('active_products')}</span><span className="holding-pos-val">{activeHoldings.length}</span></div>
+              <div className="holding-pos-cell"><span className="holding-pos-key">{t('archived_products_title')}</span><span className="holding-pos-val">{archivedHoldings.length}</span></div>
             </>
           ) : (
             <>
-              <div style={S.posCell}><span style={S.posKey}>{t('total_pnl')}</span>
-                <span style={{ ...S.posVal, color: costBasis > 0 || Math.abs(realized) > 0.005 ? pnlColor(cumulativePnl) : 'var(--text-muted)' }}>
+              <div className="holding-pos-cell"><span className="holding-pos-key">{t('total_pnl')}</span>
+                <span className="holding-pos-val" style={{ color: costBasis > 0 || Math.abs(realized) > 0.005 ? pnlColor(cumulativePnl) : 'var(--text-muted)' }}>
                   {costBasis > 0 || Math.abs(realized) > 0.005
                     ? masked(`${signed(cumulativePnl)}${cumulativePnlRate == null ? '' : ` (${cumulativePnlRate >= 0 ? '+' : ''}${cumulativePnlRate.toFixed(1)}%)`}`)
                     : '—'}
                 </span>
               </div>
-              <div style={S.posCell}><span style={S.posKey}>{t('realized_pnl')}</span>
-                <span style={{ ...S.posVal, color: Math.abs(realized) > 0.005 ? pnlColor(realized) : 'var(--text-muted)' }}>{Math.abs(realized) > 0.005 ? masked(signed(realized)) : '—'}</span>
+              <div className="holding-pos-cell"><span className="holding-pos-key">{t('realized_pnl')}</span>
+                <span className="holding-pos-val" style={{ color: Math.abs(realized) > 0.005 ? pnlColor(realized) : 'var(--text-muted)' }}>{Math.abs(realized) > 0.005 ? masked(signed(realized)) : '—'}</span>
               </div>
             </>
           )}
@@ -765,13 +764,13 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         <span style={{ flex: 1 }} />
         {hasSymbols && (
           <button type="button" className="btn btn-sm btn-secondary" onClick={() => refreshQuotes(false)} disabled={refreshing}
-            style={{ color: 'var(--asset-color)', fontSize: '0.72rem', fontWeight: 600 }}>
+            style={{ color: 'var(--asset-color)', fontSize: 'var(--fs-xs)', fontWeight: 'var(--fw-semibold)' }}>
             🔄 {t('refresh_quotes')}
           </button>
         )}
       </div>
       {activeHoldings.length === 0 ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', padding: 20, textAlign: 'center' }}>{t(isBalancePortfolio ? 'no_products_in_account' : 'no_holdings')}</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)', padding: 'var(--sp-5)', textAlign: 'center' }}>{t(isBalancePortfolio ? 'no_products_in_account' : 'no_holdings')}</div>
       ) : (
         activeHoldings.map(h => renderHolding(h))
       )}
@@ -792,7 +791,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             </button>
           </div>
           {showArchivedHoldings && <>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t(isBalancePortfolio ? 'archived_products_hint' : 'archived_holdings_hint')}</div>
+            <div className="form-hint" style={{ margin: 'calc(-1 * var(--sp-2)) 0 var(--sp-2)' }}>{t(isBalancePortfolio ? 'archived_products_hint' : 'archived_holdings_hint')}</div>
             <ArchiveControls filters={archiveFilters} onChange={setArchiveFilters} typeOptions={archiveTypeOptions}
               allowPnlSort={archiveHasPnl} dateHint={t('archive_holding_date_hint')}
               resultCount={filteredArchive.length} totalCount={archivedHoldings.length} collapsible={isStockPortfolio} />
@@ -828,7 +827,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             {!isBalancePortfolio && account.category === '股票/ETF' && (
               <div className="form-group">
                 <label className="form-label">{t('instrument_type')}</label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
                   <button className="btn btn-block" type="button"
                     style={{ background: hInstrumentType === 'security' ? 'var(--asset-dim)' : 'var(--bg-glass)', border: `1px solid ${hInstrumentType === 'security' ? 'var(--asset-color)' : 'var(--border)'}`, color: 'var(--text-primary)' }}
                     onClick={() => setHInstrumentType('security')}>{t('instrument_security')}</button>
@@ -858,7 +857,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 </div>
                 <div className="form-group">
                   <label className="form-label">{t('option_right')} *</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
                     {(['call', 'put'] as UsOptionRight[]).map(right => (
                       <button key={right} type="button" className="btn btn-block"
                         style={{ background: hOptionRight === right ? 'var(--asset-dim)' : 'var(--bg-glass)', border: `1px solid ${hOptionRight === right ? 'var(--asset-color)' : 'var(--border)'}`, color: 'var(--text-primary)' }}
@@ -866,7 +865,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                     ))}
                   </div>
                 </div>
-                <div style={{ fontSize: '0.68rem', color: formOptionContract ? 'var(--text-muted)' : 'var(--liability-color)', margin: '-4px 0 12px', lineHeight: 1.5 }}>
+                <div className="form-hint" style={{ color: formOptionContract ? 'var(--text-muted)' : 'var(--liability-color)', margin: 'calc(-1 * var(--sp-2)) 0 var(--sp-3)' }}>
                   {formOptionContract
                     ? t('option_contract_preview', { symbol: toUsOptionSymbol(formOptionContract) })
                     : t('option_contract_hint')}
@@ -877,7 +876,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 <label className="form-label">{t(isBalancePortfolio ? 'product_code' : 'f_code')}</label>
                 <input className="form-input mono" placeholder={t('f_code_ph')} value={hSymbol} onChange={e => setHSymbol(e.target.value)} />
                 {!isBalancePortfolio && (
-                  <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)', lineHeight: 'var(--lh-base)' }}>
                     {account.category === '场外基金' ? t('symbol_quote_hint_fund') : t('symbol_quote_hint_stock')}
                   </div>
                 )}
@@ -890,7 +889,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                   const label = t(k);
                   const active = hMarket === label;
                   return (
-                    <button key={k} style={{ ...S.chip, ...(active ? S.chipActive : {}) }}
+                    <button key={k} className={`chip${active ? ' active' : ''}`}
                       onClick={() => setHMarket(active ? '' : label)}>{label}</button>
                   );
                 })}
@@ -905,10 +904,10 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             ) : (
               <div className="form-group">
                 <label className="form-label">{t(balanceFlow?.balanceLabelKey ?? 'current_balance')}</label>
-                <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 12px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                <div className="form-calculation" style={{ marginBottom: 0, justifyContent: 'flex-start', gap: 'var(--sp-2)' }}>
                   {masked(fmtFull(editingHolding.marketValue))} {account.currency}
                 </div>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 6 }}>{t('derived_balance_hint')}</div>
+                <div className="form-hint" style={{ marginTop: 'var(--sp-2)' }}>{t('derived_balance_hint')}</div>
               </div>
             )}
             {productHoldingFields.map(field => (
@@ -925,7 +924,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             ))}
             {!editingHolding && !isBalancePortfolio && (
               <>
-                <div style={S.divider}><span style={S.dividerText}>{t('initial_position')}</span></div>
+                <div className="divider"><span className="divider-text">{t('initial_position')}</span></div>
                 <div className="form-group">
                   <label className="form-label">{t(hInstrumentType === 'us_option' ? 'option_contracts' : 'shares')}</label>
                   <input className="form-input mono" type="number" inputMode="decimal" step="1" min="0"
@@ -971,8 +970,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               </div>
               {!editingTxn && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button className="btn btn-block" style={{ background: txnKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: txnKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: txnKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setTxnKind('buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
-                  <button className="btn btn-block" style={{ background: txnKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: txnKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: txnKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setTxnKind('sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>
+                  <button className="btn btn-block" style={{ background: txnKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: txnKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: txnKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 'var(--fw-bold)' }} onClick={() => setTxnKind('buy')}>＋ {t(balanceFlow?.increaseActionKey ?? 'buy_in')}</button>
+                  <button className="btn btn-block" style={{ background: txnKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: txnKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: txnKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 'var(--fw-bold)' }} onClick={() => setTxnKind('sell')}>－ {t(balanceFlow?.decreaseActionKey ?? 'sell_out')}</button>
                 </div>
               )}
               <div className="form-group">
@@ -991,18 +990,18 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                   value={txnPrice} onChange={e => setTxnPrice(e.target.value)} />
               </div>}
               {valid && (
-                <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, fontSize: '0.8125rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div className="form-calculation" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--sp-1)', marginBottom: 'var(--sp-2)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-3)' }}>
                     <span style={{ color: 'var(--text-muted)' }}>
                       {t(balanceFlow ? getBalanceFlowActionKey(balanceFlow, txnKind) : (isSell ? 'sell_out' : 'buy_in'))} {shares.toLocaleString('en-US', { maximumFractionDigits: isBalancePortfolio ? 2 : 4 })}
                       {!isBalancePortfolio && `${txnMultiplier > 1 ? ` × ${txnMultiplier}` : ''} × ${price}`}
                     </span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: txnColor }}>{fmtFull(shares * price * txnMultiplier)} {account.currency}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', color: txnColor }}>{fmtFull(shares * price * txnMultiplier)} {account.currency}</span>
                   </div>
                   {isBalancePortfolio && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: balanceUnderflow ? 'var(--liability-color)' : 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: balanceUnderflow ? 'var(--liability-color)' : 'var(--text-muted)' }}>
                       <span>{balanceUnderflow ? t('balance_decrease_exceeds') : t('balance_after_change')}</span>
-                      {!balanceUnderflow && <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{fmtFull(balancePreview?.balance ?? 0)} {account.currency}</span>}
+                      {!balanceUnderflow && <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)' }}>{fmtFull(balancePreview?.balance ?? 0)} {account.currency}</span>}
                     </div>
                   )}
                 </div>
@@ -1036,7 +1035,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               <label className="form-label">{t('adjusted_balance')} ({account.currency})</label>
               <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
                 placeholder="0.00" value={adjustInput} onChange={e => setAdjustInput(e.target.value)} autoFocus />
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
                 {t('balance_adjustment_hint')}
               </div>
             </div>
@@ -1071,10 +1070,10 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
             {activeHoldings.map(h => (
               <div className="form-group" key={h.id} style={{ display: isStockPortfolio ? 'block' : 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
-                  {h.symbol && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{h.symbol}</div>}
+                  <div style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</div>
+                  {h.symbol && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{h.symbol}</div>}
                 </div>
-                {isStockPortfolio ? <div className="holding-batch-fields" style={{ marginTop: 8 }}>
+                {isStockPortfolio ? <div className="holding-batch-fields" style={{ marginTop: 'var(--sp-2)' }}>
                   <label className="form-label">{t(h.instrumentType === 'us_option' ? 'option_contracts_unit' : 'holding_import_header_shares')}
                     <input className="form-input" aria-label={h.name + ' ' + t('holding_import_header_shares')} type="number" inputMode="decimal" min="0" step="any" disabled={batchBusy}
                       value={shareInputs[h.id] ?? ''} onChange={e => setShareInputs(prev => ({ ...prev, [h.id]: e.target.value }))} />
@@ -1103,7 +1102,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       {/* Cash balance */}
       {showCash && (
         <div className="confirm-overlay" onClick={() => setShowCash(false)}>
-          <div className="modal-content" style={{ maxWidth: 360, width: '90%', borderRadius: 16, padding: '20px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" style={{ maxWidth: 360, width: '90%', borderRadius: 'var(--radius-lg)', padding: 'var(--sp-5)' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{t('edit_cash')}</h2>
               <button className="modal-close" onClick={() => setShowCash(false)}>✕</button>
@@ -1150,15 +1149,3 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   );
 }
 
-const S: Record<string, React.CSSProperties> = {
-  holdingCard: { background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 8 },
-  badge: { fontSize: '0.62rem', fontWeight: 600, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 7px', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' },
-  archivedBadge: { fontSize: '0.62rem', fontWeight: 700, background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 7px', color: 'var(--text-muted)', flexShrink: 0, whiteSpace: 'nowrap' },
-  posCell: { background: 'var(--bg-glass)', borderRadius: 10, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 },
-  posKey: { fontSize: '0.66rem', color: 'var(--text-muted)' },
-  posVal: { fontSize: '0.85rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' },
-  chip: { padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 },
-  chipActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
-  divider: { display: 'flex', alignItems: 'center', margin: '4px 0 12px', gap: 8 },
-  dividerText: { fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' },
-};

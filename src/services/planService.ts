@@ -111,6 +111,20 @@ export async function updatePlanItem(id: string, updates: Partial<PlanItem>): Pr
   requestPortableSnapshot('allocation-plan-item-updated');
 }
 
+export async function movePlanItem(id: string, direction: 'up' | 'down'): Promise<void> {
+  await db.transaction('rw', db.planItems, async () => {
+    const items = await getPlanItems();
+    const index = items.findIndex(item => item.id === id);
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || swapIndex < 0 || swapIndex >= items.length) return;
+    const next = [...items];
+    const [moved] = next.splice(index, 1);
+    next.splice(swapIndex, 0, moved);
+    await Promise.all(next.map((item, sortOrder) => db.planItems.update(item.id, { sortOrder })));
+  });
+  requestPortableSnapshot('allocation-plan-reordered');
+}
+
 export async function deletePlanItem(id: string): Promise<void> {
   await db.planTargets.where('planItemId').equals(id).delete();
   await db.planItems.delete(id);

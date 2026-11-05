@@ -362,6 +362,7 @@ export async function getChartData(): Promise<{
   accountSeries: Record<string, { name: string; category: string; type: string; values: Record<string, number> }>;
   categorySeries: Record<string, { type: string; values: Record<string, number> }>;
   totalSeries: { totalAssets: Record<string, number>; totalLiabilities: Record<string, number>; netWorth: Record<string, number> };
+  dailyFlows: Record<string, number>;
 }> {
   const settings = await initializeSettings();
   const goldSource = settings.goldPriceSource ?? 'international';
@@ -378,6 +379,23 @@ export async function getChartData(): Promise<{
   const accountSeries: Record<string, { name: string; category: string; type: string; values: Record<string, number> }> = {};
   const categorySeries: Record<string, { type: string; values: Record<string, number> }> = {};
   const totalSeries = { totalAssets: {} as Record<string, number>, totalLiabilities: {} as Record<string, number>, netWorth: {} as Record<string, number> };
+  const dailyFlows: Record<string, number> = {};
+  const firstPortfolioDate = dates[0];
+
+  for (const acct of allAccounts) {
+    if (!isAccountIncludedInTotals(acct) || acct.type !== 'asset') continue;
+    const acctRecords = (recordsByAccount[acct.id] || []).sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+    for (let i = 0; i < acctRecords.length; i++) {
+      const r = acctRecords[i];
+      if (r.deltaAmount != null && r.kind) {
+        const { converted } = await valuate(acct, Math.max(0, r.deltaAmount), primary);
+        dailyFlows[r.date] = Math.round((dailyFlows[r.date] || 0) + (r.kind === 'buy' ? converted : -converted));
+      } else if (i === 0 && firstPortfolioDate && r.date > firstPortfolioDate && r.amount > 0) {
+        const { converted } = await valuate(acct, r.amount, primary);
+        dailyFlows[r.date] = Math.round((dailyFlows[r.date] || 0) + converted);
+      }
+    }
+  }
 
   for (const date of dates) {
     let dayAssets = 0, dayLiabilities = 0;
@@ -403,5 +421,5 @@ export async function getChartData(): Promise<{
     totalSeries.totalLiabilities[date] = Math.round(dayLiabilities);
     totalSeries.netWorth[date] = Math.round(dayAssets - dayLiabilities);
   }
-  return { dates, accountSeries, categorySeries, totalSeries };
+  return { dates, accountSeries, categorySeries, totalSeries, dailyFlows };
 }

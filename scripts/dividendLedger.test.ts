@@ -184,3 +184,37 @@ test('unsupported, ambiguous, wrong-code and non-official announcement text stay
   assert.equal(parseDividendOfficialAnnouncementText(source.text.replaceAll('不送红股', '送股方案待定'), source), undefined);
   assert.equal(parseDividendOfficialAnnouncementText(source.text.replaceAll('2026 年 9 月 23 日', '待定'), source), undefined);
 });
+
+test('dividendLedgerBase excludes special dividends and official parser accepts common CNINFO title/section/date variants', () => {
+  const annuals = [
+    row('2025-12-31', '2026-06-10', 5),
+    row('2025-09-30', '2026-01-15', 10, { IMPL_PLAN_PROFILE: '特别分红10派10元' }),
+    row('2024-12-31', '2025-06-10', 4),
+  ];
+  const events = annuals.map(value => ({
+    ...official(value),
+    period: (value.REPORT_DATE === '2025-09-30' ? 'special' : 'annual') as DividendOfficialEvent['period'],
+  }));
+  const ledger = build(annuals, events);
+  const base = dividendLedgerBase(ledger, asOf);
+  assert.equal(base.frequency, 'annual');
+  assert.equal(base.dpsMicros, 500000);
+
+  const variantText = `证券代码：000001 证券简称：平安银行
+2025年度权益分派实施公告
+二、利润分配方案
+本公司2025年年度本次权益分派方案为：以公司现有总股本为基数，向全体股东每10股派3.60元人民币现金。
+三、股权登记日与除权除息日
+本次权益分派A股股权登记日为：2026年6月11日，除息日为：2026年6月12日。`;
+  const parsed = parseDividendOfficialAnnouncementText(variantText, {
+    code: '000001',
+    announcementDate: '2026-06-05',
+    sourceUrl: officialUrl,
+    verifiedAt: asOf,
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.reportDate, '2025-12-31');
+  assert.equal(parsed.cashPer10Micros, 3600000);
+  assert.equal(parsed.bonusPer10Bps, 0);
+  assert.equal(parsed.transferPer10Bps, 0);
+});

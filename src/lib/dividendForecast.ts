@@ -6,6 +6,10 @@ export interface DividendAnnouncement {
   period: 'Q1' | 'H1' | 'Q3' | 'FY' | 'other';
   /** Missing for a policy announcement that has not disclosed a per-share amount. */
   dpsMicros?: number;
+  /** Per-share dividend normalized to current share count after bonus/transfer issues. */
+  normalizedDpsMicros?: number;
+  /** Single-event share expansion factor: 1 + (bonusPer10 + transferPer10) / 10. */
+  shareFactor?: number;
   announcedAt: string;
   stage: DividendStage;
   status: string;
@@ -83,6 +87,12 @@ function numeric(raw: unknown): number | undefined {
   return value;
 }
 
+function ratioValue(raw: unknown): number {
+  if (raw === '' || raw === null || raw === undefined) return 0;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 1000 ? value : 0;
+}
+
 /** Dated events in one report can be ordinary and special dividends; revisions replace their event. */
 export function parseDividendAnnouncements(rows: Record<string, unknown>[], code: string, asOf: string): DividendAnnouncement[] {
   const byPeriod = new Map<string, DividendAnnouncement>();
@@ -95,9 +105,13 @@ export function parseDividendAnnouncements(rows: Record<string, unknown>[], code
     const stage = stageFor(`${status} ${String(row.IMPL_PLAN_PROFILE ?? '')}`);
     const amount = numeric(row.PRETAX_BONUS_RMB);
     if (amount !== undefined && amount < 0) continue;
+    const bonusRatio = ratioValue(row.BONUS_RATIO);
+    const transferRatio = ratioValue(row.IT_RATIO);
+    const shareFactor = 1 + (bonusRatio + transferRatio) / 10;
     const candidate: DividendAnnouncement = {
       reportDate, period: reportPeriod(reportDate), announcedAt, status, stage,
       dpsMicros: stage === 'cancelled' || stage === 'none' ? 0 : amount === undefined ? undefined : Math.round(amount * 100000),
+      ...(shareFactor > 1 ? { shareFactor } : {}),
       sourceUrl: `https://data.eastmoney.com/yjfp/detail/${code}.html`,
       recordDate: validDividendDate(row.EQUITY_RECORD_DATE),
       exDate: validDividendDate(row.EX_DIVIDEND_DATE),
@@ -109,12 +123,32 @@ export function parseDividendAnnouncements(rows: Record<string, unknown>[], code
     const priority = { proposal: 0, approved: 1, implemented: 2, none: 3, cancelled: 4 };
     if (!previous || candidate.announcedAt > previous.announcedAt || candidate.announcedAt === previous.announcedAt && priority[candidate.stage] > priority[previous.stage]) byPeriod.set(key, candidate);
   }
-  return [...byPeriod.values()].filter(item => {
+  const filtered = [...byPeriod.values()].filter(item => {
     const cancellation=[...byPeriod.values()].find(other=>other.reportDate===item.reportDate && !other.exDate && !other.recordDate && ['cancelled','none'].includes(other.stage) && other.announcedAt>=item.announcedAt);
     if (cancellation && item!==cancellation && item.stage!=='implemented') return false;
     return item.exDate || item.recordDate || ![...byPeriod.values()].some(other => other.reportDate === item.reportDate && (other.exDate || other.recordDate) && other.announcedAt >= item.announcedAt);
   })
     .sort((a, b) => b.reportDate.localeCompare(a.reportDate) || b.announcedAt.localeCompare(a.announcedAt));
+
+  // Normalize historical DPS by cumulative share capital expansions (bonus/transfer shares) up to asOf.
+  const factorsByExDate = new Map<string, number>();
+  for (const item of filtered) {
+    if (item.stage === 'implemented' && item.exDate && item.exDate <= asOf && (item.shareFactor ?? 1) > 1) {
+      factorsByExDate.set(item.exDate, Math.max(factorsByExDate.get(item.exDate) ?? 1, item.shareFactor!));
+    }
+  }
+  for (const item of filtered) {
+    if (item.dpsMicros !== undefined && item.dpsMicros > 0) {
+      let cumulativeFactor = 1;
+      if (item.stage === 'implemented' && item.exDate) {
+        for (const [exDate, factor] of factorsByExDate.entries()) {
+          if (exDate >= item.exDate) cumulativeFactor *= factor;
+        }
+      }
+      item.normalizedDpsMicros = Math.round(item.dpsMicros / cumulativeFactor);
+    }
+  }
+  return filtered;
 }
 
 /** The displayed numerator is the latest disclosed period, never a trailing sum or an annualisation. */

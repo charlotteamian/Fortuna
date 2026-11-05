@@ -498,7 +498,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         
         <div className="settings-item">
           <span className="settings-item-label">{t('language')}</span>
-          <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+          <select className="form-select form-select-inline"
             aria-label={t('language')}
             value={settings.language || 'auto'} onChange={e => save({ language: e.target.value as Settings['language'] })}>
             <option value="auto">{t('auto')}</option>
@@ -509,7 +509,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
 
         <div className="settings-item">
           <span className="settings-item-label">{t('theme_mode')}</span>
-          <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+          <select className="form-select form-select-inline"
             aria-label={t('theme_mode')}
             value={settings.themeMode || 'auto'} onChange={e => save({ themeMode: e.target.value as Settings['themeMode'] })}>
             <option value="auto">{t('system_auto')}</option>
@@ -520,7 +520,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
  
         <div className="settings-item">
           <span className="settings-item-label">{t('font_size')}</span>
-          <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+          <select className="form-select form-select-inline"
             aria-label={t('font_size')}
             value={settings.fontSize || 'normal'} onChange={e => save({ fontSize: e.target.value as Settings['fontSize'] })}>
             <option value="small">{t('small')}</option>
@@ -531,15 +531,14 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('show_archived_assets_setting')}</div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
               {t('show_archived_assets_hint')}
             </div>
           </div>
           <button
-            className={`btn btn-sm ${(settings.showArchivedAccounts ?? true) ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn btn-sm btn-inline ${(settings.showArchivedAccounts ?? true) ? 'btn-primary' : 'btn-secondary'}`}
             role="switch"
             aria-checked={settings.showArchivedAccounts ?? true}
-            style={{ flexShrink: 0, minWidth: 78, whiteSpace: 'nowrap' }}
             onClick={() => save({ showArchivedAccounts: !(settings.showArchivedAccounts ?? true) })}>
             {(settings.showArchivedAccounts ?? true) ? t('shown') : t('hidden')}
           </button>
@@ -555,21 +554,21 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
 
       {/* Color Theme */}
       <SettingsMenu title={t('color_theme')} value={t(settings.colorTheme)}>
-        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>{t('color_theme_hint')}</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
+        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 'var(--lh-base)', marginBottom: 'var(--sp-3)' }}>{t('color_theme_hint')}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 'var(--sp-2)' }}>
           {previewThemes.map(themeItem => (
             <button key={themeItem.id} type="button" className="theme-option" aria-pressed={settings.colorTheme === themeItem.id} onClick={() => save({ colorTheme: themeItem.id })}
               style={{ border: settings.colorTheme === themeItem.id ? `2px solid var(--accent)` : '1px solid var(--border)',
-                background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', padding: '12px', cursor: 'pointer', textAlign: 'left', minWidth: 0, overflowWrap: 'anywhere',
+                background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', padding: 'var(--sp-3)', cursor: 'pointer', textAlign: 'left', minWidth: 0, overflowWrap: 'anywhere',
                 '--preview-asset': themeItem.assetColor, '--preview-liability': themeItem.liabilityColor } as CSSProperties}>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-1)', marginBottom: 'var(--sp-1)' }}>
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.assetColor, display: 'inline-block' }} />
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: themeItem.liabilityColor, display: 'inline-block' }} />
               </div>
-              <div style={{ fontSize: '0.75rem', color: settings.colorTheme === themeItem.id ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: settings.colorTheme === themeItem.id ? 700 : 400 }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: settings.colorTheme === themeItem.id ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: settings.colorTheme === themeItem.id ? 700 : 400 }}>
                 {t(themeItem.id)}
               </div>
-              {settings.colorTheme === themeItem.id && <div style={{ fontSize: '0.625rem', color: 'var(--accent)', marginTop: 2 }}>✓ {t('current_theme')}</div>}
+              {settings.colorTheme === themeItem.id && <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--accent)', marginTop: 'var(--sp-1)' }}>✓ {t('current_theme')}</div>}
             </button>
           ))}
         </div>
@@ -581,7 +580,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('default_show_amount')}</div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
               {t('privacy_hint')}
             </div>
           </div>
@@ -599,7 +598,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-section-title">{t('primary_currency')}</div>
         <div className="settings-item">
           <span className="settings-item-label">{t('summary_currency')}</span>
-          <select className="form-select" style={{ width: 'auto', padding: '8px 32px 8px 12px' }}
+          <select className="form-select form-select-inline"
             aria-label={t('summary_currency')}
             value={settings.primaryCurrency} onChange={e => save({ primaryCurrency: e.target.value })}>
             {settings.currencies.map(c => <option key={c} value={c}>{c} - {t(c + '_name')}</option>)}
@@ -613,11 +612,11 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('last_updated')}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{lastUpdate ? new Date(lastUpdate).toLocaleString(t('zh') === '简体中文' ? 'zh-CN' : 'en-US') : t('never_updated')}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{lastUpdate ? new Date(lastUpdate).toLocaleString(t('zh') === '简体中文' ? 'zh-CN' : 'en-US') : t('never_updated')}</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={handleRefreshRates} disabled={syncing}>{syncing ? '...' : '🔄 ' + t('refresh_rates')}</button>
         </div>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('rate_source')}</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('rate_source')}</div>
       </div>
 
       {/* Gold Price Source */}
@@ -625,14 +624,14 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-section-title">{t('gold_price_section')}</div>
         <div className="settings-item">
           <span className="settings-item-label">{t('gold_price_source')}</span>
-          <select className="form-select" style={{ width: 'auto', padding: '6px 30px 6px 12px', fontSize: '0.875rem' }}
+          <select className="form-select form-select-inline"
             aria-label={t('gold_price_source')}
             value={settings.goldPriceSource ?? 'international'} onChange={e => save({ goldPriceSource: e.target.value as Settings['goldPriceSource'] })}>
             <option value="domestic">{t('gold_src_domestic')}</option>
             <option value="international">{t('gold_src_international')}</option>
           </select>
         </div>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('gold_price_source_hint')}</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('gold_price_source_hint')}</div>
       </div>
 
       </SettingsMenu>
@@ -652,14 +651,14 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             <span className="category-type" style={{ background: c.type === 'asset' ? 'var(--asset-dim)' : 'var(--liability-dim)', color: c.type === 'asset' ? 'var(--asset-color)' : 'var(--liability-color)' }}>
               {c.type === 'asset' ? t('assets') : t('liabilities')}
             </span>
-            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCategory(c.name)} style={{ padding: '4px 8px', fontSize: '0.6875rem' }}>✕</button>
+            <button className="btn btn-sm btn-danger btn-icon-sm" onClick={() => handleDeleteCategory(c.name)}>✕</button>
           </div>
         ))}
       </SettingsMenu>
 
       {/* Currencies */}
       <SettingsMenu title={t('common_currencies')} value={settings.currencies.join(' · ')}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 'var(--sp-3)' }}>
           {settings.currencies.map(c => (
             <span className="tag" key={c}>
               {c}
@@ -669,7 +668,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         </div>
         {availableCurrencies.length > 0 && (
           <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>{t('click_to_add')}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 'var(--sp-1)' }}>{t('click_to_add')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {availableCurrencies.map(c => <button type="button" className="tag tag-add" key={c} aria-label={t('add_currency', { currency: c })} onClick={() => handleAddCurrency(c)}>+ {c}</button>)}
             </div>
@@ -680,13 +679,13 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
 
       {/* Optional portable JSON snapshot */}
       <SettingsMenu title={t('snapshot_sync_title')} value={!snapshotStatus.supported ? automaticSnapshotUnavailableLabel : snapshotStatus.configured ? t('snapshot_directory_configured') : t('snapshot_directory_not_set')}>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 10 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 'var(--lh-relaxed)', marginBottom: 'var(--sp-2)' }}>
           {t('snapshot_sync_desc', { file: AUTOMATIC_SNAPSHOT_FILE })}
         </div>
         <div className="settings-item">
           <div style={{ minWidth: 0 }}>
             <div className="settings-item-label">{t('snapshot_sync_directory')}</div>
-            <div style={{ fontSize: '0.6875rem', color: snapshotStatus.configured ? 'var(--asset-color)' : 'var(--text-muted)', marginTop: 2, overflowWrap: 'anywhere' }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: snapshotStatus.configured ? 'var(--asset-color)' : 'var(--text-muted)', marginTop: 'var(--sp-1)', overflowWrap: 'anywhere' }}>
               {!snapshotStatus.supported
                 ? automaticSnapshotUnavailableLabel
                 : snapshotStatus.configured
@@ -694,7 +693,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
                   : t('snapshot_directory_not_set')}
             </div>
             {snapshotStatus.lastWriteAt && (
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
                 {t('snapshot_last_sync', { time: new Date(snapshotStatus.lastWriteAt).toLocaleString() })}
               </div>
             )}
@@ -705,19 +704,19 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           </button>
         </div>
 
-        <div style={{ marginTop: 10, marginBottom: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+        <div style={{ marginTop: 'var(--sp-2)', marginBottom: 6, fontSize: 'var(--fs-sm)', fontWeight: 'var(--fw-bold)', color: 'var(--text-secondary)' }}>
           {t('snapshot_focus_accounts')}
         </div>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 4 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 'var(--lh-base)', marginBottom: 'var(--sp-1)' }}>
           {t('snapshot_focus_accounts_hint')}
         </div>
         {snapshotCandidates.length === 0 ? (
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', padding: '8px 0 12px' }}>{t('snapshot_no_focus_accounts')}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', padding: 'var(--sp-2) 0 var(--sp-3)' }}>{t('snapshot_no_focus_accounts')}</div>
         ) : snapshotCandidates.map(account => (
-          <label key={account.id} className="settings-item" style={{ cursor: 'pointer', padding: '10px 0' }}>
+          <label key={account.id} className="settings-item" style={{ cursor: 'pointer', padding: 'var(--sp-2) 0' }}>
             <div style={{ minWidth: 0 }}>
               <div className="settings-item-label">{account.name}</div>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
                 {[account.institution, t(account.category), account.currency].filter(Boolean).join(' · ')}
               </div>
             </div>
@@ -748,16 +747,16 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('export_data')}</div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('excel_export_desc')}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('excel_export_desc')}</div>
           </div>
           <button className="btn btn-secondary btn-sm" disabled={exporting || importing} onClick={handleExport}>📥 {t('export_data')}</button>
         </div>
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('import_data')}</div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('excel_import_desc')}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('excel_import_desc')}</div>
           </div>
-          <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0, whiteSpace: 'nowrap', minWidth: '90px' }} 
+          <button className="btn btn-secondary btn-sm btn-inline"
             disabled={exporting || importing}
             onClick={() => fileInputRef.current?.click()}>📤 {t('import_data')}</button>
           <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream" style={{ display: 'none' }} ref={fileInputRef} onChange={event => void handleImport(event)} />
@@ -832,7 +831,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           <span className="settings-item-label">Fortuna</span>
           <span className="settings-item-value">v{__APP_VERSION__}</span>
         </div>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('data_security_hint')}</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('data_security_hint')}</div>
       </div>
 
       {showGuide && <UserGuide onClose={() => setShowGuide(false)} />}
@@ -893,7 +892,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             <div className="modal-header"><h2 className="modal-title">{t('add_category_title')}</h2><button className="modal-close" onClick={closeAddCategory}>✕</button></div>
             <div className="form-group">
               <label className="form-label">{t('type')}</label>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
                 <button className={`btn btn-block ${newCatType === 'asset' ? '' : 'btn-secondary'}`} style={newCatType === 'asset' ? { background: 'var(--asset-color)', color: '#fff' } : {}} onClick={() => setNewCatType('asset')}>{t('assets')}</button>
                 <button className={`btn btn-block ${newCatType === 'liability' ? '' : 'btn-secondary'}`} style={newCatType === 'liability' ? { background: 'var(--liability-color)', color: '#fff' } : {}} onClick={() => setNewCatType('liability')}>{t('liabilities')}</button>
               </div>
@@ -901,18 +900,18 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             <div className="form-group"><label className="form-label">{t('name')}</label><input className="form-input" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder={t('category_name_placeholder')} autoFocus /></div>
 
             <div className="form-group">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-1)' }}>
                 <label className="form-label" style={{ marginBottom: 0 }}>{t('category_fields')}</label>
                 <button className="btn btn-sm btn-secondary" onClick={addDraftField}>{t('add_field')}</button>
               </div>
               {newCatFields.map((f, idx) => (
-                <div key={f.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: 'var(--bg-glass)' }}>
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <div key={f.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 10, marginBottom: 'var(--sp-2)', background: 'var(--bg-glass)' }}>
+                  <div style={{ display: 'flex', gap: 'var(--sp-1)', marginBottom: 'var(--sp-1)' }}>
                     <input className="form-input" style={{ flex: 1 }} placeholder={t('field_label_ph')}
                       value={f.label} onChange={e => updateDraftField(idx, { label: e.target.value })} />
-                    <button className="btn btn-sm btn-danger" style={{ flexShrink: 0 }} onClick={() => removeDraftField(idx)}>✕</button>
+                    <button className="btn btn-sm btn-danger btn-icon-sm" onClick={() => removeDraftField(idx)}>✕</button>
                   </div>
-                  <input className="form-input" style={{ marginBottom: 6 }} placeholder={t('field_placeholder_ph')}
+                  <input className="form-input" style={{ marginBottom: 'var(--sp-1)' }} placeholder={t('field_placeholder_ph')}
                     value={f.placeholder || ''} onChange={e => updateDraftField(idx, { placeholder: e.target.value })} />
                   <input className="form-input" placeholder={t('field_options_ph')}
                     value={f.optionsStr || ''} onChange={e => updateDraftField(idx, { optionsStr: e.target.value })} />

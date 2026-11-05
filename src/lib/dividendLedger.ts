@@ -160,7 +160,7 @@ export function dividendLedgerBase(ledger: DividendLedger, asOf: string, crossch
   if (day(asOf) !== asOf || asOf > ledger.asOf) throw new Error('INVALID_DIVIDEND_LEDGER_DATE');
   const frequency = detectDividendLedgerFrequency(ledger, asOf), requiredBatches = frequency === 'semiannual' ? 2 : frequency === 'annual' ? 1 : 0;
   const implemented = ledger.events.filter(event => event.implemented && !!event.exDate && event.exDate <= asOf && !!event.announcementDate && event.announcementDate <= asOf
-    && (event.cashPer10Micros ?? 0) > 0);
+    && (event.cashPer10Micros ?? 0) > 0 && event.period !== 'special');
   const selected = [...new Map([...implemented].sort((a, b) => b.exDate!.localeCompare(a.exDate!)).map(event => [event.batchId, event])).values()].slice(0, requiredBatches);
   const flags: string[] = [];
   if (!ledger.complete) flags.push('SOURCE_PAGES_INCOMPLETE');
@@ -213,32 +213,46 @@ export function parseDividendOfficialAnnouncementText(text: string, metadata: { 
   if (!officialSource(metadata.sourceUrl) || !/^\d{6}$/.test(metadata.code) || !text.includes(metadata.code)) return undefined;
   const compact = text.replace(/(?:^|\n)\s*\d{1,3}\s*(?=\n|$)/g, '').replace(/\s+/g, '');
   if (!new RegExp(`(?:证券|股票)代码[：:]?${metadata.code}(?=\\D|$)`).test(compact)) return undefined;
-  const title = compact.match(/(20\d{2})年(半年度|中期|年度)(?:A股)?(?:权益分派|利润分配|分红派息)实施公告/);
+  const title = compact.match(/(20\d{2})(?:年(半年度|中期|年度|前三季度|第三季度|三季度|第一季度|一季度)|(年度|半年度|中期))(?:A股)?(?:权益分派|利润分配|分红派息|派息)实施公告/);
   if (!title) return undefined;
-  const reportDate = `${title[1]}-${/半年度|中期/.test(title[2]) ? '06-30' : '12-31'}`;
-  const section = compact.match(/二[、.．](?:本次实施的权益分派方案|分配方案|本次利润分配方案)([\s\S]*?)(?:三[、.．]|$)/)?.[1];
+  const periodText = title[2] || title[3];
+  const period: DividendOfficialEvent['period'] = /半年度|中期/.test(periodText)
+    ? 'interim'
+    : /前三季度|第三季度|三季度|第一季度|一季度/.test(periodText)
+      ? 'quarterly'
+      : 'annual';
+  const reportDate = `${title[1]}-${
+    period === 'interim'
+      ? '06-30'
+      : /前三季度|第三季度|三季度/.test(periodText)
+        ? '09-30'
+        : /第一季度|一季度/.test(periodText)
+          ? '03-31'
+          : '12-31'
+  }`;
+  const section = compact.match(/二[、.．](?:本次实施的)?(?:A股)?(?:权益分派方案|利润分配方案|分红派息方案|分配方案)([\s\S]*?)(?:三[、.．]|$)/)?.[1];
   if (!section) return undefined;
   const perTen = section.match(/每10股派(?:发)?(?:现金(?:股利|红利)?)?(?:人民币)?([\d.]+)元/);
   // A Shanghai final implementation can mention both this cash and the annual
   // total including interim cash. Read the first current implementation amount.
   const currentScheme = section.split(/连同已派|全年/)[0];
-  const perShare = currentScheme.match(/每股派发现金(?:股利|红利)(?:人民币)?([\d.]+)元/);
+  const perShare = currentScheme.match(/每股派(?:发)?现金(?:股利|红利)?(?:人民币)?([\d.]+)元/);
   const cashPer10Micros = perTen ? amount(perTen[1], 1e6) : perShare ? amount(perShare[1], 1e7) : undefined;
   const datePattern = '(20\\d{2})年(\\d{1,2})月(\\d{1,2})日';
   const readDate = (label: string) => { const match = compact.match(new RegExp(`${label}(?:为|是)?[：:]?${datePattern}`)); return match ? day(`${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`) : undefined; };
-  let recordDate = readDate('股权登记日'), exDate = readDate('除权除息日');
+  let recordDate = readDate('(?:A股)?股权登记日'), exDate = readDate('(?:A股)?(?:除权除息日|除权[（(]息[）)]日|除息日)');
   if ((!recordDate || !exDate) && /股权登记日最后交易日除权[（(]息[）)]日/.test(compact)) {
     const table = compact.match(/A股(20\d{2})\/(\d{1,2})\/(\d{1,2})[－—-](20\d{2})\/(\d{1,2})\/(\d{1,2})/);
     if (table) { recordDate = day(`${table[1]}-${table[2].padStart(2, '0')}-${table[3].padStart(2, '0')}`); exDate = day(`${table[4]}-${table[5].padStart(2, '0')}-${table[6].padStart(2, '0')}`); }
   }
   const bonus = section.match(/每10股(?:派[^，。;；]*[,，])?送(?:红股)?([\d.]+)股/), transfer = section.match(/每10股(?:转增|以资本公积金转增)([\d.]+)股/);
-  // The complete Shanghai allocation section explicitly describes a cash-only
-  // scheme; an unrecognised bonus clause must not be silently treated as zero.
-  const cashOnlyScheme = !!perShare && /本次利润分配/.test(section) && !/送(?:红)?股|转增/.test(section);
+  // An allocation section that explicitly states cash distribution without any
+  // bonus/transfer share keywords is a cash-only scheme; ambiguous clauses stay unverified.
+  const cashOnlyScheme = (!!perShare || !!perTen) && /本次(?:实施的)?(?:A股)?(?:权益分派|利润分配|分红派息|分配)/.test(compact) && !/送(?:红)?股|转增/.test(section);
   const bonusPer10Bps = bonus ? amount(bonus[1], 1000) : /不送红股|不送股/.test(compact) || cashOnlyScheme ? 0 : undefined;
   const transferPer10Bps = transfer ? amount(transfer[1], 1000) : /不以(?:资本)?公积金转增股本|不转增股本/.test(compact) || cashOnlyScheme ? 0 : undefined;
   if (!recordDate || !exDate || cashPer10Micros === undefined || bonusPer10Bps === undefined || transferPer10Bps === undefined) return undefined;
   const event: DividendOfficialEvent = { code: metadata.code, announcementDate: metadata.announcementDate, sourceUrl: metadata.sourceUrl, verifiedAt: metadata.verifiedAt,
-    reportDate, period: title[2] === '年度' ? 'annual' : 'interim', recordDate, exDate, cashPer10Micros, bonusPer10Bps, transferPer10Bps };
+    reportDate, period, recordDate, exDate, cashPer10Micros, bonusPer10Bps, transferPer10Bps };
   return validOfficial(event, metadata.code, metadata.verifiedAt) ? event : undefined;
 }

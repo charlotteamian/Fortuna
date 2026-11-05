@@ -373,9 +373,9 @@ export default function RecordPage({ onOpenAccount }: Props) {
         <div className="entry-info">
           <div className="entry-category">{acct.name}</div>
           <div className="entry-note-text">
-            {acct.archivedAt && <span style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{t('archived_badge')}</span>}
-            {!isAccountIncludedInTotals(acct) && <span style={{ background: 'var(--bg-glass)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{t('excluded_from_totals_badge')}</span>}
-            {acct.institution && <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '1px 7px', marginRight: 5, fontSize: '0.65rem', fontWeight: 600 }}>{acct.institution}</span>}
+            {acct.archivedAt && <span className="badge">{t('archived_badge')}</span>}
+            {!isAccountIncludedInTotals(acct) && <span className="badge">{t('excluded_from_totals_badge')}</span>}
+            {acct.institution && <span className="badge accent">{acct.institution}</span>}
             {t(acct.category)} · {acct.unit === 'gram' ? t('precious_metal_label') : acct.currency}
           </div>
           {acct.archivedAt && <div className="entry-note-text">{t('archive_account_date')} {formatLocalDate(new Date(acct.archivedAt))}</div>}
@@ -413,21 +413,21 @@ export default function RecordPage({ onOpenAccount }: Props) {
             <span className="stat-value" style={{ color: theme.assetColor }}>
               {masked(fmt(totals.totalAssets))}
             </span>
-            <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '-1px' }}>{settings.primaryCurrency}</span>
+            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: '-1px' }}>{settings.primaryCurrency}</span>
           </div>
           <div className="summary-strip-item">
             <span className="stat-label">{t('total_liabilities')}</span>
             <span className="stat-value" style={{ color: theme.liabilityColor }}>
               {masked(fmt(totals.totalLiabilities))}
             </span>
-            <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '-1px' }}>{settings.primaryCurrency}</span>
+            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: '-1px' }}>{settings.primaryCurrency}</span>
           </div>
           <div className="summary-strip-item">
             <span className="stat-label">{t('net_worth_val')}</span>
             <span className="stat-value" style={{ color: totals.netWorth >= 0 ? theme.assetColor : theme.liabilityColor }}>
               {masked(fmt(totals.netWorth))}
             </span>
-            <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '-1px' }}>{settings.primaryCurrency}</span>
+            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: '-1px' }}>{settings.primaryCurrency}</span>
           </div>
         </div>
       )}
@@ -441,7 +441,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
           <div className="empty-icon">⚠️</div>
           <div className="empty-text">{t('load_failed')}</div>
           <div className="empty-hint">{t('load_failed_hint')}</div>
-          <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => void load()}>{t('retry')}</button>
+          <button className="btn btn-primary" style={{ marginTop: 'var(--sp-4)' }} onClick={() => void load()}>{t('retry')}</button>
         </div>
       )
       : !hasAnyAccounts ? (
@@ -449,12 +449,12 @@ export default function RecordPage({ onOpenAccount }: Props) {
           <div className="empty-icon">💎</div>
           <div className="empty-text">{t('start_tracking')}</div>
           <div className="empty-hint">{t('add_first_hint')}</div>
-          <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => setShowForm(true)}>{t('add_first_account')}</button>
+          <button className="btn btn-primary" style={{ marginTop: 'var(--sp-4)' }} onClick={() => setShowForm(true)}>{t('add_first_account')}</button>
         </div>
       ) : (
         <>
           {accounts.length === 0 && (
-            <div className="empty-state" style={{ padding: '2rem 1rem' }}>
+            <div className="empty-state" style={{ padding: 'var(--sp-8) var(--sp-4)' }}>
               <div className="empty-icon">{hiddenAccountCount > 0 ? '🙈' : '📦'}</div>
               <div className="empty-text">{hiddenAccountCount > 0 ? t('all_accounts_hidden') : t('no_active_accounts')}</div>
               <div className="empty-hint">{hiddenAccountCount > 0 ? t('all_accounts_hidden_hint') : t('archived_accounts_hint')}</div>
@@ -473,7 +473,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
                 return (
                   <div key={category} style={{ marginBottom: '0.75rem' }}>
                     <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
                         <span className="dot" style={{ background: theme.assetColor }} />{t(category)} ({items.length})
                       </div>
                       <div style={{ fontFamily: 'var(--font-mono)' }}>{masked(fmt(subtotal))}</div>
@@ -498,7 +498,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
                 return (
                   <div key={category} style={{ marginBottom: '0.75rem' }}>
                     <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
                         <span className="dot" style={{ background: theme.liabilityColor }} />{t(category)} ({items.length})
                       </div>
                       <div style={{ fontFamily: 'var(--font-mono)' }}>{masked(fmt(subtotal))}</div>
@@ -511,21 +511,20 @@ export default function RecordPage({ onOpenAccount }: Props) {
           )}
           {archivedAccounts.length > 0 && (
             <div className="archived-accounts" style={{ marginBottom: '2rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '1rem 0 0.5rem' }}>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-muted)' }}>{t('archived_accounts')} ({archivedAccounts.length})</h2>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-3)', margin: 'var(--sp-4) 0 var(--sp-2)' }}>
+                <h2 style={{ fontSize: 'var(--fs-4xl)', fontWeight: 'var(--fw-bold)', margin: 0, color: 'var(--text-muted)' }}>{t('archived_accounts')} ({archivedAccounts.length})</h2>
                 <button
-                  className={`btn btn-sm ${showArchivedAccounts ? 'btn-secondary' : 'btn-primary'}`}
+                  className={`btn btn-sm btn-inline ${showArchivedAccounts ? 'btn-secondary' : 'btn-primary'}`}
                   role="switch"
                   aria-checked={showArchivedAccounts}
-                  onClick={toggleArchivedAccounts}
-                  style={{ flexShrink: 0, minWidth: 88, whiteSpace: 'nowrap' }}>
+                  onClick={toggleArchivedAccounts}>
                   {showArchivedAccounts ? `👁️ ${t('hide_archived_assets')}` : `📦 ${t('show_archived_assets')}`}
                 </button>
               </div>
               {showArchivedAccounts && (
                 <>
                   <div className="entry-group-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
                       <span className="dot" style={{ background: 'var(--text-muted)' }} />{t('archived_history')}
                     </div>
                     <div>{t('history_records')}</div>
@@ -538,7 +537,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
               )}
             </div>
           )}
-          <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textAlign: 'center', margin: '12px 0 24px' }}>{t('long_press_hint')}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', textAlign: 'center', margin: 'var(--sp-3) 0 var(--sp-6)' }}>{t('long_press_hint')}</div>
         </>
       )}
 
@@ -553,7 +552,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
               <h2 className="modal-title" id="export-format-title">{t('choose_export_format')}</h2>
               <button type="button" className="modal-close" onClick={() => setShowExportMenu(false)} aria-label={t('close')}>✕</button>
             </div>
-            <button className="btn btn-primary btn-block" style={{ marginBottom: 10 }} onClick={() => { setShowExportMenu(false); handleExportImage(); }}>
+            <button className="btn btn-primary btn-block" style={{ marginBottom: 'var(--sp-3)' }} onClick={() => { setShowExportMenu(false); handleExportImage(); }}>
               🖼️ {t('export_as_image')}
             </button>
             <button className="btn btn-secondary btn-block" onClick={() => { setShowExportMenu(false); handleExportExcel(); }}>

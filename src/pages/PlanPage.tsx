@@ -1,15 +1,15 @@
-import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { initializeSettings, type Settings, type PlanItem, type PlanResourceAllocation } from '../db';
 import {
-  getPlanStatus, createPlanItem, createInitialPlanItems, updatePlanItem, deletePlanItem, setPlanTargetTotal,
+  getPlanStatus, createPlanItem, createInitialPlanItems, updatePlanItem, movePlanItem, deletePlanItem, setPlanTargetTotal,
   createPlanTarget, updatePlanTarget, deletePlanTarget,
   splitScope, makeScope, makeAccountScope, makeHoldingScope, makeCashScope, MARKET_KEYS, MARKET_LABEL_KEYS, EQUITY_PLAN_CATEGORIES,
   type PlanStatus, type PlanItemStatus, type PlanTargetStatus, type UnplannedEntry, type MarketKey,
 } from '../services/planService';
 import { useAppContext } from '../app-context';
 import {
+  computeFundingWaterfall,
   parsePlannedPurchases,
   planPercentFromInput,
   planProgress,
@@ -559,13 +559,38 @@ export default function PlanPage() {
     const gap = Math.round(item.gapValue * 100) / 100;
     const isAtTarget = progress !== undefined && Math.abs(gap) < 0.01;
     const targets = parsePlannedPurchases(item.plannedPurchases);
+    const waterfall = gap > 0.01
+      ? computeFundingWaterfall(status.items, item.id, { requiredAmount: gap, idleCash: unplannedValue })
+      : null;
 
     return (
-      <article key={item.id} className="plan-card" style={{ '--plan-color': color } as React.CSSProperties}>
+      <article key={item.id} className="plan-card" style={{ '--plan-color': color } as CSSProperties}>
         {/* Keep the asset name and edit action easy to scan on a phone. */}
         <div className="plan-card-heading">
           <h2><span className="plan-dot" />{item.name}</h2>
-          <div className="plan-card-heading-actions">
+          <div className="plan-card-heading-actions" style={{ display: 'flex', gap: 4 }}>
+            {status.items.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  disabled={idx === 0 || saving}
+                  aria-label={t('plan_priority_up', { name: item.name })}
+                  onClick={() => void saveAction(() => movePlanItem(item.id, 'up'))}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  disabled={idx === status.items.length - 1 || saving}
+                  aria-label={t('plan_priority_down', { name: item.name })}
+                  onClick={() => void saveAction(() => movePlanItem(item.id, 'down'))}
+                >
+                  ↓
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="btn btn-sm btn-secondary"
@@ -611,6 +636,31 @@ export default function PlanPage() {
           )}
         </div>
 
+        {/* Automatic Funding Waterfall for underweight buckets */}
+        {waterfall && (waterfall.steps.length > 0 || waterfall.shortfallAmount >= 0.01) && (
+          <div style={{ marginTop: 'var(--sp-2)', padding: 'var(--sp-2) var(--sp-2)', borderRadius: 'var(--radius-md)', background: 'var(--bg-glass)', border: '1px solid var(--border)', fontSize: 'var(--fs-xs)' }}>
+            <div style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)', marginBottom: 'var(--sp-1)' }}>
+              💧 {t('plan_waterfall_title')}
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 16, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {waterfall.steps.map((step, sIdx) => (
+                <li key={sIdx}>
+                  {step.sourceType === 'idle_cash'
+                    ? t('plan_waterfall_step_idle', { amount: masked(fmt(step.amount)), currency: primary })
+                    : step.sourceType === 'overweight_trim'
+                      ? t('plan_waterfall_step_trim', { name: step.bucketName ?? '', amount: masked(fmt(step.amount)), currency: primary })
+                      : t('plan_waterfall_step_redeem', { name: step.bucketName ?? '', amount: masked(fmt(step.amount)), currency: primary })}
+                </li>
+              ))}
+              {waterfall.shortfallAmount >= 0.01 && (
+                <li style={{ color: 'var(--text-muted)' }}>
+                  {t('plan_waterfall_shortfall', { amount: masked(fmt(waterfall.shortfallAmount)), currency: primary })}
+                </li>
+              )}
+            </ol>
+          </div>
+        )}
+
         {/* Planned Target Assets (Tags & quick add/edit) */}
         <div className="plan-targets-box">
           <div className="plan-targets-heading">
@@ -640,13 +690,13 @@ export default function PlanPage() {
 
           {/* Legacy subcategories (if user previously configured plan targets) */}
           {item.targets.length > 0 && (
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ marginTop: 'var(--sp-2)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {item.targets.map(tg => (
                 <button
                   type="button"
                   key={tg.id}
                   className="plan-tag"
-                  style={{ opacity: 0.85, fontSize: '0.75rem', cursor: 'pointer' }}
+                  style={{ opacity: 0.85, fontSize: 'var(--fs-sm)', cursor: 'pointer' }}
                   onClick={() => openEditTarget(item, tg)}
                 >
                   📌 {tg.name} ({fmtPct(tg.targetPercent)}%)
@@ -673,8 +723,8 @@ export default function PlanPage() {
 
           {/* Legacy subcategories management inside details */}
           {item.targets.length > 0 && (
-            <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginBottom: 6 }}>
+            <div style={{ marginTop: 'var(--sp-2)', borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+              <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-1)' }}>
                 {t('plan_target_allocated', { sum: fmtPct(item.targetPercentSum), limit: fmtPct(item.targetPercent) })}
               </div>
               {item.targets.map(tg => (
@@ -691,19 +741,10 @@ export default function PlanPage() {
             </div>
           )}
           <button
+            className="btn-text"
             disabled={item.targetPercentSum >= item.targetPercent - 0.000001}
             onClick={() => openAddTarget(item)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--asset-color)',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              cursor: item.targetPercentSum >= item.targetPercent - 0.000001 ? 'not-allowed' : 'pointer',
-              opacity: item.targetPercentSum >= item.targetPercent - 0.000001 ? 0.4 : 1,
-              padding: '6px 0 0',
-              marginTop: 4,
-            }}
+            style={{ marginTop: 'var(--sp-1)' }}
           >
             ＋ {t('add_plan_target')}
           </button>
@@ -841,7 +882,7 @@ export default function PlanPage() {
         </div>
       )}
       {status.allocationWarnings.length > 0 && (
-        <div style={{ fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 10, padding: '8px 12px', marginBottom: 14 }}>
+        <div className="valuation-warning">
           ⚠️ {t('plan_allocation_warning', { count: status.allocationWarnings.length })}
         </div>
       )}
@@ -857,7 +898,7 @@ export default function PlanPage() {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ marginTop: 12 }}
+              style={{ marginTop: 'var(--sp-3)' }}
               onClick={handleAutoCreateFromAssets}
               disabled={saving}
             >
@@ -876,11 +917,11 @@ export default function PlanPage() {
       {status.unplanned.length > 0 && (
         <details className="plan-unplanned">
           <summary>{t('unplanned_categories')} · {masked(fmt(unplannedValue))} {primary}</summary>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 8 }}>{t('unplanned_hint')}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-2)' }}>{t('unplanned_hint')}</div>
           {status.unplanned.map(u => (
-            <div key={makeScope(u.category, u.market)} className="entry-item" style={{ padding: '0.625rem 0.5rem', cursor: 'pointer' }} onClick={() => openCreate(u)}>
+            <div key={makeScope(u.category, u.market)} className="entry-item" style={{ padding: 'var(--sp-2) var(--sp-2)', cursor: 'pointer' }} onClick={() => openCreate(u)}>
               <div className="entry-info">
-                <div className="entry-category" style={{ fontSize: '0.8125rem' }}>{scopeLabel(makeScope(u.category, u.market))}</div>
+                <div className="entry-category" style={{ fontSize: 'var(--fs-md)' }}>{scopeLabel(makeScope(u.category, u.market))}</div>
                 <div className="entry-note-text">
                   {status.totalAssets > 0 ? ((u.value / status.totalAssets) * 100).toFixed(1) : 0}% · {t('plan_tap_to_add')}
                 </div>
@@ -905,7 +946,7 @@ export default function PlanPage() {
             {/* Step 1: Select Category Chips */}
             <div className="form-group">
               <label className="form-label">{t('linked_categories')}</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div className="chip-group">
                 {assetCategories.map(c => {
                   const used = catDisabled(c.name);
                   const active = scopesOf(c.name).length > 0 || formExpandedCats.includes(c.name);
@@ -915,7 +956,7 @@ export default function PlanPage() {
                       type="button"
                       disabled={used}
                       aria-pressed={scopesOf(c.name).length > 0}
-                      style={{ ...S.chip, ...(active ? S.chipActive : {}), ...(used ? { opacity: 0.35, cursor: 'not-allowed' } : {}) }}
+                      className={`chip${active ? ' active' : ''}`}
                       onClick={() => {
                         if (!used) {
                           toggleCategory(c.name);
@@ -1021,12 +1062,12 @@ export default function PlanPage() {
                 const wholeBlocked = othersWhole.has(cat);
                 const catAccounts = status.equityAccounts.filter(a => a.category === cat);
                 return (
-                  <div key={cat} style={{ marginTop: 8 }}>
+                  <div key={cat} style={{ marginTop: 'var(--sp-2)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t(cat)}:</span>
+                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>{t(cat)}:</span>
                       <button
                         disabled={wholeBlocked}
-                        style={{ ...S.chip, ...(wholeActive ? S.chipActive : {}), ...(wholeBlocked ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
+                        className={`chip compact${wholeActive ? ' active' : ''}`}
                         onClick={() => !wholeBlocked && setWholeCat(cat)}
                       >
                         {t('plan_market_all')}
@@ -1039,7 +1080,7 @@ export default function PlanPage() {
                           <button
                             key={m}
                             disabled={mUsed}
-                            style={{ ...S.chip, ...(mActive ? S.chipActive : {}), ...(mUsed ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
+                            className={`chip compact${mActive ? ' active' : ''}`}
                             onClick={() => !mUsed && toggleMarket(cat, m)}
                           >
                             {t(MARKET_LABEL_KEYS[m])}
@@ -1048,8 +1089,8 @@ export default function PlanPage() {
                       })}
                     </div>
                     {catAccounts.length > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_by_account')}:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--sp-1)', marginTop: 'var(--sp-1)' }}>
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_by_account')}:</span>
                         {catAccounts.map(a => {
                           const scope = makeAccountScope(a.id);
                           const aUsed = othersAcct.has(a.id);
@@ -1058,7 +1099,7 @@ export default function PlanPage() {
                             <button
                               key={a.id}
                               disabled={aUsed}
-                              style={{ ...S.chip, ...(aActive ? S.chipActive : {}), ...(aUsed ? { opacity: 0.35, cursor: 'not-allowed' } : {}), padding: '4px 10px', fontSize: '0.72rem' }}
+                              className={`chip compact${aActive ? ' active' : ''}`}
                               onClick={() => !aUsed && toggleAccount(a.id)}
                             >
                               {a.name}
@@ -1068,8 +1109,8 @@ export default function PlanPage() {
                       </div>
                     )}
                     {catAccounts.filter(a => a.holdings.length > 0).map(a => (
-                      <div key={`hold-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_holdings_of', { name: a.name })}:</span>
+                      <div key={`hold-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--sp-1)', marginTop: 'var(--sp-1)' }}>
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>{t('plan_holdings_of', { name: a.name })}:</span>
                         {a.holdings.map(h => {
                           const scope = makeHoldingScope(h.id);
                           const hUsed = othersHold.has(h.id) || status.items.some(item => (
@@ -1080,7 +1121,7 @@ export default function PlanPage() {
                           return (
                             <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                               <button
-                                style={{ ...S.chip, ...(hActive ? S.chipActive : {}), padding: '4px 10px', fontSize: '0.72rem' }}
+                                className={`chip compact${hActive ? ' active' : ''}`}
                                 onClick={() => toggleHolding(h.id)}
                               >
                                 {h.name} · {masked(fmt(h.currentValue))} {a.currency}{hUsed ? ` · ${t('plan_resource_shared')}` : ''}
@@ -1095,7 +1136,7 @@ export default function PlanPage() {
                                   placeholder={t('plan_allocation_remainder')}
                                   value={formAllocationAmounts[h.refKey] ?? ''}
                                   onChange={event => setFormAllocationAmounts(previous => ({ ...previous, [h.refKey]: event.target.value }))}
-                                  style={{ width: 140, padding: '4px 8px', fontSize: '0.72rem' }}
+                                  style={{ width: 140, padding: 'var(--sp-1) var(--sp-2)', fontSize: 'var(--fs-xs)' }}
                                 />
                               )}
                             </div>
@@ -1111,10 +1152,10 @@ export default function PlanPage() {
                         && item.candidates.some(candidate => candidate.refKey === a.cash!.refKey && candidate.currentValue > 0.000001)
                       )));
                       return (
-                        <div key={`cash-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', flexShrink: 0 }}>{a.name}:</span>
+                        <div key={`cash-${a.id}`} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--sp-1)', marginTop: 'var(--sp-1)' }}>
+                          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>{a.name}:</span>
                           <button
-                            style={{ ...S.chip, ...(active ? S.chipActive : {}), padding: '4px 10px', fontSize: '0.72rem' }}
+                            className={`chip compact${active ? ' active' : ''}`}
                             onClick={() => toggleCash(a.id)}
                           >
                             {t('cash_balance')} · {masked(fmt(a.cash?.currentValue ?? 0))} {a.currency}{used ? ` · ${t('plan_resource_shared')}` : ''}
@@ -1129,7 +1170,7 @@ export default function PlanPage() {
                               placeholder={t('plan_allocation_remainder')}
                               value={formAllocationAmounts[a.cash.refKey] ?? ''}
                               onChange={event => setFormAllocationAmounts(previous => ({ ...previous, [a.cash!.refKey]: event.target.value }))}
-                              style={{ width: 140, padding: '4px 8px', fontSize: '0.72rem' }}
+                              style={{ width: 140, padding: 'var(--sp-1) var(--sp-2)', fontSize: 'var(--fs-xs)' }}
                             />
                           )}
                         </div>
@@ -1138,7 +1179,7 @@ export default function PlanPage() {
                   </div>
                 );
               })}
-              {itemAllocationInvalid && <p className="plan-error-text" role="alert" style={{ marginTop: 6 }}>{t('plan_allocation_invalid')}</p>}
+              {itemAllocationInvalid && <p className="plan-error-text" role="alert" style={{ marginTop: 'var(--sp-1)' }}>{t('plan_allocation_invalid')}</p>}
             </details>
 
             {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
@@ -1161,7 +1202,7 @@ export default function PlanPage() {
       {/* Target Total Budget Modal */}
       {showTarget && (
         <div className="confirm-overlay" onClick={() => setShowTarget(false)}>
-          <div className="modal-content" role="dialog" aria-modal="true" aria-label={t('plan_budget')} style={{ maxWidth: 380, width: '90%', borderRadius: 16, padding: '20px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label={t('plan_budget')} style={{ maxWidth: 380, width: '90%', borderRadius: 'var(--radius-lg)', padding: 'var(--sp-5)' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{t('target_total_assets')}</h2>
               <button className="modal-close" onClick={() => setShowTarget(false)}>✕</button>
@@ -1181,11 +1222,11 @@ export default function PlanPage() {
                 autoFocus
               />
               {targetInput && !isNaN(parseFloat(targetInput)) && parseFloat(targetInput) > 0 && (
-                <div style={{ fontSize: '0.78rem', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 'var(--sp-1)' }}>
                   = {fmt(parseFloat(targetInput))} {primary}
                 </div>
               )}
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 6 }}>{t('target_total_hint')}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('target_total_hint')}</div>
               {targetInput.trim() && (!Number.isFinite(Number(targetInput)) || Number(targetInput) < 0.01) && (
                 <p className="plan-error-text" role="alert">{t('plan_total_invalid')}</p>
               )}
@@ -1232,27 +1273,27 @@ export default function PlanPage() {
                 onChange={e => setTgPercent(e.target.value)}
               />
               {Number.isFinite(parsedTargetPercent) && parsedTargetPercent > 0 && status.base > 0 && (
-                <div style={{ fontSize: '0.72rem', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--asset-color)', fontFamily: 'var(--font-mono)', marginTop: 'var(--sp-1)' }}>
                   {t('plan_target_derived_amount')} = {masked(fmt(targetAmountPreview))} {primary}
                 </div>
               )}
             </div>
             <div className="form-group">
               <label className="form-label">{t('plan_target_pick')}</label>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 8 }}>{t('plan_target_pick_hint')}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-2)' }}>{t('plan_target_pick_hint')}</div>
               {targetItem.candidates.length === 0 ? (
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{t('plan_no_candidates')}</div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('plan_no_candidates')}</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
                   {targetItem.candidates.map(cd => {
                     const active = tgRefKeys.includes(cd.refKey);
                     const used = targetRefsUsedByOthers.has(cd.refKey);
                     return (
-                      <div key={cd.refKey} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <div key={cd.refKey} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           aria-pressed={active}
-                          style={{ ...S.chip, ...(active ? S.chipActive : {}) }}
+                          className={`chip${active ? ' active' : ''}`}
                           onClick={() => {
                             setTgRefKeys(previous => active
                               ? previous.filter(refKey => refKey !== cd.refKey)
@@ -1266,7 +1307,7 @@ export default function PlanPage() {
                             }
                           }}>
                           {resourceLabel(cd)}{used ? ` · ${t('plan_resource_shared')}` : ''}
-                          <span style={{ opacity: 0.65, fontSize: '0.85em', fontFamily: 'var(--font-mono)', marginLeft: 4 }}>
+                          <span style={{ opacity: 0.65, fontSize: 'var(--fs-rel-sm)', fontFamily: 'var(--font-mono)', marginLeft: 'var(--sp-1)' }}>
                             {masked(fmt(cd.currentValue))} {cd.currency}
                           </span>
                         </button>
@@ -1282,9 +1323,9 @@ export default function PlanPage() {
                               placeholder={t('plan_allocation_remainder')}
                               value={tgAllocationAmounts[cd.refKey] ?? ''}
                               onChange={event => setTgAllocationAmounts(previous => ({ ...previous, [cd.refKey]: event.target.value }))}
-                              style={{ width: 150, padding: '5px 8px', fontSize: '0.72rem' }}
+                              style={{ width: 150, padding: 'var(--sp-1) var(--sp-2)', fontSize: 'var(--fs-xs)' }}
                             />
-                            <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>{cd.currency}</span>
+                            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{cd.currency}</span>
                           </>
                         )}
                       </div>
@@ -1292,7 +1333,7 @@ export default function PlanPage() {
                   })}
                 </div>
               )}
-              <div style={{ fontSize: '0.66rem', color: targetAllocationInvalid ? 'var(--liability-color)' : 'var(--text-muted)', marginTop: 8 }}>
+              <div style={{ fontSize: 'var(--fs-2xs)', color: targetAllocationInvalid ? 'var(--liability-color)' : 'var(--text-muted)', marginTop: 'var(--sp-2)' }}>
                 {targetAllocationInvalid ? t('plan_allocation_invalid') : t('plan_allocation_hint')}
               </div>
             </div>
@@ -1368,21 +1409,3 @@ export default function PlanPage() {
   );
 }
 
-const S: Record<string, React.CSSProperties> = {
-  chip: {
-    padding: '6px 12px',
-    borderRadius: 20,
-    border: '1px solid var(--border)',
-    background: 'var(--bg-glass)',
-    color: 'var(--text-secondary)',
-    fontSize: '0.78rem',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  chipActive: {
-    background: 'var(--asset-dim)',
-    border: '1px solid var(--asset-color)',
-    color: 'var(--asset-color)',
-    fontWeight: 600,
-  },
-};

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import './AccountDetail.css';
 import { getAccount, getRecords, addRecord, updateRecord, deleteRecord, updateAccount,
   addBalanceAdjustment, addBalanceTransaction, updateBalanceTransaction,
   addMetalTransaction, updateMetalTransaction, computeMetalPosition, restoreAccount } from '../services/assetService';
@@ -325,10 +326,10 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
 
   return (
     <div className="app">
-      <div className="app-content" style={{ paddingBottom: 24, paddingLeft: '1.25rem', paddingRight: '1.25rem' }}
+      <div className="app-content" style={{ paddingBottom: 'var(--sp-6)', paddingLeft: 'var(--sp-4)', paddingRight: 'var(--sp-4)' }}
            onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-          <button className="back-btn" onClick={onBack} style={{ padding: '12px 16px 12px 0', fontSize: '1.125rem', margin: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-2)', marginBottom: 'var(--sp-2)' }}>
+          <button className="back-btn" onClick={onBack} style={{ padding: 'var(--sp-3) var(--sp-4) var(--sp-3) 0', fontSize: 'var(--fs-3xl)', margin: 0 }}>
             ← {t('back')}
           </button>
           {!isArchived && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowEditAccount(true)}>{t('edit_account')}</button>}
@@ -337,13 +338,13 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
         <div className="account-header">
           <div className="account-header-info">
             {editingName ? (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
                 <input className="form-input" value={nameText} onChange={e => setNameText(e.target.value)}
                   autoFocus onBlur={handleNameSave} onKeyDown={e => e.key === 'Enter' && handleNameSave()} />
               </div>
             ) : (
               <h1 className="account-header-name" onClick={() => setEditingName(true)}>
-                {account.name} <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>✏️</span>
+                {account.name} <span style={{ fontSize: 'var(--fs-lg)', color: 'var(--text-muted)' }}>✏️</span>
               </h1>
             )}
             <div className="account-header-meta">
@@ -353,18 +354,18 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               <span>{t(account.category)}</span>
               {account.hidden && <span className="category-type" style={{ background: 'var(--bg-glass)', color: 'var(--text-secondary)' }}>{t('hidden_account_badge')}</span>}
               {isPortfolio && (
-                <span style={{ background: 'var(--asset-dim)', color: 'var(--asset-color)', borderRadius: 10, padding: '2px 8px', fontSize: '0.68rem', fontWeight: 600 }}>
+                <span className="badge accent">
                   {t('portfolio_badge')}
                 </span>
               )}
               {isMetal && <span>{metalName}</span>}
               {isArchived && (
-                <span style={{ background: 'var(--bg-glass)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem', fontWeight: 700 }}>
+                <span className="badge pill">
                   {t('archived_badge')}
                 </span>
               )}
               {account.institution && (
-                <span style={{ background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 20, padding: '2px 10px', fontSize: '0.72rem' }}>
+                <span className="badge pill">
                   🏢 {account.institution}
                 </span>
               )}
@@ -388,10 +389,10 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
         {account.type === 'asset' && account.metalType === 'XAU' && <PriceMonitorPanel kind="gold" accountId={account.id} />}
 
         {isArchived && (
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 'var(--sp-3) var(--sp-3)', marginBottom: 'var(--sp-3)', display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{t('archived_accounts')}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('archived_detail_hint')}</div>
+              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-bold)', color: 'var(--text-secondary)' }}>{t('archived_accounts')}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('archived_detail_hint')}</div>
             </div>
             <button className="btn btn-sm btn-secondary" onClick={handleRestoreAccount}>{t('restore_account')}</button>
           </div>
@@ -399,25 +400,25 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
 
         {/* Product info card (per-product fields make no sense for portfolio accounts) */}
         {!isPortfolio && ((account.productData && Object.keys(account.productData).some(k => account.productData![k])) ? (
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', marginBottom: 12 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 'var(--sp-3) var(--sp-3)', marginBottom: 'var(--sp-3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('product_info')}</span>
-              {!isArchived && <button onClick={openEditProductData} style={{ background: 'none', border: 'none', color: 'var(--asset-color)', fontSize: '0.75rem', cursor: 'pointer', padding: '2px 6px' }}>{t('edit')}</button>}
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('product_info')}</span>
+              {!isArchived && <button className="btn-text" onClick={openEditProductData}>{t('edit')}</button>}
             </div>
             {(() => {
               const fieldDefs = settings ? getFieldsForCategory(account.category, settings, t) : [];
               const labelMap: Record<string, string> = {};
               fieldDefs.forEach(f => { labelMap[f.key] = f.label; });
               return Object.entries(account.productData).filter(([, v]) => v).map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '0.8rem' }}>
-                  <span style={{ color: 'var(--text-muted)', flexShrink: 0, marginRight: 8 }}>{labelMap[k] || k}</span>
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--sp-1) 0', fontSize: 'var(--fs-md)' }}>
+                  <span style={{ color: 'var(--text-muted)', flexShrink: 0, marginRight: 'var(--sp-2)' }}>{labelMap[k] || k}</span>
                   <span style={{ color: 'var(--text-primary)', textAlign: 'right', wordBreak: 'break-all' }}>{v}</span>
                 </div>
               ));
             })()}
           </div>
         ) : (
-          !isArchived && <button onClick={openEditProductData} style={{ width: '100%', background: 'transparent', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)', fontSize: '0.8rem', padding: '10px', cursor: 'pointer', marginBottom: 12 }}>
+          !isArchived && <button className="btn-dashed" style={{ marginBottom: 12 }} onClick={openEditProductData}>
             + {t('edit_product_info')}
           </button>
         ))}
@@ -428,9 +429,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
             <div className="stat-label">{t('remaining_grams')}</div>
             <div className="latest-value" style={{ color, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div style={{ whiteSpace: 'nowrap' }}>{masked(position.remainingGrams.toFixed(2))}</div>
-              <div className="latest-value-currency" style={{ fontSize: '0.875rem', marginTop: 4 }}>{t('unit_gram')}</div>
+              <div className="latest-value-currency" style={{ fontSize: 'var(--fs-lg)', marginTop: 'var(--sp-1)' }}>{t('unit_gram')}</div>
             </div>
-            <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+            <div style={{ fontSize: 'var(--fs-md)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--sp-1)', marginTop: 'var(--sp-2)' }}>
               {metalName}{t('unit_price')}：{metalPricePerGram != null && metalPricePerGram > 0 ? masked(metalPricePerGram.toFixed(2)) : '—'} {account.currency}/{t('unit_gram')}
               <button
                 type="button"
@@ -442,32 +443,32 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               </button>
             </div>
             {position.remainingGrams > 0 && metalPricePerGram != null && metalPricePerGram > 0 && (
-              <div style={{ fontSize: '1.125rem', fontFamily: 'var(--font-mono)', fontWeight: 600, color, marginTop: 4 }}>
+              <div style={{ fontSize: 'var(--fs-3xl)', fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', color, marginTop: 'var(--sp-1)' }}>
                 ≈ {masked(fmt(marketValue))} {account.currency}
               </div>
             )}
             {position.remainingGrams > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12, width: '100%' }}>
-                <div style={S.posCell}>
-                  <span style={S.posKey}>{t('avg_cost_label')}</span>
-                  <span style={S.posVal}>{position.avgCost > 0 ? masked(position.avgCost.toFixed(2)) : '—'}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-2)', marginTop: 'var(--sp-3)', width: '100%' }}>
+                <div className="pos-cell">
+                  <span className="pos-key">{t('avg_cost_label')}</span>
+                  <span className="pos-val">{position.avgCost > 0 ? masked(position.avgCost.toFixed(2)) : '—'}</span>
                 </div>
-                <div style={S.posCell}>
-                  <span style={S.posKey}>{t('holding_cost')}</span>
-                  <span style={S.posVal}>{position.costBasis > 0 ? masked(fmt(position.costBasis)) : '—'}</span>
+                <div className="pos-cell">
+                  <span className="pos-key">{t('holding_cost')}</span>
+                  <span className="pos-val">{position.costBasis > 0 ? masked(fmt(position.costBasis)) : '—'}</span>
                 </div>
                 {position.costBasis > 0 && metalPricePerGram != null && metalPricePerGram > 0 && (
-                  <div style={S.posCell}>
-                    <span style={S.posKey}>{t('unrealized_pnl')}</span>
-                    <span style={{ ...S.posVal, color: unrealizedPnl >= 0 ? theme.assetColor : theme.liabilityColor }}>
+                  <div className="pos-cell">
+                    <span className="pos-key">{t('unrealized_pnl')}</span>
+                    <span className="pos-val" style={{ color: unrealizedPnl >= 0 ? theme.assetColor : theme.liabilityColor }}>
                       {masked((unrealizedPnl >= 0 ? '+' : '') + fmt(unrealizedPnl))}
                     </span>
                   </div>
                 )}
                 {Math.abs(position.realizedPnl) > 0.005 && (
-                  <div style={S.posCell}>
-                    <span style={S.posKey}>{t('realized_pnl')}</span>
-                    <span style={{ ...S.posVal, color: position.realizedPnl >= 0 ? theme.assetColor : theme.liabilityColor }}>
+                  <div className="pos-cell">
+                    <span className="pos-key">{t('realized_pnl')}</span>
+                    <span className="pos-val" style={{ color: position.realizedPnl >= 0 ? theme.assetColor : theme.liabilityColor }}>
                       {masked((position.realizedPnl >= 0 ? '+' : '') + fmt(position.realizedPnl))}
                     </span>
                   </div>
@@ -488,20 +489,20 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               <div style={{ whiteSpace: 'nowrap' }}>
                 {masked(records[0].amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
               </div>
-              <div className="latest-value-currency" style={{ fontSize: '0.875rem', marginTop: 4 }}>{account.currency}</div>
+              <div className="latest-value-currency" style={{ fontSize: 'var(--fs-lg)', marginTop: 'var(--sp-1)' }}>{account.currency}</div>
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>{t('record_date')}：{records[0].date}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('record_date')}：{records[0].date}</div>
           </div>
         )}
 
         {!isArchived && account.category === '信用卡' && (
-          <div className="settings-item" style={{ marginBottom: 20, background: 'var(--bg-card)', padding: '12px 16px', borderRadius: 16 }}>
+          <div className="settings-item" style={{ marginBottom: 'var(--sp-5)', background: 'var(--bg-card)', padding: 'var(--sp-3) var(--sp-4)', borderRadius: 'var(--radius-lg)' }}>
             <div>
               <div className="settings-item-label">{t('credit_card_reminder')}</div>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: 2 }}>{t('credit_card_reminder_desc')}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{t('credit_card_reminder_desc')}</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input className="form-input" style={{ width: '60px', padding: '6px', textAlign: 'center' }} type="number" 
+              <input className="form-input" style={{ width: '60px', padding: 'var(--sp-1)', textAlign: 'center' }} type="number" 
                 placeholder={t('day', { defaultValue: 'Day' })} id="cc-day-input" />
               <button className="btn btn-primary btn-sm" onClick={async () => {
                 const input = document.getElementById('cc-day-input') as HTMLInputElement;
@@ -540,14 +541,12 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
         )}
 
         {!isArchived && (isMetal ? (
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-            <button className="btn btn-block" style={{ background: theme.assetColor, color: 'var(--theme-on-asset)', fontWeight: 700 }}
-              onClick={() => openMetalTxn('buy')}>＋ {t('buy_in')}</button>
-            <button className="btn btn-block" style={{ background: theme.liabilityColor, color: 'var(--theme-on-liability)', fontWeight: 700 }}
-              onClick={() => openMetalTxn('sell')}>－ {t('sell_out')}</button>
+          <div style={{ display: 'flex', gap: 'var(--sp-2)', marginBottom: 'var(--sp-5)' }}>
+            <button className="btn btn-primary btn-block" onClick={() => openMetalTxn('buy')}>＋ {t('buy_in')}</button>
+            <button className="btn btn-liability btn-block" onClick={() => openMetalTxn('sell')}>－ {t('sell_out')}</button>
           </div>
         ) : isPortfolio ? null : usesDerivedRecordFlow ? (
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-2)', marginBottom: 'var(--sp-5)' }}>
             <button className="btn btn-primary btn-block" onClick={openAddRecord}>
               + {t('record_balance_change')}
             </button>
@@ -577,9 +576,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
           )}
         </div>
         {(!isPortfolio || showSnapshots) && <>
-        {isPortfolio && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '-2px 0 8px' }}>{t('snapshot_hint')}</div>}
+        {isPortfolio && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', margin: 'calc(-1 * var(--sp-1)) 0 var(--sp-2)' }}>{t('snapshot_hint')}</div>}
         {records.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', padding: 20, textAlign: 'center' }}>{t('no_records')}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-md)', padding: 'var(--sp-5)', textAlign: 'center' }}>{t('no_records')}</div>
         ) : isMetal ? (
           records.map(r => {
             const isSell = r.kind === 'sell';
@@ -588,16 +587,16 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
             const hasPrice = r.pricePerGram != null && r.pricePerGram > 0;
             const total = hasPrice ? grams * r.pricePerGram! : 0;
             return (
-              <div key={r.id} style={S.metalRow}>
+              <div key={r.id} className="metal-row">
                 {/* top line: badge + date · grams · actions */}
                 <div className="metal-record-head">
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isSell ? theme.liabilityDim : theme.assetDim, color: txnColor, borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
+                  <span className="txn-badge" style={{ background: isSell ? theme.liabilityDim : theme.assetDim, color: txnColor }}>
                     {isSell ? t('sell_out') : t('buy_in')}
                   </span>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{r.date}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>{r.date}</span>
                   <span style={{ flex: 1 }} />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem', color: txnColor, whiteSpace: 'nowrap' }}>
-                    {isSell ? '−' : '+'}{masked(grams.toFixed(2))}<span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: 2 }}>{t('unit_gram')}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-xl)', color: txnColor, whiteSpace: 'nowrap' }}>
+                    {isSell ? '−' : '+'}{masked(grams.toFixed(2))}<span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginLeft: 'var(--sp-1)' }}>{t('unit_gram')}</span>
                   </span>
                   {!isArchived && (
                     <div className="entry-actions" style={{ flexShrink: 0 }}>
@@ -608,12 +607,12 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 </div>
                 {/* second line: unit price (left) · subtotal (right) */}
                 {hasPrice && (
-                  <div className="metal-record-detail" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  <div className="metal-record-detail" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
                     <span style={{ whiteSpace: 'nowrap' }}>@ {masked(r.pricePerGram!.toFixed(2))} {account.currency}/{t('unit_gram')}</span>
                     <span style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)' }}>{masked(total.toLocaleString('en-US', { maximumFractionDigits: 0 }))} {account.currency}</span>
                   </div>
                 )}
-                {r.note && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>{r.note}</div>}
+                {r.note && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{r.note}</div>}
               </div>
             );
           })
@@ -625,7 +624,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
             return (
               <div key={r.id} className="balance-record-card">
                 <div className="balance-record-meta">
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: isDelta ? (isDecrease ? theme.liabilityDim : theme.assetDim) : 'var(--bg-glass)', color: isDelta ? txnColor : 'var(--text-muted)', borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
+                  <span className="txn-badge" style={{ background: isDelta ? (isDecrease ? theme.liabilityDim : theme.assetDim) : 'var(--bg-glass)', color: isDelta ? txnColor : 'var(--text-muted)' }}>
                     {isDelta
                       ? t(getBalanceFlowActionKey(balanceFlow, r.kind!))
                       : t(r.balanceAdjustment ? 'balance_adjustment' : 'legacy_balance_record')}
@@ -691,10 +690,10 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               <div className="form-group" key={field.key}>
                 <label className="form-label">{field.label}</label>
                 {field.options ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <div className="chip-group">
                     {field.options.map(optVal => (
                       <button key={optVal}
-                        style={{ padding: '5px 11px', borderRadius: 20, border: `1px solid ${editProductData[field.key] === optVal ? 'var(--asset-color)' : 'var(--border)'}`, background: editProductData[field.key] === optVal ? 'var(--asset-dim)' : 'var(--bg-glass)', color: editProductData[field.key] === optVal ? 'var(--asset-color)' : 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: editProductData[field.key] === optVal ? 600 : 400 }}
+                        className={`chip${editProductData[field.key] === optVal ? ' active' : ''}`}
                         onClick={() => setField(field.key, editProductData[field.key] === optVal ? '' : optVal)}>
                         {optVal}
                       </button>
@@ -727,10 +726,10 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
             </div>
             {isFlowRecordInput && balanceFlow && (
               <div className="form-group">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-block" style={{ background: recordKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: recordKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: recordKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
+                <div className="segmented">
+                  <button className={recordKind === 'buy' ? 'active' : ''}
                     onClick={() => setRecordKind('buy')}>＋ {t(balanceFlow.increaseActionKey)}</button>
-                  <button className="btn btn-block" style={{ background: recordKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: recordKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: recordKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }}
+                  <button className={recordKind === 'sell' ? 'active liability' : ''}
                     onClick={() => setRecordKind('sell')}>－ {t(balanceFlow.decreaseActionKey)}</button>
                 </div>
               </div>
@@ -745,7 +744,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
                   placeholder="0.00" value={newAmount} onChange={e => setNewAmount(e.target.value)} autoFocus />
                 {balancePreview && (
-                  <div style={{ fontSize: '0.75rem', color: balancePreview.underflow ? 'var(--liability-color)' : 'var(--text-muted)', marginTop: 6 }}>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: balancePreview.underflow ? 'var(--liability-color)' : 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
                     {balancePreview.underflow
                       ? t('balance_decrease_exceeds')
                       : `${t('balance_after_change')}：${balancePreview.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${account.currency}`}
@@ -757,7 +756,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 <label className="form-label">{t('adjusted_balance')} ({account.currency})</label>
                 <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
                   placeholder="0.00" value={newAmount} onChange={e => setNewAmount(e.target.value)} autoFocus />
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
                   {t('balance_adjustment_hint')}
                 </div>
               </div>
@@ -774,17 +773,17 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                     placeholder={t('price_per_share_ph')} value={stockPrice} onChange={e => setStockPrice(e.target.value)} />
                 </div>
                 {stockShares && stockPrice && !isNaN(parseFloat(stockShares)) && !isNaN(parseFloat(stockPrice)) && (
-                  <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: 4 }}>
+                  <div style={{ background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', padding: 'var(--sp-2) var(--sp-3)', marginBottom: 'var(--sp-2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-md)', marginBottom: 4 }}>
                       <span style={{ color: 'var(--text-muted)' }}>{t('market_value')}</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', color: 'var(--asset-color)' }}>
                         {(parseFloat(stockShares) * parseFloat(stockPrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {account.currency}
                       </span>
                     </div>
                     {costPerShare !== null && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-md)' }}>
                         <span style={{ color: 'var(--text-muted)' }}>{t('pnl')}</span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: (parseFloat(stockPrice) - costPerShare) >= 0 ? 'var(--asset-color)' : 'var(--liability-color)' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', color: (parseFloat(stockPrice) - costPerShare) >= 0 ? 'var(--asset-color)' : 'var(--liability-color)' }}>
                           {((parseFloat(stockPrice) - costPerShare) * parseFloat(stockShares) >= 0 ? '+' : '')}
                           {((parseFloat(stockPrice) - costPerShare) * parseFloat(stockShares)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
@@ -799,7 +798,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
                   placeholder={isMetal ? `0.00 ${t('unit_gram')}` : '0.00'} value={newAmount} onChange={e => setNewAmount(e.target.value)} autoFocus />
                 {isMetal && metalPricePerGram !== null && newAmount && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 6 }}>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>
                     ≈ {fmt(parseFloat(newAmount || '0') * metalPricePerGram)} {account.currency}（{metalName} {metalPricePerGram.toFixed(2)}/{account.currency}/{t('unit_gram')}）
                   </div>
                 )}
@@ -840,9 +839,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 <button className="modal-close" onClick={() => { setShowMetalTxn(false); setEditingMetalRec(null); }}>✕</button>
               </div>
               {!editingMetalRec && (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button className="btn btn-block" style={{ background: metalKind === 'buy' ? theme.assetColor : 'var(--bg-glass)', color: metalKind === 'buy' ? 'var(--theme-on-asset)' : 'var(--text-secondary)', border: metalKind === 'buy' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setMetalKind('buy')}>＋ {t('buy_in')}</button>
-                  <button className="btn btn-block" style={{ background: metalKind === 'sell' ? theme.liabilityColor : 'var(--bg-glass)', color: metalKind === 'sell' ? 'var(--theme-on-liability)' : 'var(--text-secondary)', border: metalKind === 'sell' ? 'none' : '1px solid var(--border)', fontWeight: 700 }} onClick={() => setMetalKind('sell')}>－ {t('sell_out')}</button>
+                <div className="segmented" style={{ marginBottom: 14 }}>
+                  <button className={metalKind === 'buy' ? 'active' : ''} onClick={() => setMetalKind('buy')}>＋ {t('buy_in')}</button>
+                  <button className={metalKind === 'sell' ? 'active liability' : ''} onClick={() => setMetalKind('sell')}>－ {t('sell_out')}</button>
                 </div>
               )}
               <div className="form-group">
@@ -861,9 +860,9 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                   value={txnPrice} onChange={e => setTxnPrice(e.target.value)} />
               </div>
               {valid && (
-                <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
+                <div style={{ background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', padding: 'var(--sp-2) var(--sp-3)', marginBottom: 'var(--sp-2)', display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-md)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{isSell ? t('sell_out') : t('buy_in')} {grams.toFixed(2)}{t('unit_gram')} × {price.toFixed(2)}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: txnColor }}>{total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {account.currency}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', color: txnColor }}>{total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {account.currency}</span>
                 </div>
               )}
               <div className="form-group">
@@ -883,10 +882,3 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     </div>
   );
 }
-
-const S: Record<string, React.CSSProperties> = {
-  metalRow: { background: 'var(--bg-glass)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 8 },
-  posCell: { background: 'var(--bg-glass)', borderRadius: 10, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 },
-  posKey: { fontSize: '0.66rem', color: 'var(--text-muted)' },
-  posVal: { fontSize: '0.9rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' },
-};

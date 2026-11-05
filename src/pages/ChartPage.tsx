@@ -8,6 +8,7 @@ import { useAppContext } from '../app-context';
 import { formatLocalDate, parseLocalDate } from '../lib/localDate';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
+import { computePortfolioUnitNav } from '../lib/balanceFlow';
 
 type TimeRange = '3m' | '6m' | '1y' | 'all' | 'quarter' | 'year';
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
@@ -18,7 +19,13 @@ type TooltipPayload = { name: string; value: number; color?: string };
 type TooltipProps = { active?: boolean; payload?: TooltipPayload[]; label?: string };
 
 
-const COLORS = ['#818cf8', '#34d399', '#60a5fa', '#c084fc', '#fbbf24', '#f472b6', '#22d3ee', '#a3e635', '#fb923c', '#fb7185', '#2dd4bf', '#e879f9'];
+/* Categorical palette — the tokens swap to deeper tones in light mode so
+   every slice stays readable against the card background. */
+const COLORS = [
+  'var(--cat-1)', 'var(--cat-2)', 'var(--cat-3)', 'var(--cat-4)',
+  'var(--cat-5)', 'var(--cat-6)', 'var(--cat-7)', 'var(--cat-8)',
+  'var(--cat-9)', 'var(--cat-10)', 'var(--cat-11)', 'var(--cat-12)',
+];
 
 /** Generate fixed-frequency date ticks between min/max */
 function generateFixedTicks(dates: string[], range: TimeRange): string[] {
@@ -161,12 +168,12 @@ export default function ChartPage() {
   const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
     if (!active || !payload?.length) return null;
     return (
-      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: '0.75rem', maxWidth: 280 }}>
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-sm)', maxWidth: 280 }}>
+        <div style={{ fontWeight: 'var(--fw-semibold)', marginBottom: 4 }}>{label}</div>
         {payload.map((p, i) => (
           <div key={i} style={{ color: p.color, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, flexShrink: 0 }}>{masked(fmt(p.value))}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', flexShrink: 0 }}>{masked(fmt(p.value))}</span>
           </div>
         ))}
       </div>
@@ -177,9 +184,9 @@ export default function ChartPage() {
     if (!active || !payload?.length) return null;
     const v = payload[0].value;
     return (
-      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: '0.75rem' }}>
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: v >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
+        <div style={{ fontWeight: 'var(--fw-semibold)', marginBottom: 4 }}>{label}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', color: v >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>
           {masked((v >= 0 ? '+' : '') + fmt(v))} {primaryCurrency}
         </div>
       </div>
@@ -253,7 +260,21 @@ export default function ChartPage() {
       return acc;
     }, {})).sort((a, b) => b.value - a.value);
 
-    return { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal };
+    // Automatic Portfolio Unit NAV (base 1.0000, adjusted for external principal flows)
+    const unitNavSummary = computePortfolioUnitNav(
+      filteredDates.map((d, idx) => ({
+        date: d,
+        totalValue: Math.max(0, chartData.totalSeries.netWorth[d] ?? chartData.totalSeries.totalAssets[d] ?? 0),
+        netFlow: idx === 0 ? 0 : (chartData.dailyFlows?.[d] ?? 0),
+      })),
+    );
+    const navLabel = t('chart_unit_nav_title');
+    const unitNavData: ChartRow[] = unitNavSummary.series.map(pt => ({
+      date: pt.date.slice(5),
+      [navLabel]: pt.nav,
+    }));
+
+    return { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal, unitNavSummary, unitNavData, navLabel };
   }, [chartData, timeRange, pieData, t]);
 
   // Monthly realized P&L, windowed to the selected range (aggregated ranges show everything).
@@ -283,19 +304,19 @@ export default function ChartPage() {
     </>
   );
 
-  const { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal } = chartContent;
+  const { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal, unitNavSummary, unitNavData, navLabel } = chartContent;
 
   const renderMiniChart = (data: ChartRow[], dataKey: string, color: string, title: string) => (
     <div className="chart-card" style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>{title}</div>
+      <div style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-2)', color: 'var(--text-secondary)' }}>{title}</div>
       {data.length < 2 ? (
-        <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: '0.75rem' }}>{t('not_enough_data')}</div>
+        <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--sp-5)', fontSize: 'var(--fs-sm)' }}>{t('not_enough_data')}</div>
       ) : (
         <ResponsiveContainer width="100%" height={150}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} />
-            <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} width={45} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+            <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
+            <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
             <Tooltip content={<CustomTooltip />} />
             <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 2, fill: color }} />
           </LineChart>
@@ -321,28 +342,76 @@ export default function ChartPage() {
       <div className="chart-section">
         <div className="chart-title">{t('trend_overview')}</div>
         <div className="chart-subtitle">{t('unit')} {primaryCurrency}</div>
+        {unitNavSummary.series.length >= 1 && (
+          <div className="chart-card" style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <span style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)' }}>
+                🧭 {t('chart_unit_nav_title')}
+              </span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                {t('chart_unit_nav_subtitle')}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--sp-2)', marginBottom: unitNavData.length >= 2 ? 'var(--sp-2)' : 0 }}>
+              <div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_latest')}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-xl)' }}>
+                  {unitNavSummary.latestNav.toFixed(4)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_return')}</div>
+                <div style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 'var(--fw-bold)',
+                  fontSize: 'var(--fs-xl)',
+                  color: unitNavSummary.cumulativeReturnPercent >= 0 ? themeColors.assetColor : themeColors.liabilityColor,
+                }}>
+                  {unitNavSummary.cumulativeReturnPercent >= 0 ? '+' : ''}{unitNavSummary.cumulativeReturnPercent.toFixed(2)}%
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_drawdown')}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-xl)', color: 'var(--text-secondary)' }}>
+                  -{unitNavSummary.maxDrawdownPercent.toFixed(2)}%
+                </div>
+              </div>
+            </div>
+            {unitNavData.length >= 2 && (
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={unitNavData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                  <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
+                  <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
+                  <ReferenceLine y={1} stroke="var(--border-active)" strokeDasharray="3 3" />
+                  <Line type="monotone" dataKey={navLabel} stroke="var(--asset-color)" strokeWidth={2} dot={{ r: 2, fill: 'var(--asset-color)' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        )}
         {renderMiniChart(totalAssetsData, t('total_assets_val'), themeColors.assetColor, `📈 ${t('total_assets_val')}`)}
-        {renderMiniChart(netWorthData, t('net_worth_val'), '#818cf8', `💎 ${t('net_worth_val')}`)}
+        {renderMiniChart(netWorthData, t('net_worth_val'), 'var(--cat-1)', `💎 ${t('net_worth_val')}`)}
 
         {/* Per-category breakdown */}
         <div className="chart-card" style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-2)', color: 'var(--text-secondary)' }}>
             📊 {t('by_category')}
           </div>
           {breakdownData.length < 2 ? (
-            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: '0.75rem' }}>{t('not_enough_data')}</div>
+            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--sp-5)', fontSize: 'var(--fs-sm)' }}>{t('not_enough_data')}</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={breakdownData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} />
-                <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} width={45} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
+                <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
                 <Tooltip content={<CustomTooltip />} />
                 {breakdownKeys.map((key, i) => (
                   <Line key={key} type="monotone" dataKey={t(key)}
                     stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ r: 2, fill: COLORS[i % COLORS.length] }} />
                 ))}
-                <Legend wrapperStyle={{ fontSize: '0.6875rem' }} />
+                <Legend wrapperStyle={{ fontSize: 'var(--fs-xs)' }} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -356,16 +425,16 @@ export default function ChartPage() {
           <div className="chart-subtitle">{t('unit')} {primaryCurrency} · {t('monthly_pnl_hint')}</div>
           <div className="chart-card">
             {monthlyPnlView.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 20, fontSize: '0.75rem' }}>{t('no_data')}</div>
+              <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--sp-5)', fontSize: 'var(--fs-sm)' }}>{t('no_data')}</div>
             ) : (
               <>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={monthlyPnlView}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis dataKey="month" tickFormatter={(m: string) => m.slice(2)} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} />
-                    <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: '0.625rem' }} width={45} />
-                    <Tooltip content={<PnlTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                    <XAxis dataKey="month" tickFormatter={(m: string) => m.slice(2)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
+                    <YAxis tickFormatter={(v: number) => amountVisible ? fmt(v) : '****'} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
+                    <Tooltip content={<PnlTooltip />} cursor={{ fill: 'var(--border-subtle)' }} />
+                    <ReferenceLine y={0} stroke="var(--border)" />
                     <Bar dataKey="realized" radius={[3, 3, 0, 0]}>
                       {monthlyPnlView.map((d, i) => (
                         <Cell key={i} fill={d.realized >= 0 ? themeColors.assetColor : themeColors.liabilityColor} />
@@ -373,9 +442,9 @@ export default function ChartPage() {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: '0.8125rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--sp-2)', fontSize: 'var(--fs-md)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>{t('realized_pnl_total')}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: monthlyPnlTotal >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', color: monthlyPnlTotal >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>
                     {masked((monthlyPnlTotal >= 0 ? '+' : '') + fmt(monthlyPnlTotal))}
                   </span>
                 </div>
@@ -390,7 +459,7 @@ export default function ChartPage() {
         <div className="chart-title">{t('asset_allocation')}</div>
         <div className="chart-card">
           {productPieFinal.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40, fontSize: '0.8125rem' }}>{t('no_data')}</div>
+            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--sp-8)', fontSize: 'var(--fs-md)' }}>{t('no_data')}</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={240}>
@@ -406,11 +475,11 @@ export default function ChartPage() {
                 {productPieFinal.map((d, i) => {
                   const total = productPieFinal.reduce((s, x) => s + x.value, 0);
                   return (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: '0.8125rem' }}>
+                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', padding: 'var(--sp-1) 0', fontSize: 'var(--fs-md)' }}>
                       <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
                       <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{d.name}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(d.value))}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-1)' }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)' }}>{masked(fmt(d.value))}</span>
                     </div>
                   );
                 })}
@@ -438,11 +507,11 @@ export default function ChartPage() {
               {institutionPieData.map((d, i) => {
                 const total = institutionPieData.reduce((s, x) => s + x.value, 0);
                 return (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: '0.8125rem' }}>
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', padding: 'var(--sp-1) 0', fontSize: 'var(--fs-md)' }}>
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[(i + 6) % COLORS.length], flexShrink: 0 }} />
                     <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{d.name}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(d.value))}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-1)' }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)' }}>{masked(fmt(d.value))}</span>
                   </div>
                 );
               })}
@@ -456,7 +525,7 @@ export default function ChartPage() {
         <div className="chart-title">{t('currency_allocation')}</div>
         <div className="chart-card">
           {currencyPieFinal.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 40, fontSize: '0.8125rem' }}>{t('no_data')}</div>
+            <div style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--sp-8)', fontSize: 'var(--fs-md)' }}>{t('no_data')}</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={240}>
@@ -472,11 +541,11 @@ export default function ChartPage() {
                 {currencyPieFinal.map((d, i) => {
                   const total = currencyPieFinal.reduce((s, x) => s + x.value, 0);
                   return (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: '0.8125rem' }}>
+                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', padding: 'var(--sp-1) 0', fontSize: 'var(--fs-md)' }}>
                       <span style={{ width: 10, height: 10, borderRadius: '50%', background: COLORS[(i + 3) % COLORS.length], flexShrink: 0 }} />
                       <span style={{ flex: 1, color: 'var(--text-secondary)' }}>{d.name}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginRight: 4 }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(d.value))}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-1)' }}>{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)' }}>{masked(fmt(d.value))}</span>
                     </div>
                   );
                 })}

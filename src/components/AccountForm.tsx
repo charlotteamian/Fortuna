@@ -1,4 +1,3 @@
-import type React from 'react';
 import { useState } from 'react';
 import { createAccount, addRecord, addMetalTransaction } from '../services/assetService';
 import { type Settings, METAL_TYPES } from '../db';
@@ -112,10 +111,10 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
 
         {/* Type toggle */}
         <div className="form-group">
-          <div style={S.typeRow}>
-            <button type="button" style={{ ...S.typeBtn, ...(type === 'asset' ? { background: 'var(--asset-color)', color: 'var(--theme-on-asset)' } : S.typeBtnInactive) }}
+          <div className="segmented">
+            <button type="button" className={type === 'asset' ? 'active' : ''}
               onClick={() => handleTypeChange('asset')}>{t('assets')}</button>
-            <button type="button" style={{ ...S.typeBtn, ...(type === 'liability' ? { background: 'var(--liability-color)', color: 'var(--theme-on-liability)' } : S.typeBtnInactive) }}
+            <button type="button" className={type === 'liability' ? 'active liability' : ''}
               onClick={() => handleTypeChange('liability')}>{t('liabilities')}</button>
           </div>
         </div>
@@ -123,10 +122,10 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         {/* Category chips */}
         <div className="form-group">
           <label className="form-label">{t('category')}</label>
-          <div style={S.chipRow}>
+          <div className="chip-group">
             {cats.map(c => (
               <button type="button" key={c.name}
-                style={{ ...S.chip, ...(category === c.name ? S.chipActive : {}) }}
+                className={`chip${category === c.name ? ' active' : ''}`}
                 onClick={() => handleCategoryChange(c.name)}>
                 {t(c.name)}
               </button>
@@ -139,14 +138,14 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         {supportsPortfolio && (
           <div className="form-group">
             <label className="form-label">{t('manage_mode')}</label>
-            <div style={S.typeRow}>
-              <button style={{ ...S.typeBtn, ...(portfolioMode ? { background: 'var(--asset-color)', color: '#000' } : S.typeBtnInactive) }}
+            <div className="segmented">
+              <button className={portfolioMode ? 'active' : ''}
                 onClick={() => setPortfolioMode(true)}>{t('mode_portfolio')}</button>
-              <button style={{ ...S.typeBtn, ...(!portfolioMode ? { background: 'var(--asset-color)', color: '#000' } : S.typeBtnInactive) }}
+              <button className={!portfolioMode ? 'active' : ''}
                 onClick={() => setPortfolioMode(false)}>{t('mode_single')}</button>
             </div>
             {portfolioMode && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+              <div className="form-hint" style={{ marginTop: 8 }}>
                 {t('portfolio_hint')}
               </div>
             )}
@@ -190,16 +189,16 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         </div>
 
         {isMetal && (
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 16, padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 8 }}>
+          <div className="form-hint" style={{ marginBottom: 16 }}>
             {t('metal_hint', { currency })}
-            <div style={{ marginTop: 4 }}>{t('metal_channel_hint')}</div>
+            <div>{t('metal_channel_hint')}</div>
           </div>
         )}
 
         {/* Metal quick-add: initial holding (optional) */}
         {isMetal && (
           <>
-            <div style={S.divider}><span style={S.dividerText}>{t('metal_initial_position')}</span></div>
+            <div className="divider"><span className="divider-text">{t('metal_initial_position')}</span></div>
             <div className="form-group">
               <label className="form-label">{t('grams_label')}</label>
               <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
@@ -211,9 +210,9 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
                 placeholder={t('cost_price_optional')} value={metalCost} onChange={e => setMetalCost(e.target.value)} />
             </div>
             {metalGrams && metalCost && !isNaN(parseFloat(metalGrams)) && !isNaN(parseFloat(metalCost)) && parseFloat(metalGrams) > 0 && parseFloat(metalCost) > 0 && (
-              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>{t('grams_label')} × {t('cost_price')}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
+              <div className="form-calculation">
+                <span>{t('grams_label')} × {t('cost_price')}</span>
+                <span>
                   {(parseFloat(metalGrams) * parseFloat(metalCost)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency}
                 </span>
               </div>
@@ -224,15 +223,15 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         {/* Category-specific product fields */}
         {renderedExtraFields.length > 0 && (
           <>
-            <div style={S.divider}><span style={S.dividerText}>{t('product_info')}</span></div>
+            <div className="divider"><span className="divider-text">{t('product_info')}</span></div>
             {renderedExtraFields.map(field => (
               <div className="form-group" key={field.key}>
                 <label className="form-label">{field.label}</label>
                 {field.options ? (
-                  <div style={S.optionRow}>
+                  <div className="chip-group">
                     {field.options.map(optVal => (
                       <button type="button" key={optVal}
-                        style={{ ...S.optBtn, ...(productData[field.key] === optVal ? S.optBtnActive : {}) }}
+                        className={`chip${productData[field.key] === optVal ? ' active' : ''}`}
                         onClick={() => setField(field.key, productData[field.key] === optVal ? '' : optVal)}>
                         {optVal}
                       </button>
@@ -252,7 +251,7 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
         {/* Unit-product quick-add: initial position (single-product mode only) */}
         {isUnitProduct && !isPortfolio && (
           <>
-            <div style={S.divider}><span style={S.dividerText}>{t('initial_position')}</span></div>
+            <div className="divider"><span className="divider-text">{t('initial_position')}</span></div>
             <div className="form-group">
               <label className="form-label">{t('shares')}</label>
               <input className="form-input mono" type="number" inputMode="decimal" step="1" min="0"
@@ -264,9 +263,9 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
                 value={initPrice} onChange={e => setInitPrice(e.target.value)} />
             </div>
             {initShares && initPrice && !isNaN(parseFloat(initShares)) && !isNaN(parseFloat(initPrice)) && parseFloat(initShares) > 0 && parseFloat(initPrice) > 0 && (
-              <div style={{ background: 'var(--bg-glass)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>{t('market_value')} = {t('shares')} × {t('price_per_share')}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--asset-color)' }}>
+              <div className="form-calculation">
+                <span>{t('market_value')} = {t('shares')} × {t('price_per_share')}</span>
+                <span>
                   {(parseFloat(initShares) * parseFloat(initPrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -299,16 +298,3 @@ export default function AccountForm({ settings, onClose, onCreated }: Props) {
   );
 }
 
-const S: Record<string, React.CSSProperties> = {
-  typeRow: { display: 'flex', gap: 8 },
-  typeBtn: { flex: 1, padding: '10px', borderRadius: 12, border: 'none', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' },
-  typeBtnInactive: { background: 'var(--bg-glass)', color: 'var(--text-secondary)', border: '1px solid var(--border)' },
-  chipRow: { display: 'flex', flexWrap: 'wrap', gap: 6 },
-  chip: { padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 },
-  chipActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
-  divider: { display: 'flex', alignItems: 'center', margin: '4px 0 12px', gap: 8 },
-  dividerText: { fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' },
-  optionRow: { display: 'flex', flexWrap: 'wrap', gap: 6 },
-  optBtn: { padding: '5px 11px', borderRadius: 20, border: '1px solid var(--border)', background: 'var(--bg-glass)', color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' },
-  optBtnActive: { background: 'var(--asset-dim)', border: '1px solid var(--asset-color)', color: 'var(--asset-color)', fontWeight: 600 },
-};

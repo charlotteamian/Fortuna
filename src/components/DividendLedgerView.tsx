@@ -37,13 +37,13 @@ export default function DividendLedgerView({ ledger, base }: { ledger: DividendL
         <div><dt>{t('div_ledger_bonus_per_10')}</dt><dd>{shares(event.bonusPer10Bps)}</dd></div><div><dt>{t('div_ledger_transfer_per_10')}</dt><dd>{shares(event.transferPer10Bps)}</dd></div>
         <div><dt>{t('div_ledger_share_factor')}</dt><dd>{event.shareFactor === undefined ? t('div_ledger_pending') : `×${number(event.shareFactor)}`}</dd></div></dl>
       {event.issues.length > 0 && <ul className="div-ledger-issues">{issueLabels(event.issues).map(key => <li key={key}>{t(key)}</li>)}</ul>}
-      <div className="div-ledger-sources"><span>{t('div_ledger_sources')}</span><ul>{event.sources.map((source, index) => {
+      {(event.verification === 'conflict' || event.issues.length > 0) && <div className="div-ledger-sources"><span>{t('div_ledger_sources')}</span><ul>{event.sources.map((source, index) => {
         const href = sourceUrl(source.url), label = t(`div_ledger_source_${source.provider}`);
         return <li key={`${source.provider}-${index}`}>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{label}</a> : <span>{label} · {t('div_ledger_source_unavailable')}</span>}
           <small>{t('div_ledger_source_announcement', { date: source.announcementDate ?? t('div_ledger_pending') })}</small>
           <small>{t('div_ledger_source_verified', { date: source.verifiedAt ?? t('div_ledger_pending') })}</small>
         </li>;
-      })}</ul>{!event.sources.length && <p>{t('div_ledger_source_unavailable')}</p>}</div>
+      })}</ul>{!event.sources.length && <p>{t('div_ledger_source_unavailable')}</p>}</div>}
     </li>;
   };
   return <section className="div-ledger" aria-label={t('div_ledger_title')}>

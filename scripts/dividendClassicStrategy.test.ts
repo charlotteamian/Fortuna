@@ -161,3 +161,60 @@ test('buildClassicStockPlan: calculates 4-buy and 4-sell grid prices, triggers, 
   assert.ok(plan.todayAction.suggestedShares > 0);
   assert.equal(plan.healthChecks.length, 3);
 });
+
+test('resolveClassicDividendBase: guards against 18-month first-time interim transition, standalone interim halving, split dilution, and cyclical peaks', () => {
+  // 1. First-time interim transition: 2023FY + 2024FY (no 2024H1) + 2025H1 -> uses 2024FY (12M), not 2024FY+2025H1 (18M)
+  const transitionStock = makeStock({
+    code: '600900',
+    name: '长江电力',
+    dividend: {
+      dpsMicros: 1_000_000,
+      date: '2025-10-15',
+      payments: [],
+      announcements: [
+        { reportDate: '2025-06-30', period: 'H1', dpsMicros: 210_000, announcedAt: '2025-08-30', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2025-10-15' },
+        { reportDate: '2024-12-31', period: 'FY', dpsMicros: 943_000, announcedAt: '2025-04-30', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2025-07-10' },
+        { reportDate: '2023-12-31', period: 'FY', dpsMicros: 820_000, announcedAt: '2024-04-30', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2024-07-10' },
+      ],
+    },
+  });
+  const transitionBase = resolveClassicDividendBase(transitionStock, { asOf: '2025-11-01', taxBps: 1000 });
+  assert.equal(transitionBase.grossDpsMicros, 943_000);
+  assert.equal(transitionBase.batches.length, 1);
+
+  // 2. Standalone interim H1 without FY falls through to full-year proposal/baseline instead of halving the annual DPS
+  const standaloneInterim = makeStock({
+    code: '600900',
+    name: '长江电力',
+    dividend: {
+      dpsMicros: 0,
+      date: '2025-10-15',
+      payments: [],
+      announcements: [
+        { reportDate: '2025-06-30', period: 'H1', dpsMicros: 210_000, announcedAt: '2025-08-30', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2025-10-15' },
+      ],
+    },
+  });
+  const standaloneBase = resolveClassicDividendBase(standaloneInterim, { asOf: '2025-11-01', taxBps: 1000 });
+  assert.equal(standaloneBase.grossDpsMicros, 943_000);
+
+  // 3. Cyclical peak dividend auto-smoothing (3-year mean when latest > 1.3x 3-year mean)
+  const cyclicalStock = makeStock({
+    code: '601088',
+    name: '中国神华',
+    dividend: {
+      dpsMicros: 3_200_000,
+      date: '2025-07-10',
+      payments: [],
+      announcements: [
+        { reportDate: '2024-12-31', period: 'FY', dpsMicros: 3_600_000, announcedAt: '2025-03-28', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2025-07-10' },
+        { reportDate: '2023-12-31', period: 'FY', dpsMicros: 1_500_000, announcedAt: '2024-03-28', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2024-07-10' },
+        { reportDate: '2022-12-31', period: 'FY', dpsMicros: 1_500_000, announcedAt: '2023-03-28', stage: 'implemented', status: '实施', sourceUrl: 'https://data.eastmoney.com', exDate: '2023-07-10' },
+      ],
+    },
+  });
+  const cyclicalBase = resolveClassicDividendBase(cyclicalStock, { asOf: '2025-08-01', taxBps: 1000 });
+  // (3.60 + 1.50 + 1.50) / 3 = 2.20 yuan (2,200,000 micros)
+  assert.equal(cyclicalBase.grossDpsMicros, 2_200_000);
+  assert.match(cyclicalBase.periodLabel, /近3年均值平滑/);
+});

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  computeFundingWaterfall,
   getTargetRefKeys,
   majorToMinor,
   parsePlannedPurchases,
@@ -134,4 +135,21 @@ test('purchase plans start on new lines while punctuation stays inside each plan
     parsePlannedPurchases('  平安银行，等股息率达标；分批买入。\r\n\r\n沪深300 ETF、黄金，分别观察。  \r招商银行, review; do not rush.\u2028VOO: monthly.\u2029'),
     ['平安银行，等股息率达标；分批买入。', '沪深300 ETF、黄金，分别观察。', '招商银行, review; do not rush.', 'VOO: monthly.'],
   );
+});
+
+test('computeFundingWaterfall prioritizes idle cash, then overweight trims, then lower-priority buckets bottom-up', () => {
+  const buckets = [
+    { id: 'equity', name: 'A股红利', currentValue: 40_000, targetValue: 60_000 }, // underweight by 20,000
+    { id: 'gold', name: '黄金', currentValue: 25_000, targetValue: 20_000 },     // overweight by 5,000
+    { id: 'bond', name: '债券理财', currentValue: 18_000, targetValue: 20_000 }, // lower priority
+  ];
+  const waterfall = computeFundingWaterfall(buckets, 'equity', { idleCash: 3_000 });
+  assert.equal(waterfall.requiredAmount, 20_000);
+  assert.equal(waterfall.coveredAmount, 20_000);
+  assert.equal(waterfall.shortfallAmount, 0);
+  assert.deepEqual(waterfall.steps, [
+    { sourceType: 'idle_cash', amount: 3_000 },
+    { sourceType: 'overweight_trim', bucketId: 'gold', bucketName: '黄金', amount: 5_000 },
+    { sourceType: 'lower_priority_redeem', bucketId: 'bond', bucketName: '债券理财', amount: 12_000 },
+  ]);
 });

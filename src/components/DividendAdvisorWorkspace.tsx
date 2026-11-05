@@ -78,12 +78,12 @@ function StockResearch({ stock, snapshot, savedStock, check: loadedCheck, amount
               {!annual && period.roeBasis === 'annualised_ytd' && period.roePeriodMonths && period.roeBps !== undefined && roe !== undefined && <p>{t('div_ai_financial_roe_annualised_help', { months: period.roePeriodMonths, reported: `${period.roeBps / 100}%`, annualised: `${roe / 100}%` })}</p>}
               {period.noticeDate && <small>{t('div_ai_financial_published', { date: period.noticeDate })}</small>}
             </li>; })}</ul></details>}
-          <details className="div-ai-evidence-section"><summary>{t('div_ai_research_sources')}</summary><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
+          {stock.issues.length > 0 && <details className="div-ai-evidence-section"><summary>{t('div_ai_research_sources')}</summary><ul className="div-ai-sources">{stock.sources.map((source, index) => <li key={index}>
             <a href={source.url} target="_blank" rel="noopener noreferrer">{source.provider} · {t(`div_ai_source_${source.kind}`)}</a><small>{source.asOf ?? new Date(source.fetchedAt).toLocaleDateString()}</small>
-          </li>)}</ul>{stock.issues.length > 0 && <ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>
+          </li>)}</ul><ul className="div-ai-fetch-issues">{stock.issues.map((issue, index) => <li key={index}><strong>{t(`div_ai_source_${issue.kind}`)} · {t(`div_ai_issue_${issue.reason}`)}</strong>
             {issue.attempts !== undefined && <span>{t('div_ai_issue_attempts', { count: issue.attempts })}</span>}{issue.detail && <code>{issue.detail}</code>}
             <p>{t(`div_ai_issue_help_${issue.kind}`)}</p>{issue.url?.startsWith('https://') && <a href={issue.url} target="_blank" rel="noopener noreferrer">{t('div_ai_issue_open_failed_source')}</a>}
-          </li>)}</ul>}</details>
+          </li>)}</ul></details>}
           <p className="div-ai-muted">{t('div_v2_review_evidence_scope')}</p>
           {(stock.status === 'unknown' || stock.issues.length > 0) && <div className="div-ai-evidence-help"><strong>{t('div_ai_evidence_help_title')}</strong><p>{t('div_ai_evidence_help_detail')}</p><div className="div-ai-help-links">
             <a href={`https://data.eastmoney.com/stockdata/${stock.code}.html`} target="_blank" rel="noopener noreferrer">{t('div_ai_open_financial_source')}</a><a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>

@@ -47,7 +47,7 @@ export function DividendFinancialReviewCard({ review, code }: { review: Dividend
       {metric.capitalInputs && <p>{t('div_ai_financial_capital_inputs', { roe: pct(metric.capitalInputs.roeBps), payout: pct(metric.capitalInputs.payoutBps), growth: pct(metric.capitalInputs.rwaGrowthBps) })}</p>}
       {review.reportSupplement && ['comprehensiveSolvency', 'coreSolvency'].includes(metric.key) && <p>{t('div_ai_financial_report_metric_basis')}</p>}
       {metric.changeBps !== undefined && <p>{t('div_ai_financial_yoy_change', { value: `${metric.changeBps > 0 ? '+' : ''}${(metric.changeBps / 100).toFixed(2)}` })}</p>}
-      {(metric.sourceUrls ?? []).filter(url => url.startsWith('https://')).length > 0 && <div className="div-ai-help-links">{metric.sourceUrls!.filter(url => url.startsWith('https://')).map((url, index) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_original_report_source', { index: index + 1 })}</a>)}</div>}
+      {metric.status !== 'pass' && (metric.sourceUrls ?? []).filter(url => url.startsWith('https://')).length > 0 && <div className="div-ai-help-links">{metric.sourceUrls!.filter(url => url.startsWith('https://')).map((url, index) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_original_report_source', { index: index + 1 })}</a>)}</div>}
     </li>)}</ul></section>)}
     {review.missing.map(item => <p className="div-ai-muted" key={item}>{t(`div_ai_financial_missing_${item}`, { defaultValue: t('div_ai_financial_missing_other') })}</p>)}
     {review.sector === 'bank' && review.missing.some(item => ['specialMentionLoans', 'overdue90DaysDeviation', 'internalCapitalCapacity'].includes(item)) && <p className="div-ai-muted">{t('div_ai_financial_bank_evidence_gap')}</p>}
@@ -55,12 +55,12 @@ export function DividendFinancialReviewCard({ review, code }: { review: Dividend
     {review.reportSupplement && <div className="div-ai-auto-summary"><strong>{t('div_ai_financial_report_extract')}</strong>
       <p>{t('div_ai_financial_report_dates', { report: review.reportSupplement.reportDate, published: review.reportSupplement.publishedAt, verified: review.reportSupplement.verifiedAt, pages: review.reportSupplement.pdfPages.join('、') })}</p>
       <p>{t('div_ai_financial_insurance_rating_not_applicable')}</p>
-      <a href={`${review.reportSupplement.sourceUrl}#page=${review.reportSupplement.pdfPages[0]}`} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_original_pdf')}</a>
+      {review.status !== 'pass' && <a href={`${review.reportSupplement.sourceUrl}#page=${review.reportSupplement.pdfPages[0]}`} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_original_pdf')}</a>}
     </div>}
-    <div className="div-ai-help-links"><a href={review.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_review_source')}</a>
+    {review.status !== 'pass' && <div className="div-ai-help-links"><a href={review.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_review_source')}</a>
       <a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>
       {review.policySourceUrls.map((url, index) => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{t('div_ai_financial_policy_source', { index: index + 1 })}</a>)}
-    </div>
+    </div>}
   </section>;
 }
 
@@ -167,13 +167,13 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
     {pricing.theoreticalPriceMinor !== undefined && <p className="div-ai-muted">{t('div_classic_neutral', { price: yuan(pricing.theoreticalPriceMinor) })} · {t('div_classic_neutral_help')}</p>}
     {groups.filter(group => group.issues.length > 0).map(group => <section className="div-ai-pricing-gap-list" key={group.title}><h4>{t(group.title)}</h4><ul>{group.issues.map(issue => <PricingGap key={issue} blocker={issue} code={code} />)}</ul></section>)}
     <p className="div-ai-muted">{t('div_classic_update_rule')}</p><p className="div-ai-muted">{t('div_classic_evidence_help')}</p>
-    {dividendSources.length > 0 && <div className="div-ai-help-links">{dividendSources.map((url, index) => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{t('div_classic_source', { index: index + 1 })}</a>)}</div>}
+    {(pricing.blockers.length > 0 || (base && !base.verified)) && dividendSources.length > 0 && <div className="div-ai-help-links">{dividendSources.map((url, index) => <a href={url} key={url} target="_blank" rel="noopener noreferrer">{t('div_classic_source', { index: index + 1 })}</a>)}</div>}
     <dl className="div-ai-metrics"><div><dt>{t('div_v2_pricing_current_pb')}</dt><dd>{pricing.currentPbBps === undefined ? '—' : (pricing.currentPbBps / 10000).toFixed(2)}</dd></div>
       <div><dt>{t('div_classic_roe')}</dt><dd>{pct(pricing.meanRoeBps)}</dd></div>
       <div><dt>{t('div_classic_spread')}</dt><dd>{pct(pricing.currentSpreadBps)}</dd></div>
       <div><dt>{t('div_v2_pricing_spread_percentile')}</dt><dd>{pct(pricing.spreadPercentileBps)}</dd></div></dl>
     {pricing.treasury && <p className="div-ai-muted">{t('div_v2_pricing_treasury_date', { yield: pct(pricing.treasury.yieldBps), date: pricing.treasury.asOf })}</p>}
-    {pricing.opportunity && <p className="div-ai-muted">{t('div_v2_pricing_opportunity_evidence', { yield: pct(pricing.opportunity.yieldBps), date: pricing.opportunity.asOf })} · {pricing.opportunity.sourceUrl.startsWith('https://') ? <a href={pricing.opportunity.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_v2_opportunity_reference')}</a> : pricing.opportunity.sourceUrl}</p>}
+    {pricing.opportunity && <p className="div-ai-muted">{t('div_v2_pricing_opportunity_evidence', { yield: pct(pricing.opportunity.yieldBps), date: pricing.opportunity.asOf })}{(pricing.blockers.includes('opportunity_cost_missing') || pricing.blockers.includes('opportunity_cost_stale')) && pricing.opportunity.sourceUrl.startsWith('https://') && <> · <a href={pricing.opportunity.sourceUrl} target="_blank" rel="noopener noreferrer">{t('div_v2_opportunity_reference')}</a></>}</p>}
     {pricing.history && <p className="div-ai-muted">{t('div_batch_history_prices', { from: pricing.history.priceFrom ?? pricing.history.from, through: pricing.history.priceThrough ?? pricing.history.through, count: pricing.history.priceSampleCount ?? pricing.history.samples.length })}</p>}
     {pricing.historyCoverage && <><p className="div-ai-muted">{t('div_batch_history_verified', { count: pricing.historyCoverage.sampleCount, from: pricing.historyCoverage.from ?? '—', through: pricing.historyCoverage.through ?? '—' })}</p>
       <ul className="div-ai-muted">{pricing.historyCoverage.reasons.map(reason => <li key={reason}>{t(`div_batch_history_${reason}`)}</li>)}</ul></>}

@@ -3,13 +3,13 @@
 }
 
 .div-classic-advice .div-advisor-markdown {
-  font-size: .9375rem;
-  line-height: 1.65;
+  font-size: var(--fs-xl);
+  line-height: var(--lh-relaxed);
 }
 
 .div-classic-advice .div-advisor-markdown h3 {
   margin: 1em 0 .25em;
-  font-size: 1rem;
+  font-size: var(--fs-2xl);
 }
 
 .div-classic-advice .div-advisor-markdown ul {
@@ -22,16 +22,16 @@
 }
 
 .div-classic-advice-explanation {
-  margin-block-start: 1rem;
-  padding-block-start: .75rem;
+  margin-block-start: var(--sp-4);
+  padding-block-start: var(--sp-3);
   border-top: 1px solid var(--border);
 }
 
 .div-classic-advice-explanation summary {
   cursor: pointer;
-  font-weight: 650;
-  padding-block: .35rem;
-  margin-block-end: .35rem;
+  font-weight: var(--fw-semibold);
+  padding-block: var(--sp-1);
+  margin-block-end: var(--sp-1);
 }
 
 .div-classic-advice-question {

@@ -161,3 +161,127 @@ export function parsePlannedPurchases(text?: string): string[] {
     .map(item => item.trim())
     .filter(Boolean);
 }
+
+export interface FundingWaterfallBucket {
+  id: string;
+  name: string;
+  currentValue: number;
+  targetValue: number;
+}
+
+export interface FundingWaterfallStep {
+  sourceType: 'idle_cash' | 'overweight_trim' | 'lower_priority_redeem';
+  bucketId?: string;
+  bucketName?: string;
+  amount: number;
+}
+
+export interface FundingWaterfallResult {
+  targetBucketId: string;
+  targetBucketName: string;
+  requiredAmount: number;
+  coveredAmount: number;
+  shortfallAmount: number;
+  steps: FundingWaterfallStep[];
+}
+
+/**
+ * Computes an automatic funding waterfall for an underweight allocation bucket
+ * using the existing top-to-bottom bucket order as priority (top = highest priority
+ * to keep/buy; bottom = lowest priority, sold first when raising funds):
+ * 1. Use unallocated / idle cash first.
+ * 2. Trim overweight amounts from other buckets (from lowest priority upward).
+ * 3. Redeem remaining value from lower-priority buckets (from bottom upward).
+ */
+export function computeFundingWaterfall(
+  items: readonly FundingWaterfallBucket[],
+  targetBucketId: string,
+  options: { requiredAmount?: number; idleCash?: number } = {},
+): FundingWaterfallResult {
+  const targetIndex = items.findIndex(item => item.id === targetBucketId);
+  if (targetIndex < 0) {
+    return {
+      targetBucketId,
+      targetBucketName: '',
+      requiredAmount: 0,
+      coveredAmount: 0,
+      shortfallAmount: 0,
+      steps: [],
+    };
+  }
+  const target = items[targetIndex];
+  const rawRequired = options.requiredAmount ?? Math.max(0, finiteOrZero(target.targetValue) - finiteOrZero(target.currentValue));
+  const requiredAmount = Math.round(Math.max(0, finiteOrZero(rawRequired)) * 100) / 100;
+  if (requiredAmount < 0.01) {
+    return {
+      targetBucketId: target.id,
+      targetBucketName: target.name,
+      requiredAmount: 0,
+      coveredAmount: 0,
+      shortfallAmount: 0,
+      steps: [],
+    };
+  }
+
+  let remaining = requiredAmount;
+  const steps: FundingWaterfallStep[] = [];
+  const takenByIndex = items.map(() => 0);
+
+  // Step 1: Idle / unplanned cash
+  const availableIdle = Math.round(Math.max(0, finiteOrZero(options.idleCash ?? 0)) * 100) / 100;
+  if (availableIdle >= 0.01 && remaining >= 0.01) {
+    const used = Math.min(remaining, availableIdle);
+    steps.push({ sourceType: 'idle_cash', amount: Math.round(used * 100) / 100 });
+    remaining = Math.round((remaining - used) * 100) / 100;
+  }
+
+  // Step 2: Overweight trim (lowest-priority buckets first, then any other overweight bucket)
+  const trimOrder = [
+    ...Array.from({ length: items.length - targetIndex - 1 }, (_, k) => items.length - 1 - k),
+    ...Array.from({ length: targetIndex }, (_, k) => targetIndex - 1 - k),
+  ];
+  for (const idx of trimOrder) {
+    if (remaining < 0.01) break;
+    const bucket = items[idx];
+    const overweight = Math.round(Math.max(0, finiteOrZero(bucket.currentValue) - finiteOrZero(bucket.targetValue)) * 100) / 100;
+    if (overweight >= 0.01) {
+      const used = Math.min(remaining, overweight);
+      takenByIndex[idx] += used;
+      steps.push({
+        sourceType: 'overweight_trim',
+        bucketId: bucket.id,
+        bucketName: bucket.name,
+        amount: Math.round(used * 100) / 100,
+      });
+      remaining = Math.round((remaining - used) * 100) / 100;
+    }
+  }
+
+  // Step 3: Lower-priority bucket principal redemption (bottom-up, only buckets below targetIndex)
+  for (let idx = items.length - 1; idx > targetIndex; idx--) {
+    if (remaining < 0.01) break;
+    const bucket = items[idx];
+    const rest = Math.round(Math.max(0, finiteOrZero(bucket.currentValue) - takenByIndex[idx]) * 100) / 100;
+    if (rest >= 0.01) {
+      const used = Math.min(remaining, rest);
+      takenByIndex[idx] += used;
+      steps.push({
+        sourceType: 'lower_priority_redeem',
+        bucketId: bucket.id,
+        bucketName: bucket.name,
+        amount: Math.round(used * 100) / 100,
+      });
+      remaining = Math.round((remaining - used) * 100) / 100;
+    }
+  }
+
+  const coveredAmount = Math.round((requiredAmount - remaining) * 100) / 100;
+  return {
+    targetBucketId: target.id,
+    targetBucketName: target.name,
+    requiredAmount,
+    coveredAmount,
+    shortfallAmount: remaining,
+    steps,
+  };
+}

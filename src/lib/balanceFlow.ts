@@ -122,3 +122,79 @@ export function deriveBalanceTimeline(records: BalanceRecordLike[]): BalanceTime
     return { id: record.id, amount: balance, underflow };
   });
 }
+
+export interface PortfolioNavInputPoint {
+  date: string;
+  totalValue: number;
+  netFlow?: number;
+}
+
+export interface PortfolioNavSeriesPoint {
+  date: string;
+  nav: number;
+  cumulativeReturnPercent: number;
+  drawdownPercent: number;
+}
+
+export interface PortfolioNavSummary {
+  series: PortfolioNavSeriesPoint[];
+  latestNav: number;
+  cumulativeReturnPercent: number;
+  maxDrawdownPercent: number;
+}
+
+/**
+ * Computes Time-Weighted Fund Unit NAV (starting at 1.0000) across a timeline of
+ * portfolio valuations and external principal flows (deposits/withdrawals),
+ * eliminating principal flow distortion from return & drawdown metrics.
+ */
+export function computePortfolioUnitNav(points: readonly PortfolioNavInputPoint[]): PortfolioNavSummary {
+  const ordered = [...points]
+    .filter(point => Number.isFinite(point.totalValue) && point.totalValue >= 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const series: PortfolioNavSeriesPoint[] = [];
+  let shares = 0;
+  let nav = 1.0;
+  let peakNav = 1.0;
+  let maxDrawdownPercent = 0;
+
+  for (const point of ordered) {
+    const totalValue = Math.max(0, point.totalValue);
+    const netFlow = Number.isFinite(point.netFlow) ? (point.netFlow ?? 0) : 0;
+
+    if (shares <= 0) {
+      if (totalValue <= 0) continue;
+      nav = 1.0;
+      shares = totalValue / nav;
+    } else {
+      const preFlowValue = totalValue - netFlow;
+      if (preFlowValue > 0) {
+        nav = preFlowValue / shares;
+      }
+      const nextShares = shares + (nav > 0 ? netFlow / nav : 0);
+      shares = nextShares > 0 ? nextShares : totalValue > 0 && nav > 0 ? totalValue / nav : 0;
+    }
+
+    const roundedNav = Math.round(nav * 10000) / 10000;
+    if (roundedNav > peakNav) peakNav = roundedNav;
+    const drawdownPercent = peakNav > 0 ? Math.round(((peakNav - roundedNav) / peakNav) * 10000) / 100 : 0;
+    if (drawdownPercent > maxDrawdownPercent) maxDrawdownPercent = drawdownPercent;
+    const cumulativeReturnPercent = Math.round((roundedNav - 1) * 10000) / 100;
+
+    series.push({
+      date: point.date,
+      nav: roundedNav,
+      cumulativeReturnPercent,
+      drawdownPercent,
+    });
+  }
+
+  const latest = series.at(-1);
+  return {
+    series,
+    latestNav: latest?.nav ?? 1.0,
+    cumulativeReturnPercent: latest?.cumulativeReturnPercent ?? 0,
+    maxDrawdownPercent,
+  };
+}

@@ -1,5 +1,5 @@
-import type React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import './ProductsPage.css';
 import { getAccountsWithLatest, type AccountWithLatest } from '../services/assetService';
 import { initializeSettings, type Settings } from '../db';
 import { useTranslation } from 'react-i18next';
@@ -12,7 +12,7 @@ const COLORS = ['#818cf8','#34d399','#60a5fa','#c084fc','#fbbf24','#f472b6','#22
 
 export default function AccountPage() {
   const { t, i18n } = useTranslation();
-  const { theme, amountVisible } = useAppContext();
+  const { amountVisible } = useAppContext();
   const [acctData, setAcctData] = useState<{ accounts: AccountWithLatest[]; totalAssets: number; totalLiabilities: number; netWorth: number } | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -103,15 +103,15 @@ export default function AccountPage() {
   }
 
   return (
-    <div style={{ paddingBottom: 80 }}>
+    <div className="accounts-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('account_overview')}</h1>
           <p className="page-subtitle">{t('account_overview_subtitle')}</p>
         </div>
-        <div style={{ display: 'flex', gap: 6, flexDirection: 'column', alignItems: 'flex-end' }}>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t('total_assets')}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 700, color: theme.assetColor }}>{masked(fmt(acctData.totalAssets))}</div>
+        <div className="accounts-total">
+          <div className="accounts-total-label">{t('total_assets')}</div>
+          <div className="accounts-total-value">{masked(fmt(acctData.totalAssets))}</div>
         </div>
       </div>
       {acctData.accounts.some(account => isAccountIncludedInTotals(account) && account.conversionUnavailable) && (
@@ -120,9 +120,9 @@ export default function AccountPage() {
         </div>
       )}
 
-      <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="accounts-list">
         {visibleAccountCount === 0 && (
-          <div className="empty-state" style={{ padding: '2rem 1rem' }}>
+          <div className="empty-state" style={{ padding: 'var(--sp-8) var(--sp-4)' }}>
             <div className="empty-icon">🙈</div>
             <div className="empty-text">{t('all_accounts_hidden')}</div>
             <div className="empty-hint">{t('all_accounts_hidden_hint')}</div>
@@ -138,52 +138,50 @@ export default function AccountPage() {
           const initial = inst.replace(/[（(].*/, '').trim()[0] || '?';
 
           return (
-            <div key={inst} style={S.card}>
+            <div key={inst} className="inst-card">
               {/* Institution header */}
-              <button type="button" style={S.instHeader} onClick={() => toggle(inst)} aria-expanded={isExpanded}>
-                <div style={{ ...S.avatar, background: avatarColor + '22', color: avatarColor, border: `1.5px solid ${avatarColor}44` }}>
+              <button type="button" className="inst-header" onClick={() => toggle(inst)} aria-expanded={isExpanded}>
+                <div className="inst-avatar" style={{ background: avatarColor + '22', color: avatarColor, border: `1.5px solid ${avatarColor}44` }}>
                   {initial}
                 </div>
-                <div style={S.instInfo}>
-                  <span style={S.instName}>{inst}</span>
-                  <div style={S.instMeta}>
-                    {assetTotal > 0 && <span style={{ color: theme.assetColor, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{masked(fmt(assetTotal))}</span>}
-                    {liabTotal > 0 && <span style={{ color: theme.liabilityColor, fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>－{masked(fmt(liabTotal))}</span>}
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{t('item_count', { count: accounts.length })}</span>
+                <div className="inst-info">
+                  <span className="inst-name">{inst}</span>
+                  <div className="inst-meta">
+                    {assetTotal > 0 && <span className="inst-meta-amount" style={{ color: 'var(--asset-color)' }}>{masked(fmt(assetTotal))}</span>}
+                    {liabTotal > 0 && <span className="inst-meta-amount liability" style={{ color: 'var(--liability-color)' }}>－{masked(fmt(liabTotal))}</span>}
+                    <span className="inst-meta-count">{t('item_count', { count: accounts.length })}</span>
                   </div>
                 </div>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{isExpanded ? '▲' : '▼'}</span>
+                <span className="inst-caret">{isExpanded ? '▲' : '▼'}</span>
               </button>
 
               {/* Account list */}
               {isExpanded && (
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                <div className="inst-list">
                   {accounts.map(acct => {
-                    const catColor = acct.type === 'asset' ? theme.assetColor : theme.liabilityColor;
-                    const catDim = acct.type === 'asset' ? theme.assetDim : theme.liabilityDim;
+                    const catColor = acct.type === 'asset' ? 'var(--asset-color)' : 'var(--liability-color)';
+                    const catDim = acct.type === 'asset' ? 'var(--asset-dim)' : 'var(--liability-dim)';
                     const hasProductData = acct.productData && Object.keys(acct.productData).some(k => acct.productData![k]);
                     return (
-                      <div key={acct.id} style={S.acctItem}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{acct.name}</div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                                <span style={{ background: catDim, color: catColor, borderRadius: 8, padding: '1px 6px', fontSize: '0.68rem', fontWeight: 600 }}>{t(acct.category)}</span>
-                                {!isAccountIncludedInTotals(acct) && <span style={{ marginLeft: 5 }}>{t('excluded_from_totals_badge')}</span>}
-                                <span style={{ marginLeft: 5 }}>{acct.currency}</span>
-                              </div>
+                      <div key={acct.id} className="acct-item">
+                        <div className="acct-row">
+                          <div className="acct-main">
+                            <div className="acct-name">{acct.name}</div>
+                            <div className="acct-sub">
+                              <span className="acct-tag" style={{ background: catDim, color: catColor }}>{t(acct.category)}</span>
+                              {!isAccountIncludedInTotals(acct) && <span>{t('excluded_from_totals_badge')}</span>}
+                              <span>{acct.currency}</span>
                             </div>
                           </div>
-                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.875rem', fontWeight: 700, color: catColor }}>
+                          <div className="acct-figures">
+                            <div className="acct-amount" style={{ color: catColor }}>
                               {masked(acct.unit === 'gram'
                                 ? `${acct.latestAmount.toFixed(2)}g`
                                 : acct.latestAmount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
                               )}
                             </div>
                             {acct.currency !== settings?.primaryCurrency && (
-                              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                              <div className="acct-converted">
                                 {acct.conversionUnavailable ? t('conversion_unavailable') : `≈${masked(fmt(acct.convertedAmount))}`}
                               </div>
                             )}
@@ -194,11 +192,11 @@ export default function AccountPage() {
                           const labelMap: Record<string, string> = {};
                           fieldDefs.forEach(f => { labelMap[f.key] = f.label; });
                           return (
-                            <div style={S.dataGrid}>
+                            <div className="data-grid">
                               {Object.entries(acct.productData!).filter(([, v]) => v).slice(0, 4).map(([k, v]) => (
-                                <div key={k} style={S.dataCell}>
-                                  <span style={S.dataKey}>{labelMap[k] || k}</span>
-                                  <span style={S.dataVal}>{v}</span>
+                                <div key={k} className="data-cell">
+                                  <span className="data-key">{labelMap[k] || k}</span>
+                                  <span className="data-val">{v}</span>
                                 </div>
                               ))}
                             </div>
@@ -216,17 +214,3 @@ export default function AccountPage() {
     </div>
   );
 }
-
-const S: Record<string, React.CSSProperties> = {
-  card: { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' },
-  instHeader: { display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px', cursor: 'pointer', userSelect: 'none', width: '100%', border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left', font: 'inherit' },
-  avatar: { width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 700, flexShrink: 0 },
-  instInfo: { flex: 1, minWidth: 0 },
-  instName: { fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block' },
-  instMeta: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 },
-  acctItem: { padding: '10px 14px', borderTop: '1px solid var(--border)' },
-  dataGrid: { display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 6 },
-  dataCell: { display: 'flex', gap: 4, alignItems: 'center' },
-  dataKey: { fontSize: '0.68rem', color: 'var(--text-muted)' },
-  dataVal: { fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 },
-};

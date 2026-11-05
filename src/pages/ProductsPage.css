@@ -1,0 +1,120 @@
+/* ---- Account overview (ProductsPage) ----
+   The institution accordion, its avatars and the per-account data grid.
+   Every colour is either a theme token or the runtime-injected asset /
+   liability colour, so a theme switch recolours the whole page. */
+
+.accounts-page { padding-bottom: var(--sp-8); }
+
+.accounts-list {
+  padding: 0 var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+
+/* Right-aligned summary in the page header. */
+.accounts-total { display: flex; gap: var(--sp-1); flex-direction: column; align-items: flex-end; }
+.accounts-total-label { font-size: var(--fs-xs); color: var(--text-muted); }
+.accounts-total-value {
+  font-family: var(--font-mono); font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold); color: var(--asset-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.inst-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* The whole header row is the expand toggle — full-width, no default
+   button chrome, so it still reads as a row and not as a button. */
+.inst-header {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3);
+  width: 100%;
+  cursor: pointer; user-select: none;
+  border: none; background: transparent; color: inherit;
+  text-align: left; font: inherit;
+  transition: background-color var(--dur) ease;
+}
+.inst-header:hover { background: var(--bg-subtle); }
+
+.inst-avatar {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-lg); font-weight: var(--fw-bold);
+  flex-shrink: 0;
+}
+
+.inst-info { flex: 1; min-width: 0; }
+
+.inst-name {
+  font-size: var(--fs-xl); font-weight: var(--fw-bold);
+  color: var(--text-primary); display: block;
+  line-height: var(--lh-snug);
+}
+
+.inst-meta {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  font-variant-numeric: tabular-nums;
+}
+.inst-meta-amount {
+  font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semibold);
+}
+.inst-meta-amount.liability { font-size: var(--fs-xs); font-weight: var(--fw-medium); }
+.inst-meta-count { font-size: var(--fs-xs); color: var(--text-muted); }
+
+.inst-caret { color: var(--text-muted); font-size: var(--fs-xs); flex-shrink: 0; }
+
+.inst-list { border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+
+.acct-item {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.acct-item:first-child { border-top: none; }
+
+.acct-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: var(--sp-2);
+}
+.acct-main { flex: 1; min-width: 0; }
+.acct-name {
+  font-size: var(--fs-lg); font-weight: var(--fw-semibold);
+  color: var(--text-primary); line-height: var(--lh-snug);
+}
+.acct-sub {
+  font-size: var(--fs-xs); color: var(--text-muted);
+  margin-top: var(--sp-1);
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1);
+}
+.acct-tag {
+  border-radius: var(--radius-xs);
+  padding: 1px var(--sp-1);
+  font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+}
+
+.acct-figures { text-align: right; flex-shrink: 0; }
+.acct-amount {
+  font-family: var(--font-mono); font-size: var(--fs-lg); font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+.acct-converted {
+  font-size: var(--fs-2xs); color: var(--text-muted);
+  margin-top: var(--sp-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Key/value chips below each account row. */
+.data-grid {
+  display: flex; flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-1);
+}
+.data-cell { display: flex; gap: var(--sp-1); align-items: baseline; }
+.data-key { font-size: var(--fs-2xs); color: var(--text-muted); }
+.data-val {
+  font-size: var(--fs-xs); color: var(--text-secondary); font-weight: var(--fw-medium);
+}

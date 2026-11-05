@@ -104,7 +104,10 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
       const response = await request('/new/hisAnnouncement/query', { stock: `${code},${stock.orgId}`, tabName: 'fulltext', pageSize: '30', pageNum: String(page),
         column: code.startsWith('6') ? 'sse' : 'szse', searchkey: '实施', seDate: `${Number(asOf.slice(0, 4)) - 12}-01-01~${asOf}` }) as { announcements?: Announcement[]; hasMore?: boolean };
       if (!Array.isArray(response.announcements)) throw new Error('CNINFO_ANNOUNCEMENTS_INVALID');
-      found.push(...response.announcements.filter(value => /权益分派|利润分配|分红派息|派息/.test(value.announcementTitle ?? '')));
+      found.push(...response.announcements.filter(value => {
+        const title = value.announcementTitle ?? '';
+        return /(?:权益分派|利润分配|分红派息|派息)实施/.test(title) && !/优先股|可转债|债券|H股|B股|法律意见|英文|更正前|摘要/.test(title);
+      }));
       if (!response.hasMore) break;
       if (page === 4) issues.push('ANNOUNCEMENT_LIST_PARTIAL');
     }

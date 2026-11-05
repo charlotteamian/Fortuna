@@ -177,16 +177,40 @@ function daysBetween(a: string, b: string): number {
 
 /**
  * Combines the most recent full-year regular dividend cycle from structured announcements:
- * - Takes the latest regular dividend event as anchor.
- * - Includes any other distinct season (e.g. H1 + FY, or Q1/H1/Q3/FY) within 360 days of that report date,
- *   never double-counting the same season (e.g. never adding two FY dividends from two different years).
+ * - Excludes special/one-off dividends and uses share-split normalized DPS.
+ * - Guards against first-time interim transition double-counting (summing a full prior FY with a newly introduced H1).
+ * - Requires an FY component so a standalone interim (H1/Q1/Q3) never masquerades as a full-year dividend.
  */
 function selectFullYearCycle(items: DividendAnnouncement[]): ClassicDividendBatchItem[] {
+  const dpsOf = (item: DividendAnnouncement) => item.normalizedDpsMicros ?? item.dpsMicros ?? 0;
+  const toBatch = (item: DividendAnnouncement): ClassicDividendBatchItem => ({
+    reportDate: item.reportDate,
+    period: item.period,
+    dpsMicros: dpsOf(item),
+    stage: item.stage === 'implemented' ? 'implemented' : item.stage === 'approved' ? 'approved' : 'proposal',
+    exDate: item.exDate,
+  });
   const valid = items
-    .filter(item => !item.nonRecurring && !['cancelled', 'none'].includes(item.stage) && (item.dpsMicros ?? 0) > 0)
+    .filter(item => !item.nonRecurring && !/特别|特殊|一次性/.test(item.status ?? '') && !['cancelled', 'none'].includes(item.stage) && dpsOf(item) > 0)
     .sort((a, b) => b.reportDate.localeCompare(a.reportDate) || b.announcedAt.localeCompare(a.announcedAt));
   if (!valid.length) return [];
-  const newestReport = valid[0].reportDate;
+
+  const newest = valid[0];
+  const newestReport = newest.reportDate;
+  const newestYear = Number(newestReport.slice(0, 4));
+
+  // Transition guard: if the latest event is H1 (YYYY-06-30), and (YYYY-1)-12-31 + (YYYY-2)-12-31 both exist
+  // while (YYYY-1)-06-30 did NOT exist, then (YYYY-1)-12-31 was a full 12-month annual payout.
+  // Do not sum (YYYY-1) full-year + YYYY first-time H1 (18 months of dividends).
+  if (newest.period === 'H1' && Number.isFinite(newestYear)) {
+    const priorFy = valid.find(item => item.reportDate === `${newestYear - 1}-12-31`);
+    const twoYearsAgoFy = valid.find(item => item.reportDate === `${newestYear - 2}-12-31`);
+    const priorH1 = valid.find(item => item.reportDate === `${newestYear - 1}-06-30`);
+    if (priorFy && twoYearsAgoFy && !priorH1) {
+      return [toBatch(priorFy)];
+    }
+  }
+
   const seenSeasons = new Set<string>();
   const selected: ClassicDividendBatchItem[] = [];
   for (const item of valid) {
@@ -194,15 +218,55 @@ function selectFullYearCycle(items: DividendAnnouncement[]): ClassicDividendBatc
     const seasonKey = item.period === 'other' ? item.reportDate : item.period;
     if (seenSeasons.has(seasonKey)) continue;
     seenSeasons.add(seasonKey);
-    selected.push({
-      reportDate: item.reportDate,
-      period: item.period,
-      dpsMicros: item.dpsMicros!,
-      stage: item.stage === 'implemented' ? 'implemented' : item.stage === 'approved' ? 'approved' : 'proposal',
-      exDate: item.exDate,
-    });
+    selected.push(toBatch(item));
   }
+
+  // If anchored on an interim period (H1/Q1/Q3) and the adjacent FY was slightly beyond 360 days, pair up to 540 days.
+  if (!selected.some(item => item.period === 'FY')) {
+    const nearestFy = valid.find(item => item.period === 'FY' && daysBetween(newestReport, item.reportDate) <= 540);
+    if (nearestFy) {
+      selected.push(toBatch(nearestFy));
+    } else {
+      // A standalone interim payout without any annual payout is only a partial year; fall through to forecast/baseline.
+      return [];
+    }
+  }
+
   return selected.sort((a, b) => a.reportDate.localeCompare(b.reportDate));
+}
+
+function smoothCyclicalDividend(
+  stock: DividendStock,
+  implementedAnnouncements: DividendAnnouncement[],
+  latestGross: number,
+): { gross: number; smoothed: boolean } {
+  const baseline = CLASSIC_STOCK_BASELINES[stock.code];
+  const isCyclical = /煤|矿|有色|石油|化工|航运|钢铁/.test(`${stock.name} ${baseline?.sector ?? ''}`);
+  if (!isCyclical) return { gross: latestGross, smoothed: false };
+
+  const dpsOf = (item: DividendAnnouncement) => item.normalizedDpsMicros ?? item.dpsMicros ?? 0;
+  const regular = implementedAnnouncements.filter(
+    item => !item.nonRecurring && !/特别|特殊|一次性/.test(item.status ?? '') && dpsOf(item) > 0,
+  );
+  const byYear = new Map<string, { total: number; hasFy: boolean }>();
+  for (const item of regular) {
+    const year = item.reportDate.slice(0, 4);
+    const entry = byYear.get(year) ?? { total: 0, hasFy: false };
+    entry.total += dpsOf(item);
+    if (item.period === 'FY') entry.hasFy = true;
+    byYear.set(year, entry);
+  }
+  const completedYears = [...byYear.entries()]
+    .filter(([, value]) => value.hasFy && value.total > 0)
+    .sort((a, b) => b[0].localeCompare(a[0]));
+  if (completedYears.length < 3) return { gross: latestGross, smoothed: false };
+
+  const top3 = completedYears.slice(0, 3).map(([, value]) => value.total);
+  const mean3Y = Math.round((top3[0] + top3[1] + top3[2]) / 3);
+  if (mean3Y > 0 && latestGross > Math.round(mean3Y * 1.3)) {
+    return { gross: mean3Y, smoothed: true };
+  }
+  return { gross: latestGross, smoothed: false };
 }
 
 /**
@@ -241,9 +305,11 @@ export function resolveClassicDividendBase(
   const implementedAnnouncements = announcements.filter(item => item.stage === 'implemented' && (!item.exDate || item.exDate <= asOf));
   const implementedCycle = selectFullYearCycle(implementedAnnouncements);
   if (implementedCycle.length > 0) {
-    const gross = implementedCycle.reduce((sum, item) => sum + item.dpsMicros, 0);
+    const rawGross = implementedCycle.reduce((sum, item) => sum + item.dpsMicros, 0);
+    const { gross, smoothed } = smoothCyclicalDividend(stock, implementedAnnouncements, rawGross);
     const freq = implementedCycle.length >= 3 ? 'quarterly' : implementedCycle.some(b => b.period === 'H1') ? 'semiannual' : 'annual';
-    const periodLabel = implementedCycle.map(b => periodShortLabel(b.reportDate, b.period)).join(' + ');
+    const rawPeriodLabel = implementedCycle.map(b => periodShortLabel(b.reportDate, b.period)).join(' + ');
+    const periodLabel = smoothed ? `${rawPeriodLabel}（近3年均值平滑）` : rawPeriodLabel;
     return {
       grossDpsMicros: gross,
       netDpsMicros: applyTaxMicros(gross, taxBps),
@@ -251,8 +317,12 @@ export function resolveClassicDividendBase(
       tier: 'implemented_cycle',
       frequency: freq,
       periodLabel,
-      strategyNoteZh: `已按东方财富披露的最新已实施常规分红（${periodLabel}）自动合并计算，送转除权自动折算，无需人工复核PDF。`,
-      strategyNoteEn: `Automatically computed from latest implemented regular dividends (${periodLabel}).`,
+      strategyNoteZh: smoothed
+        ? `检测到强周期高点分红偏离近3年均值超30%，已按行业惯例自动采用近3年平均分红平滑计算（${periodLabel}）。`
+        : `已按东方财富披露的最新已实施常规分红（${periodLabel}）自动合并计算，送转除权自动折算，无需人工复核PDF。`,
+      strategyNoteEn: smoothed
+        ? `Cyclical peak dividend smoothed using 3-year average (${periodLabel}).`
+        : `Automatically computed from latest implemented regular dividends (${periodLabel}).`,
       fallbackApplied: false,
       batches: implementedCycle,
     };
@@ -398,20 +468,18 @@ export function resolveClassicDividendBase(
     };
   }
 
-  const impliedFromPrice = stock.quote?.priceMinor && stock.quote.priceMinor > 0
-    ? Math.round(stock.quote.priceMinor * 10000 * 0.05)
-    : 500000;
+  const fallbackDpsMicros = 500000;
   return {
-    grossDpsMicros: impliedFromPrice,
-    netDpsMicros: applyTaxMicros(impliedFromPrice, taxBps),
+    grossDpsMicros: fallbackDpsMicros,
+    netDpsMicros: applyTaxMicros(fallbackDpsMicros, taxBps),
     taxBps,
     tier: 'baseline_fallback',
     frequency: 'baseline',
-    periodLabel: '5.0%基准股息率锚定',
-    strategyNoteZh: '暂无该股历史分红缓存，已自动按经典 5.0% 基准股息率生成参考网格；点击“刷新行情与分红”即可拉取公告值。',
-    strategyNoteEn: 'Generated from 5.0% benchmark yield fallback; refresh disclosures to update with official filings.',
+    periodLabel: '待刷新公告分红（临时占位）',
+    strategyNoteZh: '暂无该股历史分红缓存，当前为临时占位基数；点击“刷新行情与分红”即可自动拉取公告分红。',
+    strategyNoteEn: 'Pending official dividend disclosure refresh; refresh disclosures to update with official filings.',
     fallbackApplied: true,
-    batches: [{ reportDate: asOf, period: 'FY', dpsMicros: impliedFromPrice, stage: 'baseline' }],
+    batches: [{ reportDate: asOf, period: 'FY', dpsMicros: fallbackDpsMicros, stage: 'baseline' }],
   };
 }
 

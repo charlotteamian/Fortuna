@@ -38,7 +38,8 @@ const render = (value = ledger, calculated: DividendLedgerBase | undefined = bas
 test('ledger presentation keeps dates, amounts and selected batch verification distinct without nested menus', () => {
   const html = render();
   assert.match(html, /半年分红 · 最近两批/); assert.match(html, /所选 2／2 批/);
-  for (const date of ['2026-06-01', '2026-06-10', '2026-06-11', '2025-12-31', '2026-10-28']) assert.ok(html.includes(date), date);
+  for (const date of ['2026-06-01', '2026-06-10', '2026-06-11', '2025-12-31']) assert.ok(html.includes(date), date);
+  assert.doesNotMatch(html, /static\.cninfo\.com\.cn\/announcement\.pdf/);
   assert.match(html, /2\.49 元/); assert.match(html, /0\.249 元/); assert.match(html, /来源冲突 · 排除计算/);
   assert.match(html, /本次候选批次 · 尚待核实/); assert.doesNotMatch(html, /class="div-ledger-selection">计入本次基数/);
   assert.doesNotMatch(html, /<details|<summary|SOURCE_CONFLICT|PROPOSAL_NOT_COUNTED|EVENT_FIELDS_INCOMPLETE|FUTURE_UNKNOWN_FLAG/);

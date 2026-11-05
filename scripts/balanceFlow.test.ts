@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  computePortfolioUnitNav,
   deriveBalanceTimeline,
   getBalanceFlowActionKey,
   getBalanceFlowConfig,
@@ -49,4 +50,19 @@ test('balance timeline flags repayments that exceed the available principal', ()
 
   assert.equal(timeline[1].underflow, true);
   assert.equal(timeline[1].amount, 0);
+});
+
+test('computePortfolioUnitNav eliminates principal deposit/withdrawal distortion and tracks max drawdown', () => {
+  const summary = computePortfolioUnitNav([
+    { date: '2026-01-01', totalValue: 100_000, netFlow: 0 },
+    // +10% investment gain -> 110,000, plus 55,000 external deposit -> total 165,000 (NAV should be 1.1000, not 1.65)
+    { date: '2026-02-01', totalValue: 165_000, netFlow: 55_000 },
+    // -10% investment drawdown -> 148,500 (NAV should be 0.9900, drawdown 10%)
+    { date: '2026-03-01', totalValue: 148_500, netFlow: 0 },
+  ]);
+
+  assert.deepEqual(summary.series.map(p => p.nav), [1.0, 1.1, 0.99]);
+  assert.equal(summary.latestNav, 0.99);
+  assert.equal(summary.cumulativeReturnPercent, -1);
+  assert.equal(summary.maxDrawdownPercent, 10);
 });

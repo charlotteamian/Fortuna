@@ -15,7 +15,7 @@ export default function DividendPricingGuide({ pricing, check, disabled = false,
     {guide.gaps.map(gap => <p className="div-price-guide-gap" key={gap.kind}>{t(`div_price_guide_gap_${gap.kind}`)}</p>)}
     {onRetry && <div className="div-price-guide-recovery"><button type="button" className="btn btn-secondary" disabled={disabled} onClick={onRetry}>{t('div_price_guide_retry')}</button>
       <p>{t('div_price_guide_retry_note')}</p></div>}
-    <details><summary>{t('div_price_guide_title')}</summary>
+    {(guide.status !== 'ready' || guide.gaps.length > 0) && <details><summary>{t('div_price_guide_title')}</summary>
       <ol className="div-price-guide-steps"><li><strong>{t('div_price_guide_base')}</strong>
         <p>{guide.grossDpsMicros === undefined ? t('div_price_guide_base_waiting') : t('div_price_guide_base_value', { gross: cash(guide.grossDpsMicros), frequency: t(`div_price_guide_${guide.frequency}`) })}</p>
         {guide.periods.length > 0 && <small>{t('div_price_guide_periods', { periods: guide.periods.join(' / ') })}</small>}</li>
@@ -25,6 +25,6 @@ export default function DividendPricingGuide({ pricing, check, disabled = false,
           : t('div_price_guide_formula_value', { net: cash(guide.netDpsMicros), price: `¥${(guide.exampleBuyPriceMinor / 100).toFixed(2)}` })}</p><small>{t('div_price_guide_rounding')}</small></li></ol>
       {guide.advisoryCount > 0 && <p>{t('div_price_guide_advisory', { count: guide.advisoryCount })}</p>}
       <p>{t('div_price_guide_save_note')}</p>
-    </details>
+    </details>}
   </section>;
 }

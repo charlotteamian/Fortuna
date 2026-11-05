@@ -384,6 +384,7 @@ export async function applyAllClassicDividendGrids(taxBps: ClassicTaxRateBps = 1
     const generatedAt = Date.now();
     for (const stock of stocks) {
       const plan = buildClassicStockPlan(stock, { taxBps });
+      if (plan.base.tier === 'baseline_fallback') continue;
       await db.dividendStocks.update(stock.code, {
         buyLevels: plan.classicBuyLevels,
         sellLevels: plan.classicSellLevels,

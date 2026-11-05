@@ -555,7 +555,7 @@ export default function DividendPage() {
               onChange={event => setSearch(event.target.value)} />
             <select aria-label={t('div_new_stock_filter')} value={selectorFilter}
               onChange={event => setSelectorFilter(event.target.value as StockSelectorFilter)}>
-              {(['all', 'triggered', 'held', 'core', 'watch', 'hidden'] as const).map(filter =>
+              {(['all', 'triggered', 'held', 'core', 'watch'] as const).map(filter =>
                 <option value={filter} key={filter}>{t(`div_cs_filter_${filter}`, {
                   count: checkedPlans.filter(item => matchesFilter(item, filter)).length,
                 })}</option>,
@@ -1056,7 +1056,7 @@ function StockEditor({
           <label>
             {t('div_group')}
             <select value={stock.group} onChange={e => patch({ group: e.target.value as DividendStock['group'] })}>
-              {['core', 'watch', 'hidden'].map(g => (
+              {(stock.group === 'hidden' ? ['core', 'watch', 'hidden'] : ['core', 'watch']).map(g => (
                 <option key={g} value={g}>
                   {t(`div_group_${g}`)}
                 </option>
