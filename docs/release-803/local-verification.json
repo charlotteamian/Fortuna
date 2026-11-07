@@ -254,5 +254,5 @@
     "asOf": "2026-11-06",
     "result": "Current or unknown-date announcement retrieval still had a genuine gap; automatic generation success is not claimed. Known-historical-only failures and manual completion are covered by deterministic tests."
   },
-  "releaseStatus": "awaiting signed workflow and downloaded APK verification"
+  "releaseStatus": "Signed release, downloaded APK, resource matching, updater parser and emulator cover-install verified; see release-verification.json."
 }

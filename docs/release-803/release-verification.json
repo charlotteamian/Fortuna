@@ -1,0 +1,60 @@
+{
+  "version": "8.0.3",
+  "sourceCommit": "f57ee02b6ec2cb9b6c06b0764f9d7b6b2be7eaec",
+  "tag": "v8.0.3",
+  "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v8.0.3",
+  "apk": {
+    "package": "com.fortuna.wealthtracker",
+    "version": "8.0.3",
+    "versionCode": 47,
+    "debuggable": false,
+    "certificateSha256": "b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c",
+    "apkSha256": "6c08ec177fe4d68f844f5f1698307ad625900f1d3c37da2eb58e51672b20a9d1",
+    "size": 6078018,
+    "webFilesMatched": 50,
+    "bridgeExtras": [
+      "assets/public/cordova.js",
+      "assets/public/cordova_plugins.js"
+    ],
+    "assetUrl": "https://github.com/charlotteamian/Fortuna/releases/download/v8.0.3/Fortuna-8.0.3-release.apk",
+    "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v8.0.3"
+  },
+  "workflows": {
+    "android": {
+      "conclusion": "success",
+      "databaseId": 42377911267,
+      "headSha": "f57ee02b6ec2cb9b6c06b0764f9d7b6b2be7eaec",
+      "status": "completed",
+      "url": "https://github.com/charlotteamian/Fortuna/actions/runs/42377911267"
+    },
+    "iosReadiness": {
+      "conclusion": "success",
+      "databaseId": 42377909164,
+      "headSha": "f57ee02b6ec2cb9b6c06b0764f9d7b6b2be7eaec",
+      "status": "completed",
+      "url": "https://github.com/charlotteamian/Fortuna/actions/runs/42377909164"
+    }
+  },
+  "publicDownload": {
+    "status": 200,
+    "bytes": 6078018,
+    "matchesReleaseAsset": true
+  },
+  "updateParser": {
+    "from8.0.2Offers8.0.3": true,
+    "at8.0.3OffersNothing": true
+  },
+  "emulator": {
+    "coverInstall": "8.0.2 (46) to 8.0.3 (47)",
+    "result": "passed",
+    "retained": {
+      "syntheticAccount": "QA202_KEEP_RECORD",
+      "balance": 1234.56,
+      "currency": "USD",
+      "snapshotCount": 1
+    },
+    "scope": "Existing emulator fixture account only. No physical device or user production database tested."
+  },
+  "physicalDevice": "not tested",
+  "liveServices": "See local-verification.json: the scoped 000858 live attempt still had a current/unknown announcement gap. Automatic success for all stocks is not claimed."
+}
