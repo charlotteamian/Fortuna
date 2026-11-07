@@ -1,5 +1,6 @@
 import { dateInChina } from './dividendWorkbench.ts';
 import { isDividendMarketQuote, isExchangeTradedFundCode, type DividendMarketQuote } from './dividendQuote.ts';
+import { latestTradingDayOnOrBefore } from './dividendQuoteUsability.ts';
 
 export type DividendStrategy = 'stocks' | 'funds';
 export type DividendFundMode = 'hold' | 'rebalance' | 'swing';
@@ -88,36 +89,29 @@ export function dividendFundPriceMicros(fund: DividendFund): number | undefined 
   return fund.quote?.priceMicros ?? fund.reference?.priceMicros;
 }
 
-export type DividendFundEntryIssue = 'price_missing' | 'price_prior_date' | 'quote_refresh_failed' | 'high_missing' | 'index_yield_missing' | 'index_yield_prior_date';
+export type DividendFundEntryIssue = 'price_missing' | 'price_prior_date' | 'quote_refresh_failed' | 'high_missing';
 
-/** A historical high is a fixed comparison point; price and index yield are dated observations. */
+/** Fund triggers are a pure price grid: latest session price versus the saved
+ * entry/exit trigger prices. Index yield stays an informational display and
+ * never gates the trigger. A quote from the latest trading day (weekends and
+ * exchange holidays included) counts as the current session. */
 export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, today = dateInChina()) {
   const ref = fund.reference;
   const priceMicros = dividendFundPriceMicros(fund);
   const drawdownBps = priceMicros !== undefined && ref?.highMicros !== undefined
     ? Math.max(0, (ref.highMicros - priceMicros) / ref.highMicros * 10000) : undefined;
   const targetPriceMicros = ref?.highMicros !== undefined ? Math.round(ref.highMicros * (10000 - plan.drawdownBps) / 10000) : undefined;
-  const observedChecks = [priceMicros === undefined || ref?.highMicros === undefined ? null
-    : BigInt(ref.highMicros - priceMicros) * 10000n >= BigInt(ref.highMicros) * BigInt(plan.drawdownBps),
-    ref?.indexYieldBps === undefined ? null : ref.indexYieldBps >= plan.indexYieldBps];
   const priceDate = fund.quote?.date.slice(0, 10) ?? ref?.asOf;
-  const priceCurrent = priceMicros !== undefined && priceDate === today && fund.quoteFailedAt === undefined;
-  const yieldCurrent = ref?.indexYieldBps !== undefined && ref.asOf === today;
-  const checks = [priceCurrent ? observedChecks[0] : null, yieldCurrent ? observedChecks[1] : null];
-  const ready = plan.entryRule === 'both'
-    ? checks.includes(false) ? false : checks.every(check => check === true) ? true : null
-    : checks.includes(true) ? true : checks.every(check => check === false) ? false : null;
+  const priceCurrent = priceMicros !== undefined && (priceDate === today || priceDate === latestTradingDayOnOrBefore(today))
+    && fund.quoteFailedAt === undefined;
+  const observed = priceMicros !== undefined && targetPriceMicros !== undefined ? priceMicros <= targetPriceMicros : null;
   const issues: DividendFundEntryIssue[] = [];
   if (priceMicros === undefined) issues.push('price_missing');
-  else if (priceDate !== today) issues.push('price_prior_date');
   if (fund.quoteFailedAt !== undefined) issues.push('quote_refresh_failed');
   if (ref?.highMicros === undefined) issues.push('high_missing');
-  if (ref?.indexYieldBps === undefined) issues.push('index_yield_missing');
-  else if (!yieldCurrent) issues.push('index_yield_prior_date');
-  // A conclusive current condition can settle both/either without the other input.
-  // No old observation is counted as true or false in that decision.
-  const status = ready !== null ? ready ? 'met' : 'wait'
-    : issues.some(issue => ['price_prior_date', 'quote_refresh_failed', 'index_yield_prior_date'].includes(issue)) ? 'update' : 'incomplete';
+  else if (!priceCurrent && priceMicros !== undefined) issues.push('price_prior_date');
+  const status = observed !== null ? observed ? 'met' : 'wait'
+    : issues.some(issue => ['price_prior_date', 'quote_refresh_failed'].includes(issue)) ? 'update' : 'incomplete';
   return { drawdownBps, targetPriceMicros, status, issues };
 }
 
@@ -126,7 +120,9 @@ export function buildDividendFundHomePlan(plan: DividendFundPlan, fund: Dividend
   const entry = dividendFundEntry(plan, fund, today);
   const priceMicros = dividendFundPriceMicros(fund);
   const highMicros = fund.reference?.highMicros;
-  const quoteUsable = priceMicros !== undefined && (fund.quote?.date.slice(0, 10) ?? fund.reference?.asOf) === today && fund.quoteFailedAt === undefined;
+  const priceDate = fund.quote?.date.slice(0, 10) ?? fund.reference?.asOf;
+  const quoteUsable = priceMicros !== undefined && (priceDate === today || priceDate === latestTradingDayOnOrBefore(today))
+    && fund.quoteFailedAt === undefined;
   const exitState = plan.mode !== 'swing' ? plan.mode : highMicros === undefined ? 'high_missing'
     : !quoteUsable ? 'quote_missing' : priceMicros! >= highMicros ? 'triggered' : 'waiting';
   return { entry, priceMicros, targetAmountMinor: plan.budgetMinor === undefined ? undefined : dividendFundAllocation(plan).amounts.get(fund.id) ?? 0,

@@ -1312,7 +1312,7 @@
   "df_rule_either": "满足任一",
   "df_yield_note": "使用基金跟踪指数的股息率，不能用 ETF 现金分红率替代。年线、3 年线仅作辅助观察。",
   "df_save_plan": "保存基金策略",
-  "df_entry_summary": "买入参考：回撤 ≥ {{drawdown}}% / 指数股息率 ≥ {{yield}}% · {{rule}}",
+  "df_entry_summary": "买入触发价 = 基准高点 × (1 − {{drawdown}}%)；波段卖出触发价 = 基准高点。只按价格触发，指数股息率仅作参考展示。",
   "df_reference_note": "报价可自动刷新；参考前高与指数股息率在各基金的“编辑”中维护。",
   "df_add": "添加计划基金",
   "df_edit": "编辑计划基金",

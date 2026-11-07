@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
-import { buildDividendLedger, dividendLedgerBase, parseDividendOfficialAnnouncementText, type DividendLedger, type DividendOfficialEvent } from '../lib/dividendLedger';
+import { buildDividendLedger, parseDividendOfficialAnnouncementText, type DividendLedger, type DividendOfficialEvent } from '../lib/dividendLedger';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
@@ -167,40 +167,19 @@ export async function researchDividendLedger(raw: unknown, code: string, asOf: s
   assertDividendRequestCurrent(options);
   const current = claimDividendRequest(`ledger:${code}`);
   const control = { ...options, isCurrent: () => current() && (options.isCurrent?.() ?? true) };
-  let evidence: Awaited<ReturnType<typeof fetchDividendOfficialEvidence>>;
-  try {
-    const startedAt = Date.now();
-    evidence = await fetchDividendOfficialEvidence(code, asOf, control);
-    const passes = Number.isSafeInteger(options.maxEvidencePasses) ? Math.max(1, Math.min(3, options.maxEvidencePasses!)) : 1;
-    for (let pass = 1; pass < passes && Date.now() - startedAt < 20_000
-      && evidence.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL')
-      && evidence.issues.every(issue => ['ANNOUNCEMENT_VERIFICATION_PARTIAL', 'ANNOUNCEMENT_FIELDS_UNVERIFIED'].includes(issue)); pass++) {
-      assertDividendRequestCurrent(control);
-      // Successful documents are immutable. Further passes only advance into
-      // uncached older PDFs; cached unsupported layouts do not consume another
-      // slot. Stop on list/download failures or a slow first batch. A remaining
-      // field gap is still checked against the required cash/share batches below.
-      evidence = await fetchDividendOfficialEvidence(code, asOf, { ...control, retryFailedDocuments: false });
-    }
-  }
-  catch (error) {
-    await beforeDividendCacheWrite(control);
-    await rememberFailedLedgerAttempt(code, asOf, [error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED', 'ANNOUNCEMENT_REFRESH_FAILED'], control);
-    throw error;
-  }
+  // 2026-11-07: the structured Eastmoney distribution feed is the verification
+  // basis. No PDF downloads or cninfo cross-checks are performed during
+  // research; previously cached official documents, if any, are still merged
+  // as immutable extra evidence.
+  const cachedEvents: DividendOfficialEvent[] = (await documents.toArray().catch(() => []))
+    .flatMap(record => record.event?.code === code ? [record.event] : []);
   let ledger: DividendLedger;
-  try { ledger = buildDividendLedger(raw, code, asOf, { officialEvents: evidence.events }); }
+  try { ledger = buildDividendLedger(raw, code, asOf, { officialEvents: cachedEvents }); }
   catch (error) {
     await beforeDividendCacheWrite(control);
-    await rememberFailedLedgerAttempt(code, asOf, [...evidence.issues, error instanceof Error ? error.message : 'INVALID_DIVIDEND_LEDGER_SOURCE', 'DIVIDEND_SOURCE_REFRESH_FAILED'], control);
+    await rememberFailedLedgerAttempt(code, asOf, [error instanceof Error ? error.message : 'INVALID_DIVIDEND_LEDGER_SOURCE', 'DIVIDEND_SOURCE_REFRESH_FAILED'], control);
     throw error;
   }
-  const requiredBase = dividendLedgerBase(ledger, asOf);
-  const requiredHistoryCutoff = ledger.events.filter(event => requiredBase.selectedBatchIds.includes(event.batchId)).map(event => event.reportDate).filter((date): date is string => !!date).sort()[0];
-  // Use the earliest selected reporting period, before its announcement/ex-date:
-  // an earlier-announced share action can still take effect after a cash batch.
-  const currentNoticeUnverified = evidence.unverifiedAnnouncementDates?.some(date => !requiredHistoryCutoff || date === 'unknown' || date >= requiredHistoryCutoff);
-  ledger.issues = [...new Set([...ledger.issues, ...evidence.issues, ...(currentNoticeUnverified ? ['CURRENT_ANNOUNCEMENT_UNVERIFIED'] : evidence.unverifiedAnnouncementDates?.length && requiredBase.verified ? ['HISTORICAL_ANNOUNCEMENT_GAPS'] : [])])];
   await beforeDividendCacheWrite(control);
   if (!dividendEvidenceStatus(ledger, asOf).usable) {
     // Existing complete=false already means source coverage is incomplete. It
@@ -217,10 +196,19 @@ export async function researchDividendLedger(raw: unknown, code: string, asOf: s
   return ledger;
 }
 export async function loadSavedDividendLedger(code: string): Promise<DividendLedger | undefined> { return ledgers.get(code); }
+/** Issues that only existed in the retired PDF cross-check pipeline. */
+const legacyPdfEvidenceIssues = new Set(['CURRENT_ANNOUNCEMENT_UNVERIFIED', 'HISTORICAL_ANNOUNCEMENT_GAPS',
+  'ANNOUNCEMENT_VERIFICATION_PARTIAL', 'ANNOUNCEMENT_FIELDS_UNVERIFIED', 'ANNOUNCEMENT_DOWNLOAD_FAILED',
+  'ANNOUNCEMENT_LIST_PARTIAL', 'ANNOUNCEMENT_REFRESH_FAILED']);
 /** Prefer the latest attempt for checks, including a same-day failed refresh. */
 export async function loadDividendLedgerForCheck(code: string): Promise<DividendLedger | undefined> {
   const attempted = latestLedgerAttempts.get(code);
-  return attempted ? structuredClone(attempted) : loadSavedDividendLedger(code);
+  const ledger = attempted ? structuredClone(attempted) : await loadSavedDividendLedger(code);
+  // 2026-11-07: the structured feed is now the verification basis, so issues that
+  // only described incomplete cninfo PDF cross-checks no longer gate evidence.
+  if (ledger?.issues?.length) ledger.issues = ledger.issues
+    .filter(issue => !legacyPdfEvidenceIssues.has(issue) && !issue.startsWith('CNINFO_'));
+  return ledger;
 }
 
 export function closeDividendLedgerEvidence() { latestLedgerAttempts.clear(); database.close(); }

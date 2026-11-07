@@ -68,9 +68,7 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
           <p className="div-muted">{t(`df_mode_${mode}_note`)}</p>
           <details className="div-method"><summary>{t('df_entry_settings')}</summary><div className="div-form-fields">
             <label>{t('df_drawdown_threshold')}<input required type="number" inputMode="decimal" min="0.01" max="99.99" step="0.01" value={drawdown} onChange={event => setDrawdown(event.target.value)} /></label>
-            <label>{t('df_yield_threshold')}<input required type="number" inputMode="decimal" min="0.01" max="100" step="0.01" value={indexYield} onChange={event => setIndexYield(event.target.value)} /></label>
-            <label>{t('df_entry_rule')}<select value={entryRule} onChange={event => setEntryRule(event.target.value as DividendFundPlan['entryRule'])}><option value="both">{t('df_rule_both')}</option><option value="either">{t('df_rule_either')}</option></select></label>
-          </div><p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100), yield: number(plan.indexYieldBps / 100), rule: t(`df_rule_${plan.entryRule}`) })}</p><p className="div-muted">{t('df_yield_note')}</p><p className="div-muted">{t('df_reference_note')}</p></details>
+          </div><p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100) })}</p><p className="div-muted">{t('df_reference_note')}</p></details>
           <button type="submit" className="btn btn-primary">{t(saving ? 'loading' : 'df_save_plan')}</button>
         </fieldset>
       </form></details>
@@ -95,7 +93,7 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
             {plan.mode === 'swing' && <div><span>{t('df_exit_price')}</span><strong>{fund.reference?.highMicros === undefined ? '—' : `¥${number(fund.reference.highMicros / 1e6, 6)}`}</strong></div>}
           </div>
           <p className="div-muted">{fund.quote ? t('div_quote_source', { date: fund.quote.date }) : t(priceMicros === undefined ? 'div_not_fetched' : 'df_manual_source')}</p>
-          <p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100), yield: number(plan.indexYieldBps / 100), rule: t(`df_rule_${plan.entryRule}`) })}</p>
+          <p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100) })}</p>
           {reference.issues.length > 0 && <p className="div-muted">{reference.issues.map(issue => t(`div_check_reason_${issue}`)).join(' · ')}</p>}
           {fund.reference && <p className="div-muted">{t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') })}</p>}
           {fund.quoteFailedAt !== undefined && <p className="div-warning">{t('div_quotes_failed')}</p>}

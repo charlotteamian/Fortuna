@@ -16,8 +16,7 @@ export const dividendFundTodayZh = {
   df_today_update_note: '当前数据不足以判断触发条件。先刷新行情；仍缺的数据收在“依据与数据”中。',
   df_today_allocate: '先分配预算',
   df_today_allocate_note: '买入条件已达到，本基金尚无可用的计划金额。调整计划后再安排买入。',
-  df_today_rule_both: '规则：触价且指数息率 ≥ {{yield}}%',
-  df_today_rule_either: '规则：触价或指数息率 ≥ {{yield}}%',
+  df_today_rule_price: '触发规则：现价 ≤ 基准高点 × (1 − {{drawdown}}%)',
 } as const;
 
 export const dividendFundTodayEn: Record<keyof typeof dividendFundTodayZh, string> = {
@@ -38,6 +37,5 @@ export const dividendFundTodayEn: Record<keyof typeof dividendFundTodayZh, strin
   df_today_update_note: 'Current data cannot establish a trigger. Refresh prices first; remaining gaps are under Basis and data.',
   df_today_allocate: 'Allocate a budget first',
   df_today_allocate_note: 'Entry conditions are met, but this fund has no allocated amount. Edit the plan before arranging a purchase.',
-  df_today_rule_both: 'Rule: price reached AND index yield ≥ {{yield}}%',
-  df_today_rule_either: 'Rule: price reached OR index yield ≥ {{yield}}%',
+  df_today_rule_price: 'Rule: price ≤ reference high × (1 − {{drawdown}}%)',
 };

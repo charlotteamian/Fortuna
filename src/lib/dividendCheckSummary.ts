@@ -281,15 +281,14 @@ export function dividendCheckSummary(input: {
   return summary;
 }
 
-/** Fund conditions remain in the existing drawdown/index-yield/high-price engine. */
+/** Fund conditions are a pure price-trigger grid against the saved entry/exit prices. */
 export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: DividendFund; shares?: number; asOf?: string; now?: number; quoteSession?: 'confirmed' | 'unknown' }): DividendFundCheckSummary {
   const now = input.now ?? Date.now(), asOf = input.asOf ?? dateInChina(new Date(now)), { plan, fund } = input;
   const quote = dividendQuoteUsability({ quote: fund.quote, failedAt: fund.quoteFailedAt, asOf, now, quoteSession: input.quoteSession });
   const referencePlan = buildDividendFundHomePlan(plan, fund, asOf);
   const shares = typeof input.shares === 'number' && Number.isFinite(input.shares) && input.shares >= 0 ? input.shares : null;
-  // Keep the original condition engine and both/either short circuit. Remove
-  // inapplicable quotes and the manual-price fallback only from its current
-  // observation input; the user's saved fund and target formulas stay intact.
+  // Keep the price-trigger engine on the current observation only; the saved
+  // fund and target formulas stay intact. A missing quote stays unknown.
   const currentPlan = buildDividendFundHomePlan(plan, { ...fund,
     quote: quote.status === 'current' ? fund.quote : undefined,
     reference: fund.reference ? { ...fund.reference, priceMicros: undefined } : undefined,
@@ -299,7 +298,11 @@ export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: 
     : fundPlan.entry.status === 'wait' ? 'not_triggered' : 'unknown';
   const sell: DividendTriggerState = plan.mode !== 'swing' ? 'not_triggered' : quote.status !== 'current' ? 'unknown'
     : fundPlan.exitState === 'triggered' ? 'triggered' : fundPlan.exitState === 'waiting' ? 'not_triggered' : 'unknown';
-  const reasons = distinct([...fundPlan.entry.issues, ...quote.reasons, ...(!fund.quote && fund.reference?.priceMicros !== undefined ? ['fund_manual_price'] : [])]);
+  // Only genuine price-grid data gaps are reported; no verification stack.
+  const reasons = distinct([
+    ...(quote.status !== 'current' ? quote.reasons.filter(reason => ['quote_missing', 'quote_refresh_failed', 'quote_invalid'].includes(reason)) : []),
+    ...fundPlan.entry.issues.filter(issue => issue === 'price_missing' || issue === 'high_missing'),
+  ]);
   const sources = fund.reference?.source ? [fund.reference.source] : [];
   const risks = reasons.map(reason => ({ id: reason, reason, sources: [...sources], reportPeriod: fund.reference?.asOf, impact: 'new_buy' as const,
     autoRepair: reason === 'quote_missing' || reason === 'quote_refresh_failed', unresolvedAction: reason.startsWith('quote_') ? 'retry' as const : 'review' as const }));
@@ -312,8 +315,8 @@ export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: 
     : !quote.sessionConfirmed ? action('review', ['execution_session_unverified']) : action('confirmation_candidate', ['fees_liquidity_unverified']);
   const summary: DividendFundCheckSummary = { kind: 'fund', id: fund.id, code: fund.code, name: fund.name,
     eligibility: { status: fundPlan.entry.status === 'met' ? 'pass' : fundPlan.entry.status === 'wait' ? 'fail' : 'unknown', reasons: fundPlan.entry.issues.slice(0, 3), checks: [] },
-    grid: { status: fundPlan.entry.targetPriceMicros === undefined && fundPlan.exitPriceMicros === undefined ? 'unavailable' : 'saved_unverified', origin: 'saved',
-      buyLevels: [], sellLevels: [], buyTierIndices: [], sellTierIndices: [], reasons: ['fund_manual_reference'], sourceUrls: [...sources], selectedBatchIds: [],
+    grid: { status: fundPlan.entry.targetPriceMicros === undefined && fundPlan.exitPriceMicros === undefined ? 'unavailable' : 'verified', origin: 'saved',
+      buyLevels: [], sellLevels: [], buyTierIndices: [], sellTierIndices: [], reasons: [], sourceUrls: [...sources], selectedBatchIds: [],
       entryPriceMicros: fundPlan.entry.targetPriceMicros, exitPriceMicros: fundPlan.exitPriceMicros,
       nextBuy: fundPlan.entry.targetPriceMicros === undefined ? undefined : { index: 1, priceMicros: fundPlan.entry.targetPriceMicros },
       nextSell: fundPlan.exitPriceMicros === undefined ? undefined : { index: 1, priceMicros: fundPlan.exitPriceMicros } },

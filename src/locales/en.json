@@ -1312,7 +1312,7 @@
   "df_rule_either": "Either condition",
   "df_yield_note": "Use the underlying index dividend yield, not the ETF cash distribution rate. One-year and three-year moving averages are supporting observations only.",
   "df_save_plan": "Save fund strategy",
-  "df_entry_summary": "Entry reference: drawdown ≥ {{drawdown}}% / index yield ≥ {{yield}}% · {{rule}}",
+  "df_entry_summary": "Buy trigger = reference high × (1 − {{drawdown}}%); swing sell trigger = reference high. Price triggers only; index yield is informational.",
   "df_reference_note": "Prices can refresh automatically. Maintain the reference high and index dividend yield in each fund’s Edit screen.",
   "df_add": "Add planned fund",
   "df_edit": "Edit planned fund",

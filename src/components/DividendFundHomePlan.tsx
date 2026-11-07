@@ -2,7 +2,6 @@ import { useTranslation } from 'react-i18next';
 import { dividendFundAllocation, type DividendFundPlan } from '../lib/dividendFundPlan';
 import { dividendFundCheckSummary, type DividendFundCheckSummary } from '../lib/dividendCheckSummary';
 import DividendFundPlanSummary from './DividendFundPlanSummary';
-import DividendCheckStatus from './DividendCheckStatus';
 import { dividendHomeCollapsed, matchesDividendReadFilter, type DividendReadFilter } from '../lib/dividendReading';
 import { dividendFundTodayAction } from '../lib/dividendFundToday';
 
@@ -44,13 +43,13 @@ export default function DividendFundHomePlan({ plan, amountVisible, asOf, onEdit
         <button type="button" className="div-advisor-text-button df-focus-evidence-toggle" aria-expanded={expanded} aria-controls={`div-fund-body-${fund.id}`} onClick={() => onToggle(`fund:${fund.id}`)}>
           <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {t('df_focus_evidence')}</button>
         <div id={`div-fund-body-${fund.id}`} hidden={!expanded}>
-        <p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100), yield: number(plan.indexYieldBps / 100), rule: t(`df_rule_${plan.entryRule}`) })}</p>
+        <p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100) })}</p>
         <p className="div-muted">{t(`df_mode_${plan.mode}_note`)}</p>
         <dl className="div-fund-home-metrics"><div><dt>{t('df_current_drawdown')}</dt><dd>{amountVisible && value.entry.drawdownBps !== undefined ? `${number(value.entry.drawdownBps / 100)}%` : amountVisible ? '—' : '••••'}</dd></div>
           <div><dt>{t('df_index_yield')}</dt><dd>{amountVisible && fund.reference?.indexYieldBps !== undefined ? `${number(fund.reference.indexYieldBps / 100)}%` : amountVisible ? '—' : '••••'}</dd></div></dl>
         <small className="div-muted">{fund.quote ? t('div_quote_source', { date: fund.quote.date }) : fund.reference ? t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') }) : t('div_not_fetched')}
           {fund.reference && fund.quote && ` · ${t('div_fund_reference_date', { date: fund.reference.asOf })}`}</small>
-        <DividendCheckStatus summary={check} />
+        {fund.quoteFailedAt !== undefined && <p className="div-warning">{t('div_quotes_failed')}</p>}
         {fund.note && <p className="div-muted">{fund.note}</p>}
         </div>
       </article>;

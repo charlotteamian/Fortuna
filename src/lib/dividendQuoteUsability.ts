@@ -16,6 +16,18 @@ export interface DividendQuoteUsability {
   sessionConfirmed: boolean;
 }
 
+/** Latest plausible A-share trading day on or before asOf: weekends never trade. */
+export function latestTradingDayOnOrBefore(asOf: string): string {
+  let time = Date.parse(`${asOf}T00:00:00Z`);
+  if (!Number.isFinite(time)) return asOf;
+  for (let steps = 0; steps < 12; steps++) {
+    const weekday = new Date(time).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) return new Date(time).toISOString().slice(0, 10);
+    time -= 86400000;
+  }
+  return asOf;
+}
+
 export function dividendQuoteUsability(input: {
   quote?: DividendCheckQuote; comparisonQuote?: DividendCheckQuote; failedAt?: number;
   latestExDate?: string; asOf: string; now: number; quoteSession?: 'confirmed' | 'unknown';
@@ -44,11 +56,18 @@ export function dividendQuoteUsability(input: {
   if (comparison && comparison.date === quote.date && micros(comparison) !== undefined && micros(comparison) !== micros(quote)) reasons.push('quote_source_conflict');
   const age = (Date.parse(asOf) - dayTime) / 86400000;
   if (validDate && age > 10) reasons.push('quote_stale');
-  if (validDate && date < asOf) reasons.push('quote_prior_date');
+  // A quote dated on the latest plausible trading day is today's session close
+  // (weekends, and via the fetch window below, exchange holidays). A stale
+  // weekday cache from before a missed refresh stays "prior date".
+  const tradingDay = latestTradingDayOnOrBefore(asOf);
+  const fetchedRecently = quote.fetchedAt !== undefined && Number.isSafeInteger(quote.fetchedAt)
+    && quote.fetchedAt <= now && now - quote.fetchedAt < 36 * 3600 * 1000;
+  const datedToday = date === asOf || date === tradingDay || fetchedRecently && date < asOf;
+  if (validDate && date < asOf && !datedToday) reasons.push('quote_prior_date');
   if (dayOnly) reasons.push('quote_time_missing');
   const invalid = reasons.some(reason => ['quote_invalid', 'quote_future', 'quote_before_ex', 'quote_source_conflict', 'quote_stale'].includes(reason));
   const historicalUsable = !invalid && age >= 0 && age <= 10;
-  const current = historicalUsable && full && date === asOf && input.failedAt === undefined;
+  const current = historicalUsable && full && datedToday && input.failedAt === undefined;
   return { status: current ? 'current' : historicalUsable ? 'last_available' : 'unknown', reasons, date: quote.date,
     priceMinor: quote.priceMinor, priceMicros: quote.priceMicros, fetchedAt: quote.fetchedAt,
     historicalUsable, sessionConfirmed: current && input.quoteSession === 'confirmed' };

@@ -252,7 +252,9 @@ input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .account-detail-host { height: 100%; min-height: 0; }
 .app-content {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  padding: calc(env(safe-area-inset-top, 24px) + var(--sp-6)) clamp(0.75rem, 4vw, 1.25rem) calc(7.5rem + env(safe-area-inset-bottom, 0px));
+  /* The tab bar sits in normal flow below this container, so only a modest
+     breathing gap is needed at the end of the page. */
+  padding: calc(env(safe-area-inset-top, 24px) + var(--sp-6)) clamp(0.75rem, 4vw, 1.25rem) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
   -webkit-overflow-scrolling: touch;
 }
 .app-content::-webkit-scrollbar { width: 4px; }

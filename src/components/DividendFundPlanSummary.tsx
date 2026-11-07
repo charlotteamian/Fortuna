@@ -35,7 +35,7 @@ export default function DividendFundPlanSummary({ plan, fund, check, amountVisib
     <dl className="df-focus-targets">
       <div><dt>{t('df_focus_buy_plan')}</dt><dd>{price(check.grid.entryPriceMicros)}</dd>
         <small className={`df-focus-signal is-${check.trigger.buy}`}>{t(`df_focus_buy_${check.trigger.buy}`)}</small>
-        <small>{t(`df_today_rule_${plan.entryRule}`, { yield: number(plan.indexYieldBps / 100) })}</small></div>
+        <small>{t('df_today_rule_price', { drawdown: number(plan.drawdownBps / 100) })}</small></div>
       <div><dt>{t('df_focus_sell_plan')}</dt><dd>{plan.mode === 'swing' ? price(check.grid.exitPriceMicros) : t(`df_focus_sell_${plan.mode}`)}</dd>
         <small className={plan.mode === 'swing' ? `df-focus-signal is-${check.trigger.sell}` : ''}>{t(plan.mode === 'swing' ? `df_focus_sell_${check.trigger.sell}` : `df_focus_sell_${plan.mode}_note`)}</small></div>
     </dl>

@@ -141,10 +141,13 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
 }
 
 function normalizedCash(ledger: DividendLedger, event: DividendLedgerEvent, asOf: string): number | undefined {
-  if (!event.implemented || !event.exDate || event.exDate > asOf || event.verification !== 'verified' || event.cashPer10Micros === undefined) return undefined;
+  // Structured feed rows with complete fields are accepted as the verification
+  // basis (2026-11-07): official PDF cross-checks are no longer required, so an
+  // "unverified" event is only excluded when its own fields are incomplete or
+  // a genuine source conflict exists.
+  if (!event.implemented || !event.exDate || event.exDate > asOf || event.verification === 'conflict' || event.cashPer10Micros === undefined) return undefined;
   const actions = ledger.events.filter(other => other.implemented && !!other.exDate && other.exDate >= event.exDate! && other.exDate <= asOf);
-  if (actions.some(action => action.shareFactor === undefined || action.verification === 'conflict'
-    || action.shareFactor !== 1 && action.verification !== 'verified')) return undefined;
+  if (actions.some(action => action.shareFactor === undefined || action.verification === 'conflict')) return undefined;
   // Same-day share capital changes are applied once, even if cash is represented by multiple batches.
   const factors = new Map<string, number>();
   for (const action of actions) {
@@ -191,7 +194,11 @@ export function dividendLedgerBase(ledger: DividendLedger, asOf: string, crossch
   if (selected.length < requiredBatches || !selected.length) flags.push('INCOMPLETE');
   if (ledger.events.some(event => event.proposal && !event.implemented && event.announcementDate && event.announcementDate <= asOf && (event.cashPer10Micros ?? 0) > 0)) flags.push('PROPOSAL_NOT_COUNTED');
   if (selected.some(event => event.verification === 'conflict')) flags.push('SOURCE_CONFLICT');
-  if (selected.some(event => event.verification === 'unverified')) flags.push('ANNOUNCEMENT_UNVERIFIED');
+  // 2026-11-07: a structured feed row with complete report/announcement/record/ex
+  // dates, cash and share ratios is itself the verification basis. Only rows
+  // with incomplete fields (or conflicts above) keep the announcement gap.
+  if (selected.some(event => event.verification !== 'verified'
+    && (event.issues.some(issue => ['EVENT_FIELDS_INCOMPLETE', 'CAPITAL_ACTIONS_UNVERIFIED', 'EVENT_DATES_INVALID'].includes(issue))))) flags.push('ANNOUNCEMENT_UNVERIFIED');
   const latestExDate = ledger.events.filter(event => event.implemented && !!event.exDate && event.exDate <= asOf
     && (event.cashPer10Micros === undefined || event.cashPer10Micros > 0 || event.shareFactor !== 1)).map(event => event.exDate!).sort().at(-1);
   const normalized = selected.map(event => normalizedCash(ledger, event, asOf));

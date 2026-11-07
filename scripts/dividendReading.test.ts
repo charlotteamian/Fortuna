@@ -68,8 +68,8 @@ test('covered targets, no holdings, unknown budgets and below-lot differences re
 });
 
 test('stale quotes retain source time without a current deepest touch or fabricated transaction', () => {
-  const html = render(dividendCheckSummary({ stock: { ...stock, quote: { ...stock.quote, date: '2026-10-31 10:00' } }, totalBudgetMinor: 1000000, shares: 0, asOf, now }));
-  assert.match(html, /2026-10-31 10:00/); assert.match(html, /行情待核实/);
+  const html = render(dividendCheckSummary({ stock: { ...stock, quote: { ...stock.quote, date: '2026-10-28 15:00', fetchedAt: Date.parse('2026-10-28T07:00:00Z') } }, totalBudgetMinor: 1000000, shares: 0, asOf, now }));
+  assert.match(html, /2026-10-28 15:00/); assert.match(html, /行情待核实/);
   assert.doesNotMatch(html, /最深触价|已成交/);
 });
 
