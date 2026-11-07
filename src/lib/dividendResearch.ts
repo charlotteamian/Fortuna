@@ -3,6 +3,9 @@ import { dateInChina, mainlandCode, trailingYearStart } from './dividendWorkbenc
 import { dividendPricingReadable, type DividendPricingResult, type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from './dividendPricing.ts';
 import { reviewDividendFinancialSector, type DividendBankReportEvidence, type DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
+import { dividendLedgerBase } from './dividendLedger.ts';
+import { dividendEvidenceStatus } from './dividendEvidenceStatus.ts';
+import { hasCurrentUserDividendEvidence } from './dividendManualInputs.ts';
 export type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 
 /** Editable screening starting points, not a promise of safety or future income. Percentages use basis points. */
@@ -238,8 +241,30 @@ export function parseDividendDistributionResearch(raw: unknown, code: string, as
   return { asOf, dpsMicros, consecutiveYears, latestCompletedYear, annualDpsMicros };
 }
 
+/** Derive cash yield from the dated unadjusted quote and its own cash/share basis.
+ * A failed or stale adjusted technical feed cannot erase an independent cash yield. */
+export function dividendResearchCashYield(stock: DividendStockResearch, now = Date.now()): { yieldBps?: number; periods?: string[] } {
+  const pricing = stock.pricing, asOf = dateInChina(new Date(now));
+  if (!pricing) return {};
+  if (!hasCurrentUserDividendEvidence(pricing, asOf) && stock.issues.some(issue => issue.kind === 'dividend')) return {};
+  const price = pricing.currentPriceMinor, priceDate = validDate(pricing.priceDate);
+  const age = priceDate ? (Date.parse(asOf) - Date.parse(priceDate)) / 86400000 : Infinity;
+  if (!Number.isSafeInteger(price) || price! <= 0 || age < 0 || age > 10) return {};
+  let base = pricing.dividendBase;
+  if (pricing.ledger) {
+    if (!priceDate || priceDate > pricing.ledger.asOf || !dividendEvidenceStatus(pricing.ledger, pricing.ledger.asOf).usable) return {};
+    const annual = pricing.annuals[0];
+    try { base = dividendLedgerBase(pricing.ledger, priceDate, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps }); } catch { return {}; }
+  } else if (!validDate(base?.asOf) || base!.asOf > asOf || base!.asOf < priceDate! || base?.latestExDate && priceDate! < base.latestExDate) return {};
+  if (pricing.userConfirmedEvidence && !hasCurrentUserDividendEvidence(pricing, asOf)) return {};
+  if (!base?.verified || !Number.isSafeInteger(base.dpsMicros) || base.dpsMicros! <= 0) return {};
+  return { yieldBps: Math.round(base.dpsMicros! / price!), periods: base.reportPeriods };
+}
+
 /** Technical pacing is deliberately separate from financial eligibility. Unknown inputs never pass. */
 export function evaluateDividendResearch(stock: DividendStockResearch, principles: DividendSelectionPrinciples, now = Date.now()): DividendStockResearch {
+  const cashYield = dividendResearchCashYield(stock, now);
+  stock = { ...stock, yieldBps: cashYield.yieldBps, yieldReportPeriods: cashYield.periods };
   const checks: DividendResearchCheck[] = [];
   const latest = stock.financial?.latest, annual = stock.financial?.annual;
   const age = latest ? (now - new Date(`${latest.reportDate}T00:00:00+08:00`).getTime()) / 86400000 : undefined;
@@ -252,7 +277,7 @@ export function evaluateDividendResearch(stock: DividendStockResearch, principle
       status: stale || value === undefined ? 'unknown' : (minimum ? value >= threshold : value <= threshold) ? 'pass' : 'risk',
       ...(stale ? { reason: 'stale' as const } : value === undefined ? { reason: 'missing' as const } : {}) });
   };
-  check('yield', stock.yieldBps, principles.minYieldBps, true, stock.yieldReportPeriods?.join('、'), stock.technical?.currentUsable === false);
+  check('yield', stock.yieldBps, principles.minYieldBps, true, stock.yieldReportPeriods?.join('、'));
   check('roe', annual?.roeBps, principles.minRoeBps, true, annual?.reportDate, staleAnnual);
   check('revenueGrowth', latest?.revenueGrowthBps, principles.minRevenueGrowthBps, true, latest?.reportDate, staleLatest);
   check('profitGrowth', latest?.profitGrowthBps, principles.minProfitGrowthBps, true, latest?.reportDate, staleLatest);
@@ -378,7 +403,7 @@ export function dividendResearchReadableSnapshot(snapshot: DividendResearchSnaps
         'Scope':'A numeric dividend screen, not a complete regulatory compliance opinion. Banks use policy buffers; insurer core solvency and risk rating cannot be inferred from comprehensive solvency.',
       } : null,
       'Recent eight reported periods': stock.financial?.periods.slice(0, 8).map(period) ?? [],
-      'Verified recent-batch cash dividend yield percent, using the dated unadjusted close': stock.technical?.currentUsable === false ? null : percent(stock.yieldBps),
+      'Verified recent-batch cash dividend yield percent, using the dated unadjusted close': percent(dividendResearchCashYield(stock, snapshot.generatedAt).yieldBps),
       'Dividend reporting periods for the cash yield': stock.yieldReportPeriods ?? null,
       'Trailing reported cash per share in CNY, before bonus-share conversion': amount(stock.distributions?.dpsMicros, 1e6),
       'Completed fiscal-year distributions per share in CNY': stock.distributions ? Object.fromEntries(Object.entries(stock.distributions.annualDpsMicros).filter(([year]) => Number(year) >= stock.distributions!.latestCompletedYear - 4).map(([year, dps]) => [year, dps / 1e6])) : null,

@@ -9,14 +9,11 @@ import {
 } from '../services/planService';
 import { useAppContext } from '../app-context';
 import {
-  computeFundingWaterfall,
-  parsePlannedPurchases,
   planPercentFromInput,
   planProgress,
   getResourceAllocation,
   majorToMinor,
   minorToMajor,
-  remainingTargetPercent,
   targetAmountFromPercent,
 } from '../lib/allocationPlan';
 import './PlanPage.css';
@@ -227,16 +224,10 @@ export default function PlanPage() {
   const handleSaveItem = async () => {
     if (!itemFormValid || saving) return;
     const pct = planPercentFromInput(formPercent, formInputMode, status?.base ?? 0);
-    const usedByOthers = status?.items.reduce((sum, item) => sum + (item.id === editingItem?.id ? 0 : item.targetPercent), 0) ?? 0;
-    const concreteTargetMinimum = editingItem
-      ? status?.items.find(item => item.id === editingItem.id)?.targetPercentSum ?? 0
-      : 0;
     if (
       !formName.trim()
-      || isNaN(pct)
-      || pct <= 0
-      || pct > 100 - usedByOthers + 0.000001
-      || pct < concreteTargetMinimum - 0.000001
+      || !Number.isFinite(pct)
+      || pct < 0
       || formCats.length === 0
     ) return;
     const exactRefs = formCats.flatMap(scope => {
@@ -245,7 +236,7 @@ export default function PlanPage() {
     });
     const data = {
       name: formName.trim(),
-      plannedPurchases: formPurchases.trim(),
+      plannedPurchases: formPurchases,
       targetPercent: pct,
       categories: formCats,
       allocations: allocationsFromInputs(exactRefs, formAllocationAmounts),
@@ -281,10 +272,9 @@ export default function PlanPage() {
   };
   const handleSaveTarget = async () => {
     if (!targetItem || !targetFormValid || saving) return;
-    const pct = parseFloat(tgPercent);
+    const pct = planPercentFromInput(tgPercent, 'percent', status?.base ?? 0);
     const label = tgLabel.trim();
-    const remaining = remainingTargetPercent(targetItem.targetPercent, targetItem.targets, editingTarget?.id);
-    if (isNaN(pct) || pct <= 0 || pct > remaining + 0.000001 || !label) return;
+    if (!Number.isFinite(pct) || pct < 0 || !label) return;
     const data = {
       label,
       refKeys: tgRefKeys,
@@ -372,13 +362,6 @@ export default function PlanPage() {
   );
   const sumOk = Math.abs(status.targetPercentSum - 100) < 0.01;
   const unplannedValue = status.unplanned.reduce((s, u) => s + u.value, 0);
-  const editingItemStatus = editingItem ? status.items.find(item => item.id === editingItem.id) : undefined;
-  const itemPercentUsedByOthers = status.items.reduce(
-    (sum, item) => sum + (item.id === editingItem?.id ? 0 : item.targetPercent),
-    0,
-  );
-  const formPercentMin = editingItemStatus?.targetPercentSum ?? 0;
-  const formPercentMax = Math.max(0, 100 - itemPercentUsedByOthers);
   const parsedFormPercent = planPercentFromInput(formPercent, formInputMode, status.base);
   const resourceCurrentValues = new Map<string, number>();
   for (const account of status.equityAccounts) {
@@ -416,16 +399,11 @@ export default function PlanPage() {
     formName.trim()
     && formCats.length > 0
     && Number.isFinite(parsedFormPercent)
-    && parsedFormPercent > 0
-    && parsedFormPercent >= formPercentMin - 0.000001
-    && parsedFormPercent <= formPercentMax + 0.000001
+    && parsedFormPercent >= 0
     && !itemAllocationInvalid
   );
 
-  const parsedTargetPercent = parseFloat(tgPercent);
-  const targetPercentMax = targetItem
-    ? remainingTargetPercent(targetItem.targetPercent, targetItem.targets, editingTarget?.id)
-    : 0;
+  const parsedTargetPercent = planPercentFromInput(tgPercent, 'percent', status.base);
   const targetLabel = tgLabel.trim();
   const targetRefsUsedByOthers = new Set((targetItem?.targets ?? [])
     .filter(target => target.id !== editingTarget?.id)
@@ -451,8 +429,7 @@ export default function PlanPage() {
     && targetLabel
     && !targetAllocationInvalid
     && Number.isFinite(parsedTargetPercent)
-    && parsedTargetPercent > 0
-    && parsedTargetPercent <= targetPercentMax + 0.000001
+    && parsedTargetPercent >= 0
   );
   const targetAmountPreview = targetAmountFromPercent(
     status.base,
@@ -558,10 +535,7 @@ export default function PlanPage() {
     const progress = planProgress(item.currentValue, item.targetValue);
     const gap = Math.round(item.gapValue * 100) / 100;
     const isAtTarget = progress !== undefined && Math.abs(gap) < 0.01;
-    const targets = parsePlannedPurchases(item.plannedPurchases);
-    const waterfall = gap > 0.01
-      ? computeFundingWaterfall(status.items, item.id, { requiredAmount: gap, idleCash: unplannedValue })
-      : null;
+    const notes = item.plannedPurchases ?? '';
 
     return (
       <article key={item.id} className="plan-card" style={{ '--plan-color': color } as CSSProperties}>
@@ -636,36 +610,11 @@ export default function PlanPage() {
           )}
         </div>
 
-        {/* Automatic Funding Waterfall for underweight buckets */}
-        {waterfall && (waterfall.steps.length > 0 || waterfall.shortfallAmount >= 0.01) && (
-          <div style={{ marginTop: 'var(--sp-2)', padding: 'var(--sp-2) var(--sp-2)', borderRadius: 'var(--radius-md)', background: 'var(--bg-glass)', border: '1px solid var(--border)', fontSize: 'var(--fs-xs)' }}>
-            <div style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)', marginBottom: 'var(--sp-1)' }}>
-              💧 {t('plan_waterfall_title')}
-            </div>
-            <ol style={{ margin: 0, paddingLeft: 16, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {waterfall.steps.map((step, sIdx) => (
-                <li key={sIdx}>
-                  {step.sourceType === 'idle_cash'
-                    ? t('plan_waterfall_step_idle', { amount: masked(fmt(step.amount)), currency: primary })
-                    : step.sourceType === 'overweight_trim'
-                      ? t('plan_waterfall_step_trim', { name: step.bucketName ?? '', amount: masked(fmt(step.amount)), currency: primary })
-                      : t('plan_waterfall_step_redeem', { name: step.bucketName ?? '', amount: masked(fmt(step.amount)), currency: primary })}
-                </li>
-              ))}
-              {waterfall.shortfallAmount >= 0.01 && (
-                <li style={{ color: 'var(--text-muted)' }}>
-                  {t('plan_waterfall_shortfall', { amount: masked(fmt(waterfall.shortfallAmount)), currency: primary })}
-                </li>
-              )}
-            </ol>
-          </div>
-        )}
-
-        {/* Planned Target Assets (Tags & quick add/edit) */}
+        {/* Free-form notes keep the existing multiline text. */}
         <div className="plan-targets-box">
           <div className="plan-targets-heading">
-            <span className="plan-targets-title">🎯 {t('plan_intended_targets')}</span>
-            {targets.length > 0 && <button
+            <span className="plan-targets-title">{t('plan_intended_targets')}</span>
+            {notes.trim() && <button
               type="button"
               className="plan-text-button"
               aria-label={t('plan_edit_purchases_named', { name: item.name })}
@@ -676,12 +625,9 @@ export default function PlanPage() {
           </div>
 
           <div className="plan-tags-wrap">
-            {targets.map((tgt, tIdx) => (
-              <button type="button" key={`${tIdx}-${tgt}`} className="plan-tag" onClick={() => openPurchases(item)}>
-                {tgt}
-              </button>
-            ))}
-            {targets.length === 0 && (
+            {notes.trim() ? (
+              <button type="button" className="plan-note-content" aria-label={t('plan_edit_purchases_named', { name: item.name })} onClick={() => openPurchases(item)}>{notes}</button>
+            ) : (
               <button type="button" className="plan-tag-add" onClick={() => openPurchases(item)}>
                 {t('plan_add_target_tag')}
               </button>
@@ -742,7 +688,6 @@ export default function PlanPage() {
           )}
           <button
             className="btn-text"
-            disabled={item.targetPercentSum >= item.targetPercent - 0.000001}
             onClick={() => openAddTarget(item)}
             style={{ marginTop: 'var(--sp-1)' }}
           >
@@ -776,7 +721,7 @@ export default function PlanPage() {
           <button type="button" className="plan-text-button" onClick={openTarget}>{t('plan_change_budget')}</button>
         </div>
 
-        <div className="plan-budget-grid">
+        <div className={`plan-budget-grid${Math.max(masked(fmt(status.base)).length, masked(fmt(status.totalAssets)).length) > 9 ? ' plan-budget-grid-long' : ''}`}>
           <div className="plan-budget-col">
             <div className="plan-budget-amount">{masked(fmt(status.base))}</div>
           </div>
@@ -1013,7 +958,7 @@ export default function PlanPage() {
                 type="number"
                 inputMode="decimal"
                 step="any"
-                min="0.01"
+                min="0"
                 placeholder={formInputMode === 'percent' ? '20' : '100000'}
                 value={formPercent}
                 onChange={e => setFormPercent(e.target.value)}
@@ -1025,19 +970,14 @@ export default function PlanPage() {
                     : `${fmtPct(parsedFormPercent)}%`}
                 </p>
               )}
-              <p className="plan-help">
-                {formPercentMin > 0
-                  ? t('plan_percent_range', { min: fmtPct(formPercentMin), max: fmtPct(formPercentMax) })
-                  : t('plan_percent_available', { percent: fmtPct(formPercentMax) })}
-              </p>
               {formInputMode === 'amount' && <p className="plan-help">{t('plan_amount_converted')}</p>}
               {status.base <= 0 && <p className="plan-help">{t('plan_amount_needs_base')}</p>}
-              {formPercent.trim() && (!Number.isFinite(parsedFormPercent) || parsedFormPercent <= 0 || parsedFormPercent > formPercentMax + 0.000001 || parsedFormPercent < formPercentMin - 0.000001) && (
+              {formPercent.trim() && (!Number.isFinite(parsedFormPercent) || parsedFormPercent < 0) && (
                 <p className="plan-error-text" role="alert">{t('plan_percent_invalid')}</p>
               )}
             </div>
 
-            {/* Step 3: Planned Purchases (Target list) */}
+            {/* Optional notes */}
             <div className="form-group">
               <label className="form-label" htmlFor="plan-purchases">{t('plan_intended_targets')}</label>
               <textarea
@@ -1265,9 +1205,8 @@ export default function PlanPage() {
                 className="form-input mono"
                 type="number"
                 inputMode="decimal"
-                step="0.1"
-                min="0.01"
-                max={targetPercentMax}
+                step="any"
+                min="0"
                 placeholder="10"
                 value={tgPercent}
                 onChange={e => setTgPercent(e.target.value)}
@@ -1367,12 +1306,12 @@ export default function PlanPage() {
         </div>
       )}
 
-      {/* Quick Edit Targets Modal */}
+      {/* Notes editor */}
       {purchaseItem && (
         <div className="modal-overlay" onClick={() => !saving && setPurchaseItem(null)}>
           <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="purchases-title" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 id="purchases-title" className="modal-title">🎯 {t('plan_intended_targets')} · {purchaseItem.name}</h2>
+              <h2 id="purchases-title" className="modal-title">{t('plan_intended_targets')} · {purchaseItem.name}</h2>
               <button className="modal-close" aria-label={t('close')} onClick={() => setPurchaseItem(null)}>✕</button>
             </div>
             <div className="form-group">
@@ -1395,7 +1334,7 @@ export default function PlanPage() {
                 className="btn btn-primary btn-block"
                 disabled={saving}
                 onClick={() => void saveAction(async () => {
-                  await updatePlanItem(purchaseItem.id, { plannedPurchases: purchaseInput.trim() });
+                  await updatePlanItem(purchaseItem.id, { plannedPurchases: purchaseInput });
                   setPurchaseItem(null);
                 })}
               >

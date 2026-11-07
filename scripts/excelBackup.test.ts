@@ -109,6 +109,24 @@ test('binary reads with missing or generic MIME restore all ledger tables and fi
   }
 });
 
+test('Excel preserves calculated cash mode and integer initial amount; rejects malformed anchors atomically', async () => {
+  await db.accounts.update(account.id, { includeInTotals: true, hidden: false, cashCalculationMode: 'initial-minus-holdings', cashInitialAmountMinor: 123456789, cashBalance: -12.34 });
+  const before = await ledgerSnapshot();
+  const backup = await exportToExcel();
+  await db.accounts.update(account.id, { cashCalculationMode: 'manual', cashInitialAmountMinor: 1, cashBalance: 5 });
+  assert.equal(await importFromExcel(backup), true);
+  assert.deepEqual((await ledgerSnapshot()).accounts, before.accounts);
+  const restored = await ledgerSnapshot();
+  for (const invalid of [-1, 1.5, 'bad', '']) {
+    const workbook = XLSX.read(backup, { type: 'base64' });
+    const accounts = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets.Accounts);
+    accounts[0].cashInitialAmountMinor = invalid;
+    workbook.Sheets.Accounts = XLSX.utils.json_to_sheet(accounts);
+    assert.equal(await importFromExcel(XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' })), false);
+    assert.deepEqual(await ledgerSnapshot(), restored);
+  }
+});
+
 test('current backups preserve literal separators in user-defined plan categories', async () => {
   const { updateSettings } = await import('../src/db.ts');
   const settings = await initializeSettings();

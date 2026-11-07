@@ -4,8 +4,8 @@ import type { DividendPricingResult } from '../lib/dividendPricing';
 import { dividendPricingGuide } from '../lib/dividendPricingGuide';
 import './DividendPricingGuide.css';
 
-export default function DividendPricingGuide({ pricing, check, disabled = false, onRetry }: {
-  pricing: DividendPricingResult; check?: DividendCheckSummary; disabled?: boolean; onRetry?: () => void;
+export default function DividendPricingGuide({ pricing, check, disabled = false, onRetry, onFill }: {
+  pricing: DividendPricingResult; check?: DividendCheckSummary; disabled?: boolean; onRetry?: () => void; onFill?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const guide = dividendPricingGuide(pricing, check);
@@ -13,7 +13,8 @@ export default function DividendPricingGuide({ pricing, check, disabled = false,
   return <section className={`div-price-guide is-${guide.status}`} aria-label={t('div_price_guide_title')}>
     <strong>{t(`div_price_guide_${guide.status}`)}</strong>
     {guide.gaps.map(gap => <p className="div-price-guide-gap" key={gap.kind}>{t(`div_price_guide_gap_${gap.kind}`)}</p>)}
-    {onRetry && <div className="div-price-guide-recovery"><button type="button" className="btn btn-secondary" disabled={disabled} onClick={onRetry}>{t('div_price_guide_retry')}</button>
+    {guide.status !== 'ready' && onFill && <button type="button" className="btn btn-primary" disabled={disabled} onClick={onFill}>{t('div_manual_open')}</button>}
+    {guide.status !== 'ready' && onRetry && <div className="div-price-guide-recovery"><button type="button" className="btn btn-secondary" disabled={disabled} onClick={onRetry}>{t('div_price_guide_retry')}</button>
       <p>{t('div_price_guide_retry_note')}</p></div>}
     {(guide.status !== 'ready' || guide.gaps.length > 0) && <details><summary>{t('div_price_guide_title')}</summary>
       <ol className="div-price-guide-steps"><li><strong>{t('div_price_guide_base')}</strong>

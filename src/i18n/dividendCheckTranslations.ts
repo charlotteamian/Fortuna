@@ -1,4 +1,5 @@
 export const dividendCheckZh = {
+  div_check_reason_historical_announcement_gaps: '旧公告尚有缺口，已与本次所需分红批次分开',
   div_read_filter: '计划筛选', div_read_filter_all: '全部', div_read_filter_triggered: '到价', div_read_filter_held: '持有', div_read_filter_paused: '暂停', div_read_filter_unknown: '资料未知',
   div_read_evidence: '查看全部依据', div_read_observation_note: '到价仅为价格观察，仍须复核与人工确认。',
   div_read_original_tier: '原第{{level}}档', div_read_price_reference: '仅价格参考 · 目标股数待核实',
@@ -95,6 +96,7 @@ export const dividendCheckZh = {
 };
 
 export const dividendCheckEn: Record<keyof typeof dividendCheckZh, string> = {
+  div_check_reason_historical_announcement_gaps: 'Older notices have gaps outside the required current cash batches',
   div_read_filter: 'Filter plans', div_read_filter_all: 'All', div_read_filter_triggered: 'Price reached', div_read_filter_held: 'Held', div_read_filter_paused: 'Paused', div_read_filter_unknown: 'Unknown data',
   div_read_evidence: 'View all evidence', div_read_observation_note: 'A price observation still requires review and manual confirmation.',
   div_read_original_tier: 'Original tier {{level}}', div_read_price_reference: 'Price reference only · target quantity unverified',

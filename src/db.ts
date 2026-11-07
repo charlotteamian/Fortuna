@@ -1,3 +1,4 @@
+import { isDividendManualInputsMap, type DividendManualInputs } from './lib/dividendManualInputs.ts';
 import { isPriceMonitor, type PriceMonitor } from './lib/priceMonitor';
 import { isDividendStock, type DividendStock } from './lib/dividendWorkbench';
 import { isDividendSelectionPrinciples, type DividendSelectionPrinciples } from './lib/dividendResearch';
@@ -30,6 +31,8 @@ export interface Account {
   productData?: Record<string, string>;
   portfolio?: boolean;     // platform-managed equity account: holdings live in `holdings`/`holdingTxns`
   cashBalance?: number;    // portfolio accounts: idle cash on the platform (account currency)
+  cashCalculationMode?: 'manual' | 'initial-minus-holdings';
+  cashInitialAmountMinor?: number; // reverse cash calculation anchor, in account-currency minor units
   archivedAt?: number;     // archived accounts are hidden from active totals but keep all history
   includeInTotals?: boolean; // false = keep tracking, but exclude from asset/liability/net-worth totals
   hidden?: boolean;        // presentation-only: hidden from regular overviews/charts until restored in Settings
@@ -155,6 +158,7 @@ export interface Settings {
   colorTheme: string;        // theme id
   amountVisible: boolean;    // false = masked by default
   showArchivedAccounts?: boolean; // whether archived accounts are expanded on the asset overview
+  chartNavAccountIds?: string[]; // explicit opt-in for named portfolio-account NAV statistics
   themeMode?: 'light' | 'dark' | 'auto';
   fontSize?: 'small' | 'normal' | 'large';
   language?: 'auto' | 'zh' | 'en';
@@ -167,6 +171,7 @@ export interface Settings {
   dividendFundPlan?: DividendFundPlan;
   dividendSelectionPrinciples?: DividendSelectionPrinciples;
   dividendPricingMethod?: DividendPricingMethod;
+  dividendManualInputs?: Record<string, DividendManualInputs>;
   planTargetTotal?: number;           // optional target total assets for the allocation plan (primary currency)
   onboardingVersion?: number;         // 0 = show first-install guide; current version = completed/skipped
   snapshotFocusAccountIds?: string[]; // optional focus labels in the portable automatic snapshot
@@ -504,7 +509,7 @@ export async function importData(jsonData: string): Promise<boolean> {
   try {
     const data = JSON.parse(jsonData);
     if (!data.accounts || !data.records || !data.settings) return false;
-    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
+    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.dividendManualInputs === undefined || isDividendManualInputsMap(row.dividendManualInputs)) && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
     if (data.dividendStocks !== undefined && (!Array.isArray(data.dividendStocks) || !data.dividendStocks.every(isDividendStock))) return false;
 
     if (data.priceMonitors !== undefined && (!Array.isArray(data.priceMonitors) || !data.priceMonitors.every(isPriceMonitor) || new Set(data.priceMonitors.map((plan: PriceMonitor) => plan.id)).size !== data.priceMonitors.length)) return false;
@@ -552,10 +557,12 @@ export async function exportToExcel(): Promise<string> {
       categories: JSON.stringify(row.categories),
       currencies: JSON.stringify(row.currencies),
       snapshotFocusAccountIds: JSON.stringify(row.snapshotFocusAccountIds ?? []),
+      chartNavAccountIds: row.chartNavAccountIds === undefined ? '' : JSON.stringify(row.chartNavAccountIds),
       dividendHomeCollapsedCodes: row.dividendHomeCollapsedCodes === undefined ? '' : JSON.stringify(row.dividendHomeCollapsedCodes),
       dividendFundPlan: row.dividendFundPlan === undefined ? '' : JSON.stringify(row.dividendFundPlan),
       dividendSelectionPrinciples: row.dividendSelectionPrinciples === undefined ? '' : JSON.stringify(row.dividendSelectionPrinciples),
       dividendPricingMethod: row.dividendPricingMethod === undefined ? '' : JSON.stringify(row.dividendPricingMethod),
+      dividendManualInputs: row.dividendManualInputs === undefined ? '' : JSON.stringify(row.dividendManualInputs),
     };
   });
   const metadataExport = [{
@@ -723,6 +730,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       void _latestBalance;
       return {
         ...rest,
+        ...(rest.cashInitialAmountMinor !== undefined ? { cashInitialAmountMinor: normalizeExcelBackupNumber(rest.cashInitialAmountMinor) } : {}),
         includeInTotals: parseBoolean(rest.includeInTotals, true),
         hidden: parseBoolean(rest.hidden, false),
         productData: typeof productData === 'string' ? (() => { try { return JSON.parse(productData) as Record<string, string>; } catch { return undefined; } })() : undefined,
@@ -862,7 +870,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       const codes: unknown = JSON.parse(row.dividendHomeCollapsedCodes);
       return Array.isArray(codes) && codes.every(code => typeof code === 'string');
     })) return fail('invalid_data', sheet);
-    if (!settingsRaw.every(row => (row.dividendPricingMethod === undefined || row.dividendPricingMethod === '' || (typeof row.dividendPricingMethod === 'string' && isDividendPricingMethod(JSON.parse(row.dividendPricingMethod)))) && (row.dividendSelectionPrinciples === undefined || row.dividendSelectionPrinciples === '' || (typeof row.dividendSelectionPrinciples === 'string' && isDividendSelectionPrinciples(JSON.parse(row.dividendSelectionPrinciples)))) && (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return fail('invalid_data', sheet);
+    if (!settingsRaw.every(row => (row.dividendManualInputs === undefined || row.dividendManualInputs === '' || typeof row.dividendManualInputs === 'string' && isDividendManualInputsMap(JSON.parse(row.dividendManualInputs))) && (row.dividendPricingMethod === undefined || row.dividendPricingMethod === '' || (typeof row.dividendPricingMethod === 'string' && isDividendPricingMethod(JSON.parse(row.dividendPricingMethod)))) && (row.dividendSelectionPrinciples === undefined || row.dividendSelectionPrinciples === '' || (typeof row.dividendSelectionPrinciples === 'string' && isDividendSelectionPrinciples(JSON.parse(row.dividendSelectionPrinciples)))) && (row.dividendFundPlan === undefined || row.dividendFundPlan === '' || (typeof row.dividendFundPlan === 'string' && isDividendFundPlan(JSON.parse(row.dividendFundPlan)))) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(String(row.dividendStrategy))))) return fail('invalid_data', sheet);
     const restoredSettings: Settings[] = settingsRaw.flatMap(row => {
       const categories = parseJson<CategoryDef[]>(row.categories, []);
       const currencies = parseJson<string[]>(row.currencies, []);
@@ -881,6 +889,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         goldPriceSource: row.goldPriceSource === 'domestic' ? 'domestic' : 'international',
         metalTxnMigrated: needsLegacyMetalMigration ? false : parseBoolean(row.metalTxnMigrated, true),
         onboardingVersion: Number(row.onboardingVersion) || CURRENT_ONBOARDING_VERSION,
+        chartNavAccountIds: parseJson<string[] | undefined>(row.chartNavAccountIds, undefined)?.filter(id => typeof id === 'string'),
         snapshotFocusAccountIds: parseJson<string[]>(
           row.snapshotFocusAccountIds ?? getLegacySnapshotFocusIds(row),
           [],
@@ -893,6 +902,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         dividendFundPlan: parseJson<DividendFundPlan | undefined>(row.dividendFundPlan, undefined),
         dividendSelectionPrinciples: parseJson<DividendSelectionPrinciples | undefined>(row.dividendSelectionPrinciples, undefined),
         dividendPricingMethod: parseJson<DividendPricingMethod | undefined>(row.dividendPricingMethod, undefined),
+        dividendManualInputs: parseJson<Record<string, DividendManualInputs> | undefined>(row.dividendManualInputs, undefined),
       };
       const targetTotal = Number(row.planTargetTotal);
       if (Number.isFinite(targetTotal) && targetTotal > 0) restored.planTargetTotal = targetTotal;
@@ -917,6 +927,10 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       && validId(account.currency)
       && Number.isFinite(account.createdAt)
       && Number.isFinite(account.sortOrder)
+      && (account.cashCalculationMode === undefined || account.cashCalculationMode === 'manual' || account.cashCalculationMode === 'initial-minus-holdings')
+      && (account.cashInitialAmountMinor === undefined || (Number.isSafeInteger(account.cashInitialAmountMinor) && account.cashInitialAmountMinor >= 0))
+      && (account.cashCalculationMode !== 'initial-minus-holdings'
+        || (account.portfolio === true && ['股票/ETF', '股票'].includes(account.category) && account.cashInitialAmountMinor !== undefined))
     ))) return fail('invalid_data', 'Accounts');
     if (!uniqueIds(records) || !records.every(record => (
       validId(record.id)

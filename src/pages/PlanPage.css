@@ -34,7 +34,7 @@
 
 .plan-budget-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-3);
   margin: var(--sp-2) 0 var(--sp-1);
 }
@@ -43,23 +43,35 @@
   flex-direction: column;
   gap: var(--sp-1);
   justify-content: center;
+  min-width: 0;
 }
 .plan-budget-col + .plan-budget-col {
   border-left: 1px solid var(--border);
   padding-left: var(--sp-3);
 }
 .plan-budget-amount {
-  font-size: var(--fs-5xl);
+  font-size: var(--fs-3xl);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
   line-height: var(--lh-tight);
+  white-space: nowrap;
+  letter-spacing: -0.02em;
 }
 .plan-budget-sub {
-  font-size: var(--fs-4xl);
+  font-size: var(--fs-2xl);
   font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
   line-height: var(--lh-tight);
   color: var(--text-secondary);
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+.plan-budget-grid-long { grid-template-columns: minmax(0, 1fr); }
+.plan-budget-grid-long .plan-budget-col + .plan-budget-col {
+  border-left: 0;
+  border-top: 1px solid var(--border);
+  padding-left: 0;
+  padding-top: var(--sp-2);
 }
 
 /* Allocation distribution visual bars */
@@ -246,7 +258,7 @@
   flex-wrap: wrap;
 }
 
-/* Planned purchase items (tags & list) */
+/* Free-form plan notes */
 .plan-targets-box {
   margin-top: var(--sp-3);
   padding-top: var(--sp-2);
@@ -304,6 +316,21 @@
 .plan-tag-add:hover, .plan-tag-add:active {
   background: var(--asset-dim);
   border-color: var(--asset-color);
+}
+.plan-note-content {
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-1) 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 .plan-raw-note {
   font-size: var(--fs-sm);

@@ -52,7 +52,7 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     ? [failedRule ?? summary.eligibility.reasons[0], ...reasons.filter(reason => reason === 'manual_pause'), ...summary.eligibility.reasons, ...reasons].filter((reason): reason is string => !!reason)
     : reasons;
   const focusReasons = [...new Set(rankedReasons)].filter(reason => !routine.has(dividendCheckReasonCode(reason)));
-  const primaryReasons = mode === 'full' ? reasons : mode === 'row' ? focusReasons.slice(0, 2) : reasons.slice(0, 3);
+  const primaryReasons = mode === 'full' ? reasons : mode === 'row' ? focusReasons.filter(reason => reason === 'manual_pause' || summary.eligibility.checks.some(check => `rule_${check.rule}` === reason && check.status === 'risk')).slice(0, 1) : reasons.slice(0, 3);
   const riskReasons = new Set(allRisks.map(item => dividendCheckReasonCode(item.reason)));
   const remainingReasons = (mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [])
     .filter(reason => !riskReasons.has(dividendCheckReasonCode(reason)) && !primaryReasons.includes(reason) && !routine.has(dividendCheckReasonCode(reason)));
@@ -75,7 +75,7 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     <span>{item.reportPeriod ? t('div_check_report_period', { date: item.reportPeriod }) : t('div_check_date_unknown')}
       {item.publishedAt && ` · ${t('div_check_notice_date', { date: item.publishedAt })}`}{item.verifiedAt && ` · ${t('div_check_verified_date', { date: item.verifiedAt })}`}</span>
   </li>;
-  const gridKey = summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
+  const gridKey = summary.grid.userConfirmedAt && summary.grid.status === 'verified' ? 'div_manual_grid_confirmed' : summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
   return <section className={`div-check-status${mode === 'row' ? ' div-check-status-row' : ''}`} aria-label={t('div_check_status_title')}>
     {mode === 'row' && <p className={`div-focus-check-title is-${summary.eligibility.status}`}>{t(`div_focus_eligibility_${summary.eligibility.status}`)}</p>}
     {mode !== 'row' && <dl className="div-check-status-main"><div><dt>{t(summary.kind === 'fund' ? 'div_check_fund_eligibility' : 'div_check_eligibility')}</dt>
@@ -85,7 +85,6 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
       <div><dt>{t('div_check_action')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side} className="div-check-status-observation">{t(`div_check_${side}`)} · {t(`div_check_action_${summary.actionCheck[side].status}`)}</span>)}</dd></div>
     </dl>}
     {primaryReasons.length > 0 && (mode === 'row' ? <ul className="div-check-primary-reasons">{primaryReasons.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong></li>)}</ul> : reasonItems(primaryReasons))}
-    {mode === 'row' && summary.kind === 'stock' && summary.eligibility.status !== 'pass' && <p className="div-check-status-note">{t('div_experience_check_next')}</p>}
     {mode !== 'row' && <p className="div-check-status-note">{t('div_check_observation_note')}</p>}
     <details className="div-check-status-evidence"><summary>{t(mode === 'row' ? 'div_read_evidence' : 'div_check_evidence')}</summary>
       {mode === 'row' && <dl className="div-check-status-main"><div><dt>{t('div_check_grid')}</dt><dd>{t(gridKey)}</dd></div>
@@ -102,7 +101,7 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
       {dates.evidenceVerifiedDates.length > 0 && <p>{t('div_check_verified_date', { date: dates.evidenceVerifiedDates.join(' · ') })}</p>}
       {allRisks.length > 0 && <details><summary>{t('div_experience_observations_details', { count: allRisks.length })}</summary><ul className="div-check-status-reasons">{allRisks.map(evidence)}</ul></details>}
       <details><summary>{t('div_experience_sources')}</summary>{sourceLinks([...dates.sources, ...allRisks.flatMap(item => item.sources)])}</details>
-      {children}
+      <details><summary>{t('div_manual_more_analysis')}</summary>{children}</details>
     </details>
   </section>;
 }

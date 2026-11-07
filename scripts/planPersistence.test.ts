@@ -283,6 +283,60 @@ test('initial plan keeps fractional allocations and rejects a duplicate retry', 
   assert.equal(await db.planItems.count(), 3);
 });
 
+test('plan ratio edits preserve the exact entry even below children or above sibling and parent totals', async () => {
+  await seedAccount();
+  const note = '保留原有备注；未来加仓 ETF。';
+  const parent = await createPlanItem({ name: 'Editable category', categories: ['acct:qa-account'], targetPercent: 40, plannedPurchases: note });
+  const sibling = await createPlanItem({ name: 'Unchanged sibling', categories: ['银行存款'], targetPercent: 60 });
+  const target = await createPlanTarget({ planItemId: parent, label: 'Linked child', targetPercent: 40,
+    refKeys: ['a:qa-account'], allocations: [{ refKey: 'a:qa-account', amountMinor: 5000000 }] });
+  const untouchedChild = await createPlanTarget({ planItemId: parent, label: 'Unchanged child', targetPercent: 10, refKeys: [] });
+  const originalSibling = await db.planItems.get(sibling);
+  const originalTarget = await db.planTargets.get(target);
+  const originalUntouchedChild = await db.planTargets.get(untouchedChild);
+  const originalLedger = await Promise.all([db.accounts.toArray(), db.records.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(), db.products.toArray()]);
+
+  await updatePlanItem(parent, { targetPercent: 30.123456789 });
+  let status = await getPlanStatus();
+  let savedParent = status.items.find(item => item.id === parent)!;
+  assert.equal(savedParent.targetPercent, 30.123456789, 'child allocations do not impose a lower bound');
+  assert.equal(savedParent.targetPercentSum, 50, 'children are not silently scaled down');
+  assert.equal(savedParent.plannedPurchases, note);
+  assert.deepEqual(await db.planItems.get(sibling), originalSibling);
+  assert.deepEqual(await db.planTargets.get(target), originalTarget);
+
+  await updatePlanItem(parent, { targetPercent: 120.125 });
+  await updatePlanTarget(target, { targetPercent: 150.25 });
+  status = await getPlanStatus();
+  savedParent = status.items.find(item => item.id === parent)!;
+  assert.equal(savedParent.targetPercent, 120.125, 'an over-100 entry retains its exact value');
+  assert.equal(status.targetPercentSum, 180.125, 'over-budget totals remain observable');
+  assert.equal(savedParent.targetPercentSum, 160.25, 'a child may exceed its parent without changing peers');
+  assert.deepEqual(await db.planItems.get(sibling), originalSibling);
+  assert.deepEqual(await db.planTargets.get(untouchedChild), originalUntouchedChild);
+  assert.deepEqual(await db.planTargets.get(target), { ...originalTarget, targetPercent: 150.25 });
+  assert.deepEqual(await Promise.all([db.accounts.toArray(), db.records.toArray(), db.holdings.toArray(), db.holdingTxns.toArray(), db.products.toArray()]), originalLedger);
+});
+
+test('zero plan ratios retain their categories, notes, resource links and sibling allocations', async () => {
+  await seedAccount();
+  const parent = await createPlanItem({ name: 'Zero category', categories: ['现金'], targetPercent: 40, plannedPurchases: 'Original note' });
+  const sibling = await createPlanItem({ name: 'Sibling', categories: ['银行存款'], targetPercent: 60 });
+  const target = await createPlanTarget({ planItemId: parent, label: 'Linked child', targetPercent: 40,
+    refKeys: ['a:qa-account'], allocations: [{ refKey: 'a:qa-account', amountMinor: 10000 }] });
+  const originalParent = await db.planItems.get(parent);
+  const originalTarget = await db.planTargets.get(target);
+  const originalSibling = await db.planItems.get(sibling);
+  await updatePlanItem(parent, { targetPercent: 0 });
+  assert.deepEqual(await db.planItems.get(parent), { ...originalParent, targetPercent: 0 });
+  assert.deepEqual(await db.planTargets.get(target), originalTarget, 'zero parent does not clear or resize children');
+  await updatePlanTarget(target, { targetPercent: 0 });
+  assert.deepEqual(await db.planTargets.get(target), { ...originalTarget, targetPercent: 0 });
+  assert.deepEqual(await db.planItems.get(sibling), originalSibling);
+  const status = await getPlanStatus();
+  assert.equal(status.items.find(item => item.id === parent)?.targets.length, 1);
+});
+
 test('initial plan rolls back all categories if one write fails', async () => {
   const failSecond = (_key: unknown, item: { name: string }) => {
     if (item.name === 'fail') throw new Error('simulated write failure');

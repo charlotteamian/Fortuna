@@ -20,6 +20,7 @@ import { getHoldingMode } from './productPortfolio.ts';
 import { minorToMajor } from './allocationPlan.ts';
 import { getHoldingContractMultiplier, resolveUsOptionContract, toUsOptionSymbol } from './usOption.ts';
 import { isAccountHidden, isAccountIncludedInTotals } from './accountPreferences.ts';
+import { calculatePortfolioCash } from './portfolioCash.ts';
 
 export const AUTOMATIC_SNAPSHOT_FILE = 'fortuna_asset_snapshot.json';
 
@@ -140,8 +141,11 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       };
     });
 
-    const cashBalance = round(account.cashBalance || 0);
-    const holdingsValue = round(holdings.reduce((sum, holding) => sum + holding.marketValue, 0));
+    const cashCalculation = calculatePortfolioCash(account, holdings.map(holding => ({
+      marketValue: holding.marketValue, position: { realizedPnl: holding.realizedPnl },
+    })));
+    const cashBalance = cashCalculation.calculated ? cashCalculation.cashMinor / 100 : round(account.cashBalance || 0);
+    const holdingsValue = cashCalculation.calculated ? cashCalculation.marketValueMinor / 100 : round(holdings.reduce((sum, holding) => sum + holding.marketValue, 0));
     const conversionUnavailable = Boolean(account.conversionUnavailable);
     const nativeValueUnavailable = conversionUnavailable && account.unit === 'gram';
     const nativeMonetaryValue = nativeValueUnavailable
@@ -233,6 +237,8 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       convertedValue,
       conversionStatus: conversionUnavailable ? 'unavailable' as const : 'available' as const,
       cashBalance,
+      cashCalculationMode: account.portfolio ? (cashCalculation.calculated ? 'initial-minus-holdings' : 'manual') : null,
+      cashInitialAmountMinor: cashCalculation.calculated ? account.cashInitialAmountMinor! : null,
       holdingsValue,
       activeHoldingCount: holdings.filter(holding => holding.status === 'active').length,
       holdings,

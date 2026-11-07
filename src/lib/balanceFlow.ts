@@ -169,7 +169,7 @@ export function computePortfolioUnitNav(points: readonly PortfolioNavInputPoint[
       shares = totalValue / nav;
     } else {
       const preFlowValue = totalValue - netFlow;
-      if (preFlowValue > 0) {
+      if (preFlowValue >= 0) {
         nav = preFlowValue / shares;
       }
       const nextShares = shares + (nav > 0 ? netFlow / nav : 0);

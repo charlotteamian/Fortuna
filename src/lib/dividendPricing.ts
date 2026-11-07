@@ -116,6 +116,8 @@ export interface DividendPricingResult {
   trailingDividend?: DividendPricingTrailingDividend;
   ledger?: DividendLedger;
   dividendBase?: DividendLedgerBase;
+  /** User-confirmed inputs are distinct from automatically verified announcements. */
+  userConfirmedEvidence?: { confirmedAt: string; expiresOn: string; fingerprint: string; automaticSignature: string; automaticLedger?: DividendLedger };
   status: 'ready' | 'blocked';
   canApply: boolean;
   riskClass: DividendPricingRiskClass;
@@ -697,7 +699,8 @@ export function dividendPricingReadable(result: DividendPricingResult) {
   result = invalidateOutdatedDividendPricing(result);
   const cash = (v?: number, divisor=100) => v === undefined ? null : v/divisor;
   const comparison = dividendPricingMarketComparison(result);
-  return { 'Pricing basis': result.pricingBasis ?? 'historical calculation; refresh before creating a plan',
+  return { 'Evidence provenance': result.userConfirmedEvidence ? `User-confirmed on ${result.userConfirmedEvidence.confirmedAt}; scope valid through ${result.userConfirmedEvidence.expiresOn}; not automatic official verification` : 'Automatic source verification',
+    'Pricing basis': result.pricingBasis ?? 'historical calculation; refresh before creating a plan',
     'Valuation draft ready for preview and confirmation': result.canApply,
     'Valuation calculation gaps': result.blockers.map(issue => dividendPricingIssueText(issue)),
     'Advisory risks and evidence gaps, no automatic pause': (result.pauseReasons ?? []).map(issue => dividendPricingIssueText(issue)),

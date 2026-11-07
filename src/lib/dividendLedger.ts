@@ -93,6 +93,25 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
     // Different ex-dates for the only disclosed batch in one reporting period
     // are a source conflict, not two independent cash payments to add together.
     if (!matches.length) { const samePeriod = [...events.values()].filter(event => event.reportDate === official.reportDate && event.period === official.period); if (samePeriod.length === 1) matches = samePeriod; }
+    // Structured feeds sometimes label an issuer's interim distribution with the
+    // quarter-end report date (e.g. an official 2025-06-30 interim announcement
+    // against a 2025-09-30 feed row). The same ex-date with the identical cash
+    // amount is one verified batch: adopt the official report period and re-key
+    // instead of duplicating the cash event, which would break frequency
+    // detection with a phantom quarterly batch.
+    if (!matches.length) {
+      const sameExDate = [...events.values()].filter(event => event.verification !== 'verified' && event.period === 'quarterly' && official.period === 'interim'
+        && event.reportDate?.slice(0, 4) === official.reportDate.slice(0, 4)
+        && event.exDate === official.exDate && event.cashPer10Micros !== undefined && event.cashPer10Micros === official.cashPer10Micros);
+      if (sameExDate.length === 1) {
+        const event = sameExDate[0];
+        events.delete(event.batchId);
+        event.reportDate = official.reportDate; event.period = official.period;
+        event.id = event.batchId = `${code}:${official.reportDate}:${official.exDate}:${official.period}`;
+        events.set(event.batchId, event);
+        matches = [event];
+      }
+    }
     const source: DividendLedgerSource = { provider: official.sourceUrl.includes('cninfo.com.cn') ? 'cninfo' : 'issuer', url: official.sourceUrl, announcementDate: official.announcementDate, verifiedAt: official.verifiedAt };
     if (!matches.length) {
       const batchId = `${code}:${official.reportDate}:${official.exDate}:${official.period}`;
@@ -100,7 +119,11 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
       continue;
     }
     for (const event of matches) {
-      const differences = (['cashPer10Micros', 'recordDate', 'exDate', 'announcementDate', 'bonusPer10Bps', 'transferPer10Bps'] as const)
+      // Announcement-date conventions differ across providers (cninfo stamps
+      // next-day midnight for an evening disclosure); the verified official
+      // announcement date replaces the feed value without a conflict. Cash,
+      // record/ex dates and share ratios stay hard conflict triggers.
+      const differences = (['cashPer10Micros', 'recordDate', 'exDate', 'bonusPer10Bps', 'transferPer10Bps'] as const)
         .some(key => event[key] !== undefined && event[key] !== official[key]);
       if (!event.sources.some(current => current.url === source.url && current.announcementDate === source.announcementDate)) event.sources.push(source);
       if (differences || event.verification === 'conflict') { event.verification = 'conflict'; event.issues = distinct([...event.issues, 'SOURCE_CONFLICT']); continue; }

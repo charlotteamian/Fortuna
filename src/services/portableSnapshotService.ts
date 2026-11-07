@@ -2,6 +2,8 @@ import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION, db, initializeSettings } fro
 import { AUTOMATIC_SNAPSHOT_FILE, buildPortableSnapshot } from '../lib/portableSnapshot';
 import { getAccountsWithLatest } from './assetService';
 import { getPlanStatus } from './planService';
+import { syncPortfolioSnapshot } from './holdingService';
+import { usesCalculatedPortfolioCash } from '../lib/portfolioCash';
 import {
   choosePortableSnapshotDirectory,
   clearPortableSnapshotDirectory,
@@ -29,6 +31,11 @@ async function performSnapshotWrite(trigger: string): Promise<PortableSnapshotRe
     await db.settings.update('main', { automaticSnapshotSchemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION });
     return { written: false, status };
   }
+
+  // Restore/import and background writes must use the same current calculated cash
+  // in account totals, plan resources, and the portable holdings snapshot.
+  const calculatedAccounts = await db.accounts.filter(account => !account.archivedAt && usesCalculatedPortfolioCash(account)).toArray();
+  for (const account of calculatedAccounts) await syncPortfolioSnapshot(account.id, false);
 
   const [settings, accountData, records, holdings, transactions, exchangeRates, planStatus, dividendStocks, priceMonitors] = await Promise.all([
     initializeSettings(),

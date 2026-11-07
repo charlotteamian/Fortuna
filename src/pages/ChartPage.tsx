@@ -2,13 +2,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { LineChart, Line, BarChart, Bar, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { getChartData, getAccountsWithLatest } from '../services/assetService';
 import { getMonthlyRealizedPnl, type MonthlyPnl } from '../services/pnlService';
-import { initializeSettings, getTheme } from '../db';
+import { initializeSettings, getTheme, updateSettings } from '../db';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../app-context';
 import { formatLocalDate, parseLocalDate } from '../lib/localDate';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
-import { computePortfolioUnitNav } from '../lib/balanceFlow';
+import { normalizeNavAccountIds, summarizeAccountNav } from '../lib/chartPortfolioNav';
+import { getChartPortfolios } from '../services/chartPortfolioService';
 
 type TimeRange = '3m' | '6m' | '1y' | 'all' | 'quarter' | 'year';
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
@@ -102,13 +103,20 @@ export default function ChartPage() {
   const [institutionPieData, setInstitutionPieData] = useState<PieDatum[]>([]);
   const [monthlyPnl, setMonthlyPnl] = useState<MonthlyPnl[]>([]);
   const [unavailableValuations, setUnavailableValuations] = useState(0);
+  const [portfolios, setPortfolios] = useState<Awaited<ReturnType<typeof getChartPortfolios>>>([]);
+  const [navAccountIds, setNavAccountIds] = useState<string[]>([]);
+  const [navSettingsOpen, setNavSettingsOpen] = useState(false);
+  const [navSaving, setNavSaving] = useState(false);
+  const [navSaveError, setNavSaveError] = useState(false);
 
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
     setLoadError(false);
     try {
-      const [data, settings, acctData, pnl] = await Promise.all([getChartData(), initializeSettings(), getAccountsWithLatest(), getMonthlyRealizedPnl()]);
+      const [data, settings, acctData, pnl, chartPortfolios] = await Promise.all([getChartData(), initializeSettings(), getAccountsWithLatest(), getMonthlyRealizedPnl(), getChartPortfolios()]);
       setChartData(data);
+      setPortfolios(chartPortfolios);
+      setNavAccountIds(normalizeNavAccountIds(settings.chartNavAccountIds, chartPortfolios.map(item => item.account)));
       setMonthlyPnl(pnl);
       setUnavailableValuations(acctData.accounts.filter(account => isAccountIncludedInTotals(account) && account.conversionUnavailable).length);
       setPrimaryCurrency(settings.primaryCurrency);
@@ -260,21 +268,7 @@ export default function ChartPage() {
       return acc;
     }, {})).sort((a, b) => b.value - a.value);
 
-    // Automatic Portfolio Unit NAV (base 1.0000, adjusted for external principal flows)
-    const unitNavSummary = computePortfolioUnitNav(
-      filteredDates.map((d, idx) => ({
-        date: d,
-        totalValue: Math.max(0, chartData.totalSeries.netWorth[d] ?? chartData.totalSeries.totalAssets[d] ?? 0),
-        netFlow: idx === 0 ? 0 : (chartData.dailyFlows?.[d] ?? 0),
-      })),
-    );
-    const navLabel = t('chart_unit_nav_title');
-    const unitNavData: ChartRow[] = unitNavSummary.series.map(pt => ({
-      date: pt.date.slice(5),
-      [navLabel]: pt.nav,
-    }));
-
-    return { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal, unitNavSummary, unitNavData, navLabel };
+    return { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal };
   }, [chartData, timeRange, pieData, t]);
 
   // Monthly realized P&L, windowed to the selected range (aggregated ranges show everything).
@@ -286,6 +280,89 @@ export default function ChartPage() {
     return monthlyPnl;
   }, [monthlyPnl, timeRange]);
   const monthlyPnlTotal = monthlyPnlView.reduce((s, r) => s + r.realized, 0);
+
+  const toggleNavAccount = async (accountId: string, enabled: boolean) => {
+    if (navSaving) return;
+    const nextIds = enabled ? [...navAccountIds, accountId] : navAccountIds.filter(id => id !== accountId);
+    const previousIds = navAccountIds;
+    setNavAccountIds(nextIds);
+    setNavSaving(true);
+    setNavSaveError(false);
+    try {
+      const settings = await updateSettings({ chartNavAccountIds: nextIds });
+      setNavAccountIds(normalizeNavAccountIds(settings.chartNavAccountIds, portfolios.map(item => item.account)));
+    } catch (error) {
+      console.error('Portfolio chart preference save failed', error);
+      setNavAccountIds(previousIds);
+      setNavSaveError(true);
+    } finally {
+      setNavSaving(false);
+    }
+  };
+
+  const portfolioNavSection = (
+    <section className="chart-section" aria-label={t('chart_portfolios_title')}>
+      <div className="chart-card" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ fontWeight: 'var(--fw-semibold)' }}>{t('chart_portfolios_title')}</div>
+          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={navSettingsOpen} onClick={() => setNavSettingsOpen(open => !open)}>
+            {t('chart_portfolios_choose')}
+          </button>
+        </div>
+        {navAccountIds.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', margin: '8px 0 0' }}>{t('chart_portfolios_opt_in')}</p>}
+        {navSettingsOpen && (
+          <div style={{ marginTop: 12 }}>
+            {portfolios.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>{t('chart_portfolios_none')}</p>
+            ) : portfolios.map(({ account }) => (
+              <label key={account.id} style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, cursor: 'pointer' }}>
+                <input type="checkbox" checked={navAccountIds.includes(account.id)} disabled={navSaving} onChange={event => void toggleNavAccount(account.id, event.target.checked)} />
+                <span style={{ overflowWrap: 'anywhere' }}>{account.name} <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}>{account.currency}</span></span>
+              </label>
+            ))}
+          </div>
+        )}
+        {navSaveError && <p role="alert" style={{ color: 'var(--danger)', fontSize: 'var(--fs-sm)', marginBottom: 0 }}>{t('chart_portfolios_save_error')}</p>}
+      </div>
+      {portfolios.filter(({ account }) => navAccountIds.includes(account.id)).map(({ account, points }) => {
+        const datesInRange = new Set(filterDates(points.map(point => point.date)));
+        const summary = summarizeAccountNav(points.filter(point => datesInRange.has(point.date)));
+        const navLabel = t('chart_unit_nav_title');
+        const data = summary.series.map(point => ({ date: point.date, [navLabel]: point.nav }));
+        return (
+          <div className="chart-card" key={account.id} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', overflowWrap: 'anywhere' }}>{account.name} · {navLabel}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', marginTop: 6, marginBottom: 12 }}>
+              {t('chart_portfolios_basis', { currency: account.currency })}
+              {summary.series.length > 0 && <div>{summary.series[0].date} — {summary.series.at(-1)?.date}</div>}
+            </div>
+            {data.length < 2 ? (
+              <div style={{ color: 'var(--text-muted)', padding: 'var(--sp-3) 0', fontSize: 'var(--fs-sm)' }}>{t('chart_portfolios_history_needed')}</div>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'var(--sp-2)', marginBottom: 'var(--sp-2)' }}>
+                  <div><div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_latest')}</div><div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-lg)' }}>{summary.latestNav.toFixed(4)}</div></div>
+                  <div><div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_return')}</div><div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-lg)', color: summary.cumulativeReturnPercent >= 0 ? themeColors.assetColor : themeColors.liabilityColor }}>{summary.cumulativeReturnPercent >= 0 ? '+' : ''}{summary.cumulativeReturnPercent.toFixed(2)}%</div></div>
+                  <div><div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_drawdown')}</div><div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-lg)' }}>{summary.maxDrawdownPercent > 0 ? '-' : ''}{summary.maxDrawdownPercent.toFixed(2)}%</div></div>
+                </div>
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                    <XAxis dataKey="date" tickFormatter={(date: string) => date.slice(5)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
+                    <YAxis domain={['auto', 'auto']} tickFormatter={(value: number) => value.toFixed(2)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
+                    <Tooltip formatter={(value) => Number(value).toFixed(4)} contentStyle={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
+                    <ReferenceLine y={1} stroke="var(--border-active)" strokeDasharray="3 3" />
+                    <Line type="monotone" dataKey={navLabel} stroke="var(--asset-color)" strokeWidth={2} isAnimationActive={false} dot={{ r: 2, fill: 'var(--asset-color)' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginBottom: 0 }}>{t('chart_portfolios_flow_note')}</p>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
   if (loadError && !chartData) return (
@@ -300,11 +377,12 @@ export default function ChartPage() {
     <>
       <div className="page-header"><div><h1 className="page-title">{t('chart_analysis')}</h1><p className="page-subtitle">{t('visualize_assets')}</p></div></div>
       {unavailableValuations > 0 && <div className="valuation-warning" role="status">⚠️ {t('some_values_excluded', { count: unavailableValuations })}</div>}
+      {portfolioNavSection}
       <div className="empty-state"><div className="empty-icon">📈</div><div className="empty-text">{t('no_data')}</div><div className="empty-hint">{t('no_data_hint')}</div></div>
     </>
   );
 
-  const { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal, unitNavSummary, unitNavData, navLabel } = chartContent;
+  const { totalAssetsData, netWorthData, breakdownData, breakdownKeys, currencyPieFinal, productPieFinal } = chartContent;
 
   const renderMiniChart = (data: ChartRow[], dataKey: string, color: string, title: string) => (
     <div className="chart-card" style={{ marginBottom: 12 }}>
@@ -338,58 +416,12 @@ export default function ChartPage() {
         ))}
       </div>
 
+      {portfolioNavSection}
+
       {/* Stacked trend charts */}
       <div className="chart-section">
         <div className="chart-title">{t('trend_overview')}</div>
         <div className="chart-subtitle">{t('unit')} {primaryCurrency}</div>
-        {unitNavSummary.series.length >= 1 && (
-          <div className="chart-card" style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-              <span style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)' }}>
-                🧭 {t('chart_unit_nav_title')}
-              </span>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
-                {t('chart_unit_nav_subtitle')}
-              </span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--sp-2)', marginBottom: unitNavData.length >= 2 ? 'var(--sp-2)' : 0 }}>
-              <div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_latest')}</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-xl)' }}>
-                  {unitNavSummary.latestNav.toFixed(4)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_return')}</div>
-                <div style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 'var(--fw-bold)',
-                  fontSize: 'var(--fs-xl)',
-                  color: unitNavSummary.cumulativeReturnPercent >= 0 ? themeColors.assetColor : themeColors.liabilityColor,
-                }}>
-                  {unitNavSummary.cumulativeReturnPercent >= 0 ? '+' : ''}{unitNavSummary.cumulativeReturnPercent.toFixed(2)}%
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{t('chart_unit_nav_drawdown')}</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', fontSize: 'var(--fs-xl)', color: 'var(--text-secondary)' }}>
-                  -{unitNavSummary.maxDrawdownPercent.toFixed(2)}%
-                </div>
-              </div>
-            </div>
-            {unitNavData.length >= 2 && (
-              <ResponsiveContainer width="100%" height={140}>
-                <LineChart data={unitNavData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                  <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
-                  <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
-                  <ReferenceLine y={1} stroke="var(--border-active)" strokeDasharray="3 3" />
-                  <Line type="monotone" dataKey={navLabel} stroke="var(--asset-color)" strokeWidth={2} dot={{ r: 2, fill: 'var(--asset-color)' }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        )}
         {renderMiniChart(totalAssetsData, t('total_assets_val'), themeColors.assetColor, `📈 ${t('total_assets_val')}`)}
         {renderMiniChart(netWorthData, t('net_worth_val'), 'var(--cat-1)', `💎 ${t('net_worth_val')}`)}
 

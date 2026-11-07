@@ -1,3 +1,4 @@
+import { loadDividendManualInputs, reuseDividendManualInputs } from './dividendManualInputsService.ts';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { defaultDividendStocks, mainlandCode, quoteSymbol, type DividendStock } from '../lib/dividendWorkbench';
@@ -164,7 +165,7 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
     ? Math.round(quoteBase.dpsMicros / unadjusted.priceMinor) : undefined;
   // Cash-grid readiness is independent of the financial and comparison feeds.
   // Even a failed distribution download gets an explicit missing-ledger result.
-  const pricing = (() => {
+  let pricing = (() => {
     const industry=(cash.data as {result?:{data?:Record<string,unknown>[]}} | undefined)?.result?.data?.[0]?.INDUSTRY_NAME;
     if (financial.data && typeof industry==='string' && industry.trim()) financial.data.sector=industry;
     const raw = financial.data?.pricingRaw as {result?:{data?:Record<string,unknown>[]}} | undefined;
@@ -178,6 +179,10 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
       currentCashYieldBps,
       sourceUrls:[...(ledger?.sourceUrls ?? []),dividendFinancialSourceUrl(stock.code),cashUrl,dividendResearchDistributionUrl(stock.code),monthly.source?.url ?? monthUrl,...(treasury?[treasury.sourceUrl]:[]),...(opportunity?[opportunity.sourceUrl]:[])] });
   })();
+  if (!pricing.canApply) {
+    const entered = await loadDividendManualInputs(stock.code);
+    pricing = reuseDividendManualInputs(pricing, entered, { ...stock, financialSector: financial.data?.financialSector, sector: financial.data?.sector }, method, asOf);
+  }
   return evaluateDividendResearch({ code: stock.code, name: financial.data?.name || stock.name, pricing,
     technical: technical.data, financial: financial.data, distributions: distributions.data,
     yieldBps: currentCashYieldBps, yieldReportPeriods: quoteBase?.verified ? quoteBase.reportPeriods : undefined,

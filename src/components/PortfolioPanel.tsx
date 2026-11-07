@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Account, Holding, HoldingTxn } from '../db';
 import {
   getHoldingsWithPositions, getAccountTxns, createHolding, updateHolding, deleteHolding,
-  addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, updatePrices, updateBalances, setHoldingBalance,
+  addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, setCalculatedCashBalance, updatePrices, updateBalances, setHoldingBalance,
   updateHoldingBalanceSnapshot,
   updateHoldingPositions,
   type HoldingWithPosition,
@@ -26,6 +26,7 @@ import {
   getBalanceFlowConfig,
 } from '../lib/balanceFlow';
 import { deriveBalanceHoldingTimeline } from '../lib/holdingPosition';
+import { calculatePortfolioCash } from '../lib/portfolioCash';
 import {
   buildUsOptionContract,
   formatStrikeMilli,
@@ -113,6 +114,10 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   // Cash balance modal
   const [showCash, setShowCash] = useState(false);
   const [cashInput, setCashInput] = useState('');
+  const [cashMode, setCashMode] = useState<'manual' | 'initial-minus-holdings'>('manual');
+  const [cashInitialInput, setCashInitialInput] = useState('');
+  const [cashBusy, setCashBusy] = useState(false);
+  const [cashError, setCashError] = useState('');
 
   // Live quotes
   const [refreshing, setRefreshing] = useState(false);
@@ -238,7 +243,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const pnlColor = (n: number) => n >= 0 ? theme.assetColor : theme.liabilityColor;
   const signed = (n: number) => (n >= 0 ? '+' : '') + fmt(n);
 
-  const cash = account.cashBalance || 0;
+  const cashCalculation = calculatePortfolioCash(account, holdings);
+  const cash = cashCalculation.cashMinor / 100;
   const { active: activeHoldings, archived: archivedHoldings } = splitHoldingsByArchive(holdings);
   const lastRecordDates = getHoldingLastRecordDates(txns);
   const archiveItems = archivedHoldings.map(holding => ({
@@ -499,13 +505,42 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   };
 
   // ---- Cash ----
-  const openCash = () => { setCashInput(cash > 0 ? String(cash) : ''); setShowCash(true); };
-  const handleSaveCash = async () => {
-    const v = parseFloat(cashInput);
-    await setCashBalance(account.id, isNaN(v) || v < 0 ? 0 : v);
-    setShowCash(false);
-    await changed();
+  const openCash = () => {
+    setCashInput(String(cash));
+    setCashMode(cashCalculation.calculated ? 'initial-minus-holdings' : 'manual');
+    const initialMinor = account.cashInitialAmountMinor
+      ?? Math.max(0, cashCalculation.cashMinor + cashCalculation.marketValueMinor - cashCalculation.realizedPnlMinor);
+    setCashInitialInput((initialMinor / 100).toFixed(2));
+    setCashError('');
+    setShowCash(true);
   };
+  const handleSaveCash = async () => {
+    if (cashBusy) return;
+    const calculated = isStockPortfolio && cashMode === 'initial-minus-holdings';
+    const input = (calculated ? cashInitialInput : cashInput).trim();
+    const value = Number(input);
+    const minor = Math.round(value * 100);
+    if (!input || !Number.isFinite(value) || value < 0 || !Number.isSafeInteger(minor)
+      || Math.abs(value * 100 - minor) > 0.00001) {
+      setCashError(t('portfolio_cash_invalid'));
+      return;
+    }
+    setCashBusy(true);
+    setCashError('');
+    try {
+      if (calculated) await setCalculatedCashBalance(account.id, minor);
+      else await setCashBalance(account.id, value);
+      setShowCash(false);
+      await changed();
+    } catch {
+      setCashError(t('portfolio_cash_save_failed'));
+    } finally { setCashBusy(false); }
+  };
+
+  const cashPreviewInput = Number(cashInitialInput);
+  const cashPreview = Number.isFinite(cashPreviewInput) && cashPreviewInput >= 0
+    ? (Math.round(cashPreviewInput * 100) + cashCalculation.realizedPnlMinor - cashCalculation.marketValueMinor) / 100
+    : null;
 
   const renderTxnRow = (h: HoldingWithPosition, tx: HoldingTxn, readOnly = false) => {
     const isSell = tx.kind === 'sell';
@@ -725,9 +760,10 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12, width: '100%' }}>
           <div className="holding-pos-cell"><span className="holding-pos-key">{isBalancePortfolio ? t('product_balance_total') : t('position_value')}</span><span className="holding-pos-val">{masked(fmt(positionValue))}</span></div>
-          <div className="holding-pos-cell holding-pos-cell-action" onClick={openCash}>
+          <div className="holding-pos-cell holding-pos-cell-action" role="button" tabIndex={0} onClick={openCash} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCash(); } }}>
             <span className="holding-pos-key">{t('cash_balance')} ✏️</span>
             <span className="holding-pos-val">{masked(fmt(cash))}</span>
+            {cashCalculation.calculated && <span className="holding-pos-key">{t('portfolio_cash_calculated_badge')}</span>}
           </div>
           {isBalancePortfolio ? (
             <>
@@ -1101,20 +1137,34 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
 
       {/* Cash balance */}
       {showCash && (
-        <div className="confirm-overlay" onClick={() => setShowCash(false)}>
-          <div className="modal-content" style={{ maxWidth: 360, width: '90%', borderRadius: 'var(--radius-lg)', padding: 'var(--sp-5)' }} onClick={e => e.stopPropagation()}>
+        <div className="confirm-overlay" onClick={() => { if (!cashBusy) setShowCash(false); }}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="cash-dialog-title" style={{ maxWidth: 400, width: '90%', borderRadius: 'var(--radius-lg)', padding: 'var(--sp-5)' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">{t('edit_cash')}</h2>
-              <button className="modal-close" onClick={() => setShowCash(false)}>✕</button>
+              <h2 className="modal-title" id="cash-dialog-title">{t('edit_cash')}</h2>
+              <button className="modal-close" disabled={cashBusy} aria-label={t('close')} onClick={() => setShowCash(false)}>✕</button>
             </div>
+            {isStockPortfolio && <div className="form-group">
+              <label className="form-label" htmlFor="portfolio-cash-mode">{t('portfolio_cash_mode')}</label>
+              <select id="portfolio-cash-mode" className="form-select" disabled={cashBusy} value={cashMode} onChange={event => { setCashMode(event.target.value as typeof cashMode); setCashError(''); }}>
+                <option value="manual">{t('portfolio_cash_manual')}</option>
+                <option value="initial-minus-holdings">{t('portfolio_cash_calculated')}</option>
+              </select>
+            </div>}
             <div className="form-group">
-              <label className="form-label">{t('cash_balance')} ({account.currency})</label>
-              <input className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0"
-                placeholder="0.00" value={cashInput} onChange={e => setCashInput(e.target.value)} autoFocus />
+              <label className="form-label" htmlFor="portfolio-cash-amount">{t(isStockPortfolio && cashMode === 'initial-minus-holdings' ? 'portfolio_cash_initial' : 'cash_balance')} ({account.currency})</label>
+              <input id="portfolio-cash-amount" className="form-input mono" type="number" inputMode="decimal" step="0.01" min="0" disabled={cashBusy}
+                placeholder="0.00" value={isStockPortfolio && cashMode === 'initial-minus-holdings' ? cashInitialInput : cashInput}
+                onChange={e => { if (isStockPortfolio && cashMode === 'initial-minus-holdings') setCashInitialInput(e.target.value); else setCashInput(e.target.value); setCashError(''); }} autoFocus />
             </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary btn-block" onClick={() => setShowCash(false)}>{t('cancel')}</button>
-              <button className="btn btn-primary btn-block" onClick={handleSaveCash}>{t('save')}</button>
+            {isStockPortfolio && cashMode === 'initial-minus-holdings' && <div style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.6, marginBottom: 'var(--sp-3)' }}>
+              <div>{t('portfolio_cash_formula')}</div>
+              <div style={{ color: 'var(--text-muted)', marginTop: 'var(--sp-2)' }}>{t('portfolio_cash_formula_note')}</div>
+              <div style={{ marginTop: 'var(--sp-2)', fontWeight: 'var(--fw-bold)' }}>{t('portfolio_cash_preview')} · {cashPreview == null ? '—' : masked(fmtFull(cashPreview))} {account.currency}</div>
+            </div>}
+            {cashError && <div role="alert" style={{ color: theme.liabilityColor, marginBottom: 'var(--sp-3)' }}>{cashError}</div>}
+            <div className="modal-actions" style={{ margin: 'var(--sp-4) 0 0', padding: 'var(--sp-3) 0 0' }}>
+              <button className="btn btn-secondary btn-block" disabled={cashBusy} onClick={() => setShowCash(false)}>{t('cancel')}</button>
+              <button className="btn btn-primary btn-block" disabled={cashBusy} onClick={handleSaveCash}>{t('save')}</button>
             </div>
           </div>
         </div>

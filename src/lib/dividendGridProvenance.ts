@@ -7,6 +7,8 @@ export interface DividendGridProvenance {
   taxBps: 0 | 1000 | 2000;
   parameterVersion: number;
   basisKind: 'recent_batches' | 'classic_ttm';
+  userConfirmedAt?: string;
+  userConfirmedExpiresOn?: string;
 }
 
 export interface DividendGridBasisCheck {
@@ -32,7 +34,9 @@ export function isDividendGridProvenance(value: unknown): value is DividendGridP
   const origin = value as DividendGridProvenance;
   return integer(origin.generatedAt, 1) && Number.isFinite(new Date(origin.generatedAt).getTime())
     && integer(origin.grossDpsMicros, 1) && [0, 1000, 2000].includes(origin.taxBps)
-    && integer(origin.parameterVersion, 1) && ['recent_batches', 'classic_ttm'].includes(origin.basisKind);
+    && integer(origin.parameterVersion, 1) && ['recent_batches', 'classic_ttm'].includes(origin.basisKind)
+    && (origin.userConfirmedAt === undefined || date(origin.userConfirmedAt))
+    && (origin.userConfirmedExpiresOn === undefined || date(origin.userConfirmedExpiresOn));
 }
 
 const explicitLevels = (levels?: GridLevel[]) => (levels ?? []).flatMap((level, index) => integer(level.priceMinor, 1) ? [{ index: index + 1, priceMinor: level.priceMinor }] : []);

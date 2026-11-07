@@ -1,3 +1,4 @@
+import { hasCurrentUserDividendEvidence } from '../lib/dividendManualInputs.ts';
 import { loadDividendResearchCache } from './dividendResearchCacheService';
 import { loadDividendLedgerForCheck } from './dividendLedgerEvidenceService';
 import { dividendLedgerBase } from '../lib/dividendLedger';
@@ -20,6 +21,7 @@ export async function loadDividendGridBases(codes: string[], asOf: string): Prom
     try {
       const pricing = cache?.snapshot.stocks.find(stock => stock.code === code)?.pricing;
       const ledger = await loadDividendLedgerForCheck(code) ?? pricing?.ledger;
+      if (hasCurrentUserDividendEvidence(pricing, asOf, ledger)) return [code, { ...pricing!.dividendBase!, evidenceStatus: 'current', evidenceIssues: ['USER_CONFIRMED_INPUT'] } satisfies DividendGridBasisResult] as const;
       if (ledger) {
         if (ledger.code !== code) throw new Error('DIVIDEND_LEDGER_CODE_MISMATCH');
         const evidence = dividendEvidenceStatus(ledger, asOf);

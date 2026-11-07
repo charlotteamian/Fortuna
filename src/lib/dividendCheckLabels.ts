@@ -3,6 +3,7 @@ import type { DividendCheckSummary } from './dividendCheckSummary';
 
 const reasonAliases: Record<string, string> = {
   SOURCE_CONFLICT: 'dividend_source_conflict', SOURCE_PAGES_INCOMPLETE: 'source_pages_incomplete', SOURCE_COVERAGE_INCOMPLETE: 'source_pages_incomplete',
+  CURRENT_ANNOUNCEMENT_UNVERIFIED: 'announcement_fields_unverified', HISTORICAL_ANNOUNCEMENT_GAPS: 'historical_announcement_gaps',
   CAPITAL_OR_CASH_UNVERIFIED: 'dividend_base_unverified', ANNOUNCEMENT_UNVERIFIED: 'announcement_fields_unverified',
   CAPITAL_ACTIONS_UNVERIFIED: 'capital_actions_unverified', CROSSCHECK_MISSING: 'crosscheck_missing',
   DIVIDEND_LEDGER_CODE_MISMATCH: 'dividend_ledger_code_mismatch', DIVIDEND_LEDGER_READ_FAILED: 'dividend_ledger_read_failed',

@@ -13,6 +13,7 @@ import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { getHoldingContractMultiplier } from '../lib/usOption';
 import { formatLocalDate } from '../lib/localDate';
 import { normalizeHoldingIdentity } from '../lib/holdingImportIdentity';
+import { calculatePortfolioCash } from '../lib/portfolioCash';
 
 export { computeBalanceHoldingPosition, computeHoldingPnl, computeHoldingPosition } from '../lib/holdingPosition';
 export type { HoldingPnl, HoldingPosition } from '../lib/holdingPosition';
@@ -121,8 +122,23 @@ export async function getHoldingsWithPositions(accountId: string): Promise<Holdi
 
 // ---- Account-level value ----
 export async function setCashBalance(accountId: string, cash: number): Promise<void> {
-  await db.accounts.update(accountId, { cashBalance: cash });
-  await syncPortfolioSnapshot(accountId);
+  if (!Number.isFinite(cash)) throw new Error('PORTFOLIO_CASH_INVALID');
+  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+    await db.accounts.update(accountId, { cashBalance: Math.round(Math.max(0, cash) * 100) / 100, cashCalculationMode: 'manual' });
+    await syncPortfolioSnapshot(accountId, false);
+  });
+  requestPortableSnapshot('portfolio-cash-updated');
+}
+
+export async function setCalculatedCashBalance(accountId: string, initialAmountMinor: number): Promise<void> {
+  if (!Number.isSafeInteger(initialAmountMinor) || initialAmountMinor < 0) throw new Error('PORTFOLIO_CASH_INVALID');
+  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+    const account = await db.accounts.get(accountId);
+    if (!account?.portfolio || !['股票/ETF', '股票'].includes(account.category)) throw new Error('PORTFOLIO_CASH_UNSUPPORTED');
+    await db.accounts.update(accountId, { cashCalculationMode: 'initial-minus-holdings', cashInitialAmountMinor: initialAmountMinor });
+    await syncPortfolioSnapshot(accountId, false);
+  });
+  requestPortableSnapshot('portfolio-cash-updated');
 }
 
 /** Apply new quotes (holdingId → price) in one pass, then refresh the snapshot once. */
@@ -237,7 +253,7 @@ async function applyPositionUpdate(holding: Holding, txns: HoldingTxn[], update:
   return quantityChanged || costChanged || priceChanged;
 }
 
-/** Correct current quantities and quotes together, without manufacturing trades or changing cash. */
+/** Correct quantities and quotes without manufacturing trades; calculated cash follows its configured formula. */
 export async function updateHoldingPositions(accountId: string, updates: HoldingPositionUpdate[], date: string): Promise<void> {
   validatePositionDate(date);
   if (!updates.length) throw new Error('HOLDING_POSITION_EMPTY');
@@ -535,8 +551,9 @@ async function getLatestAccountAmount(accountId: string): Promise<{ amount: numb
 async function getPortfolioTotal(accountId: string): Promise<number> {
   const account = await db.accounts.get(accountId);
   const withPos = await getHoldingsWithPositions(accountId);
-  const total = (account?.cashBalance || 0) + withPos.reduce((s, h) => s + h.marketValue, 0);
-  return Math.round(total * 100) / 100;
+  if (!account) return 0;
+  const { cashMinor, marketValueMinor } = calculatePortfolioCash(account, withPos);
+  return (cashMinor + marketValueMinor) / 100;
 }
 
 async function upsertTodayAccountRecord(accountId: string, amount: number): Promise<void> {
@@ -587,7 +604,7 @@ export async function setAccountPortfolioMode(accountId: string, portfolio: bool
 
   if (!account.portfolio) return;
   const total = await getPortfolioTotal(accountId);
-  await db.accounts.update(accountId, { portfolio: undefined, cashBalance: undefined });
+  await db.accounts.update(accountId, { portfolio: undefined, cashBalance: undefined, cashCalculationMode: undefined, cashInitialAmountMinor: undefined });
   await upsertTodayAccountRecord(accountId, total);
   requestPortableSnapshot('portfolio-mode-disabled');
 }
@@ -601,8 +618,9 @@ export async function syncPortfolioSnapshot(accountId: string, notify = true): P
   const account = await db.accounts.get(accountId);
   if (!account?.portfolio) return;
   const withPos = await getHoldingsWithPositions(accountId);
-  const total = (account.cashBalance || 0) + withPos.reduce((s, h) => s + h.marketValue, 0);
-  const rounded = Math.round(total * 100) / 100;
+  const { calculated, cashMinor, marketValueMinor } = calculatePortfolioCash(account, withPos);
+  if (calculated) await db.accounts.update(accountId, { cashBalance: cashMinor / 100 });
+  const rounded = (cashMinor + marketValueMinor) / 100;
   const today = formatLocalDate();
   const todayRecs = (await db.records.where('accountId').equals(accountId).toArray())
     .filter(r => r.date === today)

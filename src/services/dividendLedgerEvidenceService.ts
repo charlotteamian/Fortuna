@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
-import { buildDividendLedger, parseDividendOfficialAnnouncementText, type DividendLedger, type DividendOfficialEvent } from '../lib/dividendLedger';
+import { buildDividendLedger, dividendLedgerBase, parseDividendOfficialAnnouncementText, type DividendLedger, type DividendOfficialEvent } from '../lib/dividendLedger';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
@@ -80,7 +80,7 @@ export async function extractDividendAnnouncementPdf(bytes: Uint8Array, control:
 }
 
 interface Announcement { announcementTitle?: string; adjunctUrl?: string; announcementTime?: number }
-export async function fetchDividendOfficialEvidence(code: string, asOf: string, options: DividendOfficialEvidenceOptions = {}): Promise<{ events: DividendOfficialEvent[]; issues: string[] }> {
+export async function fetchDividendOfficialEvidence(code: string, asOf: string, options: DividendOfficialEvidenceOptions = {}): Promise<{ events: DividendOfficialEvent[]; issues: string[]; unverifiedAnnouncementDates?: string[] }> {
   assertDividendRequestCurrent(options);
   if (!/^\d{6}$/.test(code)) throw new Error('INVALID_DIVIDEND_CODE');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !Number.isFinite(Date.parse(`${asOf}T00:00:00Z`))
@@ -92,7 +92,8 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
   const download = options.readPdf ?? ((url: string) => readPdf(url, options));
   const extract = options.extractPdf ?? ((bytes: Uint8Array) => extractDividendAnnouncementPdf(bytes, options));
   const cached = (await documents.toArray()).flatMap(record => record.event?.code === code ? [record.event] : []);
-  const issues: string[] = [];
+  const issues: string[] = [], unverifiedAnnouncementDates: string[] = [];
+  const noticeDate = (item: Announcement) => item.announcementTime ? dateInChina(new Date(item.announcementTime)) : item.adjunctUrl?.match(/finalpage\/(\d{4}-\d{2}-\d{2})\//)?.[1] ?? 'unknown';
   try {
     const search = await request('/new/information/topSearch/query', { keyWord: code, maxNum: '10' }) as { code?: string; orgId?: string }[];
     const stock = Array.isArray(search) ? search.find(value => value.code === code && typeof value.orgId === 'string') : undefined;
@@ -118,11 +119,12 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
       assertDividendRequestCurrent(options);
       const url = new URL(item.adjunctUrl!, 'https://static.cninfo.com.cn/').href;
       const saved = await documents.get(url);
-      if (saved?.event || saved?.checkedAt === asOf && !options.retryFailedDocuments) { if (saved.issue) issues.push(saved.issue); continue; }
+      if (saved?.event || saved?.checkedAt === asOf && !options.retryFailedDocuments) { if (saved.issue) { issues.push(saved.issue); unverifiedAnnouncementDates.push(noticeDate(item)); } continue; }
       pending.push(item);
     }
     // Continue through older uncached documents on subsequent checks; completed evidence remains immutable.
     if (pending.length > 12) issues.push('ANNOUNCEMENT_VERIFICATION_PARTIAL');
+    unverifiedAnnouncementDates.push(...pending.slice(12).map(noticeDate));
     const selected = pending.slice(0, 12);
     let cursor = 0;
     await Promise.all(Array.from({ length: Math.min(3, selected.length) }, async () => {
@@ -142,15 +144,15 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
             await documents.put({ url, sha256, checkedAt: asOf, ...(event ? { event } : { issue: 'ANNOUNCEMENT_FIELDS_UNVERIFIED' }) });
             assertDividendRequestCurrent(options);
           });
-          if (!event) issues.push('ANNOUNCEMENT_FIELDS_UNVERIFIED');
-        } catch { assertDividendRequestCurrent(options); issues.push('ANNOUNCEMENT_DOWNLOAD_FAILED'); }
+          if (!event) { issues.push('ANNOUNCEMENT_FIELDS_UNVERIFIED'); unverifiedAnnouncementDates.push(noticeDate(item)); }
+        } catch { assertDividendRequestCurrent(options); issues.push('ANNOUNCEMENT_DOWNLOAD_FAILED'); unverifiedAnnouncementDates.push(noticeDate(item)); }
       }
     }));
-    return { events: (await documents.toArray()).flatMap(record => record.event?.code === code ? [record.event] : []), issues: [...new Set(issues)] };
+    return { events: (await documents.toArray()).flatMap(record => record.event?.code === code ? [record.event] : []), issues: [...new Set(issues)], unverifiedAnnouncementDates: [...new Set(unverifiedAnnouncementDates)] };
   } catch (error) {
     assertDividendRequestCurrent(options);
     const reason = error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED';
-    return { events: cached, issues: reason.startsWith('CNINFO_') || reason === 'ANNOUNCEMENT_DOWNLOAD_FAILED' ? [reason] : [reason, 'ANNOUNCEMENT_REFRESH_FAILED'] };
+    return { events: cached, issues: reason.startsWith('CNINFO_') ? [reason] : [reason, 'ANNOUNCEMENT_REFRESH_FAILED'] };
   }
 }
 
@@ -193,7 +195,12 @@ export async function researchDividendLedger(raw: unknown, code: string, asOf: s
     await rememberFailedLedgerAttempt(code, asOf, [...evidence.issues, error instanceof Error ? error.message : 'INVALID_DIVIDEND_LEDGER_SOURCE', 'DIVIDEND_SOURCE_REFRESH_FAILED'], control);
     throw error;
   }
-  ledger.issues = [...new Set([...ledger.issues, ...evidence.issues])];
+  const requiredBase = dividendLedgerBase(ledger, asOf);
+  const requiredHistoryCutoff = ledger.events.filter(event => requiredBase.selectedBatchIds.includes(event.batchId)).map(event => event.reportDate).filter((date): date is string => !!date).sort()[0];
+  // Use the earliest selected reporting period, before its announcement/ex-date:
+  // an earlier-announced share action can still take effect after a cash batch.
+  const currentNoticeUnverified = evidence.unverifiedAnnouncementDates?.some(date => !requiredHistoryCutoff || date === 'unknown' || date >= requiredHistoryCutoff);
+  ledger.issues = [...new Set([...ledger.issues, ...evidence.issues, ...(currentNoticeUnverified ? ['CURRENT_ANNOUNCEMENT_UNVERIFIED'] : evidence.unverifiedAnnouncementDates?.length && requiredBase.verified ? ['HISTORICAL_ANNOUNCEMENT_GAPS'] : [])])];
   await beforeDividendCacheWrite(control);
   if (!dividendEvidenceStatus(ledger, asOf).usable) {
     // Existing complete=false already means source coverage is incomplete. It

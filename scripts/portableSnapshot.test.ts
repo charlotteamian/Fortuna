@@ -113,6 +113,19 @@ const emptyPlanStatus = (totalAssets: number, unavailableValuationCount = 0): Pl
   equityAccounts: [],
 });
 
+test('automatic snapshot recalculates reverse cash from positions and exposes the integer initial anchor', () => {
+  const snapshot = buildAutomaticSnapshot({
+    accounts: [{ ...focusAccount, cashCalculationMode: 'initial-minus-holdings', cashInitialAmountMinor: 100000, cashBalance: -999, latestAmount: 1080, convertedAmount: 1080 }],
+    records, holdings: [holding], transactions, exchangeRates: [], planStatus: emptyPlanStatus(1080),
+    settings: { primaryCurrency: 'CNY' },
+  });
+  const saved = snapshot.accounts[0];
+  assert.equal(saved.cashBalance, 420, '1000 initial + 80 realised P&L - 660 holdings');
+  assert.equal(saved.nativeMonetaryValue, 1080);
+  assert.equal(saved.cashCalculationMode, 'initial-minus-holdings');
+  assert.equal(saved.cashInitialAmountMinor, 100000);
+});
+
 test('snapshot focus labels are optional and only accept active accounts', () => {
   assert.deepEqual(getDefaultSnapshotFocusAccountIds(), []);
   assert.deepEqual(

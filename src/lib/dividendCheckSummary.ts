@@ -1,3 +1,4 @@
+import { hasCurrentUserDividendEvidence } from './dividendManualInputs.ts';
 import { buildDividendHomePlan, dateInChina, quoteSymbol, type DividendStock, type GridLevel } from './dividendWorkbench.ts';
 import { buildDividendFundHomePlan, type DividendFund, type DividendFundPlan } from './dividendFundPlan.ts';
 import { isDividendGridProvenance, reviewDividendGrid, type DividendGridBasisCheck } from './dividendGridProvenance.ts';
@@ -32,6 +33,7 @@ interface DividendCheckSummaryBase {
     buyTierIndices: number[]; sellTierIndices: number[];
     nextBuy?: DividendNextTier; nextSell?: DividendNextTier;
     nextBuyState?: DividendNextTierState; nextSellState?: DividendNextTierState;
+    userConfirmedAt?: string;
     generatedAt?: number; grossDpsMicros?: number; netDpsMicros?: number; taxBps?: number; parameterVersion?: number;
     sourceUrls: string[]; selectedBatchIds: string[]; entryPriceMicros?: number; exitPriceMicros?: number;
   };
@@ -85,11 +87,12 @@ export function dividendCheckSummary(input: {
     pricing: invalidPricing ? undefined : originalPricing } : undefined;
   const research = safeResearch && input.principles ? evaluateDividendResearch(safeResearch, input.principles, now) : safeResearch;
   const pricing = research?.pricing, basis = input.basis ?? pricing?.dividendBase;
-  const ledger = input.ledger ?? pricing?.ledger;
+  const userConfirmed = hasCurrentUserDividendEvidence(pricing, asOf, input.ledger);
+  const ledger = userConfirmed ? undefined : input.ledger ?? pricing?.ledger;
   const cachedEvidence = pricing?.ledger ? dividendEvidenceStatus(pricing.ledger, asOf) : undefined;
   const cachedFailureIsCurrent = cachedEvidence && !cachedEvidence.usable && pricing?.ledger?.asOf === asOf;
   const cashFetchFailed = research?.issues.some(issue => issue.kind === 'dividend' && ['request_failed', 'invalid_data', 'deferred'].includes(issue.reason));
-  const evidence = cashFetchFailed ? { status: 'failed' as const, usable: false, reasons: ['DIVIDEND_SOURCE_REFRESH_FAILED'] }
+  const evidence = userConfirmed ? { status: 'current' as const, usable: true, reasons: ['USER_CONFIRMED_INPUT'] } : cashFetchFailed ? { status: 'failed' as const, usable: false, reasons: ['DIVIDEND_SOURCE_REFRESH_FAILED'] }
     : cachedFailureIsCurrent ? cachedEvidence : input.basis?.evidenceStatus && input.basis.evidenceStatus !== 'current'
     ? { status: input.basis.evidenceStatus, usable: false, reasons: input.basis.evidenceIssues ?? [] }
     : ledger ? dividendEvidenceStatus(ledger, asOf) : input.basis?.evidenceStatus
@@ -261,6 +264,7 @@ export function dividendCheckSummary(input: {
     kind: 'stock', id: stock.code, code: stock.code, name: stock.name, eligibility,
     grid: { status: gridStatus, origin: hasSaved ? 'saved' : currentPlan ? 'current' : 'none', buyLevels, sellLevels, buyTierIndices, sellTierIndices, reasons: gridReasons,
       nextBuy, nextSell, nextBuyState, nextSellState,
+      userConfirmedAt: hasSaved ? origin?.userConfirmedAt : userConfirmed ? pricing?.userConfirmedEvidence?.confirmedAt : undefined,
       generatedAt: hasSaved ? origin?.generatedAt : input.researchGeneratedAt, grossDpsMicros: hasSaved ? origin?.grossDpsMicros : basis?.dpsMicros,
       netDpsMicros: hasSaved && origin ? Number(BigInt(origin.grossDpsMicros) * BigInt(10000 - origin.taxBps) / 10000n) : pricing?.d1Micros,
       taxBps: hasSaved ? origin?.taxBps : pricing?.taxBps, parameterVersion: hasSaved ? origin?.parameterVersion : pricing?.calculationVersion,

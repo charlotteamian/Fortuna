@@ -74,6 +74,31 @@ test('unverified or conflicting latest events cannot silently fall back to older
   const base = dividendLedgerBase(conflict, asOf); assert.equal(base.dpsMicros, undefined); assert.ok(base.flags.includes('SOURCE_CONFLICT'));
 });
 
+test('a feed interim row mislabeled with the quarter-end report date merges into the official interim batch', () => {
+  // 五粮液 2026 pattern: eastmoney reports the interim cash as a 09-30 quarterly
+  // row while the implementation announcement discloses a 2026-06-30 interim.
+  const rows = [row('2026-09-30', '2026-09-24', 2.49), row('2025-12-31', '2026-06-12', 3.6)];
+  const interim = { ...official(rows[0]), reportDate: '2026-06-30', period: 'interim' as const };
+  const ledger = build(rows, [interim, official(rows[1])]);
+  assert.equal(ledger.events.length, 2);
+  assert.ok(ledger.events.every(event => event.verification === 'verified' && event.period !== 'quarterly'));
+  assert.ok(ledger.events.some(event => event.batchId === `${code}:2026-06-30:2026-09-24:interim`));
+  const base = dividendLedgerBase(ledger, asOf);
+  assert.equal(base.frequency, 'semiannual'); assert.equal(base.dpsMicros, 609000);
+  assert.deepEqual(base.reportPeriods, ['2026-06-30', '2025-12-31']); assert.ok(base.verified);
+});
+
+test('a provider/official announcement-date difference alone verifies the batch with the official date', () => {
+  const rows = semiRows();
+  // cninfo stamps an evening disclosure at next-day midnight; the feed keeps the notice date.
+  const events = rows.map(value => ({ ...official(value), announcementDate: shift(value.EX_DIVIDEND_DATE, -6) }));
+  const ledger = build(rows, events);
+  assert.ok(ledger.events.every(event => event.verification === 'verified'));
+  assert.equal(ledger.events[0].announcementDate, events[0].announcementDate);
+  const base = dividendLedgerBase(ledger, asOf);
+  assert.equal(base.dpsMicros, 609000); assert.equal(base.verified, true); assert.ok(!base.flags.includes('SOURCE_CONFLICT'));
+});
+
 test('conflicting provider duplicates and mismatched registration dates are excluded even with an official match', () => {
   const rows = semiRows(); const duplicate = { ...rows[0], PRETAX_BONUS_RMB: 2.5 };
   const ledger = buildDividendLedger(payload([...rows, duplicate]), code, asOf, { officialEvents: rows.map(official) });
@@ -217,4 +242,15 @@ test('dividendLedgerBase excludes special dividends and official parser accepts 
   assert.equal(parsed.cashPer10Micros, 3600000);
   assert.equal(parsed.bonusPer10Bps, 0);
   assert.equal(parsed.transferPer10Bps, 0);
+});
+
+
+test('two official ordinary distributions with matching cash and ex-date retain distinct reporting periods', () => {
+  const annual = row('2025-12-31', '2026-09-24', 5);
+  const interim = row('2026-06-30', '2026-09-24', 5);
+  const ledger = build([annual], [official(annual), official(interim)]);
+  assert.equal(ledger.events.length, 2);
+  assert.deepEqual(ledger.events.map(event => event.reportDate).sort(), ['2025-12-31', '2026-06-30']);
+  assert.ok(ledger.events.every(event => event.verification === 'verified'));
+  assert.equal(dividendLedgerBase(ledger, asOf).dpsMicros, 1000000);
 });

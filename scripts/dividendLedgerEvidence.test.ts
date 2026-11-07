@@ -331,3 +331,38 @@ test('Shanghai company lookup uses its exact official orgId and SSE query column
   });
   assert.equal(seen[0].column, 'sse'); assert.equal(seen[0].stock, '600036,gssh0600036'); assert.equal(evidence.events[0].cashPer10Micros, 10030000);
 });
+
+test('a positively older failed PDF stays historical while verified recent cash and full lists remain usable', async () => {
+  await researchDividendLedger(raw, '000001', scope, transport().options);
+  const options = transport().options, request = options.post;
+  options.post = async (path, fields) => {
+    const result = await request(path, fields);
+    return Array.isArray(result) ? result : { ...result, announcements: [...result.announcements,
+      { announcementTitle: '历史权益分派实施公告', adjunctUrl: 'finalpage/2017-06-01/old-failed.PDF', announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }] };
+  };
+  options.readPdf = async () => { throw new Error('OLD_PDF_OFFLINE'); };
+  const ledger = await researchDividendLedger(raw, '000001', '2026-10-30', options);
+  assert.ok(ledger.issues.includes('ANNOUNCEMENT_DOWNLOAD_FAILED'));
+  assert.ok(ledger.issues.includes('HISTORICAL_ANNOUNCEMENT_GAPS'));
+  assert.equal(ledger.complete, true);
+  assert.equal(dividendEvidenceStatus(ledger, '2026-10-30').usable, true);
+  assert.equal(dividendLedgerBase(ledger, '2026-10-30').dpsMicros, 609000);
+  assert.equal(dividendEvidenceStatus({ ...ledger, issues: ['ANNOUNCEMENT_DOWNLOAD_FAILED'] }, '2026-10-30').usable, false, 'undated legacy failure cannot acquire historical-only status');
+});
+
+test('an unparsed earlier-announced share action inside the required reporting horizon and unknown dates still block', async () => {
+  await researchDividendLedger(raw, '000001', scope, transport().options);
+  for (const date of ['2026-01-01', 'unknown']) {
+    const options = transport().options, request = options.post;
+    options.post = async (path, fields) => {
+      const result = await request(path, fields);
+      return Array.isArray(result) ? result : { ...result, announcements: [...result.announcements,
+        { announcementTitle: '权益分派实施公告', adjunctUrl: date === 'unknown' ? 'new-undated.PDF' : `finalpage/${date}/share-action.PDF`, ...(date === 'unknown' ? {} : { announcementTime: Date.parse(`${date}T00:00:00+08:00`) }) }] };
+    };
+    options.readPdf = async () => { throw new Error('REQUIRED_PDF_OFFLINE'); };
+    const ledger = await researchDividendLedger(raw, '000001', '2026-10-30', options);
+    assert.ok(ledger.issues.includes('CURRENT_ANNOUNCEMENT_UNVERIFIED'), date);
+    assert.equal(dividendEvidenceStatus(ledger, '2026-10-30').usable, false, date);
+    assert.equal(ledger.complete, false, date);
+  }
+});

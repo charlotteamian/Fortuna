@@ -20,3 +20,10 @@
 .div-price-guide-steps { list-style: none; display: grid; gap: var(--sp-2); padding: 0; margin: var(--sp-2) 0; }
 .div-price-guide-steps li { margin: 0; padding: 0; }
 .div-price-guide-steps strong { font-size: var(--fs-md); }
+.div-manual-inputs label { display: grid; gap: var(--sp-1); margin: var(--sp-2) 0; min-width: 0; }
+.div-manual-inputs fieldset { border: 1px solid var(--border); padding: var(--sp-2); margin: var(--sp-3) 0; min-width: 0; }
+.div-manual-inputs small { color: var(--text-secondary); overflow-wrap: anywhere; }
+.div-manual-inputs .div-manual-check { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.div-manual-inputs input[type='checkbox'] { flex: 0 0 1.1em; width: 1.1em; height: 1.1em; margin-top: .25em; }
+.div-manual-inputs .div-manual-check span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.div-manual-inputs .form-input { width: 100%; min-width: 0; }

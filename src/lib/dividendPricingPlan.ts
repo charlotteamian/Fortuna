@@ -30,5 +30,6 @@ export function dividendPricingPlan(pricing: DividendPricingResult): { buyLevels
 export function dividendPricingProvenance(pricing: DividendPricingResult, generatedAt: number): DividendGridProvenance | undefined {
   if (!dividendPricingPlan(pricing) || !Number.isSafeInteger(generatedAt) || generatedAt <= 0) return undefined;
   return { generatedAt, grossDpsMicros: pricing.dividendBase!.dpsMicros!, taxBps: pricing.taxBps as 0 | 1000 | 2000,
-    parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches' };
+    parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches',
+    ...(pricing.userConfirmedEvidence ? { userConfirmedAt: pricing.userConfirmedEvidence.confirmedAt, userConfirmedExpiresOn: pricing.userConfirmedEvidence.expiresOn } : {}) };
 }

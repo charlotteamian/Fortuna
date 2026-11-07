@@ -58,7 +58,7 @@ function StockResearch({ stock, snapshot, savedStock, check: loadedCheck, amount
       {savedStock && <DividendGridOrigin stock={savedStock} asOf={dateInChina()} check={check} />}
         <div className="div-ai-research-card-body">
 
-          <details><summary>{t('div_ai_research_rules')}</summary><ul className="div-ai-checks">{stock.checks.map(check => <li key={check.rule}><div><strong>{t(`div_ai_rule_label_${check.rule}`)}</strong>
+          <details><summary>{t('div_ai_research_rules')}</summary><ul className="div-ai-checks">{check.eligibility.checks.map(check => <li key={check.rule}><div><strong>{t(`div_ai_rule_label_${check.rule}`)}</strong>
             <span className={`div-ai-status ${check.status}`}>{t(`div_ai_research_${check.status}`)}</span></div>
             {check.value !== undefined && check.threshold !== undefined && <p>{t('div_ai_research_value', { value: check.rule === 'dividendYears' ? check.value : `${check.value / 100}%`, threshold: check.rule === 'dividendYears' ? check.threshold : `${check.threshold / 100}%` })}</p>}
             {check.period && <p>{t('div_ai_research_period', { period: check.period })}</p>}{check.reason && <p>{t(`div_ai_reason_${check.reason}`)}</p>}
@@ -84,10 +84,10 @@ function StockResearch({ stock, snapshot, savedStock, check: loadedCheck, amount
             {issue.attempts !== undefined && <span>{t('div_ai_issue_attempts', { count: issue.attempts })}</span>}{issue.detail && <code>{issue.detail}</code>}
             <p>{t(`div_ai_issue_help_${issue.kind}`)}</p>{issue.url?.startsWith('https://') && <a href={issue.url} target="_blank" rel="noopener noreferrer">{t('div_ai_issue_open_failed_source')}</a>}
           </li>)}</ul></details>}
-          <p className="div-ai-muted">{t('div_v2_review_evidence_scope')}</p>
-          {(stock.status === 'unknown' || stock.issues.length > 0) && <div className="div-ai-evidence-help"><strong>{t('div_ai_evidence_help_title')}</strong><p>{t('div_ai_evidence_help_detail')}</p><div className="div-ai-help-links">
+
+          {(stock.status === 'unknown' || stock.issues.length > 0) && <details><summary>{t('div_ai_evidence_help_title')}</summary><div className="div-ai-evidence-help"><strong>{t('div_ai_evidence_help_title')}</strong><p>{t('div_ai_evidence_help_detail')}</p><div className="div-ai-help-links">
             <a href={`https://data.eastmoney.com/stockdata/${stock.code}.html`} target="_blank" rel="noopener noreferrer">{t('div_ai_open_financial_source')}</a><a href="https://www.cninfo.com.cn/new/index" target="_blank" rel="noopener noreferrer">{t('div_ai_open_company_reports')}</a>
-          </div></div>}
+          </div></div></details>}
           {savedStock?.buyPaused && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
           <div className="div-actions"><button type="button" className="btn btn-primary" disabled={busy} onClick={onDiscuss}>{t('div_ai_discuss_stock')}</button></div>
         </div>
@@ -101,7 +101,7 @@ function StockResearch({ stock, snapshot, savedStock, check: loadedCheck, amount
       {outdated && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
       <p className="div-ai-stock-checked div-ai-muted">{t('div_ai_research_stock_checked', { time: new Date(snapshot.generatedAt).toLocaleString(i18n.language) })}</p>
       {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button><span className="div-ai-muted">{t('div_check_join_to_save')}</span></div>}
-      {stock.pricing ? <DividendPricingCard key={snapshot.generatedAt} retryDisabled={busy} onRetry={onRetry} check={check} code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />
+      {stock.pricing ? <DividendPricingCard key={snapshot.generatedAt} retryDisabled={busy} onRetry={onRetry} onResearchUpdated={onResearchUpdated} check={check} code={stock.code} pricing={stock.pricing} method={snapshot.pricingMethod} generatedAt={snapshot.generatedAt} disabled={busy || canAdd || outdated} onUpdated={onUpdated} />
         : <p className="div-ai-stock-checked div-ai-muted">{t('div_check_grid_missing')}</p>}
     </div>
   </article>;

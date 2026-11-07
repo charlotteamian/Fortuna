@@ -1,3 +1,5 @@
+import { hasCurrentUserDividendEvidence, dividendAutomaticSignature, dividendManualFingerprint, buildDividendManualBase } from '../lib/dividendManualInputs.ts';
+import { loadDividendManualInputs } from './dividendManualInputsService.ts';
 import { loadDividendLedgerForCheck } from './dividendLedgerEvidenceService.ts';
 import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 import { dividendLedgerBase } from '../lib/dividendLedger.ts';
@@ -45,6 +47,13 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
   // A fresh daily-advice request can update the ledger without replacing the
   // research-card cache. Confirm against this independent latest evidence too.
   const ledger = await loadDividendLedgerForCheck(proposal.code);
+  if (pricing?.userConfirmedEvidence && !hasCurrentUserDividendEvidence(pricing, dateInChina(), ledger)) throw new Error('DIVIDEND_REVIEW_CHANGED');
+  if (hasCurrentUserDividendEvidence(pricing, dateInChina())) {
+    const entered = await loadDividendManualInputs(proposal.code);
+    if (!entered || dividendManualFingerprint(entered) !== pricing!.userConfirmedEvidence!.fingerprint
+      || ledger && dividendAutomaticSignature(ledger) !== entered.automaticSignature
+      || JSON.stringify(buildDividendManualBase(entered, dateInChina(), pricing)) !== JSON.stringify(pricing!.dividendBase)) throw new Error('DIVIDEND_REVIEW_CHANGED');
+  } else {
   if (!ledger && pricing?.ledger) throw new Error('DIVIDEND_REVIEW_CHANGED');
   if (ledger) {
     if (!dividendEvidenceStatus(ledger, dateInChina()).usable) throw new Error('DIVIDEND_REVIEW_CHANGED');
@@ -53,6 +62,7 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
     if (!latestBase.verified || latestBase.dpsMicros !== pricing!.dividendBase?.dpsMicros
       || latestBase.latestExDate !== pricing!.dividendBase?.latestExDate
       || JSON.stringify(latestBase.selectedBatchIds) !== JSON.stringify(pricing!.dividendBase?.selectedBatchIds)) throw new Error('DIVIDEND_REVIEW_CHANGED');
+  }
   }
   const origin = dividendPricingProvenance(pricing!, context.generatedAt);
   if (JSON.stringify(proposal.gridProvenance) !== JSON.stringify(origin)) throw new Error('DIVIDEND_REVIEW_CHANGED');

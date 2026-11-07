@@ -26,6 +26,17 @@ test('amount entry preserves cents without rounding its derived percentage', () 
   assertClose(targetAmountFromPercent(500000, planPercentFromInput('100000', 'amount', 500000)), 100000);
 });
 
+test('plan percentage input preserves zero and any finite nonnegative ratio without hierarchy caps', () => {
+  for (const value of ['0', '30', '40.123456789', '100', '120', '250']) {
+    assert.equal(planPercentFromInput(value, 'percent', 1_000_000), Number(value));
+  }
+  assert.equal(planPercentFromInput('1500000', 'amount', 1_000_000), 150);
+  assert.equal(planPercentFromInput('0', 'amount', 1_000_000), 0);
+  for (const invalid of ['', ' ', '-1', 'NaN', 'Infinity', '40% trailing']) {
+    assert.ok(Number.isNaN(planPercentFromInput(invalid, 'percent', 1_000_000)), invalid);
+  }
+});
+
 test('amount entry needs a positive base and rejects malformed or negative input', () => {
   for (const raw of ['', ' ', '20abc', '-5', 'Infinity']) {
     assert.ok(Number.isNaN(planPercentFromInput(raw, 'amount', 1000)));

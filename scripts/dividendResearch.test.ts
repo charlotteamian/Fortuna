@@ -138,7 +138,8 @@ test('matching report-year dividends and EPS establish payout, missing reports n
     dividendRow('2022-12-31', '2023-06-01'), dividendRow('2021-12-31', '2022-06-01'),
   ]), '600036', '2026-10-21');
   const result = evaluateDividendResearch(research({ financial, distributions, yieldBps: 500 }), principles, now);
-  assert.equal(result.status, 'pass');
+  assert.equal(result.status, 'unknown', 'a legacy yield value without a dated cash basis does not establish the cash-yield rule');
+  assert.equal(result.checks.find(check => check.rule === 'yield')?.status, 'unknown');
   assert.equal(result.checks.find(check => check.rule === 'payout')?.value, 2500);
   assert.equal(evaluateDividendResearch(research(), principles, now).status, 'unknown');
   const old = { ...financial, latest: { ...financial.latest, reportDate: '2025-12-31' } };

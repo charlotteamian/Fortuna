@@ -1,3 +1,5 @@
+import DividendPricingInputsDialog from './DividendPricingInputsDialog';
+import type { DividendResearchSnapshot } from '../lib/dividendResearch';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dividendPricingMarketComparison, invalidateOutdatedDividendPricing, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
@@ -102,8 +104,9 @@ export function DividendPricingEditor({ method, disabled, onSave }: { method: Di
   </form>;
 }
 
-export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated, check, onRetry, retryDisabled }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown>; check?: DividendStockCheckSummary; onRetry?: () => void; retryDisabled?: boolean }) {
+export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated, check, onRetry, retryDisabled, onResearchUpdated }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown>; check?: DividendStockCheckSummary; onRetry?: () => void; retryDisabled?: boolean; onResearchUpdated?: (value: DividendResearchSnapshot) => Promise<void> }) {
   const { t } = useTranslation();
+  const [filling, setFilling] = useState(false);
   const pricing = invalidateOutdatedDividendPricing(sourcePricing);
   const plan = check ? check.currentPlan : dividendPricingPlan(pricing);
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
@@ -114,7 +117,9 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
   } : null;
   return <section className="div-ai-pricing-card div-check-grid" aria-label={t('div_check_grid_title')}>
     <h3>{t('div_check_grid_title')}</h3>
-    <DividendPricingGuide pricing={pricing} check={check} disabled={retryDisabled ?? disabled} onRetry={onRetry} />
+    <DividendPricingGuide pricing={pricing} check={check} disabled={retryDisabled ?? disabled} onRetry={onRetry} onFill={onResearchUpdated ? () => setFilling(true) : undefined} />
+    {pricing.userConfirmedEvidence && <p className="div-ai-muted">{t('div_manual_used', { date: pricing.userConfirmedEvidence.confirmedAt, expiry: pricing.userConfirmedEvidence.expiresOn })}</p>}
+    {filling && onResearchUpdated && <DividendPricingInputsDialog code={code} pricing={pricing} onClose={() => setFilling(false)} onSaved={onResearchUpdated} />}
     {pricing.blockers.includes('pricing_calculation_stale') ? <p className="div-warning">{t('div_v2_pricing_model_stale')}</p> : <>
       <p className="div-ai-muted">{t('div_check_grid_caption')}</p>
       {plan && <><p className="div-ai-muted">{t('div_batch_columns_note', { tax: pct(pricing.taxBps ?? 0) })}</p>

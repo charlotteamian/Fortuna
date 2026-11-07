@@ -1,4 +1,4 @@
-import type { DividendLedger } from './dividendLedger.ts';
+import { dividendLedgerBase, type DividendLedger } from './dividendLedger.ts';
 
 export interface DividendEvidenceStatus {
   status: 'current' | 'stale' | 'incomplete' | 'failed' | 'missing' | 'invalid';
@@ -24,11 +24,19 @@ export function dividendEvidenceStatus(ledger: DividendLedger | undefined, asOf:
     return { status: 'invalid', usable: false, reasons: ['DIVIDEND_LEDGER_INVALID'] };
   }
   const reasons = [...new Set(ledger.issues)];
-  if (reasons.some(issue => issue === 'ANNOUNCEMENT_REFRESH_FAILED' || issue === 'ANNOUNCEMENT_DOWNLOAD_FAILED' || issue.startsWith('CNINFO_'))) {
+  if (reasons.some(issue => issue === 'ANNOUNCEMENT_REFRESH_FAILED' || issue === 'CURRENT_ANNOUNCEMENT_UNVERIFIED' || issue.startsWith('CNINFO_'))) {
     return { status: 'failed', usable: false, reasons };
   }
-  if (!ledger.complete || reasons.some(issue => ['SOURCE_PAGES_INCOMPLETE', 'ANNOUNCEMENT_LIST_PARTIAL', 'ANNOUNCEMENT_VERIFICATION_PARTIAL'].includes(issue))) {
+  if (!ledger.complete || reasons.some(issue => ['SOURCE_PAGES_INCOMPLETE', 'ANNOUNCEMENT_LIST_PARTIAL'].includes(issue))) {
     return { status: 'incomplete', usable: false, reasons: [...new Set([...reasons, ...(!ledger.complete ? ['SOURCE_COVERAGE_INCOMPLETE'] : [])])] };
+  }
+  // Full current source listings and the exact required cash/share batches are
+  // sufficient for today's grid. A failed old PDF remains a historical gap;
+  // it cannot turn a complete feed into fictional missing source pages.
+  if (reasons.some(issue => ['ANNOUNCEMENT_DOWNLOAD_FAILED', 'ANNOUNCEMENT_VERIFICATION_PARTIAL'].includes(issue))) {
+    let requiredBatchesVerified = false;
+    try { requiredBatchesVerified = dividendLedgerBase(ledger, ledger.asOf).verified; } catch { /* Invalid required batches stay unverified. */ }
+    if (!requiredBatchesVerified || !reasons.includes('HISTORICAL_ANNOUNCEMENT_GAPS')) return { status: reasons.includes('ANNOUNCEMENT_DOWNLOAD_FAILED') ? 'failed' : 'incomplete', usable: false, reasons };
   }
   if (ledger.asOf !== asOf) return { status: 'stale', usable: false, reasons: [...reasons, 'DIVIDEND_LEDGER_STALE'] };
   return { status: 'current', usable: true, reasons };
