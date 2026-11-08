@@ -110,7 +110,9 @@ export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, to
   if (fund.quoteFailedAt !== undefined) issues.push('quote_refresh_failed');
   if (ref?.highMicros === undefined) issues.push('high_missing');
   else if (!priceCurrent && priceMicros !== undefined) issues.push('price_prior_date');
-  const status = observed !== null ? observed ? 'met' : 'wait'
+  const status = !priceCurrent && (priceMicros !== undefined || fund.quoteFailedAt !== undefined)
+    ? 'update'
+    : observed !== null ? observed ? 'met' : 'wait'
     : issues.some(issue => ['price_prior_date', 'quote_refresh_failed'].includes(issue)) ? 'update' : 'incomplete';
   return { drawdownBps, targetPriceMicros, status, issues };
 }
