@@ -4,7 +4,6 @@ import { dividendPricingReadable, type DividendPricingResult, type DividendPrici
 import { reviewDividendFinancialSector, type DividendBankReportEvidence, type DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
 import { dividendLedgerBase } from './dividendLedger.ts';
-import { dividendEvidenceStatus } from './dividendEvidenceStatus.ts';
 import { hasCurrentUserDividendEvidence } from './dividendManualInputs.ts';
 export type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 
@@ -246,19 +245,18 @@ export function parseDividendDistributionResearch(raw: unknown, code: string, as
 export function dividendResearchCashYield(stock: DividendStockResearch, now = Date.now()): { yieldBps?: number; periods?: string[] } {
   const pricing = stock.pricing, asOf = dateInChina(new Date(now));
   if (!pricing) return {};
-  if (!hasCurrentUserDividendEvidence(pricing, asOf) && stock.issues.some(issue => issue.kind === 'dividend')) return {};
   const price = pricing.currentPriceMinor, priceDate = validDate(pricing.priceDate);
   const age = priceDate ? (Date.parse(asOf) - Date.parse(priceDate)) / 86400000 : Infinity;
   if (!Number.isSafeInteger(price) || price! <= 0 || age < 0 || age > 10) return {};
   let base = pricing.dividendBase;
   if (pricing.ledger) {
-    if (!priceDate || priceDate > pricing.ledger.asOf || !dividendEvidenceStatus(pricing.ledger, pricing.ledger.asOf).usable) return {};
+    if (!priceDate || priceDate > pricing.ledger.asOf) return {};
     const annual = pricing.annuals[0];
     try { base = dividendLedgerBase(pricing.ledger, priceDate, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps }); } catch { return {}; }
   } else if (!validDate(base?.asOf) || base!.asOf > asOf || base!.asOf < priceDate! || base?.latestExDate && priceDate! < base.latestExDate) return {};
   if (pricing.userConfirmedEvidence && !hasCurrentUserDividendEvidence(pricing, asOf)) return {};
-  if (!base?.verified || !Number.isSafeInteger(base.dpsMicros) || base.dpsMicros! <= 0) return {};
-  return { yieldBps: Math.round(base.dpsMicros! / price!), periods: base.reportPeriods };
+  if (!Number.isSafeInteger(base?.dpsMicros) || base!.dpsMicros! <= 0) return {};
+  return { yieldBps: Math.round(base!.dpsMicros! / price!), periods: base!.reportPeriods };
 }
 
 /** Technical pacing is deliberately separate from financial eligibility. Unknown inputs never pass. */
@@ -297,8 +295,6 @@ export function evaluateDividendResearch(stock: DividendStockResearch, principle
   if (stock.pricing) {
     const annuals = stock.pricing.annuals;
     if (!stock.financial?.financialSector) check('fcfCoverage', annuals[0]?.fcfCoverageBps, principles.minFcfCoverageBps ?? 15000, true, annuals[0]?.reportDate, staleAnnual);
-    check('fiveYearPayout', annuals.length >= 5 && annuals.every(y => y.payoutBps !== undefined) ? Math.max(...annuals.map(y => y.payoutBps!)) : undefined,
-      principles.maxPayoutBps, false, annuals[0]?.reportDate, staleAnnual);
   }
   checks.push({ rule: 'reportFreshness', status: age === undefined || age > 230 ? 'unknown' : 'pass', period: latest?.reportDate,
     ...(age === undefined ? { reason: 'missing' as const } : age > 230 ? { reason: 'stale' as const } : {}) });

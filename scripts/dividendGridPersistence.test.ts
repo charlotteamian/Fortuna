@@ -174,21 +174,25 @@ test('a newer independent ledger retires old UI drafts even when the research ca
   changed.events[0].verification = 'conflict';
   await ledgerStore.table('ledgers').put(changed);
   await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
-  await ledgerStore.table('ledgers').put({ ...ledger, asOf: '2026-10-20' });
-  await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
   await ledgerStore.table('ledgers').clear();
   await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
   assert.deepEqual(await state(), before, 'all rejected previews preserve saved plans and holdings');
 });
 
-test('a failed same-day official refresh blocks confirmation while preserving the last successful ledger and all plans', async () => {
+test('retired official transports cannot block confirmation or change the user plan', async () => {
   const { researchDividendLedger } = await import('../src/services/dividendLedgerEvidenceService.ts');
   const raw = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json', import.meta.url), 'utf8')).sources.distribution.data;
   const ledger = pingAnOfficialLedger(dateInChina());
+  raw.result.data = ledger.events.map(event => ({ SECURITY_CODE: '000001', REPORT_DATE: event.reportDate,
+    NOTICE_DATE: event.announcementDate, EQUITY_RECORD_DATE: event.recordDate, EX_DIVIDEND_DATE: event.exDate,
+    PRETAX_BONUS_RMB: event.cashPer10Micros! / 1e6, BONUS_RATIO: event.bonusPer10Bps! / 1000,
+    IT_RATIO: event.transferPer10Bps! / 1000, ASSIGN_PROGRESS: '实施分配' }));
   await ledgerStore.table('ledgers').put(ledger);
-  const { draft, evidence } = pricedDraft();
+  const { draft, evidence } = pricedDraft(dividendLedgerBase(ledger, dateInChina()));
   const before = await state();
-  await researchDividendLedger(raw, '000001', dateInChina(), { post: async () => { throw new Error('CNINFO_HTTP_503'); } });
-  await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
-  assert.deepEqual(await state(), before); assert.deepEqual(await ledgerStore.table('ledgers').get('000001'), ledger);
+  let requests = 0;
+  await researchDividendLedger(raw, '000001', dateInChina(), { post: async () => { requests++; throw new Error('CNINFO_HTTP_503'); } });
+  await validateDividendPricingProposal(draft, evidence);
+  assert.equal(requests, 0); assert.deepEqual(await state(), before);
+  assert.equal(dividendLedgerBase((await ledgerStore.table('ledgers').get('000001'))!, dateInChina()).dpsMicros, 609000);
 });

@@ -1,6 +1,6 @@
 import { dateInChina } from './dividendWorkbench.ts';
 import { isDividendMarketQuote, isExchangeTradedFundCode, type DividendMarketQuote } from './dividendQuote.ts';
-import { latestTradingDayOnOrBefore } from './dividendQuoteUsability.ts';
+import { dividendQuoteUsability } from './dividendQuoteUsability.ts';
 
 export type DividendStrategy = 'stocks' | 'funds';
 export type DividendFundMode = 'hold' | 'rebalance' | 'swing';
@@ -93,17 +93,21 @@ export type DividendFundEntryIssue = 'price_missing' | 'price_prior_date' | 'quo
 
 /** Fund triggers are a pure price grid: latest session price versus the saved
  * entry/exit trigger prices. Index yield stays an informational display and
- * never gates the trigger. A quote from the latest trading day (weekends and
- * exchange holidays included) counts as the current session. */
-export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, today = dateInChina()) {
+ * never gates the trigger. Shared quote rules require today's source date on
+ * trading days and a fetch within 36 hours on exchange non-trading days. */
+function fundPriceIsCurrent(fund: DividendFund, asOf: string, now: number): boolean {
+  const quote = fund.quote ?? (fund.reference?.priceMicros === undefined ? undefined
+    : { date: `${fund.reference.asOf} 00:00`, priceMicros: fund.reference.priceMicros });
+  return dividendQuoteUsability({ quote, failedAt: fund.quoteFailedAt, asOf, now }).status === 'current';
+}
+
+export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, today = dateInChina(), now = Date.now()) {
   const ref = fund.reference;
   const priceMicros = dividendFundPriceMicros(fund);
   const drawdownBps = priceMicros !== undefined && ref?.highMicros !== undefined
     ? Math.max(0, (ref.highMicros - priceMicros) / ref.highMicros * 10000) : undefined;
   const targetPriceMicros = ref?.highMicros !== undefined ? Math.round(ref.highMicros * (10000 - plan.drawdownBps) / 10000) : undefined;
-  const priceDate = fund.quote?.date.slice(0, 10) ?? ref?.asOf;
-  const priceCurrent = priceMicros !== undefined && (priceDate === today || priceDate === latestTradingDayOnOrBefore(today))
-    && fund.quoteFailedAt === undefined;
+  const priceCurrent = fundPriceIsCurrent(fund, today, now);
   const observed = priceMicros !== undefined && targetPriceMicros !== undefined ? priceMicros <= targetPriceMicros : null;
   const issues: DividendFundEntryIssue[] = [];
   if (priceMicros === undefined) issues.push('price_missing');
@@ -118,13 +122,11 @@ export function dividendFundEntry(plan: DividendFundPlan, fund: DividendFund, to
 }
 
 /** Home and management share the same saved entry rules and dated observations. */
-export function buildDividendFundHomePlan(plan: DividendFundPlan, fund: DividendFund, today = dateInChina()) {
-  const entry = dividendFundEntry(plan, fund, today);
+export function buildDividendFundHomePlan(plan: DividendFundPlan, fund: DividendFund, today = dateInChina(), now = Date.now()) {
+  const entry = dividendFundEntry(plan, fund, today, now);
   const priceMicros = dividendFundPriceMicros(fund);
   const highMicros = fund.reference?.highMicros;
-  const priceDate = fund.quote?.date.slice(0, 10) ?? fund.reference?.asOf;
-  const quoteUsable = priceMicros !== undefined && (priceDate === today || priceDate === latestTradingDayOnOrBefore(today))
-    && fund.quoteFailedAt === undefined;
+  const quoteUsable = fundPriceIsCurrent(fund, today, now);
   const exitState = plan.mode !== 'swing' ? plan.mode : highMicros === undefined ? 'high_missing'
     : !quoteUsable ? 'quote_missing' : priceMicros! >= highMicros ? 'triggered' : 'waiting';
   return { entry, priceMicros, targetAmountMinor: plan.budgetMinor === undefined ? undefined : dividendFundAllocation(plan).amounts.get(fund.id) ?? 0,

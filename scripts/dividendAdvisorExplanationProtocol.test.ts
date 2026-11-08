@@ -33,11 +33,11 @@ test('the fact manifest contains exact existing ROE gaps and preserves context w
   assert.deepEqual(data, before);
 });
 
-test('relevant risk entries keep their own existing source and dates rather than inheriting another event', () => {
+test('relevant key-data risk entries keep their own existing source and dates rather than inheriting another event', () => {
   const data = context(), risk = data.stockPlan.stocks[0].checkSummary.risk.evidenceInsufficient;
-  risk.push({ id: 'special_dividend_review:synthetic', reason: 'special_dividend_review', sources: ['https://example.com/special-source'], reportPeriod: '2025-12-31', publishedAt: '2026-08-01',
+  risk.push({ id: 'dividend_base_unverified', reason: 'dividend_base_unverified', sources: ['https://example.com/special-source'], reportPeriod: '2025-12-31', publishedAt: '2026-08-01',
     impact: 'new_buy', autoRepair: false, unresolvedAction: 'review' });
-  const fact = buildDividendExplanationFacts(data).find(item => item.id.endsWith('risk:special_dividend_review:synthetic'));
+  const fact = buildDividendExplanationFacts(data).find(item => item.id.endsWith('risk:dividend_base_unverified'));
   assert.ok(fact); assert.match(fact.text, /special-source/); assert.match(fact.text, /2026-08-01/); assert.doesNotMatch(fact.text, /原文核验日/);
 });
 

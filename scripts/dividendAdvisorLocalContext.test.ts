@@ -63,7 +63,7 @@ test('local chat keeps current stored constraints, original evidence dates and a
   const before = await state(), context = await loadDividendAdvisorContext();
   const check = context.stockPlan.stocks[0].checkSummary;
   assert.equal(check.actionCheck.buy.status, 'blocked'); assert.deepEqual(check.actionCheck.buy.reasons, ['manual_pause']);
-  assert.equal(check.trigger.buy, 'unknown'); assert.equal(context.stockPlan.stocks[0].quoteState.priorDate, true);
+  assert.equal(check.trigger.buy, 'triggered'); assert.equal(context.stockPlan.stocks[0].quoteState.priorDate, true);
   assert.equal(context.stockPlan.stocks[0].shares, 200); assert.equal(context.stockPlan.budgetMinor, 1000000);
   assert.deepEqual(check.grid.buyLevels, stock.buyLevels); assert.deepEqual(check.grid.sellLevels, stock.sellLevels);
   assert.ok(check.freshness.evidenceVerifiedDates.every(date => date === '2026-10-29'));

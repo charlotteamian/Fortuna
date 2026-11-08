@@ -33,8 +33,7 @@ test('missing research time and a failed current source do not inherit a passing
   assert.equal(failedCash.eligibility.status, 'unknown');
   const cachedFailed = summarize({ ledger, research: { ...research, pricing: { ...pricing,
     ledger: { ...ledger, complete: false, issues: ['CNINFO_HTTP_503'] } } } });
-  assert.equal(cachedFailed.grid.status, 'saved_unverified', 'a current cached failure cannot be revived by an older successful persistent ledger after reload');
-  assert.equal(cachedFailed.currentPlan, null);
+  assert.equal(cachedFailed.grid.status, 'verified', 'structured cash evidence stays verified despite a failed announcement refresh');
 });
 
 test('a missing earlier tier keeps original tier numbers and cannot invent cumulative quantities', () => {
@@ -53,7 +52,7 @@ test('a future fund quote cannot supply current either/both price evidence while
   for (const entryRule of ['both', 'either'] as const) {
     const value = dividendFundCheckSummary({ plan: { ...defaultDividendFundPlan(), entryRule, funds: [fund], budgetMinor: 100000 }, fund, asOf, now });
     assert.equal(value.trigger.buy, 'unknown'); assert.notEqual(value.actionCheck.buy.status, 'confirmation_candidate');
-    assert.equal(value.eligibility.status, entryRule === 'either' ? 'pass' : 'unknown');
+    assert.equal(value.eligibility.status, 'unknown', 'index yield never substitutes for a valid price');
   }
 });
 
@@ -74,14 +73,16 @@ test('pass plus a verified current grid above the buy price waits, while a reach
   const reached = summarize();
   assert.equal(reached.trigger.buy, 'triggered'); assert.equal(reached.actionCheck.buy.status, 'review');
   assert.ok(reached.actionCheck.buy.reasons.includes('execution_session_unverified'));
-  assert.ok(reached.actionCheck.buy.reasons.includes('saved_evidence_snapshot_missing'));
+  assert.ok(!reached.actionCheck.buy.reasons.includes('saved_evidence_snapshot_missing'));
+  assert.equal(reached.risk.evidenceInsufficient.find(item => item.reason === 'saved_evidence_snapshot_missing')?.impact, 'information');
 });
 
-test('failed eligibility and manual pause preserve the price event without allowing an unconditional new buy', () => {
+test('screening observations never restrict buying while a manual pause still blocks it', () => {
   const failed = { ...research, status: 'risk' as const, checks: [{ rule: 'roe' as const, status: 'risk' as const, value: 500, threshold: 800 }] };
-  const result = summarize({ research: failed });
-  assert.equal(result.eligibility.status, 'fail'); assert.equal(result.trigger.buy, 'triggered'); assert.equal(result.actionCheck.buy.status, 'review');
-  assert.ok(result.actionCheck.buy.reasons.includes('eligibility_fail'));
+  const result = summarize({ research: failed, quoteSession: 'confirmed' });
+  assert.equal(result.eligibility.status, 'fail'); assert.equal(result.trigger.buy, 'triggered'); assert.equal(result.actionCheck.buy.status, 'confirmation_candidate');
+  assert.ok(!result.actionCheck.buy.reasons.includes('eligibility_fail'));
+  assert.equal(result.risk.attention.find(item => item.reason === 'rule_roe')?.impact, 'information');
   assert.equal(result.risk.attention.find(item => item.reason === 'rule_roe')?.verifiedAt, undefined,
     'cash-announcement verification must never be attached to an unverified financial rule');
   const paused = summarize({ stock: { ...stock, buyPaused: true }, research: failed });
@@ -158,25 +159,28 @@ test('an old parameter version, changed tax or newer numerator never silently re
   assert.ok(oldVersion.grid.reasons.includes('parameters_changed'));
   const candidate = summarize({ stock: { ...stock, buyLevels: undefined, sellLevels: undefined }, basis: { ...pricing.dividendBase!, dpsMicros: 999000 } });
   assert.equal(candidate.grid.status, 'unavailable'); assert.ok(candidate.grid.reasons.includes('pricing_basis_changed'));
+  const changedLadder = summarize({ pricingMethod: { ...method, buyYieldBps: [700, 800, 900, 1000], sellYieldBps: [600, 500, 400, 300] } });
+  assert.equal(changedLadder.grid.status, 'saved_unverified'); assert.ok(changedLadder.grid.reasons.includes('parameters_changed'));
+  assert.deepEqual(changedLadder.grid.buyLevels, plan.buyLevels); assert.deepEqual(changedLadder.grid.sellLevels, plan.sellLevels);
 });
 
-test('source refresh failure and incomplete pagination downgrade status without redating old verified documents', () => {
+test('source refresh failure and incomplete pagination no longer downgrade structured cash evidence', () => {
   const before = structuredClone(ledger), oldDates = ledger.events.flatMap(event => event.sources.map(source => source.verifiedAt));
   for (const patch of [{ issues: ['ANNOUNCEMENT_REFRESH_FAILED'] }, { complete: false, issues: ['SOURCE_PAGES_INCOMPLETE'] }]) {
     const result = summarize({ ledger: { ...ledger, ...patch } });
-    assert.equal(result.grid.status, 'saved_unverified'); assert.deepEqual(result.grid.buyLevels, plan.buyLevels);
-    assert.notEqual(result.actionCheck.buy.status, 'confirmation_candidate');
+    assert.equal(result.grid.status, 'verified'); assert.deepEqual(result.grid.buyLevels, plan.buyLevels);
     assert.deepEqual(result.freshness.evidenceVerifiedDates, [...new Set(oldDates.filter((value): value is string => !!value && pricing.dividendBase!.selectedBatchIds.some(id => ledger.events.find(event => event.batchId === id)?.sources.some(source => source.verifiedAt === value))))].sort());
   }
   assert.deepEqual(ledger, before);
 });
 
-test('provisional cross-check/special-distribution/saved-snapshot limits affect new-buy review without rewriting pricing', () => {
+test('cross-check, special-distribution and missing saved-snapshot observations do not restrict new buys', () => {
   const selectedId = pricing.dividendBase!.selectedBatchIds[0];
   const result = summarize({ basis: { ...pricing.dividendBase!, flags: ['CROSSCHECK_MISSING'] },
     ledger: { ...ledger, events: ledger.events.map(event => event.batchId === selectedId ? { ...event, period: 'special' as const } : event) } });
   for (const reason of ['crosscheck_missing', 'special_dividend_review', 'saved_evidence_snapshot_missing']) {
-    assert.ok(result.risk.evidenceInsufficient.some(item => item.reason === reason)); assert.ok(result.actionCheck.buy.reasons.includes(reason));
+    assert.ok(result.risk.evidenceInsufficient.some(item => item.reason === reason && item.impact === 'information'));
+    assert.ok(!result.actionCheck.buy.reasons.includes(reason));
   }
   assert.equal(result.grid.status, 'verified'); assert.equal(pricing.canApply, true); assert.deepEqual(result.grid.buyLevels, plan.buyLevels);
 });
@@ -256,12 +260,12 @@ test('an unrelated old special dividend neither persists a new-buy restriction n
   assert.deepEqual(result.grid.buyLevels, baseline.grid.buyLevels); assert.deepEqual(result.grid.sellLevels, baseline.grid.sellLevels);
 });
 
-test('special dividends selected by current or supplied saved comparison evidence retain the review limit', () => {
+test('special dividends selected by current or supplied saved comparison evidence retain their observation', () => {
   const old = { ...ledger.events[0], id: 'old-special', batchId: 'old-special', period: 'special' as const, reportDate: '2019-12-31',
     announcementDate: '2020-05-01', exDate: '2020-06-01', shareFactor: 1, implemented: true };
   const result = summarize({ ledger: { ...ledger, events: [...ledger.events, old] },
     savedEvidenceSnapshot: { sourceUrls: ['https://example.com/synthetic-saved-special'], selectedBatchIds: [old.batchId] } });
-  assert.ok(result.actionCheck.buy.reasons.includes('special_dividend_review'));
+  assert.ok(!result.actionCheck.buy.reasons.includes('special_dividend_review'));
   for (const verification of ['unverified', 'conflict'] as const) {
     const selectedId = pricing.dividendBase!.selectedBatchIds[0];
     const unresolved = summarize({ ledger: { ...ledger, events: ledger.events.map(event => event.batchId === selectedId
@@ -310,7 +314,7 @@ test('a relevant unverified special event uses its own source and dates without 
   assert.equal(risks[0].reportPeriod, '2026-09-30'); assert.equal(risks[0].publishedAt, '2026-10-01');
   assert.equal(risks[0].verifiedAt, undefined);
   assert.ok(!risks[0].sources.some(source => pricing.dividendBase!.sourceUrls.includes(source)));
-  assert.ok(result.actionCheck.buy.reasons.includes('special_dividend_review'));
+  assert.ok(!result.actionCheck.buy.reasons.includes('special_dividend_review'));
   const unknownDates = summarize({ ledger: { ...ledger, events: [...ledger.events,
     { ...special, reportDate: undefined, announcementDate: undefined, sources: [] }] } });
   const unknown = unknownDates.risk.evidenceInsufficient.find(item => item.reason === 'special_dividend_review')!;
@@ -332,7 +336,7 @@ test('multiple relevant special events keep separate original verification metad
     { id: 'special_dividend_review:verified-special-one', sources: ['https://example.com/special-one'], period: '2026-09-30', published: '2026-10-01', verified: '2026-10-03' },
     { id: 'special_dividend_review:verified-special-two', sources: ['https://example.com/special-two'], period: '2026-10-01', published: '2026-10-04', verified: '2026-10-06' },
   ]);
-  assert.equal(result.actionCheck.buy.reasons.filter(reason => reason === 'special_dividend_review').length, 1);
+  assert.equal(result.actionCheck.buy.reasons.filter(reason => reason === 'special_dividend_review').length, 0);
 });
 
 test('eligibility preserves evidence unknown and carries at most three main reasons instead of a risk score', () => {
@@ -361,17 +365,18 @@ test('funds preserve their own drawdown/index-yield/high-price engine and never 
 
 test('a dated fund index yield and a manual price are never promoted to a current executable quote', () => {
   const oldYield = dividendFundCheckSummary({ plan: fundPlan, fund: { ...fund, reference: { ...fund.reference!, asOf: '2026-10-29' } }, asOf, now });
-  assert.equal(oldYield.eligibility.status, 'unknown'); assert.ok(oldYield.risk.evidenceInsufficient.some(item => item.reason === 'index_yield_prior_date'));
+  assert.equal(oldYield.eligibility.status, 'pass'); assert.equal(oldYield.trigger.buy, 'triggered');
+  assert.ok(!oldYield.risk.evidenceInsufficient.some(item => item.reason === 'index_yield_prior_date'));
   const manual = dividendFundCheckSummary({ plan: fundPlan, fund: { ...fund, quote: undefined, reference: { ...fund.reference!, priceMicros: 900000 } }, asOf, now });
-  assert.equal(manual.trigger.buy, 'unknown'); assert.ok(manual.risk.evidenceInsufficient.some(item => item.reason === 'fund_manual_price'));
+  assert.equal(manual.trigger.buy, 'unknown'); assert.ok(manual.risk.evidenceInsufficient.some(item => item.reason === 'quote_missing'));
 });
 
-test('fund either/both conditions preserve meaningful short-circuiting despite an irrelevant missing observation', () => {
+test('legacy either/both settings no longer make informational index yield a price trigger gate', () => {
   const noYield = { ...fund, reference: { ...fund.reference!, indexYieldBps: undefined } };
   const either = dividendFundCheckSummary({ plan: { ...fundPlan, entryRule: 'either' }, fund: noYield, asOf, now });
   assert.equal(either.eligibility.status, 'pass'); assert.equal(either.trigger.buy, 'triggered');
   const both = dividendFundCheckSummary({ plan: fundPlan, fund: noYield, asOf, now });
-  assert.equal(both.eligibility.status, 'unknown'); assert.equal(both.trigger.buy, 'unknown');
+  assert.equal(both.eligibility.status, 'pass'); assert.equal(both.trigger.buy, 'triggered');
 });
 
 test('quote parsing rejects invalid times and preserves a closed-session current-day price fact without pretending it can trade', () => {

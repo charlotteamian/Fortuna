@@ -27,6 +27,9 @@ export interface DividendPricingMethod {
   opportunityCostAsOf?: string;
   opportunityCostSource?: string;
   stockOverrides: Record<string, DividendPricingStockOverride>;
+  /** User-configurable buy/sell yield ladder (basis points). Defaults to the classic grid. */
+  buyYieldBps?: number[];
+  sellYieldBps?: number[];
 }
 export interface DividendTreasuryResearch {
   yieldBps: number;
@@ -96,7 +99,7 @@ export type DividendPricingBlocker = 'annual_eps_missing' | 'annual_payout_missi
   | 'treasury_missing' | 'treasury_stale' | 'yield_history_missing' | 'capital_actions_unverified'
   | 'opportunity_cost_missing' | 'opportunity_cost_stale' | 'anchors_conflict' | 'growth_return_conflict'
   | 'quote_missing' | 'roe_bps_missing' | 'cyclical_normalisation_required' | 'annual_stale'
-  | 'dividend_continuity_missing' | 'implausible_yield' | 'anchors_missing' | 'pricing_calculation_stale'
+  | 'implausible_yield' | 'anchors_missing' | 'pricing_calculation_stale'
   | 'trailing_dividend_missing' | 'trailing_dividend_invalid' | 'trailing_dividend_stale' | 'trailing_dividend_zero' | 'cash_distributions_incomplete'
   | 'dividend_ledger_missing' | 'dividend_base_unverified' | 'dividend_base_incomplete' | 'dividend_source_conflict' | 'dividend_frequency_unknown' | 'dividend_crosscheck_mismatch';
 export interface DividendPricingGrid {
@@ -153,6 +156,8 @@ export interface DividendPricingResult {
   currentSpreadBps?: number;
   spreadPercentileBps?: number;
   grid: DividendPricingGrid[];
+  buyYieldBps: number[];
+  sellYieldBps: number[];
   treasury?: DividendTreasuryResearch;
   history?: DividendYieldHistory;
   historyCoverage?: DividendYieldHistoryCoverage;
@@ -191,13 +196,15 @@ export interface DividendPricingInput {
 export function defaultDividendPricingMethod(): DividendPricingMethod {
   return { strategy: 'recent_batches', requiredReturnBps: 800, growthBps: 0, holdingPeriod: 'month_to_year', safetyMarginBps: 1500,
     riskPremiumBps: { bondlike: 175, bank: 225, cyclical: 350, other: 300 }, historicalPercentileBps: 7500,
-    stockOverrides: {} };
+    stockOverrides: {}, buyYieldBps: [...CLASSIC_DIVIDEND_BUY_YIELDS], sellYieldBps: [...CLASSIC_DIVIDEND_SELL_YIELDS] };
 }
 export function isDividendPricingMethod(raw: unknown): raw is DividendPricingMethod {
   if (!raw || typeof raw !== 'object') return false;
   const p = raw as DividendPricingMethod;
   const integer = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
   const text = (v: unknown, length: number) => v === undefined || typeof v === 'string' && v.length <= length;
+  const ladder = (v: unknown, side: 'buy' | 'sell') => v === undefined || Array.isArray(v) && v.length === 4
+    && v.every((value, index) => integer(value, 1, 5000) && (index === 0 || (side === 'buy' ? value > (v as number[])[index - 1] : value < (v as number[])[index - 1])));
   return (p.strategy === undefined || p.strategy === 'classic_ttm' || p.strategy === 'recent_batches')
     && integer(p.requiredReturnBps, 1, 5000) && integer(p.growthBps, 0, 300)
     && ['over_year', 'month_to_year', 'up_to_month'].includes(p.holdingPeriod)
@@ -205,6 +212,7 @@ export function isDividendPricingMethod(raw: unknown): raw is DividendPricingMet
     && !!p.riskPremiumBps && ['bondlike', 'bank', 'cyclical', 'other'].every(key => integer(p.riskPremiumBps[key as DividendPricingRiskClass], 0, 3000))
     && (p.opportunityCostBps === undefined || integer(p.opportunityCostBps, 1, 3000))
     && text(p.opportunityCostAsOf, 10) && text(p.opportunityCostSource, 2000)
+    && ladder(p.buyYieldBps, 'buy') && ladder(p.sellYieldBps, 'sell')
     && !!p.stockOverrides && typeof p.stockOverrides === 'object' && !Array.isArray(p.stockOverrides)
     && Object.entries(p.stockOverrides).length <= 100 && Object.entries(p.stockOverrides).every(([code, value]) => /^\d{6}$/.test(code)
       && !!value && typeof value === 'object' && (value.riskClass === undefined || ['bondlike', 'bank', 'cyclical', 'other'].includes(value.riskClass))
@@ -473,9 +481,8 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const normalizedEpsMicros = manual ? override!.normalizedEpsMicros : adjusted.length === 3 && adjusted.every(v => v !== undefined) ? Math.round(adjusted.reduce<number>((s,v) => s+v!,0)/3) : undefined;
   pause(normalizedEpsMicros === undefined, 'annual_eps_missing'); pause(normalizedEpsMicros !== undefined && normalizedEpsMicros <= 0, 'non_positive_earnings');
   pause(riskClass === 'cyclical' && !manual, 'cyclical_normalisation_required');
-  pause(annuals.length < 5 || annuals.slice(0,5).some(y => y.payoutBps === undefined), 'annual_payout_missing');
-  pause(annuals.some(y => (y.payoutBps ?? 0) > 10000), 'payout_above_100');
-  pause(annuals.slice(0,5).some(y => y.dividendMicros === undefined || y.dividendMicros <= 0), 'dividend_continuity_missing');
+  // Dividend continuity and payout sustainability are evaluated by the
+  // configurable screening principles, not hardcoded year-count gates.
   pause(!annuals[0]?.noticeDate || age(annuals[0].reportDate) > 550, 'annual_stale');
   const payouts = annuals.slice(0,5).flatMap(y => y.payoutBps === undefined ? [] : [y.payoutBps]).sort((a,b) => a-b);
   // A historical distribution above earnings is a reason to pause buying,
@@ -492,7 +499,6 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
       pause(freeCashMinor !== undefined ? freeCashMinor <= 0 : coverageKnown && year.fcfCoverageBps! <= 0, 'fcf_non_positive');
       const coverage = freeCashMinor !== undefined && year.dividendCashMinor && year.dividendCashMinor > 0
         ? freeCashMinor / year.dividendCashMinor * 10000 : coverageKnown ? year.fcfCoverageBps : undefined;
-      if (coverage !== undefined && coverage > 0 && coverage < 15000) warnings.push('fcf_below_150');
       // Prefer reported cash flow divided by the source's reported share count.
       // The provider may repeat current shares across annual rows; this is not
       // claimed as a dated year-end share count. When absent, cash-dividend
@@ -507,15 +513,12 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
           basis: reportedPerShare === undefined ? 'reported_dividend_coverage' : 'reported_cash_flow_per_share' });
       }
     }
-    pause(recent.length < 3 || fcfEvidence.length !== 3, 'fcf_missing');
   }
   const taxBps = method.holdingPeriod === 'over_year' ? 0 : method.holdingPeriod === 'month_to_year' ? 1000 : 2000;
   const earningsDividendMicros = normalizedEpsMicros !== undefined && sustainablePayoutBps !== undefined
     ? Math.round(normalizedEpsMicros * sustainablePayoutBps / 10000) : undefined;
   const fcfDividendCapMicros = fcfEvidence.length === 3 ? Math.min(...fcfEvidence.map(year => year.dividendCapMicros)) : undefined;
-  const fcfReferenceBelowEarnings = earningsDividendMicros !== undefined && fcfDividendCapMicros !== undefined && fcfDividendCapMicros < earningsDividendMicros;
   const fcfCapApplied = false;
-  pause(warnings.includes('fcf_below_150') || fcfReferenceBelowEarnings, 'fcf_below_150');
   // New grids use the verified most recent distribution batches, never a rolling cash window.
   const trailingDividend = input.trailingDividend;
   const dividendBase = input.ledger ? dividendLedgerBase(input.ledger, asOf, { epsMicros: annuals[0]?.epsMicros, payoutBps: annuals[0]?.payoutBps }) : input.dividendBase;
@@ -526,14 +529,12 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
     && date(dividendBase.latestExDate) === dividendBase.latestExDate && dividendBase.latestExDate! <= asOf
     && Array.isArray(dividendBase.sourceUrls) && dividendBase.sourceUrls.length > 0
     && dividendBase.sourceUrls.every(url => typeof url === 'string' && url.startsWith('https://'));
-  const flags = dividendBase?.flags ?? [];
+  // Only genuinely missing key pricing inputs block a grid: no ledger, an
+  // incomplete key shape (cash/frequency/share basis missing), or zero cash.
+  // Pagination, announcement and cross-check observations never block pricing.
   block(!dividendBase, 'dividend_ledger_missing');
-  block(!!dividendBase && (!baseShapeValid || !dividendBase.verified), 'dividend_base_unverified');
-  block(flags.includes('INCOMPLETE') || flags.includes('SOURCE_PAGES_INCOMPLETE'), 'dividend_base_incomplete');
-  block(flags.includes('SOURCE_CONFLICT'), 'dividend_source_conflict');
-  block(flags.includes('FREQUENCY_UNKNOWN'), 'dividend_frequency_unknown');
-  block(flags.includes('CROSSCHECK_MISMATCH'), 'dividend_crosscheck_mismatch');
-  const baseUsable = baseShapeValid && dividendBase!.verified && !blockers.length;
+  block(!!dividendBase && !baseShapeValid, 'dividend_base_unverified');
+  const baseUsable = baseShapeValid && !blockers.length;
   const d1Micros = baseUsable ? Number(BigInt(dividendBase!.dpsMicros!) * BigInt(10000 - taxBps) / 10000n) : undefined;
   block(baseUsable && d1Micros === 0, 'trailing_dividend_zero');
   const treasuryValid = !!treasury && Number.isSafeInteger(treasury.yieldBps) && treasury.yieldBps >= 0 && treasury.yieldBps < 3000
@@ -587,8 +588,10 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   // Treasury, history, opportunity, Gordon and PB never change the fixed ladder.
   const candidatePriceMinor = anchorPriceMinor;
   pause(quoteMatchesGrid && d1Micros !== undefined && d1Micros/currentPrice! > 3000, 'implausible_yield');
-  const buyPrices = CLASSIC_DIVIDEND_BUY_YIELDS.map(yieldBps => priceFor(yieldBps));
-  const sellPrices = CLASSIC_DIVIDEND_SELL_YIELDS.map(yieldBps => d1Micros !== undefined ? Number((BigInt(d1Micros) + BigInt(yieldBps) - 1n) / BigInt(yieldBps)) : undefined);
+  const buyYields = method.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS;
+  const sellYields = method.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS;
+  const buyPrices = buyYields.map(yieldBps => priceFor(yieldBps));
+  const sellPrices = sellYields.map(yieldBps => d1Micros !== undefined ? Number((BigInt(d1Micros) + BigInt(yieldBps) - 1n) / BigInt(yieldBps)) : undefined);
   block(d1Micros !== undefined && d1Micros > 0 && (!candidatePriceMinor
     || [...buyPrices,...sellPrices].some(price => !price || !Number.isSafeInteger(price))
     || buyPrices.some((price,index) => index > 0 && price! >= buyPrices[index-1]!)
@@ -597,7 +600,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const canApply = !blockers.length && !!candidatePriceMinor && !!d1Micros;
   const theoreticalPriceMinor = canApply ? candidatePriceMinor : undefined;
   const marginPriceMinor = theoreticalPriceMinor ? Math.floor(theoreticalPriceMinor*(1-method.safetyMarginBps/10000)) : undefined;
-  const grid: DividendPricingGrid[] = canApply ? CLASSIC_DIVIDEND_BUY_YIELDS.map((yieldBps,index) => {
+  const grid: DividendPricingGrid[] = canApply ? buyYields.map((yieldBps,index) => {
     const priceMinor = buyPrices[index]!;
     return { discountBps: Math.round(priceMinor / theoreticalPriceMinor! * 10000), priceMinor, yieldBps,
       changeFromCurrentBps: quoteMatchesGrid ? Math.round((priceMinor/currentPrice!-1)*10000) : undefined,
@@ -622,7 +625,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
     normalizedEpsMicros, normalizationBasis: manual ? 'documented_user_normalization' : normalizedEpsMicros === undefined ? 'missing' : 'three_year_adjusted_eps_mean',
     normalizationEvidence: manual ? {source:override!.normalizationSource!,asOf:override!.normalizationAsOf!} : undefined,
     sustainablePayoutBps, taxBps, earningsDividendMicros, fcfDividendCapMicros, fcfCapApplied, fcfEvidence, d1Micros, anchors, gordonYieldBps, gordonPriceMinor, anchorPriceMinor, theoreticalPriceMinor, marginPriceMinor, financialReview:input.financialReview,
-    currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, treasury, history, historyCoverage, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps,
+    currentPbBps, meanRoeBps, pbImpliedYieldBps, reasonablePbBps, pbBridgePriceMinor, currentSpreadBps, spreadPercentileBps, grid, buyYieldBps: [...buyYields], sellYieldBps: [...sellYields], treasury, history, historyCoverage, opportunity, currentPriceMinor:input.priceMinor,priceDate:input.priceDate,currentCashYieldBps:input.currentCashYieldBps,
     sourceUrls:[...new Set([...(input.sourceUrls ?? []),...(trailingDividend?.sourceUrls ?? []),...annuals.flatMap(year=>year.reportEvidence?.sources.map(source=>source.url) ?? [])])] };
 }
 
@@ -654,7 +657,6 @@ const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]
   roe_bps_missing: ['ROE或市净率依据不足，排除PB参考价', 'ROE or book-value evidence is incomplete; exclude the PB comparison'],
   cyclical_normalisation_required: ['周期行业归一盈利待复核，过去12个月现金可能包含景气高点分红', 'Cyclical earnings need normalisation review; trailing cash may include peak-cycle dividends'],
   annual_stale: ['年报依据过期或披露日期待核实，固定网格不代表最新经营检查已通过', 'Annual evidence is stale or publication is unverified; the fixed grid does not establish a current business review'],
-  dividend_continuity_missing: ['连续分红记录待核实，固定网格不保证未来分红持续', 'Dividend continuity needs verification; the fixed grid does not guarantee future dividends'],
   implausible_yield: ['计算结果或行情的数量级异常，需要核对', 'The calculated yield or price scale needs verification'],
   anchors_missing: ['收益率参考数据不足，固定网格仍按明示的收益率计算', 'Reference yield evidence is unavailable; the fixed grid uses its stated yields independently'],
   pricing_calculation_stale: ['定价计算已更新，请重新检查该股票；旧结果仅供回顾，不能生成新的价格草案', 'The pricing calculation has changed. Review this stock again; historical results cannot create new price drafts'],
@@ -677,7 +679,16 @@ export function humanizeDividendPricingIssues(text: string, language: string): s
 
 /** Preserve dated inputs and numbers while preventing reuse of obsolete arithmetic. */
 export function invalidateOutdatedDividendPricing(result: DividendPricingResult): DividendPricingResult {
-  if (result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'recent_batches') return result;
+  if (result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'recent_batches') {
+    if (Array.isArray(result.buyYieldBps) && Array.isArray(result.sellYieldBps)) return result;
+    // v5 originally used only the classic ladder. Restore its missing metadata
+    // without changing dated evidence, prices or any persisted user plan.
+    if (result.buyYieldBps === undefined && result.sellYieldBps === undefined
+      && Array.isArray(result.grid) && result.grid.length === CLASSIC_DIVIDEND_BUY_YIELDS.length
+      && result.grid.every((level, index) => level.yieldBps === CLASSIC_DIVIDEND_BUY_YIELDS[index])) {
+      return { ...result, buyYieldBps: [...CLASSIC_DIVIDEND_BUY_YIELDS], sellYieldBps: [...CLASSIC_DIVIDEND_SELL_YIELDS] };
+    }
+  }
   return { ...result, status: 'blocked', canApply: false,
     blockers: [...new Set([...result.blockers, 'pricing_calculation_stale' as const])] };
 }

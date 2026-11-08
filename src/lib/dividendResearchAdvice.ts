@@ -54,7 +54,8 @@ export function dividendResearchAdvice(stock: DividendStockResearch, indices: Di
   // freshness rules, so failed financial downloads cannot hide a valid saved trigger.
   const quoteBase: DividendStock = savedStock ?? { code: stock.code, name: stock.name, group: 'watch', weightBps: 0,
     shareMode: 'manual', manualShares: 0, lotSize: 100, buyLevels: [], sellLevels: [] };
-  const savedReview = savedStock ? reviewDividendGrid(savedStock, stock.pricing?.dividendBase, { asOf, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches', taxBps: stock.pricing?.taxBps }) : undefined;
+  const savedReview = savedStock ? reviewDividendGrid(savedStock, stock.pricing?.dividendBase, { asOf, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches', taxBps: stock.pricing?.taxBps,
+    buyYieldBps: stock.pricing?.buyYieldBps, sellYieldBps: stock.pricing?.sellYieldBps }) : undefined;
   const currentShareBasisDate = stock.pricing?.dividendBase?.latestExDate;
   // Only an explicit saved grid can use the provisional old-grid comparison.
   // A fresh candidate ladder must use a quote after all cash/share changes.

@@ -256,12 +256,14 @@ test('stock disclosure cancellation stops all writes, leaving dividend dates, pa
   late.resolve(new Response('{}')); await tick(); assert.equal(JSON.stringify(await db.dividendStocks.toArray()), before);
 });
 
-test('official evidence cancellation isolates a late custom transport and does not redate the last successful ledger', async () => {
+test('cancelling a structured ledger cache write leaves the last successful ledger and document dates intact', async () => {
   const ledger = pingAnOfficialLedger('2026-10-31'); await ledgers.table('ledgers').put(ledger);
   const before = JSON.stringify(await ledgers.table('ledgers').toArray()), late = deferred<unknown>(), started = deferred<void>(), controller = new AbortController(); let requests = 0;
-  const task = researchDividendLedger({}, stock.code, asOf, { signal: controller.signal, post: async () => { requests++; started.resolve(); return late.promise; } });
-  await started.promise; controller.abort(); await assert.rejects(task); late.resolve([{ code: stock.code, orgId: 'synthetic' }]); await tick();
-  assert.equal(requests, 1); assert.equal(await ledgers.table('documents').count(), 0); assert.equal(JSON.stringify(await ledgers.table('ledgers').toArray()), before);
+  const raw = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json', import.meta.url), 'utf8')).sources.distribution.data;
+  const task = researchDividendLedger(raw, stock.code, asOf, { signal: controller.signal,
+    beforeWrite: async () => { started.resolve(); await late.promise; }, post: async () => { requests++; return []; } });
+  await started.promise; controller.abort(); late.resolve(undefined); await assert.rejects(task); await tick();
+  assert.equal(requests, 0); assert.equal(await ledgers.table('documents').count(), 0); assert.equal(JSON.stringify(await ledgers.table('ledgers').toArray()), before);
 });
 
 test('read-only check snapshot does not initialise or migrate an empty main database', async () => {
@@ -281,6 +283,7 @@ test('all real refresh services failing retain dated evidence and user inputs wh
   await initializeSettings(); await db.settings.update('main', { dividendWorkbenchInitialized: true, dividendBudgetMinor: 1000000 }); await db.dividendStocks.put(stock);
   const ledger = pingAnOfficialLedger('2026-10-31'); await ledgers.table('ledgers').put(ledger);
   const value = await dividendDailyCheckRunner.run();
+  assert.ok(value.sources.every(source => source.provider !== 'CNINFO'), 'current checks never report a retired official request');
   assert.equal(value.status, 'partial'); assert.equal(value.items.length, 1); assert.equal(value.checkedKeys.length, 1); assert.ok(dividendDailyCoverage(value.sources).failed > 0);
   const saved = (await db.dividendStocks.get(stock.code))!;
   assert.equal(saved.buyPaused, true); assert.deepEqual(saved.buyLevels, stock.buyLevels); assert.equal(saved.manualShares, 200);
@@ -559,7 +562,7 @@ test('current-day item counts expire at the China date boundary without changing
 });
 
 for (const [name, patch] of [
-  ['old', { date: '2026-10-31 10:00', priceMinor: 900 }], ['future', { date: '2026-11-02 10:00', priceMinor: 900 }],
+  ['old', { date: '2026-10-30 10:00', priceMinor: 900, fetchedAt: now - 37 * 3600000 }], ['future', { date: '2026-11-02 10:00', priceMinor: 900 }],
   ['before ex-date', { date: '2026-01-01 10:00', priceMinor: 900 }], ['invalid', { date: `${asOf} 10:00`, priceMinor: -1 }],
 ] as const) test(`daily projection retains ${name} quote facts without promoting them to a current trigger`, () => {
   const check = dividendCheckSummary({ stock: { ...stock, buyPaused: false, quote: { ...stock.quote, ...patch } }, asOf, now,

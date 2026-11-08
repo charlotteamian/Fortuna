@@ -14,7 +14,7 @@ import type { DividendDailySource, DividendDailyStage } from '../lib/dividendDai
 import { dividendSourceUrl } from './dividendService';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { quoteSymbol } from '../lib/dividendWorkbench';
-import { fetchDividendResearch } from './dividendResearchService';
+import { fetchDividendResearch, dividendResearchDistributionUrl } from './dividendResearchService';
 import type { DividendFund } from '../lib/dividendFundPlan';
 import { loadDividendCheckSummaries } from './dividendCheckSummaryService';
 import { saveDividendResearchCache, loadDividendResearchCache } from './dividendResearchCacheService';
@@ -115,10 +115,10 @@ export async function prepareDividendAdvisorContext(onProgress: (done: number, t
         for (const issue of stock.issues) await report({ id: `${itemKey}:research:${issue.url ?? issue.kind}`, itemKey, stage: 'evidence', provider: issue.kind,
           url: issue.url, status: issue.reason === 'deferred' ? 'deferred' : 'failed', attemptedAt: Date.now(), detail: issue.detail ?? issue.reason });
         const ledger = stock.pricing?.ledger;
-        await report({ id: `${itemKey}:official`, itemKey, stage: 'evidence', provider: 'CNINFO', url: 'https://www.cninfo.com.cn/new/hisAnnouncement/query',
+        await report({ id: `${itemKey}:official`, itemKey, stage: 'evidence', provider: 'Eastmoney', url: dividendResearchDistributionUrl(stock.code),
           status: ledger?.complete ? 'success' : 'failed', attemptedAt: Date.now(), sourceDate: ledger?.events.flatMap(event => event.announcementDate ? [event.announcementDate] : []).sort().at(-1),
           verifiedDates: [...new Set(ledger?.events.flatMap(event => event.sources.flatMap(source => source.verifiedAt ? [source.verifiedAt] : [])) ?? [])],
-          detail: ledger?.complete ? undefined : ledger?.issues.join('; ').slice(0, 500) || 'official_evidence_unavailable' });
+          detail: ledger?.complete ? undefined : ledger?.issues.join('; ').slice(0, 500) || 'structured_evidence_unavailable' });
         if (!saved) await report({ id: `${itemKey}:cache`, itemKey, stage: 'evidence', provider: 'cache', status: 'failed', detail: 'research_save_failed' });
       },
     });

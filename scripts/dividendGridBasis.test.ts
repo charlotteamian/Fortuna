@@ -21,11 +21,12 @@ const store = new Dexie('FortunaDividendLedger'); store.version(1).stores({ docu
 const researchStore = new Dexie('FortunaDividendResearchCache'); researchStore.version(1).stores({ results: 'id' });
 beforeEach(async () => { await store.table('ledgers').clear(); await researchStore.table('results').clear(); });
 after(() => { store.close(); researchStore.close(); closeDividendLedgerEvidence(); closeDividendResearchCache(); });
-test('a prior-day ledger never breaks home loading or becomes a newly verified current base', async () => {
+test('a prior-day ledger stays readable as structured evidence without redating it to today', async () => {
   const ledger = pingAnOfficialLedger('2026-10-23'); await store.table('ledgers').put(ledger);
   const bases = await loadDividendGridBases(['000001', '600036'], '2026-10-30');
   assert.equal(bases['000001'].dpsMicros, 609000); assert.equal(bases['000001'].asOf, '2026-10-23');
-  assert.equal(bases['000001'].verified, false); assert.equal(bases['600036'], undefined);
+  assert.equal(bases['000001'].verified, true); assert.equal(bases['000001'].evidenceStatus, 'stale');
+  assert.equal(bases['600036'], undefined);
   assert.deepEqual(await store.table('ledgers').get('000001'), ledger);
 });
 test('today ledger recomputes the current batch base without fetching or changing evidence dates', async () => {
@@ -47,12 +48,12 @@ test('one malformed ledger is an explicit per-stock failure while another stock 
   assert.deepEqual(await store.table('ledgers').get('600036'), bad);
 });
 
-test('a failed current ledger is provisional even if cached document events themselves are verified', async () => {
+test('a failed current announcement refresh keeps the structured cash base usable', async () => {
   const ledger = { ...pingAnOfficialLedger('2026-10-30'), issues: ['CNINFO_HTTP_503'] };
   await store.table('ledgers').put(ledger);
   const result = (await loadDividendGridBases(['000001'], '2026-10-30'))['000001'];
-  assert.equal(result.dpsMicros, 609000); assert.equal(result.verified, false);
-  assert.equal(result.evidenceStatus, 'failed'); assert.deepEqual(result.evidenceIssues, ['CNINFO_HTTP_503']);
+  assert.equal(result.dpsMicros, 609000); assert.equal(result.verified, true);
+  assert.equal(result.evidenceStatus, 'current'); assert.deepEqual(result.evidenceIssues, []);
   assert.deepEqual(await store.table('ledgers').get('000001'), ledger);
 });
 
@@ -76,23 +77,25 @@ async function cachePricing(asOf: string, includeLedger: boolean) {
   } });
 }
 
-test('research fallback cannot promote a prior-day ledger or an aggregate without readable coverage evidence', async () => {
+test('research fallback keeps a prior-day ledger usable but never promotes an unreadable aggregate', async () => {
   await cachePricing('2026-10-29', true);
   const stale = (await loadDividendGridBases(['000001'], '2026-10-30'))['000001'];
   assert.equal(stale.dpsMicros, 609000); assert.equal(stale.asOf, '2026-10-29');
-  assert.equal(stale.verified, false); assert.equal(stale.evidenceStatus, 'stale');
+  assert.equal(stale.verified, true); assert.equal(stale.evidenceStatus, 'stale');
   await cachePricing('2026-10-30', false);
   const unsupported = (await loadDividendGridBases(['000001'], '2026-10-30'))['000001'];
   assert.equal(unsupported.verified, false); assert.equal(unsupported.evidenceStatus, 'missing');
   assert.ok(unsupported.evidenceIssues.includes('DIVIDEND_LEDGER_MISSING'));
 });
 
-test('a failed first official attempt prevents research fallback from reviving a previously cached verified base', async () => {
+test('a retired official transport is never called and does not invalidate fresh structured evidence', async () => {
   await cachePricing('2026-10-30', true);
   const raw = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json', import.meta.url), 'utf8')).sources.distribution.data;
-  await researchDividendLedger(raw, '000001', '2026-10-30', { post: async () => { throw new Error('CNINFO_HTTP_503'); } });
+  let officialRequests = 0;
+  await researchDividendLedger(raw, '000001', '2026-10-30', { post: async () => { officialRequests++; throw new Error('CNINFO_HTTP_503'); } });
   const result = (await loadDividendGridBases(['000001'], '2026-10-30'))['000001'];
-  assert.equal(result.verified, false); assert.equal(result.dpsMicros, undefined); assert.equal(result.evidenceStatus, 'failed');
-  assert.ok(result.evidenceIssues.includes('CNINFO_HTTP_503'));
-  assert.equal(await store.table('ledgers').get('000001'), undefined, 'failed attempt never becomes a saved success');
+  assert.equal(officialRequests, 0);
+  assert.equal(result.verified, true); assert.equal(result.dpsMicros, 609000); assert.equal(result.evidenceStatus, 'current');
+  assert.ok(!result.evidenceIssues.includes('CNINFO_HTTP_503'));
+  assert.ok(await store.table('ledgers').get('000001'));
 });

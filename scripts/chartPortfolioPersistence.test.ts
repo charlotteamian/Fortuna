@@ -33,6 +33,8 @@ beforeEach(async () => {
     { id: 'a2', accountId: 'strategy', date: '2026-02-01', amount: 1100, createdAt: 2 },
     { id: 'b1', accountId: 'other', date: '2026-02-01', amount: 99999999, createdAt: 3 },
   ]);
+  await db.holdings.bulkPut([{ id: 'h1', accountId: 'strategy', name: 'Synthetic', symbol: '000001', lastPrice: 11, sortOrder: 0, createdAt: 1 }]);
+  await db.holdingTxns.bulkPut([{ id: 't1', accountId: 'strategy', holdingId: 'h1', date: '2026-01-01', kind: 'buy', shares: 100, price: 10, createdAt: 1 }]);
 });
 after(() => db.close());
 
@@ -40,7 +42,7 @@ test('portfolio chart reads named portfolios only and requires an explicit saved
   assert.equal((await initializeSettings()).chartNavAccountIds, undefined);
   const portfolios = await getChartPortfolios();
   assert.deepEqual(portfolios.map(item => item.account.name), ['My strategy']);
-  assert.deepEqual(portfolios[0].points.map(point => point.totalValue), [100000, 110000]);
+  assert.deepEqual(portfolios[0].points.map(point => point.nav), [1.1]);
   const beforeAccounts = await db.accounts.toArray(), beforeRecords = await db.records.toArray();
   await updateSettings({ chartNavAccountIds: ['strategy'] });
   assert.deepEqual((await initializeSettings()).chartNavAccountIds, ['strategy']);

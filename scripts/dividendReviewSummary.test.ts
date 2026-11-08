@@ -14,6 +14,7 @@ const technical: DividendTechnicalResearch = { asOf: '2026-10-23', fetchedAt: 1,
 const pricing: DividendPricingResult = { calculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION, pricingBasis:'recent_batches', status: 'ready', canApply: true, riskClass: 'other', blockers: [], warnings: [], annuals: [],
   dividendBase: verifiedDividendBase(500000, '2026-10-23'), normalizationBasis: 'three_year_adjusted_eps_mean', taxBps: 0, anchors: {}, gordonYieldBps: 800,
   grid: [{ priceMinor: 1200, discountBps: 9500, yieldBps: 500, cumulativePortionBps: 3333, meetsSafetyMargin: false }],
+  buyYieldBps: [550, 575, 600, 650], sellYieldBps: [480, 450, 420, 400],
   sourceUrls: [], currentPriceMinor: 1000, priceDate: '2026-10-23' };
 function research(checks: DividendResearchCheck[], pricingChanges: Partial<DividendPricingResult> = {}): DividendStockResearch {
   return { code: '000333', name: 'Fixture', technical: { ...technical }, pricing: { ...pricing, ...pricingChanges },
@@ -59,11 +60,11 @@ test('dividend history, report dates and specialist financial evidence each comb
   const summary = summarize(research([
     { rule: 'dividendYears', status: 'unknown' }, { rule: 'reportFreshness', status: 'unknown', reason: 'stale' },
     { rule: 'financialSector', status: 'unknown' },
-  ], { pauseReasons: ['dividend_continuity_missing', 'annual_stale', 'financial_sector_review'] }));
+  ], { pauseReasons: ['annual_stale', 'financial_sector_review'] }));
   assert.deepEqual(summary.risks, []);
   assert.equal(summary.missing.length, 3);
   assert.deepEqual(summary.missing.map(item => [item.topic, item.rules, item.pricingIssues]), [
-    ['dividend_history', ['dividendYears'], ['dividend_continuity_missing']],
+    ['dividend_history', ['dividendYears'], []],
     ['report', ['reportFreshness'], ['annual_stale']],
     ['financial_sector', ['financialSector'], ['financial_sector_review']],
   ]);
@@ -93,14 +94,11 @@ test('a fully evidenced nonpositive cash year keeps its derived pricing gap with
     else annuals[0].fcfCoverageBps = 0;
     const calculated = priceCashEvidence(annuals);
     assert.ok(calculated.pauseReasons?.includes('fcf_non_positive'), basis);
-    assert.equal(calculated.canApply, true, 'a historical cash-flow risk does not replace verified TTM');
-    assert.ok(calculated.pauseReasons?.includes('fcf_missing'), 'the reference calculation gap is reproduced before summary grouping');
+    assert.equal(calculated.canApply, true, 'a historical cash-flow risk does not replace the cash base');
     const summary = summarize(research([], calculated));
-    assert.deepEqual(summary.risks.find(item => item.topic === 'cashflow')?.pricingIssues,
-      ['fcf_non_positive', 'fcf_missing'], basis);
+    assert.deepEqual(summary.risks.find(item => item.topic === 'cashflow')?.pricingIssues, ['fcf_non_positive'], basis);
     assert.equal(summary.risks.find(item => item.topic === 'cashflow')?.factKey, 'div_v4_fact_fcf_non_positive', basis);
     assert.equal(summary.missing.some(item => item.topic === 'cashflow'), false, basis);
-    assert.ok(calculated.pauseReasons?.includes('fcf_missing'), 'grouping preserves the original reference evidence');
   }
 });
 
@@ -122,7 +120,7 @@ test('a nonpositive cash year does not conceal another year with genuinely unava
   ] as const) {
     const summary = summarize(research([], priceCashEvidence(annuals)));
     assert.deepEqual(summary.risks.find(item => item.topic === 'cashflow')?.pricingIssues, ['fcf_non_positive'], label);
-    assert.deepEqual(summary.missing.find(item => item.topic === 'cashflow')?.pricingIssues, ['fcf_missing'], label);
+    assert.equal(summary.missing.find(item => item.topic === 'cashflow'), undefined, label);
   }
 });
 

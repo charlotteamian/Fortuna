@@ -2,7 +2,8 @@ import { hasCurrentUserDividendEvidence } from './dividendManualInputs.ts';
 import { buildDividendHomePlan, dateInChina, quoteSymbol, type DividendStock, type GridLevel } from './dividendWorkbench.ts';
 import { buildDividendFundHomePlan, type DividendFund, type DividendFundPlan } from './dividendFundPlan.ts';
 import { isDividendGridProvenance, reviewDividendGrid, type DividendGridBasisCheck } from './dividendGridProvenance.ts';
-import { DIVIDEND_PRICING_CALCULATION_VERSION, type DividendPricingMethod } from './dividendPricing.ts';
+import { CLASSIC_DIVIDEND_BUY_YIELDS, CLASSIC_DIVIDEND_SELL_YIELDS, DIVIDEND_PRICING_CALCULATION_VERSION, type DividendPricingMethod } from './dividendPricing.ts';
+import { isKeyDataReason } from './dividendKeyData.ts';
 import { dividendPricingPlan } from './dividendPricingPlan.ts';
 import { dividendResearchAdvice } from './dividendResearchAdvice.ts';
 import { dividendReviewSummary } from './dividendReviewSummary.ts';
@@ -100,7 +101,9 @@ export function dividendCheckSummary(input: {
   const taxBps = input.pricingMethod ? { over_year: 0, month_to_year: 1000, up_to_month: 2000 }[input.pricingMethod.holdingPeriod] : pricing?.taxBps;
   const origin = isDividendGridProvenance(stock.gridProvenance) ? stock.gridProvenance : undefined;
   const gridReview = reviewDividendGrid({ ...stock, buyLevels: Array.isArray(stock.buyLevels) ? stock.buyLevels : [], sellLevels: Array.isArray(stock.sellLevels) ? stock.sellLevels : [],
-    quote: stock.quote && typeof stock.quote.date === 'string' ? stock.quote : undefined }, basis, { asOf, taxBps, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches' });
+    quote: stock.quote && typeof stock.quote.date === 'string' ? stock.quote : undefined }, basis, { asOf, taxBps, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches',
+      buyYieldBps: input.pricingMethod?.buyYieldBps ?? pricing?.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS,
+      sellYieldBps: input.pricingMethod?.sellYieldBps ?? pricing?.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS });
   const savedBuy = explicit(stock.buyLevels), savedSell = explicit(stock.sellLevels), hasSaved = savedBuy.length > 0 || savedSell.length > 0;
   const basisMatches = !input.basis || !pricing?.dividendBase || input.basis.dpsMicros === pricing.dividendBase.dpsMicros
     && input.basis.asOf === pricing.dividendBase.asOf && input.basis.verified === pricing.dividendBase.verified
@@ -191,7 +194,8 @@ export function dividendCheckSummary(input: {
       // Cash-announcement verification does not verify a financial report or an
       // earnings cross-check. Missing dates remain absent rather than relabelled.
       verifiedAt: cashEvidence && !lower.includes('crosscheck') ? evidenceVerifiedDates.at(-1) : undefined,
-      impact: informational.has(reason) ? 'information' : impact, autoRepair: group === 'evidenceInsufficient' && repairable, unresolvedAction: repairable ? 'retry' : 'review' });
+      impact: informational.has(reason) || group === 'attention' || group === 'evidenceInsufficient' && !isKeyDataReason(reason) ? 'information' : impact,
+      autoRepair: group === 'evidenceInsufficient' && repairable, unresolvedAction: repairable ? 'retry' : 'review' });
   };
   const checks = research?.checks.map(check => ({ ...check })) ?? [];
   const failed = checks.filter(check => check.status === 'risk'), missing = checks.filter(check => check.status === 'unknown');
@@ -243,15 +247,15 @@ export function dividendCheckSummary(input: {
     risk.evidenceInsufficient.push({ id: `special_dividend_review:${event.id}`, reason: 'special_dividend_review',
       sources: distinct(eventSources.flatMap(source => typeof source?.url === 'string' ? [source.url] : [])),
       reportPeriod: event.reportDate, publishedAt: event.announcementDate, verifiedAt: eventVerifiedDates.at(-1),
-      impact: 'new_buy', autoRepair: false, unresolvedAction: 'review' });
+      impact: 'information', autoRepair: false, unresolvedAction: 'review' });
   }
   if (hasSaved && (!input.savedEvidenceSnapshot?.sourceUrls.length || !input.savedEvidenceSnapshot.selectedBatchIds.length)) add('evidenceInsufficient', 'saved_evidence_snapshot_missing');
   const buyConstraints = distinct([...gridReasons, ...(gridStatus !== 'verified' ? ['grid_not_verified'] : []),
     ...risk.blocking.map(item => item.reason), ...risk.evidenceInsufficient.filter(item => item.impact !== 'information' && !item.reason.startsWith('quote_')).map(item => item.reason),
-    ...(eligibility.status !== 'pass' ? [`eligibility_${eligibility.status}`] : []), ...(!quote.sessionConfirmed ? ['execution_session_unverified'] : []),
+    ...(!quote.sessionConfirmed ? ['execution_session_unverified'] : []),
     ...(!hasSaved && currentPlan ? ['current_grid_not_saved'] : [])]);
   const buyAction = stock.buyPaused ? action('blocked', ['manual_pause']) : gridStatus === 'unavailable' || quote.status !== 'current' ? action('unknown', [...gridReasons, ...quote.reasons])
-    : buy === 'not_triggered' ? action('wait', eligibility.status === 'pass' ? [] : [`eligibility_${eligibility.status}`])
+    : buy === 'not_triggered' ? action('wait')
     : input.totalBudgetMinor === undefined ? action('review', ['budget_missing', ...buyConstraints])
     : displayPlan.budgetMinor! <= 0 ? action('blocked', ['budget_empty'])
     : buyConstraints.length ? action('review', buyConstraints)
@@ -285,14 +289,14 @@ export function dividendCheckSummary(input: {
 export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: DividendFund; shares?: number; asOf?: string; now?: number; quoteSession?: 'confirmed' | 'unknown' }): DividendFundCheckSummary {
   const now = input.now ?? Date.now(), asOf = input.asOf ?? dateInChina(new Date(now)), { plan, fund } = input;
   const quote = dividendQuoteUsability({ quote: fund.quote, failedAt: fund.quoteFailedAt, asOf, now, quoteSession: input.quoteSession });
-  const referencePlan = buildDividendFundHomePlan(plan, fund, asOf);
+  const referencePlan = buildDividendFundHomePlan(plan, fund, asOf, now);
   const shares = typeof input.shares === 'number' && Number.isFinite(input.shares) && input.shares >= 0 ? input.shares : null;
   // Keep the price-trigger engine on the current observation only; the saved
   // fund and target formulas stay intact. A missing quote stays unknown.
   const currentPlan = buildDividendFundHomePlan(plan, { ...fund,
     quote: quote.status === 'current' ? fund.quote : undefined,
     reference: fund.reference ? { ...fund.reference, priceMicros: undefined } : undefined,
-  }, asOf);
+  }, asOf, now);
   const fundPlan = { ...currentPlan, priceMicros: referencePlan.priceMicros };
   const buy: DividendTriggerState = quote.status !== 'current' ? 'unknown' : fundPlan.entry.status === 'met' ? 'triggered'
     : fundPlan.entry.status === 'wait' ? 'not_triggered' : 'unknown';
@@ -300,7 +304,7 @@ export function dividendFundCheckSummary(input: { plan: DividendFundPlan; fund: 
     : fundPlan.exitState === 'triggered' ? 'triggered' : fundPlan.exitState === 'waiting' ? 'not_triggered' : 'unknown';
   // Only genuine price-grid data gaps are reported; no verification stack.
   const reasons = distinct([
-    ...(quote.status !== 'current' ? quote.reasons.filter(reason => ['quote_missing', 'quote_refresh_failed', 'quote_invalid'].includes(reason)) : []),
+    ...(quote.status !== 'current' ? quote.reasons : []),
     ...fundPlan.entry.issues.filter(issue => issue === 'price_missing' || issue === 'high_missing'),
   ]);
   const sources = fund.reference?.source ? [fund.reference.source] : [];

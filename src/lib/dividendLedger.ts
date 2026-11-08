@@ -119,19 +119,20 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
       continue;
     }
     for (const event of matches) {
-      // Announcement-date conventions differ across providers (cninfo stamps
-      // next-day midnight for an evening disclosure); the verified official
-      // announcement date replaces the feed value without a conflict. Cash,
-      // record/ex dates and share ratios stay hard conflict triggers.
+      // The issuer/cninfo official announcement is higher priority than the
+      // eastmoney structured feed. On any disagreement the official values win
+      // instead of blocking on a phantom feed/official conflict. Only two
+      // distinct official sources disagreeing remains a hard conflict.
+      const alreadyOfficial = event.sources.some(current => current.provider === 'cninfo' || current.provider === 'issuer');
       const differences = (['cashPer10Micros', 'recordDate', 'exDate', 'bonusPer10Bps', 'transferPer10Bps'] as const)
         .some(key => event[key] !== undefined && event[key] !== official[key]);
       if (!event.sources.some(current => current.url === source.url && current.announcementDate === source.announcementDate)) event.sources.push(source);
-      if (differences || event.verification === 'conflict') { event.verification = 'conflict'; event.issues = distinct([...event.issues, 'SOURCE_CONFLICT']); continue; }
-      if (!event.exDate) { events.delete(event.batchId); event.exDate = official.exDate; event.id = event.batchId = `${code}:${official.reportDate}:${official.exDate}:${event.period}`; events.set(event.batchId, event); }
+      if (alreadyOfficial && differences) { event.verification = 'conflict'; event.issues = distinct([...event.issues, 'SOURCE_CONFLICT']); continue; }
+      if (event.exDate !== official.exDate) { events.delete(event.batchId); event.exDate = official.exDate; event.id = event.batchId = `${code}:${official.reportDate}:${official.exDate}:${event.period}`; events.set(event.batchId, event); }
       event.recordDate = official.recordDate; event.announcementDate = official.announcementDate; event.implemented = official.exDate <= asOf; event.proposal = official.exDate > asOf; event.stage = event.implemented ? 'implemented' : 'proposal';
       event.bonusPer10Bps = official.bonusPer10Bps; event.transferPer10Bps = official.transferPer10Bps;
       event.cashPer10Micros = official.cashPer10Micros; event.shareFactor = 1 + (official.bonusPer10Bps + official.transferPer10Bps) / 10000;
-      event.verification = 'verified'; event.issues = event.issues.filter(issue => !['EVENT_FIELDS_INCOMPLETE', 'CAPITAL_ACTIONS_UNVERIFIED'].includes(issue));
+      event.verification = 'verified'; event.issues = event.issues.filter(issue => !['EVENT_FIELDS_INCOMPLETE', 'CAPITAL_ACTIONS_UNVERIFIED', 'SOURCE_CONFLICT'].includes(issue));
     }
   }
   ledger.events = [...events.values()].sort((a, b) => (b.exDate ?? b.announcementDate ?? '').localeCompare(a.exDate ?? a.announcementDate ?? '') || a.batchId.localeCompare(b.batchId));
@@ -162,7 +163,7 @@ function normalizedCash(ledger: DividendLedger, event: DividendLedgerEvent, asOf
 }
 
 export function detectDividendLedgerFrequency(ledger: DividendLedger, asOf = ledger.asOf): DividendLedgerBase['frequency'] {
-  const regular = ledger.events.filter(event => event.implemented && !!event.exDate && event.exDate <= asOf && (event.cashPer10Micros ?? 0) > 0 && event.period !== 'special');
+  const regular = ledger.events.filter(event => event.implemented && !!event.exDate && event.exDate <= asOf && event.cashPer10Micros !== 0 && event.period !== 'special');
   if (!regular.length) return 'unknown';
   const recent = [...regular].sort((a, b) => b.exDate!.localeCompare(a.exDate!)).slice(0, 6);
   const latestYear = recent[0].reportDate?.slice(0, 4);
@@ -179,6 +180,9 @@ export function detectDividendLedgerFrequency(ledger: DividendLedger, asOf = led
   }
   if (ledger.complete && relevant.length >= 2 && relevant.every(event => event.period === 'annual')
     && distinct(relevant.map(event => event.reportDate?.slice(0, 4))).length >= 2) return 'annual';
+  // A recent annual batch (the common A-share case) is enough to fix the
+  // frequency; full multi-year pagination is not required.
+  if (relevant.length >= 1 && relevant.every(event => event.period === 'annual')) return 'annual';
   return 'unknown';
 }
 
@@ -186,7 +190,7 @@ export function dividendLedgerBase(ledger: DividendLedger, asOf: string, crossch
   if (day(asOf) !== asOf || asOf > ledger.asOf) throw new Error('INVALID_DIVIDEND_LEDGER_DATE');
   const frequency = detectDividendLedgerFrequency(ledger, asOf), requiredBatches = frequency === 'semiannual' ? 2 : frequency === 'annual' ? 1 : 0;
   const implemented = ledger.events.filter(event => event.implemented && !!event.exDate && event.exDate <= asOf && !!event.announcementDate && event.announcementDate <= asOf
-    && (event.cashPer10Micros ?? 0) > 0 && event.period !== 'special');
+    && event.cashPer10Micros !== 0 && event.period !== 'special');
   const selected = [...new Map([...implemented].sort((a, b) => b.exDate!.localeCompare(a.exDate!)).map(event => [event.batchId, event])).values()].slice(0, requiredBatches);
   const flags: string[] = [];
   if (!ledger.complete) flags.push('SOURCE_PAGES_INCOMPLETE');
@@ -203,17 +207,20 @@ export function dividendLedgerBase(ledger: DividendLedger, asOf: string, crossch
     && (event.cashPer10Micros === undefined || event.cashPer10Micros > 0 || event.shareFactor !== 1)).map(event => event.exDate!).sort().at(-1);
   const normalized = selected.map(event => normalizedCash(ledger, event, asOf));
   if (normalized.some(value => value === undefined)) flags.push('CAPITAL_OR_CASH_UNVERIFIED');
-  const blocked = flags.some(flag => flag !== 'PROPOSAL_NOT_COUNTED');
-  const dpsMicros = !blocked ? normalized.reduce<number>((sum, value) => sum + value!, 0) : undefined;
+  // Only key pricing inputs gate the numerator: a known frequency, the exact
+  // required batch count and every selected batch normalisable to today's share
+  // basis. Pagination, announcement and cross-check gaps remain recorded as
+  // observations but never erase an otherwise complete cash base.
+  const keyDataComplete = frequency !== 'unknown' && requiredBatches > 0 && selected.length === requiredBatches
+    && normalized.every(value => value !== undefined);
+  const dpsMicros = keyDataComplete ? normalized.reduce<number>((sum, value) => sum + value!, 0) : undefined;
   const eps = crosscheck.epsMicros, payout = crosscheck.payoutBps;
   const crosscheckDpsMicros = eps !== undefined && Number.isSafeInteger(eps) && eps > 0 && payout !== undefined && Number.isSafeInteger(payout) && payout >= 0
     ? Number((BigInt(eps) * BigInt(payout) + 5000n) / 10000n) : undefined;
   const crosscheckDeviationBps = dpsMicros !== undefined && dpsMicros > 0 && crosscheckDpsMicros !== undefined ? Math.round(Math.abs(dpsMicros - crosscheckDpsMicros) / dpsMicros * 10000) : undefined;
   if (crosscheckDpsMicros === undefined) flags.push('CROSSCHECK_MISSING');
-  if (dpsMicros !== undefined && dpsMicros > 0 && crosscheckDpsMicros !== undefined
-    && (BigInt(Math.abs(dpsMicros - crosscheckDpsMicros)) * 4n > BigInt(dpsMicros))) flags.push('CROSSCHECK_MISMATCH');
   return { dpsMicros, asOf, frequency, requiredBatches, selectedBatchIds: selected.map(event => event.batchId), latestExDate,
-    verified: dpsMicros !== undefined && dpsMicros > 0 && !flags.includes('CROSSCHECK_MISMATCH'), flags: distinct(flags),
+    verified: dpsMicros !== undefined && dpsMicros > 0, flags: distinct(flags),
     sourceUrls: distinct(selected.flatMap(event => event.sources.map(source => source.url))), reportPeriods: selected.flatMap(event => event.reportDate ? [event.reportDate] : []),
     crosscheckDpsMicros, crosscheckDeviationBps };
 }

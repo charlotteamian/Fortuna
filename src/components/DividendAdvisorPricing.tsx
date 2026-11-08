@@ -2,7 +2,7 @@ import DividendPricingInputsDialog from './DividendPricingInputsDialog';
 import type { DividendResearchSnapshot } from '../lib/dividendResearch';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { dividendPricingMarketComparison, invalidateOutdatedDividendPricing, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
+import { CLASSIC_DIVIDEND_BUY_YIELDS, CLASSIC_DIVIDEND_SELL_YIELDS, dividendPricingMarketComparison, invalidateOutdatedDividendPricing, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult, type DividendOpportunityResearch, type DividendPricingBlocker } from '../lib/dividendPricing';
 import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
@@ -14,6 +14,8 @@ import DividendLedgerView from './DividendLedgerView';
 import type { DividendStockCheckSummary } from '../lib/dividendCheckSummary';
 import DividendPricingGuide from './DividendPricingGuide';
 
+const yieldText = (values: readonly number[]) => values.map(value => `${value / 100}%`).join(' / ');
+
 const GAP_HELP: Record<DividendPricingBlocker, string> = {
   dividend_ledger_missing: 'dividend', dividend_base_unverified: 'dividend', dividend_base_incomplete: 'dividend',
   dividend_source_conflict: 'dividend', dividend_frequency_unknown: 'dividend', dividend_crosscheck_mismatch: 'dividend',
@@ -24,7 +26,7 @@ const GAP_HELP: Record<DividendPricingBlocker, string> = {
   treasury_missing: 'macro', treasury_stale: 'macro', yield_history_missing: 'history', capital_actions_unverified: 'history',
   opportunity_cost_missing: 'opportunity', opportunity_cost_stale: 'opportunity', anchors_conflict: 'anchors', anchors_missing: 'anchors', growth_return_conflict: 'method',
   quote_missing: 'price', roe_bps_missing: 'financials', cyclical_normalisation_required: 'normalisation', annual_stale: 'financials',
-  dividend_continuity_missing: 'financials', implausible_yield: 'risk', pricing_calculation_stale: 'financials',
+  implausible_yield: 'risk', pricing_calculation_stale: 'financials',
 };
 
 export function DividendFinancialReviewCard({ review, code }: { review: DividendFinancialSectorReview; code: string }) {
@@ -80,9 +82,13 @@ function PricingGap({ blocker, code }: { blocker: DividendPricingBlocker; code: 
 export function DividendPricingEditor({ method, disabled, onSave }: { method: DividendPricingMethod; opportunity?: DividendOpportunityResearch; stocks?: Pick<DividendStock, 'code' | 'name'>[]; disabled: boolean; onSave: (value: DividendPricingMethod) => Promise<void> }) {
   const { t } = useTranslation();
   const [holdingPeriod, setHoldingPeriod] = useState(method.holdingPeriod);
+  const [buyYields, setBuyYields] = useState((method.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS).map(value => value / 100).join(', '));
+  const [sellYields, setSellYields] = useState((method.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS).map(value => value / 100).join(', '));
   const [error, setError] = useState('');
+  const parse = (text: string) => text.split(/[,，\s]+/).filter(Boolean).map(value => Math.round(Number(value) * 100));
   const save = async () => {
-    const value = { ...method, strategy: 'recent_batches' as const, holdingPeriod };
+    const buy = parse(buyYields), sell = parse(sellYields);
+    const value = { ...method, strategy: 'recent_batches' as const, holdingPeriod, buyYieldBps: buy, sellYieldBps: sell };
     if (!isDividendPricingMethod(value)) { setError(t('div_classic_invalid')); return; }
     setError('');
     await onSave(value);
@@ -90,14 +96,22 @@ export function DividendPricingEditor({ method, disabled, onSave }: { method: Di
   return <form className="div-ai-pricing-editor" onSubmit={event => { event.preventDefault(); void save(); }}>
     <p>{t('div_classic_intro')}</p>
     <div className="div-ai-auto-summary"><strong>{t('div_classic_fixed_title')}</strong>
-      <p>{t('div_classic_buy_yields')}</p><p>{t('div_classic_sell_yields')}</p>
+      <p>{t('div_classic_current_buy_yields', { yields: yieldText(method.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS) })}</p>
+      <p>{t('div_classic_current_sell_yields', { yields: yieldText(method.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS) })}</p>
       <p>{t('div_classic_neutral_help')}</p><p>{t('div_classic_allocation')}</p>
     </div>
-    <div className="div-ai-principles-form"><label><span>{t('div_v2_pricing_holding_period')}</span>
-      <select className="form-input" value={holdingPeriod} disabled={disabled} onChange={event => setHoldingPeriod(event.target.value as DividendPricingMethod['holdingPeriod'])}>
-        {(['over_year', 'month_to_year', 'up_to_month'] as const).map(value => <option key={value} value={value}>{t(`div_v2_holding_${value}`)}</option>)}
-      </select><small>{t('div_classic_tax_help')}</small>
-    </label></div>
+    <div className="div-ai-principles-form">
+      <label><span>{t('div_classic_buy_yields_label')}</span>
+        <input className="form-input" value={buyYields} disabled={disabled} onChange={event => setBuyYields(event.target.value)} placeholder="5.5, 5.75, 6, 6.5" />
+        <small>{t('div_classic_buy_yields_help')}</small></label>
+      <label><span>{t('div_classic_sell_yields_label')}</span>
+        <input className="form-input" value={sellYields} disabled={disabled} onChange={event => setSellYields(event.target.value)} placeholder="4.8, 4.5, 4.2, 4" />
+        <small>{t('div_classic_sell_yields_help')}</small></label>
+      <label><span>{t('div_v2_pricing_holding_period')}</span>
+        <select className="form-input" value={holdingPeriod} disabled={disabled} onChange={event => setHoldingPeriod(event.target.value as DividendPricingMethod['holdingPeriod'])}>
+          {(['over_year', 'month_to_year', 'up_to_month'] as const).map(value => <option key={value} value={value}>{t(`div_v2_holding_${value}`)}</option>)}
+        </select><small>{t('div_classic_tax_help')}</small>
+      </label></div>
     <p className="div-ai-muted">{t('div_classic_refresh_help')}</p>
     {error && <p className="div-warning" role="alert">{error}</p>}
     <button type="submit" className="btn btn-primary" disabled={disabled}>{t('div_v2_pricing_save')}</button>
@@ -135,7 +149,7 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
         {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)} · {t('div_check_origin_saved')}</caption>
           <thead><tr><th>{t('div_grid_level_column')}</th><th>{t('div_grid_target_yield')}</th><th>{t('div_grid_price_short')}</th></tr></thead>
           <tbody>{check.grid[side === 'buy' ? 'buyLevels' : 'sellLevels'].map((level, index) => <tr key={index}><th>{check.grid[side === 'buy' ? 'buyTierIndices' : 'sellTierIndices'][index]}</th><td>{pct(level.yieldBps)}</td><td>{yuan(level.priceMinor)}</td></tr>)}</tbody></table>)}</details>}
-      {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} embedded previewLabel={t('div_v2_pricing_preview')}
+      {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} embedded direct
         beforePreview={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })}
         beforeApply={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })} />}
     </>}
@@ -165,7 +179,9 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
     <dl className="div-ai-metrics"><div><dt>{t('div_classic_gross_dividend')}</dt><dd>{yuan(base?.dpsMicros, 1e6)}</dd></div>
       <div><dt>{t('div_classic_net_dividend')}</dt><dd>{yuan(pricing.d1Micros, 1e6)}</dd></div></dl>
     <p className="div-ai-muted">{t('div_classic_dividend_basis', { tax: pct(pricing.taxBps) })}</p>
-    <p className="div-ai-muted">{t('div_classic_price_rule')}</p><p className="div-ai-muted">{t('div_classic_buy_yields')}</p><p className="div-ai-muted">{t('div_classic_sell_yields')}</p>
+    <p className="div-ai-muted">{t('div_classic_price_rule')}</p>
+    <p className="div-ai-muted">{t('div_classic_current_buy_yields', { yields: yieldText(pricing.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS) })}</p>
+    <p className="div-ai-muted">{t('div_classic_current_sell_yields', { yields: yieldText(pricing.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS) })}</p>
     {comparison.quoteUsable && <p className="div-ai-muted">{t('div_classic_quote', { price: yuan(pricing.currentPriceMinor), date: pricing.priceDate, grossYield: pct(pricing.currentCashYieldBps) })}</p>}
     {comparison.reachedBuyLevels.length > 0 && <p className="div-ai-muted">{t('div_v2_pricing_model_reached', { levels: comparison.reachedBuyLevels.join('、') })}</p>}
     {pricing.grid.some(grid => grid.changeFromCurrentBps !== undefined) && <ul className="div-ai-muted">{pricing.grid.map((grid, index) => grid.changeFromCurrentBps === undefined ? null : <li key={grid.yieldBps}>{t('div_classic_buy_level', { level: index + 1 })} · {t('div_classic_price_gap', { gap: pct(grid.changeFromCurrentBps) })}</li>)}</ul>}

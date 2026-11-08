@@ -35,8 +35,9 @@ interface RunOptions {
 function initialSources(items: DividendDailyItem[]): DividendDailySource[] {
   return items.flatMap(item => [
     { id: `${item.key}:quote`, itemKey: item.key, stage: 'quotes' as const, provider: 'Tencent', status: 'pending' as const },
+    // Keep saved source IDs stable; the active ledger source is now Eastmoney.
     ...item.kind === 'stock' ? ['disclosure', 'schedule', 'research', 'official'].map(kind => ({ id: `${item.key}:${kind}`, itemKey: item.key,
-      stage: 'evidence' as const, provider: kind === 'official' ? 'CNINFO' : 'Eastmoney', status: 'pending' as const }))
+      stage: 'evidence' as const, provider: 'Eastmoney', status: 'pending' as const }))
       : [{ id: `${item.key}:reference`, itemKey: item.key, stage: 'evidence' as const, provider: 'manual', status: 'pending' as const }],
     { id: `${item.key}:plan`, itemKey: item.key, stage: 'plans' as const, provider: 'local', status: 'pending' as const },
   ]);

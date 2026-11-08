@@ -34,49 +34,86 @@ function transport() {
   return { options, downloads, requests };
 }
 
-test('official adapter derives verified event facts from actual announcement text and caches only exact document evidence', async () => {
-  const { options, downloads, requests } = transport();
-  const ledger = await researchDividendLedger(raw, '000001', scope, options);
-  assert.equal(dividendLedgerBase(ledger, scope).dpsMicros, 609000); assert.equal(dividendLedgerBase(ledger, scope).verified, true);
-  assert.equal(downloads.length, 2); assert.equal(requests[1].fields.stock, '000001,gssz0000001'); assert.equal(requests[1].fields.column, 'szse');
-  const docs = await stored.table('documents').toArray();
-  for (const doc of docs) { assert.equal(doc.checkedAt, scope); assert.equal(doc.event.verifiedAt, scope); assert.equal(doc.sha256, createHash('sha256').update(`%PDF-ISOLATED:${doc.url}`).digest('hex')); assert.equal('text' in doc.event, false); }
-  assert.deepEqual(await loadSavedDividendLedger('000001'), ledger);
+test('structured research never calls retired official transports and saves usable cash without PDF receipts', async () => {
+  const run=transport();
+  const ledger=await researchDividendLedger(raw,'000001',scope,run.options);
+  assert.deepEqual(run.requests,[]); assert.deepEqual(run.downloads,[]);
+  assert.equal(await stored.table('documents').count(),0);
+  assert.equal(dividendLedgerBase(ledger,scope).dpsMicros,609000);
+  assert.equal(dividendEvidenceStatus(ledger,scope).usable,true);
+  assert.deepEqual(await loadSavedDividendLedger('000001'),ledger);
 });
 
-test('cached official evidence retains its original verification date and hash on later checks', async () => {
-  const first = transport(); await researchDividendLedger(raw, '000001', scope, first.options);
-  const saved = await stored.table('documents').toArray();
-  const second = transport(); const result = await fetchDividendOfficialEvidence('000001', '2026-10-30', second.options);
-  assert.equal(second.downloads.length, 0); assert.equal(result.events.length, 2); assert.ok(result.events.every(event => event.verifiedAt === scope));
-  assert.deepEqual(await stored.table('documents').toArray(), saved);
-  const current = await researchDividendLedger(raw, '000001', '2026-10-30', second.options);
-  assert.equal(second.downloads.length, 0);
-  assert.equal(dividendEvidenceStatus(current, '2026-10-30').usable, true);
-  assert.equal(dividendLedgerBase(current, '2026-10-30').verified, true);
-  assert.deepEqual(await stored.table('documents').toArray(), saved, 'a successful current list reuses immutable documents');
-  assert.deepEqual(await loadSavedDividendLedger('000001'), current);
+test('previous official receipts stay immutable optional evidence without a new official request', async () => {
+  const legacy=transport();
+  await fetchDividendOfficialEvidence('000001',scope,legacy.options);
+  const documents=await stored.table('documents').toArray();
+  assert.equal(documents.length,2);
+  for (const doc of documents) {
+    assert.equal(doc.checkedAt,scope); assert.equal(doc.event.verifiedAt,scope);
+    assert.equal(doc.sha256,createHash('sha256').update('%PDF-ISOLATED:'+doc.url).digest('hex'));
+  }
+  const current=transport();
+  const ledger=await researchDividendLedger(raw,'000001','2026-10-30',current.options);
+  assert.deepEqual(current.requests,[]); assert.deepEqual(current.downloads,[]);
+  assert.deepEqual(await stored.table('documents').toArray(),documents);
+  assert.equal(dividendLedgerBase(ledger,'2026-10-30').dpsMicros,609000);
+  assert.ok(ledger.events.some(event=>event.sources.some(source=>source.verifiedAt===scope)));
 });
 
-test('a source discrepancy survives official extraction as a conflict, never a substituted verified amount', async () => {
-  const changed = structuredClone(raw); changed.result.data[0].PRETAX_BONUS_RMB = 2.5;
-  const ledger = await researchDividendLedger(changed, '000001', scope, transport().options);
-  const latest = ledger.events.find(event => event.reportDate === '2026-06-30')!;
-  assert.equal(latest.verification, 'conflict'); assert.equal(latest.cashPer10Micros, 2500000);
-  const base = dividendLedgerBase(ledger, scope); assert.equal(base.dpsMicros, undefined); assert.equal(base.verified, false); assert.ok(base.flags.includes('SOURCE_CONFLICT'));
+test('missing latest cash and duplicate source conflicts never save an older substitute as a new success', async () => {
+  const missing=structuredClone(raw); missing.result.data[0].PRETAX_BONUS_RMB=null;
+  const result=await researchDividendLedger(missing,'000001',scope,transport().options);
+  assert.equal(dividendLedgerBase(result,scope).verified,false);
+  assert.equal(await loadSavedDividendLedger('000001'),undefined);
+  const conflict=structuredClone(raw);
+  conflict.result.data.push({...conflict.result.data[0],PRETAX_BONUS_RMB:2.5});
+  const conflicted=await researchDividendLedger(conflict,'000001',scope,transport().options);
+  assert.ok(dividendLedgerBase(conflicted,scope).flags.includes('SOURCE_CONFLICT'));
+  assert.equal(await loadSavedDividendLedger('000001'),undefined);
 });
 
-test('an empty official list or unparseable PDF does not create a verified dividend record', async () => {
-  const empty = transport(); empty.options.post = async path => path.includes('topSearch') ? [{ code: '000001', orgId: 'gssz0000001' }] : { hasMore: false, announcements: [] };
-  const unknown = await researchDividendLedger(raw, '000001', scope, empty.options);
-  assert.equal(dividendLedgerBase(unknown, scope).verified, false); assert.ok(unknown.events.every(event => event.verification === 'unverified'));
-  const malformed = transport(); malformed.options.extractPdf = async () => 'This document has no verified implementation facts.';
-  const result = await fetchDividendOfficialEvidence('000001', scope, malformed.options);
-  assert.equal(result.events.length, 0); assert.ok(result.issues.includes('ANNOUNCEMENT_FIELDS_UNVERIFIED'));
-  const cachedFailure = await fetchDividendOfficialEvidence('000001', scope, malformed.options);
-  assert.equal(cachedFailure.events.length, 0); assert.ok(cachedFailure.issues.includes('ANNOUNCEMENT_FIELDS_UNVERIFIED'), 'same-day cached extraction gaps must remain visible');
+test('invalid provider input cannot overwrite a successful saved ledger or mutate its original dates', async () => {
+  const saved=await researchDividendLedger(raw,'000001',scope,transport().options);
+  await assert.rejects(researchDividendLedger({success:false},'000001','2026-10-30'),/INVALID_DIVIDEND_LEDGER_SOURCE/);
+  assert.deepEqual(await loadSavedDividendLedger('000001'),saved);
+  const attempted=await loadDividendLedgerForCheck('000001');
+  assert.ok(attempted?.issues.includes('DIVIDEND_SOURCE_REFRESH_FAILED'));
+  assert.equal(await stored.table('documents').count(),0);
 });
 
+test('retired PDF issues do not become current requests or rewrite the saved ledger', async () => {
+  const ledger=await researchDividendLedger(raw,'000001',scope);
+  const legacy={...ledger,issues:['CNINFO_HTTP_503','ANNOUNCEMENT_DOWNLOAD_FAILED']};
+  await stored.table('ledgers').put(legacy);
+  const checked=await loadDividendLedgerForCheck('000001');
+  assert.deepEqual(checked?.issues,[]); assert.equal(checked?.asOf,scope);
+  assert.deepEqual(await loadSavedDividendLedger('000001'),legacy);
+});
+
+test('cancellation before cache commit preserves the last success without starting official requests', async () => {
+  const original=await researchDividendLedger(raw,'000001',scope);
+  const controller=new AbortController(); const run=transport();
+  await assert.rejects(researchDividendLedger(raw,'000001','2026-10-30',{
+    ...run.options,signal:controller.signal,beforeWrite:async()=>controller.abort(),
+  }));
+  assert.deepEqual(await loadSavedDividendLedger('000001'),original);
+  assert.deepEqual(run.requests,[]);
+});
+
+test('a newer structured refresh owns the ledger even when an older cache write resumes late', async () => {
+  let release!:()=>void, started!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const entered=new Promise<void>(resolve=>{started=resolve;});
+  const older=researchDividendLedger(raw,'000001',scope,{beforeWrite:async()=>{started();await gate;}});
+  await entered;
+  const updated=structuredClone(raw);updated.result.data[0].PRETAX_BONUS_RMB=2.5;
+  const current=await researchDividendLedger(updated,'000001','2026-10-30');
+  release();await assert.rejects(older);
+  assert.deepEqual(await loadSavedDividendLedger('000001'),current);
+});
+
+// Compatibility checks for the retired adapter and its optional legacy receipts.
 test('explicit recovery retries a failed same-day extraction and preserves every successful document', async () => {
   const partial = transport();
   const extract = partial.options.extractPdf;
@@ -94,206 +131,6 @@ test('explicit recovery retries a failed same-day extraction and preserves every
   assert.deepEqual(retry.downloads, [fixtures[1].sourceUrl]);
   assert.deepEqual(await stored.table('documents').get(fixtures[0].sourceUrl), savedSuccess,
     'successful hash, facts and original verification date remain immutable');
-});
-
-test('a bounded explicit ledger request continues older-document verification without a second user action', async () => {
-  const run = transport(), request = run.options.post;
-  run.options.post = async (path, fields) => {
-    const response = await request(path, fields);
-    if (Array.isArray(response)) return response;
-    return { ...response, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
-      announcementTitle: '权益分派实施公告', adjunctUrl: `finalpage/2026-10-29/continue-${index}.PDF`,
-      announcementTime: Date.parse(`${fixtures[0].announcementDate}T00:00:00+08:00`) })) };
-  };
-  run.options.extractPdf = async () => fixtures[0].text;
-  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3, retryFailedDocuments: true });
-  assert.equal(run.downloads.length, 26);
-  assert.equal(new Set(run.downloads).size, 26, 'completed PDFs are reused within the same request');
-  assert.equal(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'), false);
-});
-
-test('unsupported historical layouts do not prevent continuation or block the verified latest cash batches', async () => {
-  const run = transport(), request = run.options.post, extract = run.options.extractPdf;
-  run.options.post = async (path, fields) => {
-    const response = await request(path, fields);
-    if (Array.isArray(response)) return response;
-    return { ...response, announcements: [...response.announcements, ...Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
-      announcementTitle: '历史权益分派实施公告', adjunctUrl: `finalpage/2017-06-01/historical-${index}.PDF`,
-      announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }))] };
-  };
-  run.options.extractPdf = async bytes => new TextDecoder().decode(bytes).includes('historical-') ? 'Unsupported historical layout' : extract(bytes);
-  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3, retryFailedDocuments: true });
-  assert.equal(run.downloads.length, 28);
-  assert.equal(new Set(run.downloads).size, 28, 'unsupported cached PDFs never consume another slot in the same request');
-  assert.ok(ledger.issues.includes('ANNOUNCEMENT_FIELDS_UNVERIFIED'), 'the historical field gap remains visible');
-  assert.equal(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'), false);
-  assert.equal(dividendEvidenceStatus(ledger, scope).usable, true);
-  const base = dividendLedgerBase(ledger, scope);
-  assert.equal(base.verified, true);
-  assert.equal(base.dpsMicros, 609000);
-  assert.deepEqual(new Set(base.reportPeriods), new Set(['2025-12-31', '2026-06-30']));
-});
-
-test('completing old-document coverage cannot approve an unsupported latest required batch', async () => {
-  const run = transport(), request = run.options.post, extract = run.options.extractPdf;
-  run.options.post = async (path, fields) => {
-    const response = await request(path, fields);
-    if (Array.isArray(response)) return response;
-    return { ...response, announcements: [...response.announcements, ...Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
-      announcementTitle: '历史权益分派实施公告', adjunctUrl: `finalpage/2017-06-01/older-${index}.PDF`,
-      announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }))] };
-  };
-  run.options.extractPdf = async bytes => {
-    const content = new TextDecoder().decode(bytes);
-    return content.includes('older-') || content.includes(fixtures[0].sourceUrl) ? 'Unsupported implementation layout' : extract(bytes);
-  };
-  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
-  assert.equal(run.downloads.length, 28);
-  assert.equal(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'), false);
-  const base = dividendLedgerBase(ledger, scope);
-  assert.equal(base.verified, false);
-  assert.equal(base.dpsMicros, undefined);
-  assert.ok(base.flags.includes('ANNOUNCEMENT_UNVERIFIED'));
-});
-
-test('an incomplete official list stops automatic continuation even when some PDF fields remain unsupported', async () => {
-  const run = transport(), request = run.options.post;
-  run.options.post = async (path, fields) => {
-    const response = await request(path, fields);
-    if (Array.isArray(response)) return response;
-    return { ...response, hasMore: true, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
-      announcementTitle: '历史权益分派实施公告', adjunctUrl: `finalpage/2017-06-01/partial-list-${index}.PDF`,
-      announcementTime: Date.parse('2017-06-01T00:00:00+08:00') })) };
-  };
-  run.options.extractPdf = async () => 'Unsupported older layout';
-  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
-  assert.equal(run.downloads.length, 12);
-  assert.ok(ledger.issues.includes('ANNOUNCEMENT_LIST_PARTIAL'));
-  assert.equal(ledger.complete, false);
-  assert.equal(dividendLedgerBase(ledger, scope).verified, false);
-});
-
-test('automatic continuation stops on real PDF download failures rather than repeating the same failed batch', async () => {
-  const run = transport(), request = run.options.post;
-  run.options.post = async (path, fields) => {
-    const response = await request(path, fields);
-    if (Array.isArray(response)) return response;
-    return { ...response, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
-      announcementTitle: '权益分派实施公告', adjunctUrl: `finalpage/2026-10-29/failed-${index}.PDF`,
-      announcementTime: Date.parse(`${fixtures[0].announcementDate}T00:00:00+08:00`) })) };
-  };
-  run.options.readPdf = async url => { run.downloads.push(url); throw new Error('SYNTHETIC_OFFLINE'); };
-  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
-  assert.equal(run.downloads.length, 12);
-  assert.ok(ledger.issues.includes('ANNOUNCEMENT_DOWNLOAD_FAILED'));
-  assert.equal(ledger.complete, false);
-});
-
-test('a slow first verification batch leaves the remainder for a later request', async context => {
-  const run = transport(), request = run.options.post;
-  let now = Date.now();
-  context.mock.method(Date, 'now', () => now);
-  run.options.post = async (path, fields) => {
-    const response = await request(path, fields);
-    if (Array.isArray(response)) return response;
-    return { ...response, announcements: Array.from({ length: 26 }, (_, index) => ({ secCode: '000001',
-      announcementTitle: '权益分派实施公告', adjunctUrl: `finalpage/2026-10-29/slow-${index}.PDF`,
-      announcementTime: Date.parse(`${fixtures[0].announcementDate}T00:00:00+08:00`) })) };
-  };
-  run.options.extractPdf = async () => { now += 2000; return fixtures[0].text; };
-  const ledger = await researchDividendLedger(raw, '000001', scope, { ...run.options, maxEvidencePasses: 3 });
-  assert.equal(run.downloads.length, 12);
-  assert.ok(ledger.issues.includes('ANNOUNCEMENT_VERIFICATION_PARTIAL'));
-  assert.equal(ledger.complete, false);
-});
-
-test('failed requests preserve earlier document facts; invalid provider input cannot erase a saved ledger', async () => {
-  const saved = await researchDividendLedger(raw, '000001', scope, transport().options);
-  const documents = await stored.table('documents').toArray();
-  const failed = { post: async () => { throw new Error('CNINFO_HTTP_503'); } };
-  const retry = await fetchDividendOfficialEvidence('000001', '2026-10-30', failed);
-  assert.equal(retry.events.length, 2); assert.deepEqual(retry.issues, ['CNINFO_HTTP_503']); assert.deepEqual(await stored.table('documents').toArray(), documents);
-  await assert.rejects(researchDividendLedger({ success: false }, '000001', '2026-10-30', failed), /INVALID_DIVIDEND_LEDGER_SOURCE/);
-  assert.deepEqual(await loadSavedDividendLedger('000001'), saved);
-  const currentAttempt = await loadDividendLedgerForCheck('000001');
-  assert.equal(currentAttempt?.complete, false); assert.equal(currentAttempt?.asOf, '2026-10-30');
-  assert.ok(currentAttempt?.issues.includes('INVALID_DIVIDEND_LEDGER_SOURCE'));
-});
-
-test('a failed next-day official refresh cannot promote cached facts or overwrite the last successful ledger', async () => {
-  const saved = await researchDividendLedger(raw, '000001', scope, transport().options);
-  const documents = await stored.table('documents').toArray();
-  const attempted = await researchDividendLedger(raw, '000001', '2026-10-30', { post: async () => { throw new Error('CNINFO_HTTP_503'); } });
-  assert.equal(attempted.asOf, '2026-10-30'); assert.equal(attempted.complete, false);
-  assert.equal(dividendLedgerBase(attempted, '2026-10-30').verified, false);
-  assert.deepEqual(dividendEvidenceStatus(attempted, '2026-10-30'), { status: 'failed', usable: false, reasons: ['CNINFO_HTTP_503'] });
-  assert.deepEqual(await stored.table('documents').toArray(), documents);
-  assert.deepEqual(await loadSavedDividendLedger('000001'), saved);
-  assert.deepEqual(await loadDividendLedgerForCheck('000001'), attempted);
-  assert.ok(attempted.events.flatMap(event => event.sources).filter(source => source.verifiedAt).every(source => source.verifiedAt === scope));
-});
-
-test('same-day failure remains visible to checks until a successful retry without changing successful facts', async () => {
-  const saved = await researchDividendLedger(raw, '000001', scope, transport().options);
-  const failed = await researchDividendLedger(raw, '000001', scope, { post: async () => { throw new Error('Failed to fetch'); } });
-  assert.equal(dividendEvidenceStatus(failed, scope).status, 'failed');
-  assert.ok(failed.issues.includes('ANNOUNCEMENT_REFRESH_FAILED'));
-  assert.deepEqual(await loadSavedDividendLedger('000001'), saved);
-  assert.equal((await loadDividendLedgerForCheck('000001'))?.complete, false);
-  const retry = transport(); const recovered = await researchDividendLedger(raw, '000001', scope, retry.options);
-  assert.equal(retry.downloads.length, 0);
-  assert.deepEqual(await loadDividendLedgerForCheck('000001'), recovered);
-  assert.equal(dividendEvidenceStatus(recovered, scope).status, 'current');
-});
-
-test('incomplete official listing does not replace the last successful complete coverage', async () => {
-  const saved = await researchDividendLedger(raw, '000001', scope, transport().options);
-  const options = transport().options;
-  const request = options.post;
-  options.post = async (path, fields) => {
-    const result = await request(path, fields);
-    return Array.isArray(result) ? result : { ...result, hasMore: true };
-  };
-  const incomplete = await researchDividendLedger(raw, '000001', '2026-10-30', options);
-  assert.equal(incomplete.complete, false); assert.ok(incomplete.issues.includes('ANNOUNCEMENT_LIST_PARTIAL'));
-  assert.equal(dividendEvidenceStatus(incomplete, '2026-10-30').status, 'incomplete');
-  assert.equal(dividendLedgerBase(incomplete, '2026-10-30').verified, false);
-  assert.deepEqual(await loadSavedDividendLedger('000001'), saved);
-});
-
-test('a newly listed document download failure keeps successful facts and cannot certify current coverage', async () => {
-  const saved = await researchDividendLedger(raw, '000001', scope, transport().options);
-  const documents = await stored.table('documents').toArray();
-  const options = transport().options;
-  const request = options.post;
-  options.post = async (path, fields) => {
-    const result = await request(path, fields);
-    return Array.isArray(result) ? result : { ...result, announcements: [...result.announcements,
-      { secCode: '000001', announcementTitle: '权益分派实施公告', adjunctUrl: 'finalpage/2026-10-30/new.PDF', announcementTime: Date.parse('2026-10-30T00:00:00+08:00') }] };
-  };
-  options.readPdf = async () => { throw new Error('SYNTHETIC_OFFLINE'); };
-  const failed = await researchDividendLedger(raw, '000001', '2026-10-30', options);
-  assert.equal(failed.complete, false); assert.equal(dividendEvidenceStatus(failed, '2026-10-30').status, 'failed');
-  assert.ok(failed.issues.includes('ANNOUNCEMENT_DOWNLOAD_FAILED'));
-  assert.equal(dividendLedgerBase(failed, '2026-10-30').verified, false);
-  assert.deepEqual(await loadSavedDividendLedger('000001'), saved);
-  assert.deepEqual(await stored.table('documents').toArray(), documents);
-});
-
-test('an unsupported unrelated older document remains a visible gap without changing required-batch rules', async () => {
-  await researchDividendLedger(raw, '000001', scope, transport().options);
-  const options = transport().options;
-  const request = options.post;
-  options.post = async (path, fields) => {
-    const result = await request(path, fields);
-    return Array.isArray(result) ? result : { ...result, announcements: [...result.announcements,
-      { secCode: '000001', announcementTitle: '历史权益分派实施公告', adjunctUrl: 'finalpage/2017-06-01/old-unparsed.PDF', announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }] };
-  };
-  options.extractPdf = async () => 'Unsupported older layout';
-  const ledger = await researchDividendLedger(raw, '000001', '2026-10-30', options);
-  assert.ok(ledger.issues.includes('ANNOUNCEMENT_FIELDS_UNVERIFIED'));
-  assert.equal(dividendEvidenceStatus(ledger, '2026-10-30').usable, true);
-  assert.equal(dividendLedgerBase(ledger, '2026-10-30').verified, true);
 });
 
 test('invalid dates and missing company matches stay explicit failures instead of querying another issuer', async () => {
@@ -330,39 +167,4 @@ test('Shanghai company lookup uses its exact official orgId and SSE query column
     readPdf: async () => new TextEncoder().encode('%PDF-SHANGHAI'), extractPdf: async () => source.text,
   });
   assert.equal(seen[0].column, 'sse'); assert.equal(seen[0].stock, '600036,gssh0600036'); assert.equal(evidence.events[0].cashPer10Micros, 10030000);
-});
-
-test('a positively older failed PDF stays historical while verified recent cash and full lists remain usable', async () => {
-  await researchDividendLedger(raw, '000001', scope, transport().options);
-  const options = transport().options, request = options.post;
-  options.post = async (path, fields) => {
-    const result = await request(path, fields);
-    return Array.isArray(result) ? result : { ...result, announcements: [...result.announcements,
-      { announcementTitle: '历史权益分派实施公告', adjunctUrl: 'finalpage/2017-06-01/old-failed.PDF', announcementTime: Date.parse('2017-06-01T00:00:00+08:00') }] };
-  };
-  options.readPdf = async () => { throw new Error('OLD_PDF_OFFLINE'); };
-  const ledger = await researchDividendLedger(raw, '000001', '2026-10-30', options);
-  assert.ok(ledger.issues.includes('ANNOUNCEMENT_DOWNLOAD_FAILED'));
-  assert.ok(ledger.issues.includes('HISTORICAL_ANNOUNCEMENT_GAPS'));
-  assert.equal(ledger.complete, true);
-  assert.equal(dividendEvidenceStatus(ledger, '2026-10-30').usable, true);
-  assert.equal(dividendLedgerBase(ledger, '2026-10-30').dpsMicros, 609000);
-  assert.equal(dividendEvidenceStatus({ ...ledger, issues: ['ANNOUNCEMENT_DOWNLOAD_FAILED'] }, '2026-10-30').usable, false, 'undated legacy failure cannot acquire historical-only status');
-});
-
-test('an unparsed earlier-announced share action inside the required reporting horizon and unknown dates still block', async () => {
-  await researchDividendLedger(raw, '000001', scope, transport().options);
-  for (const date of ['2026-01-01', 'unknown']) {
-    const options = transport().options, request = options.post;
-    options.post = async (path, fields) => {
-      const result = await request(path, fields);
-      return Array.isArray(result) ? result : { ...result, announcements: [...result.announcements,
-        { announcementTitle: '权益分派实施公告', adjunctUrl: date === 'unknown' ? 'new-undated.PDF' : `finalpage/${date}/share-action.PDF`, ...(date === 'unknown' ? {} : { announcementTime: Date.parse(`${date}T00:00:00+08:00`) }) }] };
-    };
-    options.readPdf = async () => { throw new Error('REQUIRED_PDF_OFFLINE'); };
-    const ledger = await researchDividendLedger(raw, '000001', '2026-10-30', options);
-    assert.ok(ledger.issues.includes('CURRENT_ANNOUNCEMENT_UNVERIFIED'), date);
-    assert.equal(dividendEvidenceStatus(ledger, '2026-10-30').usable, false, date);
-    assert.equal(ledger.complete, false, date);
-  }
 });

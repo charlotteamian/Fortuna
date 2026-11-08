@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
 import ts from 'typescript';
-import type { DividendLedger, DividendLedgerBase } from '../src/lib/dividendLedger.ts';
+import { buildDividendLedger, dividendLedgerBase, type DividendLedger, type DividendLedgerBase } from '../src/lib/dividendLedger.ts';
 import { dividendLedgerV5Zh, dividendLedgerV5En } from '../src/i18n/dividendLedgerV5Translations.ts';
 
 registerHooks({
@@ -66,4 +66,15 @@ test('English ledger strings are complete and do not expose translation or sourc
   assert.match(html, /Dividend ledger/); assert.match(html, /Source conflict · excluded/); assert.match(html, /Record date/); assert.match(html, /CNY 0\.249/);
   assert.doesNotMatch(html, /div_ledger_|SOURCE_CONFLICT/);
   await i18n.changeLanguage('zh');
+});
+
+test('a usable structured batch is shown as included without inventing official verification', () => {
+  const data = buildDividendLedger({ success: true, result: { pages: 1, data: [{ SECURITY_CODE: '000001', REPORT_DATE: '2025-12-31',
+    EX_DIVIDEND_DATE: '2026-06-10', EQUITY_RECORD_DATE: '2026-06-09', NOTICE_DATE: '2026-06-01',
+    PRETAX_BONUS_RMB: 5, BONUS_RATIO: 0, IT_RATIO: 0, ASSIGN_PROGRESS: '实施分配' }] } }, '000001', '2026-10-29');
+  const html = render(data, dividendLedgerBase(data, data.asOf));
+  assert.match(html, /最近批次基数已核验/); assert.match(html, /计入本次基数/);
+  assert.match(html, /结构化资料可用于计算/);
+  assert.doesNotMatch(html, /尚未和公告核验|已和公告核验/);
+  assert.equal(data.events[0].sources[0].verifiedAt, undefined);
 });

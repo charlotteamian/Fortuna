@@ -1,25 +1,28 @@
-import { CLASSIC_DIVIDEND_BUY_YIELDS, CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS, CLASSIC_DIVIDEND_SELL_YIELDS,
-  DIVIDEND_PRICING_CALCULATION_VERSION, type DividendPricingResult } from './dividendPricing.ts';
+import { CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS, DIVIDEND_PRICING_CALCULATION_VERSION, invalidateOutdatedDividendPricing, type DividendPricingResult } from './dividendPricing.ts';
 import type { DividendGridProvenance } from './dividendGridProvenance.ts';
 import type { GridLevel } from './dividendWorkbench.ts';
 
 /** Both sides use the same verified recent-batch base and the user's fixed cash-yield ladder. */
-export function dividendPricingPlan(pricing: DividendPricingResult): { buyLevels: GridLevel[]; sellLevels: GridLevel[] } | null {
+export function dividendPricingPlan(source: DividendPricingResult): { buyLevels: GridLevel[]; sellLevels: GridLevel[] } | null {
+  const pricing = invalidateOutdatedDividendPricing(source);
   const dividend = pricing.d1Micros, base = pricing.dividendBase;
+  const buyYields = pricing.buyYieldBps, sellYields = pricing.sellYieldBps;
   if (pricing.calculationVersion !== DIVIDEND_PRICING_CALCULATION_VERSION || pricing.pricingBasis !== 'recent_batches'
-    || !pricing.canApply || pricing.status !== 'ready' || pricing.blockers.length > 0 || pricing.grid.length !== CLASSIC_DIVIDEND_BUY_YIELDS.length
+    || !pricing.canApply || pricing.status !== 'ready' || pricing.blockers.length > 0 || !Array.isArray(buyYields) || buyYields.length < 1
+    || pricing.grid.length !== buyYields.length
     || !dividend || !Number.isSafeInteger(dividend) || !base || !Number.isSafeInteger(base.dpsMicros)
-    || !base.verified || ![0,1000,2000].includes(pricing.taxBps)
+    || ![0,1000,2000].includes(pricing.taxBps)
     || dividend !== Number(BigInt(base.dpsMicros!) * BigInt(10000-pricing.taxBps) / 10000n)
     || pricing.anchors.selectedBps !== CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS || pricing.anchors.selection !== 'fixed_classic'
     || pricing.theoreticalPriceMinor !== Math.floor(dividend / CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS)) return null;
-  if (pricing.grid.some((level,index) => level.yieldBps !== CLASSIC_DIVIDEND_BUY_YIELDS[index]
-    || level.priceMinor !== Math.floor(dividend / CLASSIC_DIVIDEND_BUY_YIELDS[index])
+  if (pricing.grid.some((level,index) => level.yieldBps !== buyYields[index]
+    || level.priceMinor !== Math.floor(dividend / buyYields[index])
     || level.cumulativePortionBps !== (index+1)*2500)) return null;
   const buyLevels = pricing.grid.map(level => ({ priceMinor: level.priceMinor, yieldBps: level.yieldBps, portionBps: 2500 }));
-  const sellLevels = CLASSIC_DIVIDEND_SELL_YIELDS.map(yieldBps => ({ yieldBps, portionBps: 2500, priceMinor: Number((BigInt(dividend) + BigInt(yieldBps) - 1n) / BigInt(yieldBps)) }));
+  const sellLevels = (sellYields ?? []).map(yieldBps => ({ yieldBps, portionBps: 2500, priceMinor: Number((BigInt(dividend) + BigInt(yieldBps) - 1n) / BigInt(yieldBps)) }));
   if (buyLevels.some((level,index) => !Number.isSafeInteger(level.priceMinor) || level.priceMinor <= 0
       || index > 0 && level.priceMinor >= buyLevels[index-1].priceMinor)
+    || sellLevels.length !== buyLevels.length
     || sellLevels.some((level, index) => !Number.isSafeInteger(level.priceMinor) || level.priceMinor <= 0
       || index > 0 && level.priceMinor <= sellLevels[index - 1].priceMinor)
     || Math.max(...buyLevels.map(level => level.priceMinor)) >= sellLevels[0].priceMinor) return null;

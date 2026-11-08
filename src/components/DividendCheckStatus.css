@@ -30,3 +30,5 @@
 .div-check-status-row .div-check-status-evidence { margin: 0; }
 .div-check-status-row .div-check-status-evidence > summary { display: list-item; min-height: var(--btn-h); padding: var(--sp-2) 0; cursor: pointer; }
 .div-check-status-evidence > summary:focus-visible { outline: 2px solid var(--asset-color); outline-offset: 2px; }
+
+.div-check-advisory { margin: var(--sp-2) 0; padding-left: var(--sp-4); color: var(--text-secondary); font-size: var(--fs-xs); }

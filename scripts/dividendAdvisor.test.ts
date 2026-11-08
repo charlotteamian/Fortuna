@@ -105,8 +105,8 @@ test('context excludes private account identities and preserves alternative budg
   assert.equal(data.fundPlan.bondBudgetMinor, 6000_00);
   assert.equal(data.fundPlan.funds[0].budgetMinor, 14000_00);
   assert.equal(data.fundPlan.funds[0].recordedShares, 500);
-  assert.equal(data.fundPlan.funds[0].ruleCheck.status, 'update');
-  assert.deepEqual(data.fundPlan.funds[0].ruleCheck.issues, ['index_yield_prior_date']);
+  assert.equal(data.fundPlan.funds[0].ruleCheck.status, 'met');
+  assert.deepEqual(data.fundPlan.funds[0].ruleCheck.issues, []);
   assert.deepEqual(data.dividendRefreshDeferredCodes, ['601398']);
 });
 

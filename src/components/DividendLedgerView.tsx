@@ -23,11 +23,13 @@ export default function DividendLedgerView({ ledger, base }: { ledger: DividendL
   const issueLabels = (issues: string[]) => [...new Set(issues.map(issue => ISSUE_KEYS[issue] ?? 'div_ledger_issue_other'))];
   const flags = issueLabels([...(base?.flags ?? []), ...ledger.issues]);
   const eventCard = (event: DividendLedgerEvent) => {
-    const counted = selected.has(event.batchId) && !!base?.verified && isImplemented(event) && event.verification === 'verified' && event.normalizedDpsMicros !== undefined;
+    const counted = selected.has(event.batchId) && !!base?.verified && isImplemented(event) && event.verification !== 'conflict' && event.normalizedDpsMicros !== undefined;
+    // Pricing inclusion is distinct from a cached official-document receipt.
+    const verification = event.verification === 'unverified' && event.normalizedDpsMicros !== undefined ? 'structured' : event.verification;
     return <li className={`div-ledger-event ${event.verification}${counted ? ' is-selected' : ''}`} key={event.id}>
       <div className="div-ledger-event-heading"><strong>{event.reportDate ?? t('div_ledger_pending')} · {t(`div_ledger_period_${event.period}`)}</strong>
         <span>{t(`div_ledger_stage_${event.stage ?? 'unknown'}`)}</span>
-        <span className={`div-ledger-verification ${event.verification}`}>{t(`div_ledger_verification_${event.verification}`)}</span></div>
+        <span className={`div-ledger-verification ${verification}`}>{t(`div_ledger_verification_${verification}`)}</span></div>
       {selected.has(event.batchId) && <p className="div-ledger-selection">{t(counted ? 'div_ledger_selected' : 'div_ledger_selected_pending')}</p>}
       <dl className="div-ledger-dates">{([['announcementDate', 'div_ledger_announcement_date'], ['recordDate', 'div_ledger_record_date'], ['exDate', 'div_ledger_ex_date']] as const).map(([key, label]) => <div key={key}>
         <dt>{t(label)}</dt><dd>{event[key] ?? t('div_ledger_pending')}</dd>

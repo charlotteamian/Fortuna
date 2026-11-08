@@ -18,7 +18,7 @@ export const homeAssetZh = {
   plan_priority_up: '上移 {{name}}',
   plan_priority_down: '下移 {{name}}',
   chart_unit_nav_title: '组合单位净值',
-  chart_unit_nav_subtitle: '基准 1.0000 · 自动剔除本金进出扭曲',
+  chart_unit_nav_subtitle: '基准 1.0000 · 按持仓盈亏计算',
   chart_unit_nav_latest: '最新单位净值',
   chart_unit_nav_return: '区间累计收益',
   chart_unit_nav_drawdown: '最大回撤',
@@ -27,9 +27,9 @@ export const homeAssetZh = {
   chart_portfolios_opt_in: '选择需要统计的组合账户，开启后分别展示净值和收益。',
   chart_portfolios_none: '暂无组合账户。可在账户设置中开启“按组合记录”，用来记录你的投资策略。',
   chart_portfolios_save_error: '选择未保存，请重试。',
-  chart_portfolios_basis: '{{currency}} · 按此账户的历史总值计算 · 区间起点 1.0000',
-  chart_portfolios_history_needed: '此区间至少需要两天的组合总值记录，记录后即可统计。',
-  chart_portfolios_flow_note: '仅调整已记录的本金进出；未记录的入金、出金会影响收益和回撤。',
+  chart_portfolios_basis: '{{currency}} · 按持仓已实现+浮动盈亏计算 · 区间起点 1.0000',
+  chart_portfolios_history_needed: '此区间不足两个持仓交易或份额记录日期，暂不绘制曲线；账户总值记录不参与此统计。',
+  chart_portfolios_flow_note: '按持仓已实现+浮动盈亏计算，不计现金余额和出入金；按当前价格估值。',
 };
 
 export const homeAssetEn = {
@@ -52,7 +52,7 @@ export const homeAssetEn = {
   plan_priority_up: 'Move {{name}} up',
   plan_priority_down: 'Move {{name}} down',
   chart_unit_nav_title: 'Portfolio Unit NAV',
-  chart_unit_nav_subtitle: 'Base 1.0000 · Adjusted for external cash flows',
+  chart_unit_nav_subtitle: 'Base 1.0000 · Based on holdings P&L',
   chart_unit_nav_latest: 'Latest Unit NAV',
   chart_unit_nav_return: 'Cumulative Return',
   chart_unit_nav_drawdown: 'Max Drawdown',
@@ -61,7 +61,7 @@ export const homeAssetEn = {
   chart_portfolios_opt_in: 'Choose portfolio accounts to show their NAV and returns separately.',
   chart_portfolios_none: 'No portfolio accounts yet. Enable portfolio tracking in account settings to track an investment strategy.',
   chart_portfolios_save_error: 'Could not save your selection. Please try again.',
-  chart_portfolios_basis: '{{currency}} · This account’s recorded total values · Range starts at 1.0000',
-  chart_portfolios_history_needed: 'Record portfolio total values on at least two days in this range to see statistics.',
-  chart_portfolios_flow_note: 'Adjusted only for recorded principal flows. Unrecorded deposits or withdrawals affect returns and drawdowns.',
+  chart_portfolios_basis: '{{currency}} · Holdings realised + floating P&L · Range starts at 1.0000',
+  chart_portfolios_history_needed: 'This range has fewer than two dates with holdings trades or quantity records. Account total-value records are not used for this chart.',
+  chart_portfolios_flow_note: 'Based on holdings realised + floating P&L, excluding cash and deposits/withdrawals. Valued at current prices.',
 };

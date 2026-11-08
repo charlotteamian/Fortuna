@@ -17,7 +17,7 @@ export const dividendExperienceZh = {
   div_experience_evidence_operation: '该项操作条件尚不能确认；不会改写已有价格。',
   div_experience_evidence_history: '历史计划未记录生成依据。保留作历史价，不用今天的资料补造过去记录。',
   div_experience_sources: '原始来源与日期',
-  div_experience_observations_details: '查看全部观察与资料缺口（{{count}}）',
+  div_experience_observations_details: '查看问题与依据（{{count}}）',
   div_experience_history_prices: '查看历史保存价',
 };
 export const dividendExperienceEn = {
@@ -39,6 +39,6 @@ export const dividendExperienceEn = {
   div_experience_evidence_operation: 'This operating condition is unverified. Existing prices are retained.',
   div_experience_evidence_history: 'The historical plan has no saved generation evidence. Keep it as historical pricing; current evidence cannot recreate a past record.',
   div_experience_sources: 'Original sources and dates',
-  div_experience_observations_details: 'All observations and evidence gaps ({{count}})',
+  div_experience_observations_details: 'Problems and evidence ({{count}})',
   div_experience_history_prices: 'View historical saved prices',
 };

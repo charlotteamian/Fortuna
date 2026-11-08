@@ -43,7 +43,7 @@ test('automatic fund prices drive drawdown without redating manual high/yield ob
   assert.equal(isDividendFund(fund), true);
   assert.equal(dividendFundEntry(plan, fund, '2026-10-13').status, 'met');
   assert.equal(dividendFundEntry(plan, fund, '2026-10-13').drawdownBps, 1000);
-  assert.equal(dividendFundEntry(plan, { ...fund, reference: { ...fund.reference!, asOf: '2026-10-12' } }, '2026-10-13').status, 'update');
+  assert.equal(dividendFundEntry(plan, { ...fund, reference: { ...fund.reference!, asOf: '2026-10-12' } }, '2026-10-13').status, 'met');
   assert.equal(dividendFundEntry(plan, { ...fund, quote: { ...fund.quote!, date: '2026-10-12 16:14' } }, '2026-10-13').status, 'update');
   assert.equal(dividendFundEntry(plan, { ...fund, quoteFailedAt: 101 }, '2026-10-13').status, 'update');
   assert.equal(isDividendFund({ ...fund, code: '005561' }), false);

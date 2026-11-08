@@ -45,6 +45,18 @@ function ledger(rows: Record<string, unknown>[], at = asOf) {
 const prices = (pricing: DividendPricingResult) => ({ neutral: pricing.theoreticalPriceMinor,
   buys: pricing.grid.map(row => row.priceMinor), sells: dividendPricingPlan(pricing)?.sellLevels.map(row => row.priceMinor) });
 
+test('legacy v5 fixed-ladder caches regain only their missing yield metadata without changing evidence or prices', () => {
+  const source = calculateDividendPricing(input()), original = structuredClone(source);
+  const legacy = structuredClone(source) as Partial<DividendPricingResult>;
+  delete legacy.buyYieldBps; delete legacy.sellYieldBps;
+  const restored = invalidateOutdatedDividendPricing(legacy as DividendPricingResult);
+  assert.deepEqual(restored, original);
+  assert.deepEqual(dividendPricingPlan(legacy as DividendPricingResult), dividendPricingPlan(original));
+  assert.equal(legacy.buyYieldBps, undefined, 'loading never mutates the cached source object');
+  const broken = { ...legacy, grid: [{ ...original.grid[0], yieldBps: 999 }] } as DividendPricingResult;
+  assert.ok(invalidateOutdatedDividendPricing(broken).blockers.includes('pricing_calculation_stale'));
+});
+
 test('captured official Ping An final and interim announcements create the default ten-percent-tax recent-batch plan', () => {
   const value = pingAnOfficialLedger(asOf), base = dividendLedgerBase(value, asOf);
   assert.equal(base.dpsMicros, 609000); assert.equal(base.verified, true);
@@ -122,42 +134,33 @@ test('legacy trailing cash alone is not a verified batch base, while a verified 
   assert.equal(dividendPricingYieldHistory([{ date: asOf, priceMinor: 1000 }], source([firstObserved]), code)?.samples[0].yieldBps, 0);
 });
 
-test('unverified capital actions, missing cash, duplicate conflicts and paginated cash cannot produce a ready batch plan', () => {
+test('only genuinely missing key cash data blocks a plan; pagination and structured conflicts no longer do', () => {
   const missingBonus = event('2026-06-01', 3.6); delete missingBonus.BONUS_RATIO;
   const malformedBonus = event('2026-06-01', 3.6, { IT_RATIO: 'unknown' });
   for (const row of [missingBonus,malformedBonus]) {
     const cash = dividendPricingTrailingDividend(source([firstObserved,row]), code, asOf)!;
     assert.equal(cash.capitalActionsVerified, false);
-    const p = calculateDividendPricing(input({ dividendBase: verifiedDividendBase(609000, asOf, { verified: false, flags: ['CAPITAL_OR_CASH_UNVERIFIED'] }) }));
+    const p = calculateDividendPricing(input({ dividendBase: verifiedDividendBase(609000, asOf, { dpsMicros: undefined, flags: ['CAPITAL_OR_CASH_UNVERIFIED'] }) }));
     assert.equal(p.canApply, false); assert.ok(p.blockers.includes('dividend_base_unverified'));
   }
-  for (const raw of [source([firstObserved,event('2026-06-01', null)]),
-    source([firstObserved,event('2026-06-01', 3.6),event('2026-06-01', 3.7)]),
-    source([firstObserved,event('2026-06-01', 3.6)], 2)]) {
-    const cash = dividendPricingTrailingDividend(raw, code, asOf)!;
-    assert.equal(cash.cashDistributionsComplete, false);
-    assert.equal(calculateDividendPricing(input({ dividendBase: undefined, ledger: buildDividendLedger(raw, code, asOf) })).canApply, false);
-  }
-  for (const [flag, blocker] of [['INCOMPLETE', 'dividend_base_incomplete'], ['SOURCE_PAGES_INCOMPLETE', 'dividend_base_incomplete'], ['SOURCE_CONFLICT', 'dividend_source_conflict']] as const) {
-    const p = calculateDividendPricing(input({ dividendBase: verifiedDividendBase(609000, asOf, { verified: false, flags: [flag] }) }));
-    assert.ok(p.blockers.includes(blocker)); assert.equal(dividendPricingPlan(p), null);
-  }
+  // A paginated structured feed still yields the recent-batch base.
+  const paged = buildDividendLedger(source([firstObserved, event('2026-06-01', 3.6)], 2), code, asOf);
+  assert.equal(calculateDividendPricing(input({ dividendBase: undefined, ledger: paged })).canApply, true);
   assert.throws(() => dividendPricingTrailingDividend(source([event('2026-06-01', 1, { SECURITY_CODE: '000001' })]), code, asOf), /PRICING_SOURCE_INVALID/);
 });
 
-test('verified annual issuer cash cannot certify unverified individual CATL batches or fill a new base silently', () => {
+test('structured CATL batches yield a plan without per-batch official certification', () => {
   const fixture = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-catl-2026-10-23.json', import.meta.url), 'utf8'));
   const cash = dividendPricingTrailingDividend(fixture.sources.distribution.data, '300750', asOf)!;
   assert.equal(cash.cashDistributionsComplete, false);
   const p = calculateDividendPricing(input({ code: '300750', name: '宁德时代', financialSector: false, dividendBase: undefined,
     ledger: buildDividendLedger(fixture.sources.distribution.data, '300750', asOf) }));
-  assert.equal(p.canApply, false); assert.equal(p.d1Micros, undefined);
-  assert.ok(p.blockers.includes('dividend_base_unverified'));
+  assert.equal(p.canApply, true); assert.equal(p.blockers.includes('dividend_base_unverified'), false);
 });
 
-test('only a same-date, sourced, verified and complete recent-batch contract supplies the grid numerator', () => {
+test('only a same-date, sourced and complete recent-batch contract supplies the grid numerator', () => {
   for (const patch of [{ dpsMicros: -1 }, { dpsMicros: 1.5 }, { dpsMicros: Number.MAX_SAFE_INTEGER+1 }, { dpsMicros: NaN },
-    { sourceUrls: [] }, { sourceUrls: [''] }, { verified: false }, { requiredBatches: 2 }, { selectedBatchIds: [] },
+    { sourceUrls: [] }, { sourceUrls: [''] }, { requiredBatches: 2 }, { selectedBatchIds: [] },
     { frequency: 'unknown' as const }, { asOf: '2026-10-22' }, { asOf: '2026-10-24' }]) {
     const p = calculateDividendPricing(input({ dividendBase: { ...verifiedDividendBase(609000, asOf), ...patch } }));
     assert.equal(p.canApply, false); assert.equal(p.d1Micros, undefined); assert.ok(p.blockers.includes('dividend_base_unverified'));
@@ -231,14 +234,14 @@ test('a semiannual base does not lose the preceding interim payment after its an
   assert.equal(first.canApply, true); assert.deepEqual(prices(first), prices(next)); assert.equal(next.d1Micros, 536400);
 });
 
-test('the EPS-payout crosscheck blocks only a deviation strictly greater than twenty-five percent without rounding it away', () => {
+test('the EPS-payout crosscheck deviation is recorded but never blocks the cash base', () => {
   const value = ledger([ledgerRow('2024-12-31', '2025-06-10', 2), ledgerRow('2025-12-31', '2026-06-12', 3), ledgerRow('2026-06-30', '2026-09-24', 3)]);
   const boundary = dividendLedgerBase(value, asOf, { epsMicros: 450000, payoutBps: 10000 });
   const above = dividendLedgerBase(value, asOf, { epsMicros: 449999, payoutBps: 10000 });
-  assert.equal(boundary.dpsMicros, 600000); assert.equal(boundary.verified, true); assert.ok(!boundary.flags.includes('CROSSCHECK_MISMATCH'));
-  assert.equal(above.dpsMicros, 600000); assert.equal(above.verified, false); assert.ok(above.flags.includes('CROSSCHECK_MISMATCH'));
+  assert.equal(boundary.dpsMicros, 600000); assert.equal(boundary.verified, true);
+  assert.equal(above.dpsMicros, 600000); assert.equal(above.verified, true); assert.ok(!above.flags.includes('CROSSCHECK_MISMATCH'));
   const pricing = calculateDividendPricing(input({ dividendBase: above }));
-  assert.equal(pricing.canApply, false); assert.ok(pricing.blockers.includes('dividend_crosscheck_mismatch'));
+  assert.equal(pricing.canApply, true); assert.ok(!pricing.blockers.includes('dividend_crosscheck_mismatch'));
 });
 
 test('the historical leap-day TTM rollover stays reproducible but no longer reduces the recent annual-batch grid', () => {

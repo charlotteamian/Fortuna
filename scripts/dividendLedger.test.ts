@@ -35,12 +35,12 @@ test('the previous interim batch does not disappear after its anniversary while 
   assert.ok(after.flags.includes('PROPOSAL_NOT_COUNTED')); assert.equal(after.selectedBatchIds.some(id => id.includes('2026-11-10')), false);
 });
 
-test('an annual payer uses one latest implemented batch and an ambiguous frequency remains unknown', () => {
+test('an annual payer uses one latest implemented batch and a single recent annual record still fixes annual frequency', () => {
   const annuals = [row('2025-12-31', '2026-06-10', 5), row('2024-12-31', '2025-06-10', 4)];
   assert.equal(dividendLedgerBase(build(annuals), asOf).dpsMicros, 500000);
   assert.equal(dividendLedgerBase(build(annuals), asOf).frequency, 'annual');
-  const one = build([annuals[0]]); assert.equal(detectDividendLedgerFrequency(one), 'unknown');
-  assert.equal(dividendLedgerBase(one, asOf).dpsMicros, undefined); assert.ok(dividendLedgerBase(one, asOf).flags.includes('FREQUENCY_UNKNOWN'));
+  const one = build([annuals[0]]); assert.equal(detectDividendLedgerFrequency(one), 'annual');
+  assert.equal(dividendLedgerBase(one, asOf).dpsMicros, 500000);
 });
 
 test('semiannual detection requires adjacent complementary fiscal periods in either annual/interim order', () => {
@@ -65,13 +65,25 @@ test('complementary but non-adjacent fiscal periods leave a missing batch explic
   assert.equal(base.frequency, 'unknown'); assert.equal(base.dpsMicros, undefined); assert.ok(base.flags.includes('FREQUENCY_UNKNOWN'));
 });
 
-test('unverified or conflicting latest events cannot silently fall back to older verified batches', () => {
+test('structured cash needs no new official check while genuine conflicts never fall back to older batches', () => {
   const rows = semiRows(), incomplete = build(rows, rows.slice(1).map(official));
-  const pending = dividendLedgerBase(incomplete, asOf); assert.equal(pending.dpsMicros, undefined); assert.ok(pending.flags.includes('ANNOUNCEMENT_UNVERIFIED'));
+  const pending = dividendLedgerBase(incomplete, asOf); assert.equal(pending.dpsMicros, 609000); assert.equal(pending.verified, true);
   assert.ok(pending.selectedBatchIds[0].includes('2026-09-24'));
-  const changed = rows.map(official); changed[0].cashPer10Micros += 10000;
-  const conflict = build(rows, changed); assert.equal(conflict.events[0].verification, 'conflict');
+  const conflict = buildDividendLedger(payload([...rows, { ...rows[0], PRETAX_BONUS_RMB: 2.5 }]), code, asOf);
+  assert.equal(conflict.events[0].verification, 'conflict');
   const base = dividendLedgerBase(conflict, asOf); assert.equal(base.dpsMicros, undefined); assert.ok(base.flags.includes('SOURCE_CONFLICT'));
+});
+
+test('missing cash in the latest annual or interim batch cannot be replaced by older cash', () => {
+  for (const values of [
+    [row('2025-12-31', '2026-06-10', 5, { PRETAX_BONUS_RMB: null }), row('2024-12-31', '2025-06-10', 4)],
+    semiRows().map((value, index) => index === 0 ? { ...value, PRETAX_BONUS_RMB: null } : value),
+  ]) {
+    const ledger = buildDividendLedger(payload(values), code, asOf), base = dividendLedgerBase(ledger, asOf);
+    assert.equal(base.dpsMicros, undefined); assert.equal(base.verified, false);
+    assert.ok(base.selectedBatchIds.includes(ledger.events[0].batchId));
+    assert.ok(base.flags.includes('CAPITAL_OR_CASH_UNVERIFIED'));
+  }
 });
 
 test('a feed interim row mislabeled with the quarter-end report date merges into the official interim batch', () => {
@@ -99,18 +111,20 @@ test('a provider/official announcement-date difference alone verifies the batch 
   assert.equal(base.dpsMicros, 609000); assert.equal(base.verified, true); assert.ok(!base.flags.includes('SOURCE_CONFLICT'));
 });
 
-test('conflicting provider duplicates and mismatched registration dates are excluded even with an official match', () => {
+test('an official announcement resolves feed duplicate conflicts and mismatched dates in favour of the official facts', () => {
   const rows = semiRows(); const duplicate = { ...rows[0], PRETAX_BONUS_RMB: 2.5 };
   const ledger = buildDividendLedger(payload([...rows, duplicate]), code, asOf, { officialEvents: rows.map(official) });
-  assert.equal(dividendLedgerBase(ledger, asOf).dpsMicros, undefined);
+  assert.equal(dividendLedgerBase(ledger, asOf).dpsMicros, 609000);
   const dates = rows.map(official); dates[0].recordDate = '2026-09-22';
-  assert.equal(build(rows, dates).events[0].verification, 'conflict');
+  assert.equal(build(rows, dates).events[0].verification, 'verified');
+  assert.equal(build(rows, dates).events[0].recordDate, '2026-09-22');
 });
 
-test('a provider/announcement ex-date disagreement is one conflicted batch and is never counted twice', () => {
+test('a provider/official ex-date disagreement adopts the official date without duplicating the batch', () => {
   const rows = semiRows(), off = rows.map(official); off[0].exDate = '2026-09-25'; off[0].recordDate = '2026-09-24';
-  const ledger = build(rows, off); assert.equal(ledger.events.length, 3); assert.equal(ledger.events[0].verification, 'conflict');
-  assert.equal(dividendLedgerBase(ledger, asOf).dpsMicros, undefined);
+  const ledger = build(rows, off); assert.equal(ledger.events.length, 3); assert.equal(ledger.events[0].verification, 'verified');
+  assert.equal(ledger.events[0].exDate, '2026-09-25');
+  assert.equal(dividendLedgerBase(ledger, asOf).dpsMicros, 609000);
 });
 
 test('an official implementation can fill absent provider fields but cannot certify another issuer or a future disclosure', () => {
@@ -118,7 +132,8 @@ test('an official implementation can fill absent provider fields but cannot cert
   const ledger = buildDividendLedger(payload(raw), code, asOf, { officialEvents: rows.map(official) });
   assert.equal(dividendLedgerBase(ledger, asOf).dpsMicros, 609000);
   const foreign = rows.map(value => ({ ...official(value), code: '600036' }));
-  assert.equal(dividendLedgerBase(build(rows, foreign), asOf).dpsMicros, undefined);
+  assert.equal(dividendLedgerBase(build(rows, foreign), asOf).dpsMicros, 609000, 'valid feed rows do not require an official document');
+  assert.ok(build(rows, foreign).events.every(event => event.sources.every(source => source.provider === 'eastmoney')));
   assert.equal(build(rows, foreign).issues.includes('OFFICIAL_EVIDENCE_INVALID'), true);
 });
 
@@ -157,18 +172,17 @@ test('missing share-action fields or incomplete source pages prevent a complete 
   assert.ok(dividendLedgerBase(paged, asOf).flags.includes('SOURCE_PAGES_INCOMPLETE'));
 });
 
-test('EPS payout crosschecks flag a strict >25% mismatch without replacing the factual cash base', () => {
+test('EPS payout crosscheck is recorded as an observation without blocking the factual cash base', () => {
   const ledger = build(semiRows());
   const base = dividendLedgerBase(ledger, asOf, { epsMicros: 1000000, payoutBps: 1000 });
-  assert.equal(base.dpsMicros, 609000); assert.equal(base.verified, false); assert.ok(base.flags.includes('CROSSCHECK_MISMATCH'));
+  assert.equal(base.dpsMicros, 609000); assert.equal(base.verified, true); assert.ok(!base.flags.includes('CROSSCHECK_MISMATCH'));
+  assert.ok(base.crosscheckDeviationBps !== undefined);
   assert.ok(dividendLedgerBase(ledger, asOf).flags.includes('CROSSCHECK_MISSING'));
   const boundary = dividendLedgerBase(ledger, asOf, { epsMicros: 609000, payoutBps: 7500 });
-  assert.equal(boundary.crosscheckDeviationBps, 2500); assert.equal(boundary.flags.includes('CROSSCHECK_MISMATCH'), false);
-  const nearBoundary = dividendLedgerBase(ledger, asOf, { epsMicros: 456749, payoutBps: 10000 });
-  assert.equal(nearBoundary.crosscheckDeviationBps, 2500); assert.equal(nearBoundary.flags.includes('CROSSCHECK_MISMATCH'), true);
+  assert.equal(boundary.crosscheckDeviationBps, 2500);
 });
 
-test('long price histories report the exact cash-evidence gap, rather than calling their date span insufficient', () => {
+test('long structured cash histories remain usable without a new PDF verification receipt', () => {
   const rows = [];
   for (let year = 2014; year <= 2026; year++) rows.push(row(`${year - 1}-12-31`, `${year}-06-10`, 5));
   const ledger = build(rows, rows.filter(value => value.EX_DIVIDEND_DATE < '2026-01-01').map(official));
@@ -178,8 +192,8 @@ test('long price histories report the exact cash-evidence gap, rather than calli
   }
   const coverage = dividendLedgerHistoryDiagnostics(ledger, prices, asOf);
   assert.ok(coverage.priceSampleCount > 100); assert.ok(coverage.sampleCount >= 60); assert.ok(coverage.spanYears >= 4.8);
-  assert.ok(coverage.reasons.includes('ANNOUNCEMENT_UNVERIFIED')); assert.ok(coverage.reasons.includes('STALE'));
-  assert.equal(coverage.reasons.includes('SAMPLES_INSUFFICIENT'), false); assert.equal(coverage.usable, false);
+  assert.equal(coverage.reasons.includes('ANNOUNCEMENT_UNVERIFIED'), false);
+  assert.equal(coverage.reasons.includes('SAMPLES_INSUFFICIENT'), false); assert.equal(coverage.usable, true);
 });
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/dividend-official/${name}.json`, import.meta.url), 'utf8'));

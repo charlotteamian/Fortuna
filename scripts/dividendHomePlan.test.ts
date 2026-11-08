@@ -114,7 +114,11 @@ test('home plan shows allocation rather than fabricated zero shares when no budg
 
 test('home distinguishes verified, provisional, unavailable and stale saved bases without changing prices', () => {
   const generatedAt = Date.parse('2026-10-20T01:00:00Z');
-  const originStock = { ...stock, gridProvenance: { generatedAt, grossDpsMicros: 600000, taxBps: 1000 as const, parameterVersion: 5, basisKind: 'recent_batches' as const } };
+  const originStock = { ...stock,
+    buyLevels: [550, 575, 600, 650].map((yieldBps, index) => ({ yieldBps, priceMinor: [1000, 800, 700, 600][index], portionBps: 2500 })),
+    sellLevels: [480, 450, 420, 400].map((yieldBps, index) => ({ yieldBps, priceMinor: [1200, 1400, 1600, 1800][index], portionBps: 2500 })),
+    gridProvenance: { generatedAt, grossDpsMicros: 600000, taxBps: 1000 as const, parameterVersion: 5, basisKind: 'recent_batches' as const } };
+  const savedLevels = structuredClone(originStock.buyLevels);
   const renderBasis = (value: typeof stock, basis?: { asOf: string; dpsMicros?: number; latestExDate?: string; verified: boolean }) => renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(DividendHomePlan, { stock: value, basis, totalBudgetMinor: 1000000, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
   const verified = { asOf: '2026-10-21', dpsMicros: 600000, latestExDate: '2026-09-10', verified: true };
   assert.match(renderBasis(originStock, verified), /已触发第 1 档/);
@@ -124,5 +128,5 @@ test('home distinguishes verified, provisional, unavailable and stale saved base
   assert.match(renderBasis({ ...stock, buyLevels: [], sellLevels: [] }), /无法判断/);
   assert.match(renderBasis(originStock, { ...verified, dpsMicros: 700000 }), /已保存网格基数过期/);
   assert.match(renderBasis(originStock, { ...verified, latestExDate: '2026-10-21' }), /生成后发生过除息/);
-  assert.deepEqual(originStock.buyLevels, stock.buyLevels);
+  assert.deepEqual(originStock.buyLevels, savedLevels);
 });

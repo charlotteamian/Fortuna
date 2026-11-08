@@ -12,6 +12,7 @@ export interface DividendPricingGuide {
   requiredBatches?: number;
   frequency: 'annual' | 'semiannual' | 'unknown';
   exampleBuyPriceMinor?: number;
+  exampleBuyYieldBps?: number;
   gaps: { kind: DividendPricingGapKind; reasons: string[] }[];
   advisoryCount: number;
   sourceCount: number;
@@ -50,6 +51,7 @@ export function dividendPricingGuide(source: DividendPricingResult, check?: Divi
     requiredBatches: base?.requiredBatches,
     frequency: base?.frequency ?? 'unknown',
     exampleBuyPriceMinor: plan?.buyLevels[0]?.priceMinor,
+    exampleBuyYieldBps: plan?.buyLevels[0]?.yieldBps,
     gaps: priority.flatMap(kind => grouped.has(kind) ? [{ kind, reasons: grouped.get(kind)! }] : []),
     advisoryCount: new Set(advisoryReasons).size,
     sourceCount: new Set(base?.sourceUrls ?? []).size,

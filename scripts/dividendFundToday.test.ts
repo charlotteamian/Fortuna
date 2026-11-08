@@ -36,10 +36,10 @@ test('today never reports a fresh trigger from stale, missing, failed or manual-
   }
 });
 
-test('today respects both/either conditions and short-circuit waiting without a full audit', () => {
+test('today uses price-only entry conditions regardless of legacy index-yield settings', () => {
   const aboveEntry = { ...fund, quote: { ...fund.quote!, priceMicros: 950000 }, reference: { ...fund.reference!, asOf: '2026-11-03' } };
   assert.equal(dividendFundTodayAction(check(aboveEntry), plan.mode), 'wait');
-  assert.equal(dividendFundTodayAction(check(aboveEntry, { ...plan, entryRule: 'either' }), plan.mode), 'update');
+  assert.equal(dividendFundTodayAction(check(aboveEntry, { ...plan, entryRule: 'either' }), plan.mode), 'wait');
   const drawdownOnly = { ...fund, reference: { ...fund.reference!, indexYieldBps: undefined } };
   assert.equal(dividendFundTodayAction(check(drawdownOnly, { ...plan, entryRule: 'either' }), plan.mode), 'buy');
 });

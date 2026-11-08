@@ -27,17 +27,17 @@ test('70:30 divides the strategy budget and weights divide only the dividend sle
   assert.equal(large.amounts.get('a')! + large.bondBudgetMinor + large.unallocatedMinor, 1e14);
 });
 
-test('entry flags require current observations and distinguish both/either from missing inputs', () => {
+test('entry requires a dated price and high regardless of legacy both/either index-yield settings', () => {
   const plan = defaultDividendFundPlan();
-  const today = dateInChina();
+  const today = '2026-10-20';
   const current = fund('a', 10000, { reference: { priceMicros: 900000, highMicros: 1000000, indexYieldBps: 500, asOf: today } });
-  assert.equal(dividendFundEntry(plan, current).status, 'met');
-  assert.equal(dividendFundEntry(plan, current).targetPriceMicros, 900000);
-  assert.equal(dividendFundEntry(plan, current).drawdownBps, 1000);
-  assert.equal(dividendFundEntry(plan, { ...current, reference: { ...current.reference!, priceMicros: 900001 } }).status, 'wait');
+  assert.equal(dividendFundEntry(plan, current, today).status, 'met');
+  assert.equal(dividendFundEntry(plan, current, today).targetPriceMicros, 900000);
+  assert.equal(dividendFundEntry(plan, current, today).drawdownBps, 1000);
+  assert.equal(dividendFundEntry(plan, { ...current, reference: { ...current.reference!, priceMicros: 900001 } }, today).status, 'wait');
   const yieldOnly = { ...current, reference: { indexYieldBps: 500, asOf: today } };
-  assert.equal(dividendFundEntry(plan, yieldOnly).status, 'incomplete');
-  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, yieldOnly).status, 'met');
+  assert.equal(dividendFundEntry(plan, yieldOnly, today).status, 'incomplete');
+  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, yieldOnly, today).status, 'incomplete');
   assert.equal(dividendFundEntry(plan, { ...current, reference: { ...current.reference!, asOf: '2020-01-01' } }).status, 'update');
   assert.equal(dividendFundEntry(plan, fund('missing', 0)).status, 'incomplete');
   assert.equal(dividendFundEntry(plan, { ...current, reference: { ...current.reference!, priceMicros: 1100000 } }).drawdownBps, 0);
@@ -53,18 +53,18 @@ test('historical highs remain comparison points while current prices and index y
   const result = dividendFundEntry(plan, dated, today);
   assert.equal(result.drawdownBps, 1000);
   assert.equal(result.targetPriceMicros, 900000);
-  assert.equal(result.status, 'update');
-  assert.deepEqual(result.issues, ['index_yield_prior_date']);
+  assert.equal(result.status, 'met');
+  assert.deepEqual(result.issues, []);
   // The current drawdown alone is sufficient for the OR rule; the historical high is not stale.
   assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, dated, today).status, 'met');
   assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, { ...dated, reference: { highMicros: 1000000, asOf: '2020-01-01' } }, today).status, 'met');
   // A false current drawdown settles AND without pretending that the old yield was checked.
   assert.equal(dividendFundEntry(plan, { ...dated, quote: { ...dated.quote!, priceMicros: 950000 } }, today).status, 'wait');
   // The same old yield cannot settle OR when the current drawdown is false.
-  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, { ...dated, quote: { ...dated.quote!, priceMicros: 950000 } }, today).status, 'update');
+  assert.equal(dividendFundEntry({ ...plan, entryRule: 'either' }, { ...dated, quote: { ...dated.quote!, priceMicros: 950000 } }, today).status, 'wait');
   const manualOnly = dividendFundEntry(plan, { ...dated, quote: undefined }, today);
   assert.equal(manualOnly.status, 'update');
-  assert.deepEqual(manualOnly.issues, ['price_prior_date', 'index_yield_prior_date']);
+  assert.deepEqual(manualOnly.issues, ['price_prior_date']);
   assert.equal(dated.reference?.asOf, '2026-10-08');
 });
 
@@ -149,11 +149,11 @@ test('home entry and exit retain different evidence requirements instead of trea
     quote: { priceMicros: 900000, date: `${today} 15:00`, fetchedAt: 10 },
   });
   const plan = { ...defaultDividendFundPlan(), mode: 'swing' as const, funds: [current] };
-  assert.equal(buildDividendFundHomePlan(plan, current, today).entry.status, 'update');
+  assert.equal(buildDividendFundHomePlan(plan, current, today).entry.status, 'met');
   assert.equal(buildDividendFundHomePlan({ ...plan, entryRule: 'either' }, current, today).entry.status, 'met');
   const freshYieldStalePrice = { ...current, reference: { ...current.reference!, asOf: today }, quote: { ...current.quote!, date: '2026-10-27 15:00' } };
   const result = buildDividendFundHomePlan({ ...plan, entryRule: 'either' }, freshYieldStalePrice, today);
-  assert.equal(result.entry.status, 'met', 'current index yield can settle an either rule');
+  assert.equal(result.entry.status, 'update', 'index yield cannot substitute for a current price');
   assert.equal(result.exitState, 'quote_missing', 'the same current index yield does not establish the exit price');
   const failed = buildDividendFundHomePlan(plan, { ...current, quoteFailedAt: 11 }, today);
   assert.equal(failed.entry.status, 'update');

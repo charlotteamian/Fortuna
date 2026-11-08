@@ -1,7 +1,7 @@
 export const dividendLedgerV5Zh = {
   div_ledger_title: '分红台账',
   div_ledger_stage_implemented: '已实施', div_ledger_stage_proposal: '未实施预案', div_ledger_stage_cancelled: '已取消', div_ledger_stage_no_dividend: '明确不分红', div_ledger_stage_unknown: '进度待核实',
-  div_ledger_intro: '逐笔保留原始分红资料；来源冲突和未核验记录不进入基数。',
+  div_ledger_intro: '逐笔保留原始分红资料；结构化资料可用于计算，来源冲突或必要金额、送转缺失时不进入基数。',
   div_ledger_asof: '台账截至 {{date}}',
   div_ledger_base_asof: '基数核查 {{date}}',
   div_ledger_base: '税前基数／股',
@@ -44,6 +44,7 @@ export const dividendLedgerV5Zh = {
   div_ledger_selected_pending: '本次候选批次 · 尚待核实',
   div_ledger_verification_verified: '已和公告核验',
   div_ledger_verification_unverified: '尚未和公告核验',
+  div_ledger_verification_structured: '结构化资料可用于计算',
   div_ledger_verification_conflict: '来源冲突 · 排除计算',
   div_ledger_sources: '来源与核验日期',
   div_ledger_source_eastmoney: '东方财富',
@@ -81,7 +82,7 @@ export const dividendLedgerV5Zh = {
 export const dividendLedgerV5En: Record<keyof typeof dividendLedgerV5Zh, string> = {
   div_ledger_title: 'Dividend ledger',
   div_ledger_stage_implemented: 'Implemented', div_ledger_stage_proposal: 'Unimplemented proposal', div_ledger_stage_cancelled: 'Cancelled', div_ledger_stage_no_dividend: 'No distribution', div_ledger_stage_unknown: 'Stage unverified',
-  div_ledger_intro: 'Each distribution retains its original evidence. Conflicting or unverified records are excluded from the base.',
+  div_ledger_intro: 'Original distribution data is retained. Structured data can support calculation; conflicts or missing cash/share inputs are excluded.',
   div_ledger_asof: 'Ledger as of {{date}}',
   div_ledger_base_asof: 'Base checked {{date}}',
   div_ledger_base: 'Pretax base per share',
@@ -124,6 +125,7 @@ export const dividendLedgerV5En: Record<keyof typeof dividendLedgerV5Zh, string>
   div_ledger_selected_pending: 'Selected batch · verification pending',
   div_ledger_verification_verified: 'Verified against announcement',
   div_ledger_verification_unverified: 'Announcement not yet verified',
+  div_ledger_verification_structured: 'Structured data usable for calculation',
   div_ledger_verification_conflict: 'Source conflict · excluded',
   div_ledger_sources: 'Sources and verification dates',
   div_ledger_source_eastmoney: 'Eastmoney',

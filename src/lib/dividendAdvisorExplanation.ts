@@ -1,6 +1,7 @@
 import type { DividendAdvisorContext } from './dividendAdvisor.ts';
 import type { DividendFinancialPeriod, DividendResearchSnapshot } from './dividendResearch.ts';
 import { dividendCheckReasonText, dividendCheckSummaryText } from './dividendCheckExplanation.ts';
+import { isKeyDataReason } from './dividendKeyData.ts';
 import { dividendAdvisorExplanationCopy } from '../i18n/dividendAdvisorExplanationTranslations.ts';
 export { dividendExplanationUi } from '../i18n/dividendAdvisorExplanationTranslations.ts';
 
@@ -86,7 +87,9 @@ export function buildDividendExplanationFacts(context: DividendAdvisorContext, l
       if (check.threshold !== undefined && Number.isFinite(check.threshold)) parts.push(`${copy.threshold}: ${number(check.threshold / (check.rule === 'dividendYears' ? 1 : 100))}${check.rule === 'dividendYears' ? '' : '%'}`);
       result.push({ id: `${subject}:check:${check.rule}`, text: parts.join(chinese ? '；' : '; '), kind: 'check', subject, reason: check.rule });
     }
-    for (const risk of [...summary.risk.blocking, ...summary.risk.attention, ...summary.risk.evidenceInsufficient]) {
+    // Only genuinely missing key inputs are surfaced as risk facts; observations
+    // stay out of the explanation manifest to avoid restating them as findings.
+    for (const risk of [...summary.risk.blocking, ...summary.risk.evidenceInsufficient.filter(item => isKeyDataReason(item.reason))]) {
       const parts = [identity, dividendCheckReasonText(risk.reason, language)];
       if (risk.reportPeriod) parts.push(`${copy.report}: ${plain(risk.reportPeriod)}`);
       if (risk.publishedAt) parts.push(`${copy.published}: ${plain(risk.publishedAt)}`);

@@ -43,7 +43,7 @@ const explicitLevels = (levels?: GridLevel[]) => (levels ?? []).flatMap((level, 
 
 /** Review is read-only: stale evidence never replaces prices, budget, shares or the manual pause. */
 export function reviewDividendGrid(stock: Pick<DividendStock, 'buyLevels' | 'sellLevels' | 'gridProvenance' | 'quote' | 'quoteFailedAt'>,
-  basis?: DividendGridBasisCheck, options: { asOf?: string; parameterVersion?: number; taxBps?: number; basisKind?: DividendGridProvenance['basisKind']; marketDistanceBps?: number } = {}) {
+  basis?: DividendGridBasisCheck, options: { asOf?: string; parameterVersion?: number; taxBps?: number; basisKind?: DividendGridProvenance['basisKind']; marketDistanceBps?: number; buyYieldBps?: readonly number[]; sellYieldBps?: readonly number[] } = {}) {
   const asOf = options.asOf ?? chinaDate();
   const buy = explicitLevels(stock.buyLevels), sell = explicitLevels(stock.sellLevels);
   const hasSavedGrid = buy.length > 0 || sell.length > 0;
@@ -65,7 +65,13 @@ export function reviewDividendGrid(stock: Pick<DividendStock, 'buyLevels' | 'sel
     }
     // Ex-date evidence can retire an old grid even when the cash base cannot be recomputed.
     if (basis?.latestExDate && date(basis.latestExDate) && basis.latestExDate <= asOf && generatedDate && basis.latestExDate > generatedDate) staleReasons.push('ex_dividend_since_generation');
-    if (options.parameterVersion !== undefined && options.parameterVersion !== origin.parameterVersion) staleReasons.push('parameters_changed');
+    // The confirmed level rows already persist the exact yield parameters in
+    // JSON/Excel. Compare them too, so legacy origins need no fabricated fields.
+    const ladderChanged = (['buy', 'sell'] as const).some(side => {
+      const current = options[`${side}YieldBps`];
+      return current !== undefined && JSON.stringify(stock[`${side}Levels`]?.map(level => level.yieldBps)) !== JSON.stringify(current);
+    });
+    if (options.parameterVersion !== undefined && options.parameterVersion !== origin.parameterVersion || ladderChanged) staleReasons.push('parameters_changed');
     if (options.taxBps !== undefined && options.taxBps !== origin.taxBps) staleReasons.push('tax_changed');
     if (options.basisKind !== undefined && options.basisKind !== origin.basisKind) staleReasons.push('basis_kind_changed');
   }

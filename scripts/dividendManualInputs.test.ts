@@ -133,20 +133,20 @@ test('ready automatic prices outrank saved inputs and expired or changed source 
   assert.equal(reuseDividendManualInputs(blocked, { ...value, automaticSignature: 'changed' }, stock, method, asOf), blocked);
 });
 
-test('cash-yield review refuses legacy, failed, mismatched, stale and expired evidence', async () => {
+test('cash-yield review uses structured key data and rejects only stale or expired evidence', async () => {
   const { pingAnOfficialLedger } = await import('./helpers/dividendPricingFixture.ts');
   const ledger = pingAnOfficialLedger(asOf);
   const valid = calculateDividendPricing({ code: '000001', name: 'Yield fixture', financialSector: true, method, asOf, annuals: [], ledger, priceMinor: 1000, priceDate: asOf });
   const research = (pricing = valid) => ({ code: '000001', name: 'Yield fixture', status: 'unknown' as const, checks: [], sources: [], issues: [], pricing });
   assert.equal(dividendResearchCashYield(research()).yieldBps, 609);
   assert.equal(evaluateDividendResearch({ code: '000001', name: 'Legacy', status: 'unknown', checks: [], sources: [], issues: [], yieldBps: 900 }, defaultDividendSelectionPrinciples()).checks.find(check => check.rule === 'yield')?.status, 'unknown');
-  assert.equal(dividendResearchCashYield({ ...research(), issues: [{ kind: 'dividend', reason: 'request_failed' }] }).yieldBps, undefined);
-  assert.equal(dividendResearchCashYield(research({ ...valid, ledger: { ...ledger, issues: ['ANNOUNCEMENT_REFRESH_FAILED'] } })).yieldBps, undefined);
+  assert.equal(dividendResearchCashYield({ ...research(), issues: [{ kind: 'dividend', reason: 'request_failed' }] }).yieldBps, 609);
+  assert.equal(dividendResearchCashYield(research({ ...valid, ledger: { ...ledger, issues: ['ANNOUNCEMENT_REFRESH_FAILED'] } })).yieldBps, 609);
   assert.equal(dividendResearchCashYield(research({ ...valid, ledger: { ...ledger, asOf: `${year}-01-01` } })).yieldBps, undefined);
   const mismatch = calculateDividendPricing({ code: '000001', name: 'Mismatch', financialSector: true, method, asOf, ledger, priceMinor: 1000, priceDate: asOf,
     annuals: [{ year: 2025, reportDate: '2025-12-31', noticeDate: '2026-03-20', epsMicros: 100000, payoutBps: 1000 }] });
-  assert.ok(mismatch.dividendBase!.flags.includes('CROSSCHECK_MISMATCH'));
-  assert.equal(dividendResearchCashYield(research(mismatch)).yieldBps, undefined);
+  assert.ok(!mismatch.dividendBase!.flags.includes('CROSSCHECK_MISMATCH'));
+  assert.equal(dividendResearchCashYield(research(mismatch)).yieldBps, 609);
   const manual = applyDividendManualInputs(source(), entered(), stock, method, asOf);
   assert.equal(dividendResearchCashYield(research({ ...manual, userConfirmedEvidence: { ...manual.userConfirmedEvidence!, expiresOn: `${year}-01-01` } })).yieldBps, undefined);
 });

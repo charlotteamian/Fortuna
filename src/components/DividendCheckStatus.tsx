@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { DividendCheckRisk, DividendCheckSummary } from '../lib/dividendCheckSummary';
 import './DividendCheckStatus.css';
 import { dividendCheckReasonCode, dividendCheckReasonLabel } from '../lib/dividendCheckLabels';
+import { isKeyDataReason } from '../lib/dividendKeyData';
 
 const adviceKeys: Record<string, string> = {
   research_missing: 'research', research_not_current: 'research', additional_rules_unverified: 'additional_rules',
@@ -65,15 +66,29 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     {source.startsWith('https://') ? <a href={source} target="_blank" rel="noopener noreferrer">{t('div_check_source', { index: index + 1 })}</a> : <span>{source}</span>}
   </li>)}</ul> : <p>{t('div_check_sources_unknown')}</p>;
   const reasonItems = (items: string[]) => <ul className="div-check-status-reasons">{items.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong><span>{reasonHelp(reason)}</span></li>)}</ul>;
+  const conflictFirst = (reason: string) => /conflict|mismatch/.test(reason) ? 0 : 1;
+  // 真问题 = 找不到对计算/到价判断很关键的数据。其余（选股原则财务指标、
+  // 交叉校验、历史样本、报告新鲜度等）都是观察，合并成一行，不逐条列出。
+  const genuineRisks = [
+    ...summary.risk.blocking.map(item => ({ ...item, group: 'blocking' as const })),
+    ...summary.risk.evidenceInsufficient
+      .filter(item => isKeyDataReason(item.reason))
+      .map(item => ({ ...item, group: 'evidenceInsufficient' as const })),
+  ].sort((a, b) => (a.group === 'blocking' ? 0 : 1) - (b.group === 'blocking' ? 0 : 1) || conflictFirst(a.reason) - conflictFirst(b.reason));
+  const advisoryRisks = [
+    ...summary.risk.attention,
+    ...summary.risk.evidenceInsufficient.filter(item => !isKeyDataReason(item.reason)),
+  ];
   const evidence = (item: DividendCheckRisk & { group: keyof DividendCheckSummary['risk'] }) => <li key={`${item.group}:${item.id}`}>
     <strong>{t(`div_check_risk_${item.group}`)} · {reasonLabel(item.reason)}</strong>
-    <span>{t(dividendCheckReasonCode(item.reason) === 'saved_evidence_snapshot_missing' ? 'div_experience_evidence_history'
-      : item.group === 'attention' || item.impact === 'information' ? 'div_experience_evidence_advisory'
-        : item.autoRepair && item.unresolvedAction === 'retry' ? 'div_experience_evidence_auto'
-        : item.impact === 'new_price' ? 'div_experience_evidence_blocked'
-          : item.impact === 'new_buy' ? 'div_experience_evidence_operation' : 'div_experience_evidence_advisory')}</span>
-    <span>{item.reportPeriod ? t('div_check_report_period', { date: item.reportPeriod }) : t('div_check_date_unknown')}
-      {item.publishedAt && ` · ${t('div_check_notice_date', { date: item.publishedAt })}`}{item.verifiedAt && ` · ${t('div_check_verified_date', { date: item.verifiedAt })}`}</span>
+    <span>{t(item.autoRepair && item.unresolvedAction === 'retry' ? 'div_experience_evidence_auto'
+      : item.impact === 'new_price' ? 'div_experience_evidence_blocked'
+        : item.impact === 'new_buy' ? 'div_experience_evidence_operation' : 'div_experience_evidence_advisory')}</span>
+    {(item.reportPeriod || item.publishedAt || item.verifiedAt) && <span>
+      {item.reportPeriod && t('div_check_report_period', { date: item.reportPeriod })}
+      {item.publishedAt && ` · ${t('div_check_notice_date', { date: item.publishedAt })}`}
+      {item.verifiedAt && ` · ${t('div_check_verified_date', { date: item.verifiedAt })}`}
+    </span>}
   </li>;
   const gridKey = summary.grid.userConfirmedAt && summary.grid.status === 'verified' ? 'div_manual_grid_confirmed' : summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
   return <section className={`div-check-status${mode === 'row' ? ' div-check-status-row' : ''}`} aria-label={t('div_check_status_title')}>
@@ -99,7 +114,10 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
       {dates.reportPeriod && <p>{t('div_check_report_period', { date: dates.reportPeriod })}</p>}
       {dates.noticeDate && <p>{t('div_check_notice_date', { date: dates.noticeDate })}</p>}
       {dates.evidenceVerifiedDates.length > 0 && <p>{t('div_check_verified_date', { date: dates.evidenceVerifiedDates.join(' · ') })}</p>}
-      {allRisks.length > 0 && <details><summary>{t('div_experience_observations_details', { count: allRisks.length })}</summary><ul className="div-check-status-reasons">{allRisks.map(evidence)}</ul></details>}
+      {(genuineRisks.length > 0 || advisoryRisks.length > 0) && <details><summary>{t('div_experience_observations_details', { count: genuineRisks.length })}</summary>
+        {genuineRisks.length > 0 && <ul className="div-check-status-reasons">{genuineRisks.map(evidence)}</ul>}
+        {advisoryRisks.length > 0 && <p className="div-check-advisory">{t('div_check_advisory_summary', { count: advisoryRisks.length })}</p>}
+      </details>}
       <details><summary>{t('div_experience_sources')}</summary>{sourceLinks([...dates.sources, ...allRisks.flatMap(item => item.sources)])}</details>
       <details><summary>{t('div_manual_more_analysis')}</summary>{children}</details>
     </details>

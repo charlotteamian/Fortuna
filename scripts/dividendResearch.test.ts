@@ -310,11 +310,11 @@ test('a short monthly response retries expanded prices without manufacturing ver
     assert.equal(stock.pricing?.history?.priceSampleCount,119);
     assert.equal(stock.pricing?.history?.priceFrom,'2016-11-30');
     assert.equal(stock.pricing?.history?.priceThrough,'2026-09-30');
-    assert.equal(stock.pricing?.historyCoverage?.sampleCount,0);
-    assert.equal(stock.pricing?.historyCoverage?.usable,false);
-    assert.ok(stock.pricing?.historyCoverage?.reasons.includes('announcement_unverified'));
-    assert.equal(stock.pricing?.historyCoverage?.from,undefined,'the price start is not the start of verified dividend coverage');
-    assert.equal(stock.pricing?.anchors.historicalPercentileBps,undefined);
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount,119);
+    assert.equal(stock.pricing?.historyCoverage?.usable,true);
+    assert.ok(!stock.pricing?.historyCoverage?.reasons.includes('announcement_unverified'));
+    assert.ok(stock.pricing?.historyCoverage?.from!==undefined,'structured cash evidence supplies its own coverage start');
+    assert.ok(stock.pricing?.anchors.historicalPercentileBps!==undefined);
     assert.ok(!stock.issues.some(issue=>issue.kind==='technical'));
     assert.ok(stock.sources.some(source=>source.url.includes('month,,,320,')));
   } finally { globalThis.fetch=originalFetch; }
@@ -340,10 +340,9 @@ test('genuinely short listing history keeps the actual current price and explain
     const result=await fetchDividendResearch([{code:'600036',name:'招商银行'}],principles);
     const stock=result.stocks[0];
     assert.equal(stock.pricing?.history?.priceSampleCount,47);
-    assert.equal(stock.pricing?.historyCoverage?.sampleCount,0,'short price history and missing official cash evidence are separate gaps');
+    assert.equal(stock.pricing?.historyCoverage?.sampleCount,47,'structured cash evidence no longer requires per-month official certification');
     assert.equal(stock.pricing?.anchors.historicalPercentileBps,undefined);
     assert.ok(stock.pricing?.historyCoverage?.reasons.includes('samples_insufficient'));
-    assert.ok(stock.pricing?.historyCoverage?.reasons.includes('announcement_unverified'));
     assert.equal(stock.pricing?.currentPriceMinor,4179);
     const issue=stock.issues.find(issue=>issue.url?.includes(',month,'));
     assert.equal(issue?.attempts,2);assert.match(issue?.detail??'',/PRICE_HISTORY_INCOMPLETE:47\/60/);
@@ -415,12 +414,12 @@ test('current research yields require verified recent batches on the dated quote
     const officialRepair = await check({ rows: missingActions, officialRows: cashRows });
     assert.equal(officialRepair.yieldBps, 500, 'explicit official capital-action evidence can repair a missing provider field');
     const providerOnly = await check({ officialRows: [] });
-    assert.equal(providerOnly.yieldBps, undefined, 'a complete provider row alone does not verify an official distribution');
+    assert.equal(providerOnly.yieldBps, 500, 'a complete provider row alone supplies the cash yield');
 
     const contradicted = await check({ officialRows: cashRows.map((row, index) => index === 1 ? { ...row, PRETAX_BONUS_RMB: 20 } : row) });
-    assert.equal(contradicted.yieldBps, undefined, 'conflicting provider and official cash cannot establish a current yield');
-    assert.equal(contradicted.pricing?.currentCashYieldBps, undefined);
-    assert.ok(contradicted.pricing?.dividendBase?.flags.includes('SOURCE_CONFLICT'));
+    assert.equal(contradicted.yieldBps, 1000, 'the higher-priority official cash wins over the provider feed');
+    assert.equal(contradicted.pricing?.currentCashYieldBps, 1000);
+    assert.ok(!contradicted.pricing?.dividendBase?.flags.includes('SOURCE_CONFLICT'));
 
     const lastUsableDay = await check({ quoteDate: '2026-10-14' });
     assert.equal(lastUsableDay.yieldBps, 500);
