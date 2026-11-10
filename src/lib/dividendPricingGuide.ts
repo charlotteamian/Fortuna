@@ -1,6 +1,6 @@
 import type { DividendCheckSummary } from './dividendCheckSummary.ts';
 import { invalidateOutdatedDividendPricing, type DividendPricingResult } from './dividendPricing.ts';
-import { dividendPricingPlan } from './dividendPricingPlan.ts';
+import { dividendPricingPlan, dividendPricingPlanForCheck } from './dividendPricingPlan.ts';
 
 export type DividendPricingGapKind = 'conflict' | 'crosscheck' | 'frequency' | 'cash' | 'calculation' | 'other';
 export interface DividendPricingGuide {
@@ -29,8 +29,8 @@ const kindFor = (reason: string): DividendPricingGapKind => reason.includes('sou
 export function dividendPricingGuide(source: DividendPricingResult, check?: DividendCheckSummary): DividendPricingGuide {
   const pricing = invalidateOutdatedDividendPricing(source);
   const calculatedPlan = dividendPricingPlan(pricing);
-  const currentEvidenceChanged = !!calculatedPlan && check?.kind === 'stock' && !check.currentPlan;
-  const plan = currentEvidenceChanged ? null : calculatedPlan;
+  const plan = dividendPricingPlanForCheck(pricing, check?.kind === 'stock' ? check.currentPlan : undefined);
+  const currentEvidenceChanged = !!calculatedPlan && !plan;
   const grouped = new Map<DividendPricingGapKind, string[]>();
   for (const reason of new Set([...pricing.blockers, ...currentEvidenceChanged ? ['dividend_base_unverified'] : []])) {
     const kind = kindFor(reason), reasons = grouped.get(kind) ?? [];

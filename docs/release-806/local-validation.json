@@ -1,0 +1,18 @@
+{
+  "verifiedAt": "2026-11-10T06:07:49.345709+00:00",
+  "version": "8.0.6",
+  "build": 50,
+  "tests": {
+    "total": 898,
+    "passed": 898,
+    "failed": 0
+  },
+  "lint": "passed",
+  "webBuild": "passed",
+  "androidSync": "passed",
+  "androidUnitTests": "passed",
+  "iosSyncAndResourceVerification": "passed; 48 web assets",
+  "browserReport": "ui-verification.json",
+  "realUserDatabaseAccessed": false,
+  "physicalDeviceTested": false
+}

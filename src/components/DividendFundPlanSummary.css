@@ -15,14 +15,19 @@
 .df-focus-price strong { color: var(--text-primary); }
 .df-focus-amount strong { color: var(--asset-color); }
 .df-focus-plan small { display: block; color: var(--text-secondary); font-size: var(--fs-xs); line-height: var(--lh-relaxed); overflow-wrap: anywhere; }
-.df-focus-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); margin: 0; padding: var(--sp-3) 0 3px; border-top: 1px solid var(--border); }
+.df-focus-buy-grid { padding: var(--sp-2) 0 var(--sp-3); border-top: 1px solid var(--border); }
+.df-focus-buy-grid table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.df-focus-buy-grid caption { text-align: left; font-weight: var(--fw-semibold); padding-bottom: var(--sp-2); }
+.df-focus-buy-grid th, .df-focus-buy-grid td { padding: var(--sp-2) 0; text-align: left; overflow-wrap: anywhere; }
+.df-focus-buy-grid thead th { color: var(--text-secondary); font-weight: var(--fw-normal); font-size: var(--fs-sm); }
+.df-focus-buy-grid tbody th { font-weight: var(--fw-normal); font-size: var(--fs-sm); }
+.df-focus-buy-grid tbody td:not([colspan]) { color: var(--asset-color); font-size: var(--fs-xl); white-space: nowrap; }
+.df-focus-buy-grid tr + tr { border-top: 1px solid var(--border); }
+.df-focus-targets { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); margin: 0; padding: var(--sp-3) 0 3px; border-top: 1px solid var(--border); }
 .df-focus-targets > div { min-width: 0; }
 .df-focus-targets dd { margin: var(--sp-1) 0; font-size: var(--fs-2xl); line-height: var(--lh-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .df-focus-plan .df-focus-signal.is-triggered { color: var(--asset-color); font-weight: var(--fw-semibold); }
 .df-focus-plan .df-focus-signal.is-unknown { color: var(--text-secondary); }
-.df-focus-evidence { margin-top: var(--sp-2); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
-.df-focus-evidence > summary { color: var(--text-secondary); font-size: var(--fs-sm); cursor: pointer; min-height: var(--btn-h-sm); align-content: center; }
-.df-focus-evidence-toggle { min-height: var(--btn-h); }
 .df-focus-allocation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-4); }
 .df-focus-allocation > div { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3); border-radius: var(--radius-md); background: var(--bg-secondary); min-width: 0; }
 .df-focus-allocation span { color: var(--text-secondary); font-size: var(--fs-sm); line-height: var(--lh-base); }

@@ -1,0 +1,92 @@
+{
+  "success": true,
+  "scope": "Isolated Chrome profiles and synthetic fixtures; external traffic blocked; no real user database or live service.",
+  "checks": [
+    {
+      "name": "Existing saved plans and research open selection; expanding pricing does not blank the page",
+      "passed": true
+    },
+    {
+      "name": "Allocation plan navigation still opens",
+      "passed": true
+    },
+    {
+      "name": "Amount visibility masks all three grid prices",
+      "passed": true
+    },
+    {
+      "name": "Fund home and management share the three-tier grid and omit evidence prose",
+      "passed": true
+    },
+    {
+      "name": "Eight width/font/theme combinations have readable grids without overflow or untranslated copy",
+      "passed": true
+    }
+  ],
+  "layouts": [
+    {
+      "name": "selection",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "fund home",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    }
+  ],
+  "errors": []
+}

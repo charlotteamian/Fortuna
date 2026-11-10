@@ -7,7 +7,7 @@ import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
-import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan';
+import { dividendPricingPlanForCheck, dividendPricingProvenance } from '../lib/dividendPricingPlan';
 import { validateDividendPricingProposal } from '../services/dividendAdvisorActionsService';
 import './DividendReviewAlerts.css';
 import DividendLedgerView from './DividendLedgerView';
@@ -122,7 +122,7 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
   const { t } = useTranslation();
   const [filling, setFilling] = useState(false);
   const pricing = invalidateOutdatedDividendPricing(sourcePricing);
-  const plan = check ? check.currentPlan : dividendPricingPlan(pricing);
+  const plan = dividendPricingPlanForCheck(pricing, check?.currentPlan);
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
   const pct = (value: number) => `${Number((value / 100).toFixed(2))}%`;
   const proposal: DividendPlanProposal | null = plan ? {

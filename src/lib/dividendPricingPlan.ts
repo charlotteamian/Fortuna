@@ -29,6 +29,19 @@ export function dividendPricingPlan(source: DividendPricingResult): { buyLevels:
   return { buyLevels, sellLevels };
 }
 
+/** Async inspection results may belong to the previous research snapshot.
+ * Never combine that plan's prices with this snapshot's dividend arithmetic. */
+export function dividendPricingPlanForCheck(source: DividendPricingResult, checkedPlan?: ReturnType<typeof dividendPricingPlan>) {
+  const plan = dividendPricingPlan(source);
+  if (!plan || checkedPlan === null) return null;
+  if (checkedPlan === undefined) return plan;
+  return (['buyLevels', 'sellLevels'] as const).every(side => plan[side].length === checkedPlan[side].length
+    && plan[side].every((level, index) => {
+      const checked = checkedPlan[side][index];
+      return level.priceMinor === checked.priceMinor && level.yieldBps === checked.yieldBps && level.portionBps === checked.portionBps;
+    })) ? plan : null;
+}
+
 /** Origin is created by deterministic code, never copied from a model-supplied JSON field. */
 export function dividendPricingProvenance(pricing: DividendPricingResult, generatedAt: number): DividendGridProvenance | undefined {
   if (!dividendPricingPlan(pricing) || !Number.isSafeInteger(generatedAt) || generatedAt <= 0) return undefined;

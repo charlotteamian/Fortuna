@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { dateInChina } from '../lib/dividendWorkbench';
-import { dividendFundAllocation, dividendFundPriceMicros, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
+import { dividendFundAllocation, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
 import { dividendFundCheckSummary, type DividendFundCheckSummary } from '../lib/dividendCheckSummary';
-import DividendCheckStatus from './DividendCheckStatus';
-import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { deleteDividendFund, saveDividendFund, saveDividendFundConfig } from '../services/dividendFundService';
 import DividendFundComparison from './DividendFundComparison';
 import DividendFundPlanSummary from './DividendFundPlanSummary';
@@ -78,27 +76,9 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
     <input className="div-search" aria-label={t('df_search')} placeholder={t('df_search')} value={search} onChange={event => setSearch(event.target.value)} />
     <div className="div-stock-list df-fund-list">{funds.map(fund => {
       const check = checks[fund.id] ?? dividendFundCheckSummary({ plan, fund });
-      const reference = check.fundPlan.entry;
-      const priceMicros = dividendFundPriceMicros(fund);
       return <article className="div-stock" key={fund.id}>
         <div className="div-stock-heading"><div><h2>{fund.name}</h2><small>{t(`df_index_${fund.indexKind}`)}{fund.code ? ` · ${fund.code}` : ''}</small></div><button className="btn btn-secondary" disabled={saving} onClick={() => setEditor(fund)}>{t('edit')}</button></div>
         <DividendFundPlanSummary plan={plan} fund={fund} check={check} amountVisible={amountVisible} />
-        <details className="df-focus-evidence"><summary>{t('df_focus_evidence')}</summary>
-          {fund.note && <div className="div-note"><span>{t('div_note')}</span><p>{fund.note}</p></div>}
-          <DividendCheckStatus summary={check} />
-          <div className="div-metrics">
-            <div><span>{t('df_current_drawdown')}</span><strong>{!amountVisible ? '••••' : reference.drawdownBps === undefined ? '—' : `${number(reference.drawdownBps / 100)}%`}</strong></div>
-            <div><span>{t('df_index_yield')}</span><strong>{fund.reference?.indexYieldBps === undefined ? '—' : `${number(fund.reference.indexYieldBps / 100)}%`}</strong></div>
-            <div><span>{t('df_entry_price', { percent: number(plan.drawdownBps / 100) })}</span><strong>{reference.targetPriceMicros === undefined ? '—' : `¥${number(reference.targetPriceMicros / 1e6, 6)}`}</strong></div>
-            {plan.mode === 'swing' && <div><span>{t('df_exit_price')}</span><strong>{fund.reference?.highMicros === undefined ? '—' : `¥${number(fund.reference.highMicros / 1e6, 6)}`}</strong></div>}
-          </div>
-          <p className="div-muted">{fund.quote ? t('div_quote_source', { date: fund.quote.date }) : t(priceMicros === undefined ? 'div_not_fetched' : 'df_manual_source')}</p>
-          <p className="div-muted">{t('df_entry_summary', { drawdown: number(plan.drawdownBps / 100) })}</p>
-          {reference.issues.length > 0 && <p className="div-muted">{reference.issues.map(issue => t(`div_check_reason_${issue}`)).join(' · ')}</p>}
-          {fund.reference && <p className="div-muted">{t('df_data_source', { date: fund.reference.asOf, source: fund.reference.source || t('df_manual_source') })}</p>}
-          {fund.quoteFailedAt !== undefined && <p className="div-warning">{t('div_quotes_failed')}</p>}
-          {!isExchangeTradedFundCode(fund.code) && <p className="div-muted">{t(fund.code ? 'df_manual_quote_note' : 'df_add_code_note')}</p>}
-        </details>
       </article>;
     })}</div>
     {funds.length === 0 && <p className="div-notice">{t(plan.funds.length ? 'df_no_match' : 'df_empty')}</p>}

@@ -10,6 +10,8 @@ import { I18nextProvider } from 'react-i18next';
 import ts from 'typescript';
 import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
 import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
+import { dividendCheckSummary } from '../src/lib/dividendCheckSummary.ts';
+import { defaultDividendStocks } from '../src/lib/dividendWorkbench.ts';
 import { dividendAiWorkspaceZh } from '../src/i18n/dividendAiWorkspaceTranslations.ts';
 import { dividendPricingGuideZh } from '../src/i18n/dividendPricingGuideTranslations.ts';
 
@@ -50,4 +52,32 @@ test('the price card shows one buy/sell grid and a confirmation button without a
   const html = render(createElement(DividendPricingCard, { code: '600000', pricing, method, generatedAt: 1, disabled: false, onUpdated: async () => undefined }));
   assert.equal((html.match(/<table /g) ?? []).length, 2);
   assert.match(html, /确认写入网格计划/); assert.doesNotMatch(html, /div-ai-grid-comparison|div-ai-confirm/);
+});
+
+test('an old check cannot render or apply its grid using a new snapshot without a dividend base', () => {
+  const method = defaultDividendPricingMethod(), asOf = '2026-11-06';
+  const pricing = calculateDividendPricing({ code: '600000', name: 'Synthetic', method, asOf, annuals: [], financialSector: true, dividendBase: verifiedDividendBase(500000, asOf) });
+  const check = dividendCheckSummary({ stock: { ...defaultDividendStocks()[0], code: '600000' }, asOf,
+    research: { code: '600000', name: 'Synthetic', pricing, checks: [], sources: [], issues: [], status: 'unknown' } });
+  assert.ok(check.currentPlan);
+  const missingBase = calculateDividendPricing({ code: '600000', name: 'Synthetic', method, asOf, annuals: [], financialSector: true });
+  const html = render(createElement(DividendPricingCard, { code: '600000', pricing: missingBase, method, check, generatedAt: 1, disabled: false, onUpdated: async () => undefined }));
+  assert.match(html, /div-price-guide is-waiting/);
+  assert.doesNotMatch(html, /确认写入网格计划|div-ai-plan-actions|<table /);
+});
+
+test('only matching checked and current pricing grids can display a new plan or offer confirmation', () => {
+  const method = defaultDividendPricingMethod(), asOf = '2026-11-06';
+  const pricing = calculateDividendPricing({ code: '600000', name: 'Synthetic', method, asOf, annuals: [], financialSector: true, dividendBase: verifiedDividendBase(500000, asOf) });
+  const check = dividendCheckSummary({ stock: { ...defaultDividendStocks()[0], code: '600000' }, asOf,
+    research: { code: '600000', name: 'Synthetic', pricing, checks: [], sources: [], issues: [], status: 'unknown' } });
+  assert.ok(check.currentPlan);
+  const renderChecked = (currentPricing = pricing, currentCheck = check) => render(createElement(DividendPricingCard, { code: '600000', pricing: currentPricing, method, check: currentCheck, generatedAt: 1, disabled: false, onUpdated: async () => undefined }));
+  const matching = renderChecked();
+  assert.equal((matching.match(/<table /g) ?? []).length, 2);
+  assert.match(matching, /确认写入网格计划/);
+  const differentBase = calculateDividendPricing({ code: '600000', name: 'Synthetic', method, asOf, annuals: [], financialSector: true, dividendBase: verifiedDividendBase(600000, asOf) });
+  assert.doesNotMatch(renderChecked(differentBase), /确认写入网格计划|div-ai-plan-actions|<table /);
+  assert.match(renderChecked(differentBase), /div-price-guide is-waiting/);
+  assert.doesNotMatch(renderChecked(pricing, { ...check, currentPlan: null }), /确认写入网格计划|div-ai-plan-actions|<table /);
 });
