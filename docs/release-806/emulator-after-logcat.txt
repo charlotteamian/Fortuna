@@ -1,0 +1,82 @@
+--------- beginning of main
+11-10 14:13:07.706  8257  8257 I Zygote  : Process 8257 created for com.fortuna.wealthtracker
+11-10 14:13:07.706  8257  8257 I a.wealthtracker: Using CollectorTypeCMC GC.
+11-10 14:13:07.717  8257  8257 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-10 14:13:07.749  8257  8257 D nativeloader: Configuring clns-9 for other apk /data/app/~~sPoDiDgxw6Yd4B60hSEM5A==/com.fortuna.wealthtracker-I1Z8_4G8i4cXQwjDqwjDHA==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~sPoDiDgxw6Yd4B60hSEM5A==/com.fortuna.wealthtracker-I1Z8_4G8i4cXQwjDqwjDHA==/lib/arm64, permitted_path=/data:/mnt/expand:/data/user/0/com.fortuna.wealthtracker
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment: Currently set values for:
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment: com.fortuna.wealthtracker is not listed in per-application setting
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment: ANGLE allowlist from config: com.dreamgames.royalmatch com.dts.freefiremax com.dxx.firenow com.gramgames.mergedragons com.ludo.king com.mojang.minecraftpe com.my.defense com.nintendo.zaka com.os.airforce com.playrix.fishdomdd.gplay io.teslatech.callbreak jp.konami.prospia net.peakgames.toonblast
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment: No special selections for ANGLE, returning default driver choice
+11-10 14:13:07.753  8257  8257 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+--------- beginning of system
+11-10 14:13:07.811  8257  8280 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+11-10 14:13:07.816  8257  8257 D DesktopExperienceFlags: Toggle override initialized to: false
+11-10 14:13:07.818  8257  8257 D AppCompatDelegate: Checking for metadata for AppLocalesMetadataHolderService : Service not found
+11-10 14:13:07.819  8257  8257 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+11-10 14:13:07.833  8257  8257 D CompatChangeReporter: Compat change id reported: 377864165; UID 10224; state: ENABLED
+11-10 14:13:07.834  8257  8257 D DesktopModeFlags: Toggle override initialized to: OVERRIDE_UNSET
+11-10 14:13:07.845  8257  8257 I WebViewFactory: Loading com.google.android.webview version 134.0.6998.135 (code 699813532)
+11-10 14:13:07.847  8257  8257 V ResourcesManager: The following library key has been added: ResourcesKey{ mHash=89b2d29c mResDir=null mSplitDirs=[] mOverlayDirs=[] mLibDirs=[/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/WebViewGoogle.apk,/data/app/~~XyzEsY0EiFALQyFO-Kpmtg==/com.google.android.trichromelibrary_699813532-PNTmSDN4Zn7J3k3nXjlObA==/TrichromeLibrary.apk,/system_ext/framework/androidx.window.extensions.jar] mDisplayId=0 mOverrideConfig=v36 mCompatInfo={420dpi always-compat} mLoaders=[]}
+11-10 14:13:07.848  8257  8257 W a.wealthtracker: Failed to find entry 'classes.dex': Entry not found
+11-10 14:13:07.849  8257  8257 D nativeloader: Configuring clns-10 for other apk /data/app/~~XyzEsY0EiFALQyFO-Kpmtg==/com.google.android.trichromelibrary_699813532-PNTmSDN4Zn7J3k3nXjlObA==/TrichromeLibrary.apk. target_sdk_version=35, uses_libraries=ALL, library_path=/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/lib/arm64:/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/WebViewGoogle.apk!/lib/arm64-v8a:/data/app/~~XyzEsY0EiFALQyFO-Kpmtg==/com.google.android.trichromelibrary_699813532-PNTmSDN4Zn7J3k3nXjlObA==/TrichromeLibrary.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand
+11-10 14:13:07.849  8257  8257 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+11-10 14:13:07.851  8257  8257 D nativeloader: Configuring clns-11 for other apk /data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/WebViewGoogle.apk. target_sdk_version=35, uses_libraries=, library_path=/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/lib/arm64:/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/WebViewGoogle.apk!/lib/arm64-v8a:/data/app/~~XyzEsY0EiFALQyFO-Kpmtg==/com.google.android.trichromelibrary_699813532-PNTmSDN4Zn7J3k3nXjlObA==/TrichromeLibrary.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand
+11-10 14:13:07.880  8257  8257 I cr_WVCFactoryProvider: version=134.0.6998.135 (699813532) minSdkVersion=29 isBundle=false multiprocess=true packageId=2
+11-10 14:13:07.881  8257  8280 I GFXSTREAM: [eglDisplay.cpp(297)] Opening libGLESv1_CM_emulation.so
+11-10 14:13:07.881  8257  8280 I GFXSTREAM: [eglDisplay.cpp(297)] Opening libGLESv2_emulation.so
+11-10 14:13:07.882  8257  8280 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-10 14:13:07.882  8257  8280 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+11-10 14:13:07.891  8257  8257 D nativeloader: Load /data/app/~~XyzEsY0EiFALQyFO-Kpmtg==/com.google.android.trichromelibrary_699813532-PNTmSDN4Zn7J3k3nXjlObA==/TrichromeLibrary.apk!/lib/arm64-v8a/libmonochrome_64.so using class loader ns clns-11 (caller=/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/WebViewGoogle.apk): ok
+11-10 14:13:07.895  8257  8257 D nativeloader: Load /system/lib64/libwebviewchromium_plat_support.so using class loader ns clns-11 (caller=/data/app/~~_NV_q6NDZiEA5460I-LtdA==/com.google.android.webview-4Hlmd3-SCk35vxWWKNd6Fw==/WebViewGoogle.apk): ok
+11-10 14:13:07.900  8257  8290 E chromium: [1110/141307.899360:ERROR:variations_seed_loader.cc(39)] Seed missing signature.
+11-10 14:13:07.900  8257  8290 I chromium: [INFO:variations_seed_loader.cc(67)] Failed to open file for reading.: No such file or directory (2)
+11-10 14:13:07.905  8257  8257 I cr_LibraryLoader: Successfully loaded native library
+11-10 14:13:07.906  8257  8257 I cr_CachingUmaRecorder: Flushed 6 samples from 6 histograms, 0 samples were dropped.
+11-10 14:13:07.909  8257  8257 I cr_CombinedPProvider: #registerProvider() provider:WV.I8@b389055 isPolicyCacheEnabled:false policyProvidersSize:0
+11-10 14:13:07.910  8257  8257 I cr_PolicyProvider: #setManagerAndSource() 0
+11-10 14:13:07.942  8257  8257 I cr_CombinedPProvider: #linkNativeInternal() 1
+11-10 14:13:07.943  8257  8257 I cr_AppResProvider: #getApplicationRestrictionsFromUserManager() Bundle[EMPTY_PARCEL]
+11-10 14:13:07.943  8257  8257 I cr_PolicyProvider: #notifySettingsAvailable() 0
+11-10 14:13:07.943  8257  8257 I cr_CombinedPProvider: #onSettingsAvailable() 0
+11-10 14:13:07.943  8257  8257 I cr_CombinedPProvider: #flushPolicies()
+11-10 14:13:07.969  8257  8303 W chromium: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+11-10 14:13:08.009  8257  8303 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.fortuna.wealthtracker/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-10 14:13:08.013  8257  8303 E chromium: [ERROR:simple_index_file.cc(613)] Could not reconstruct index from disk
+11-10 14:13:08.047  8257  8257 D Capacitor: Starting BridgeActivity
+11-10 14:13:08.073  8257  8312 W cr_media: BLUETOOTH_CONNECT permission is missing.
+11-10 14:13:08.080  8257  8312 W cr_media: getBluetoothAdapter() requires BLUETOOTH permission
+11-10 14:13:08.080  8257  8312 W cr_media: registerBluetoothIntentsIfNeeded: Requires BLUETOOTH permission
+11-10 14:13:08.085  8257  8337 W libc    : Access denied finding property "vendor.mesa.log"
+11-10 14:13:08.087  8257  8337 W libc    : Access denied finding property "vendor.mesa.log.file"
+11-10 14:13:08.087  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.087  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.111  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.111  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.111  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.111  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.113  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.113  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.113  8257  8337 W libc    : Access denied finding property "vendor.mesa.vk.trace.per.submit"
+11-10 14:13:08.113  8257  8337 W libc    : Access denied finding property "vendor.mesa.gallium.print.optio"
+11-10 14:13:08.113  8257  8337 W libc    : Access denied finding property "vendor.mesa.vk.trace.frame"
+11-10 14:13:08.120  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.120  8257  8337 W libc    : Access denied finding property "vendor.mesa.vk.wsi.headless.swa"
+11-10 14:13:08.120  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.120  8257  8337 E MESA    : Failed to open rendernode: No such file or directory
+11-10 14:13:08.126  8257  8257 W HWUI    : Unknown dataspace 0
+11-10 14:13:08.175  8257  8337 W chromium: [WARNING:viz_main_impl.cc(85)] VizNullHypothesis is disabled (not a warning)
+11-10 14:13:08.205  8257  8257 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@8e010e6
+11-10 14:13:08.205  8257  8257 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): androidx.activity.OnBackPressedDispatcher$Api34Impl$createOnBackAnimationCallback$1@4717627
+11-10 14:13:08.224  8257  8257 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,63,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,63,0,84] 
+11-10 14:13:08.245  8257  8349 I CameraManagerGlobal: Connecting to camera service
+11-10 14:13:08.394  8257  8257 D InsetsController: hide(ime())
+11-10 14:13:08.394  8257  8257 I ImeTracker: com.fortuna.wealthtracker:db2a337a: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-10 14:13:09.094  8257  8366 I HWUI    : Using FreeType backend (prop=Auto)
+11-10 14:13:12.800  8257  8391 D ProfileInstaller: Installing profile for com.fortuna.wealthtracker
+11-10 14:13:17.459  8257  8257 I cr_A11yState: Enabled accessibility services list updated. []
+11-10 14:13:17.460  8257  8257 I cr_A11yState: Informing listeners of changes.
+11-10 14:13:17.461  8257  8257 I cr_A11yState: New AccessibilityState: State{isScreenReaderEnabled=false, isTouchExplorationEnabled=false, isPerformGesturesEnabled=false, isAnyAccessibilityServiceEnabled=false, isAccessibilityToolPresent=false, isSpokenFeedbackServicePresent=false, isTextShowPasswordEnabled=true, isOnlyPasswordManagersEnabled=false}
+11-10 14:13:19.759  8257  8270 W a.wealthtracker: userfaultfd: MOVE ioctl seems unsupported: Connection timed out
+11-10 14:13:44.515  8257  8257 I AssistStructure: Flattened final assist data: 2800 bytes, containing 1 windows, 6 views

@@ -1,0 +1,22 @@
+[
+  {
+    "conclusion": "success",
+    "databaseId": 42766452092,
+    "event": "push",
+    "headBranch": "main",
+    "headSha": "31ca1adb79fc20920893d1bc935e4b9cefe32d0f",
+    "status": "completed",
+    "url": "https://github.com/charlotteamian/Fortuna/actions/runs/42766452092",
+    "workflowName": "iOS Release Readiness"
+  },
+  {
+    "conclusion": "success",
+    "databaseId": 42766452081,
+    "event": "push",
+    "headBranch": "v8.0.6",
+    "headSha": "31ca1adb79fc20920893d1bc935e4b9cefe32d0f",
+    "status": "completed",
+    "url": "https://github.com/charlotteamian/Fortuna/actions/runs/42766452081",
+    "workflowName": "Android APK Release"
+  }
+]

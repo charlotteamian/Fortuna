@@ -1,0 +1,16 @@
+{
+  "verifiedAt": "2026-11-10T06:09:12.400625+00:00",
+  "serial": "emulator-5586",
+  "avd": "fortuna806isolated",
+  "version": "8.0.5",
+  "versionCode": 49,
+  "sentinel": {
+    "account": "QA806_KEEP_ACCOUNT",
+    "institution": "QA806_SYNTHETIC",
+    "currency": "USD",
+    "balance": 1234.56,
+    "snapshotCount": 1
+  },
+  "coldLaunchRetained": true,
+  "scope": "New disposable AVD and synthetic account only; no user production data or physical device."
+}

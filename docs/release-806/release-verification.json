@@ -1,0 +1,37 @@
+{
+  "verifiedAt": "2026-11-10T06:13:15.945673+00:00",
+  "releaseUrl": "https://github.com/charlotteamian/Fortuna/releases/tag/v8.0.6",
+  "tag": "v8.0.6",
+  "commit": "31ca1adb79fc20920893d1bc935e4b9cefe32d0f",
+  "localTagAndRemoteMainAndTagMatch": true,
+  "asset": "Fortuna-8.0.6-release.apk",
+  "assetUrl": "https://github.com/charlotteamian/Fortuna/releases/download/v8.0.6/Fortuna-8.0.6-release.apk",
+  "size": 5947107,
+  "sha256": "613241196e336ec40945ea6e589dd5dbfb64bff049e9cc89d69e77c72002cb93",
+  "githubDigestMatches": true,
+  "package": "com.fortuna.wealthtracker",
+  "versionName": "8.0.6",
+  "versionCode": 50,
+  "debuggable": false,
+  "certificateSha256": "b6898c38efabded0a7a2826ff1b83c5191b3d3be7f0723201984ecd0fc8cf62c",
+  "pinnedCertificateMatches": true,
+  "webBuildResourcesMatched": 48,
+  "capacitorBridgeResourcesMatched": 2,
+  "publicDownload": {
+    "status": 200,
+    "bytes": 5947107,
+    "digestMatchesRelease": true
+  },
+  "updateParser": {
+    "previousVersion": "8.0.5",
+    "previousOffersNewRelease": true,
+    "currentOffersNothing": true
+  },
+  "requiredWorkflowsSucceeded": [
+    "Android APK Release",
+    "iOS Release Readiness"
+  ],
+  "physicalDeviceTested": false,
+  "emulatorTested": true,
+  "emulatorVerification": "signed-emulator-verification.json"
+}

@@ -14,5 +14,6 @@
   "iosSyncAndResourceVerification": "passed; 48 web assets",
   "browserReport": "ui-verification.json",
   "realUserDatabaseAccessed": false,
-  "physicalDeviceTested": false
+  "physicalDeviceTested": false,
+  "signedEmulatorUpgrade": "passed; 8.0.5/49 to 8.0.6/50, synthetic account/balance/snapshot retained"
 }

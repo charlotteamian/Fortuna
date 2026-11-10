@@ -1,0 +1,33 @@
+{
+  "verifiedAt": "2026-11-10T06:14:36.575987+00:00",
+  "avd": "fortuna806isolated",
+  "serial": "emulator-5586",
+  "upgrade": {
+    "fromVersion": "8.0.5",
+    "fromVersionCode": 49,
+    "toVersion": "8.0.6",
+    "toVersionCode": 50,
+    "installMode": "adb install -r",
+    "result": "passed",
+    "formalCertificateMatched": true
+  },
+  "retained": {
+    "account": "QA806_KEEP_ACCOUNT",
+    "institution": "QA806_SYNTHETIC",
+    "currency": "USD",
+    "balance": 1234.56,
+    "snapshotCount": 1
+  },
+  "pages": {
+    "bottomAllocationPlan": "passed, rendered allocation and asset plan content",
+    "dividendStocksAndPlans": "passed, rendered default configured stock cards"
+  },
+  "logcat": {
+    "appPid": "8257",
+    "uncaughtJavaScriptOrFatalErrors": [],
+    "file": "emulator-after-logcat.txt"
+  },
+  "scope": "Disposable AVD only. Default configured stock list without a research cache; this is navigation/upgrade coverage, not the cached research/check mismatch regression. No physical device or user production data tested.",
+  "physicalDeviceTested": false,
+  "shutdown": "Confirmed emulator-5586 stopped; target no longer connected"
+}
