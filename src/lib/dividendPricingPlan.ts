@@ -1,6 +1,7 @@
 import { CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS, DIVIDEND_PRICING_CALCULATION_VERSION, invalidateOutdatedDividendPricing, type DividendPricingResult } from './dividendPricing.ts';
 import type { DividendGridProvenance } from './dividendGridProvenance.ts';
 import type { GridLevel } from './dividendWorkbench.ts';
+import { DIVIDEND_OFFICIAL_PARSER_VERSION } from './dividendLedger.ts';
 
 /** Both sides use the same verified recent-batch base and the user's fixed cash-yield ladder. */
 export function dividendPricingPlan(source: DividendPricingResult): { buyLevels: GridLevel[]; sellLevels: GridLevel[] } | null {
@@ -47,5 +48,6 @@ export function dividendPricingProvenance(pricing: DividendPricingResult, genera
   if (!dividendPricingPlan(pricing) || !Number.isSafeInteger(generatedAt) || generatedAt <= 0) return undefined;
   return { generatedAt, grossDpsMicros: pricing.dividendBase!.dpsMicros!, taxBps: pricing.taxBps as 0 | 1000 | 2000,
     parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches',
+    ...(!pricing.userConfirmedEvidence ? { officialParserVersion: DIVIDEND_OFFICIAL_PARSER_VERSION } : {}),
     ...(pricing.userConfirmedEvidence ? { userConfirmedAt: pricing.userConfirmedEvidence.confirmedAt, userConfirmedExpiresOn: pricing.userConfirmedEvidence.expiresOn } : {}) };
 }

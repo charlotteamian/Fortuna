@@ -3,7 +3,7 @@ import { dateInChina, mainlandCode, trailingYearStart } from './dividendWorkbenc
 import { dividendPricingReadable, type DividendPricingResult, type DividendPricingMethod, type DividendTreasuryResearch, type DividendOpportunityResearch } from './dividendPricing.ts';
 import { reviewDividendFinancialSector, type DividendBankReportEvidence, type DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
-import { dividendLedgerBase } from './dividendLedger.ts';
+import { dividendLedgerBase, dividendLedgerNeedsOfficialReparse } from './dividendLedger.ts';
 import { hasCurrentUserDividendEvidence } from './dividendManualInputs.ts';
 export type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 
@@ -250,6 +250,7 @@ export function dividendResearchCashYield(stock: DividendStockResearch, now = Da
   if (!Number.isSafeInteger(price) || price! <= 0 || age < 0 || age > 10) return {};
   let base = pricing.dividendBase;
   if (pricing.ledger) {
+    if (dividendLedgerNeedsOfficialReparse(pricing.ledger)) return {};
     if (!priceDate || priceDate > pricing.ledger.asOf) return {};
     const annual = pricing.annuals[0];
     try { base = dividendLedgerBase(pricing.ledger, priceDate, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps }); } catch { return {}; }

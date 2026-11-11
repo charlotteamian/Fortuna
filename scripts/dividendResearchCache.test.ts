@@ -4,6 +4,7 @@ import test, { after, beforeEach } from 'node:test';
 import Dexie from 'dexie';
 import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
 import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
+import { pingAnOfficialLedger } from './helpers/dividendPricingFixture.ts';
 import { defaultDividendSelectionPrinciples, type DividendResearchSnapshot, type DividendStockResearch } from '../src/lib/dividendResearch.ts';
 import { closeDividendResearchCache, dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache,
   loadDividendResearchCollapsePreference, saveDividendResearchCache, saveDividendResearchCollapse } from '../src/services/dividendResearchCacheService.ts';
@@ -52,6 +53,28 @@ test('an upgrade retires persisted pricing arithmetic without deleting evidence 
   const updated=await save(snapshot(2000,[{...stock('600036'),pricing}]));
   assert.equal(updated.snapshot.stocks[0].pricing?.canApply,true);
   assert.ok(dividendPricingPlan(updated.snapshot.stocks[0].pricing!));
+});
+
+test('all symbols retire drafts carrying old PDF extraction while retaining the original evidence and research dates', async () => {
+  for (const code of ['000001', '300750', '600036']) {
+    const ledger = pingAnOfficialLedger('2026-10-23');
+    ledger.code = code; ledger.events = ledger.events.map(event => ({ ...event, code }));
+    const pricing = calculateDividendPricing({ code, name: code, financialSector: false, asOf: ledger.asOf, ledger,
+      annuals: [], method: defaultDividendPricingMethod(), priceMinor: 1000, priceDate: ledger.asOf });
+    delete ledger.officialParserVersion;
+    delete pricing.ledger!.officialParserVersion;
+    const original = { id: 'latest', snapshot: snapshot(1000, [{ ...stock(code), pricing }]), scope: 'plan', candidateInput: '' };
+    await stored.table('results').put(original);
+    const restored = (await loadDividendResearchCache())!;
+    const retired = restored.snapshot.stocks[0].pricing!;
+    assert.equal(retired.canApply, false); assert.equal(dividendPricingPlan(retired), null);
+    assert.equal(restored.snapshot.stocks[0].yieldBps, undefined);
+    assert.equal(restored.snapshot.stocks[0].checks.find(check => check.rule === 'yield')?.status, 'unknown');
+    assert.ok(retired.blockers.includes('pricing_calculation_stale'));
+    assert.equal(restored.snapshot.generatedAt, 1000); assert.equal(retired.ledger!.asOf, '2026-10-23');
+    assert.deepEqual(retired.ledger, JSON.parse(JSON.stringify(ledger)));
+    assert.deepEqual(await stored.table('results').get('latest'), original, 'reading must not rewrite historical evidence');
+  }
 });
 
 test('completed screening preserves its date/scope/input, ignores stale results and keeps the last result after a failure', async () => {

@@ -101,7 +101,8 @@ export function dividendCheckSummary(input: {
   const taxBps = input.pricingMethod ? { over_year: 0, month_to_year: 1000, up_to_month: 2000 }[input.pricingMethod.holdingPeriod] : pricing?.taxBps;
   const origin = isDividendGridProvenance(stock.gridProvenance) ? stock.gridProvenance : undefined;
   const gridReview = reviewDividendGrid({ ...stock, buyLevels: Array.isArray(stock.buyLevels) ? stock.buyLevels : [], sellLevels: Array.isArray(stock.sellLevels) ? stock.sellLevels : [],
-    quote: stock.quote && typeof stock.quote.date === 'string' ? stock.quote : undefined }, basis, { asOf, taxBps, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches',
+    quote: stock.quote && typeof stock.quote.date === 'string' ? stock.quote : undefined }, basis && { ...basis,
+      officialParserVersion: input.basis?.officialParserVersion ?? ledger?.officialParserVersion }, { asOf, taxBps, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches',
       buyYieldBps: input.pricingMethod?.buyYieldBps ?? pricing?.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS,
       sellYieldBps: input.pricingMethod?.sellYieldBps ?? pricing?.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS });
   const savedBuy = explicit(stock.buyLevels), savedSell = explicit(stock.sellLevels), hasSaved = savedBuy.length > 0 || savedSell.length > 0;
@@ -151,12 +152,16 @@ export function dividendCheckSummary(input: {
     sellShares: quote.status === 'current' && !partialSell ? rawDisplayPlan.sellShares : 0,
     buyTriggeredLevel: quote.status === 'current' ? historicalBuy.reached.at(-1) ?? 0 : 0,
     sellTriggeredLevel: quote.status === 'current' ? historicalSell.reached.at(-1) ?? 0 : 0 };
-  // These are outstanding cumulative targets, not a trade history or a second
-  // allocation engine. Missing quantities permit only an indexed price reference.
+  // Zero shares have not completed any buy tier. Keep the first price visible
+  // even when its 25% allocation rounds down to zero lots; lot size limits the
+  // order quantity, not which price tier the user is waiting for.
+  // With existing shares, use the first uncovered cumulative target. Missing
+  // quantities permit only an indexed price reference.
   // See docs/dividend-stage1/next-tier-definition.md for the exact semantics.
   const priceReference = (levels: GridLevel[], indices: number[]): DividendNextTier | undefined => levels[0]?.priceMinor === undefined ? undefined
     : { index: indices[0], priceMinor: levels[0].priceMinor, basis: 'price_reference' };
-  const nextBuyRow = displayPlan.buy.findIndex(row => row.targetShares !== undefined && row.targetShares > shares);
+  const nextBuyRow = shares <= 0 && displayPlan.buy.length ? 0
+    : displayPlan.buy.findIndex(row => row.targetShares !== undefined && row.targetShares > shares);
   const nextSellRow = displayPlan.sell.findIndex(row => row.sellShares !== undefined && row.sellShares > 0);
   const buyTargetUnknown = partialBuy || !buyLevels.length || displayPlan.budgetMinor === undefined;
   const sellTargetUnknown = partialSell || !sellLevels.length;

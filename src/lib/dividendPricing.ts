@@ -1,7 +1,7 @@
 import type { DividendFinancialSectorReview } from './dividendFinancialSector.ts';
 import { dividendAnnualCashEvidence, dividendAnnualReportEvidence, type DividendAnnualReportEvidence } from './dividendAnnualReportEvidence.ts';
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
-import { dividendLedgerBase, dividendLedgerHistoryDiagnostics, type DividendLedger, type DividendLedgerBase } from './dividendLedger.ts';
+import { dividendLedgerBase, dividendLedgerHistoryDiagnostics, dividendLedgerNeedsOfficialReparse, type DividendLedger, type DividendLedgerBase } from './dividendLedger.ts';
 /** Changes to inputs, evidence or arithmetic must retire older cached drafts. */
 export const DIVIDEND_PRICING_CALCULATION_VERSION = 5;
 export const CLASSIC_DIVIDEND_BUY_YIELDS = [550, 575, 600, 650] as const;
@@ -521,7 +521,9 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const fcfCapApplied = false;
   // New grids use the verified most recent distribution batches, never a rolling cash window.
   const trailingDividend = input.trailingDividend;
-  const dividendBase = input.ledger ? dividendLedgerBase(input.ledger, asOf, { epsMicros: annuals[0]?.epsMicros, payoutBps: annuals[0]?.payoutBps }) : input.dividendBase;
+  const obsoleteOfficialExtraction = dividendLedgerNeedsOfficialReparse(input.ledger);
+  const dividendBase = obsoleteOfficialExtraction ? undefined : input.ledger
+    ? dividendLedgerBase(input.ledger, asOf, { epsMicros: annuals[0]?.epsMicros, payoutBps: annuals[0]?.payoutBps }) : input.dividendBase;
   const baseShapeValid = !!dividendBase && dividendBase.asOf === asOf && Number.isSafeInteger(dividendBase.dpsMicros) && dividendBase.dpsMicros! >= 0
     && ['annual', 'semiannual'].includes(dividendBase.frequency) && dividendBase.requiredBatches === (dividendBase.frequency === 'semiannual' ? 2 : 1)
     && Array.isArray(dividendBase.selectedBatchIds) && dividendBase.selectedBatchIds.length === dividendBase.requiredBatches
@@ -532,7 +534,8 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   // Only genuinely missing key pricing inputs block a grid: no ledger, an
   // incomplete key shape (cash/frequency/share basis missing), or zero cash.
   // Pagination, announcement and cross-check observations never block pricing.
-  block(!dividendBase, 'dividend_ledger_missing');
+  block(obsoleteOfficialExtraction, 'pricing_calculation_stale');
+  block(!dividendBase && !obsoleteOfficialExtraction, 'dividend_ledger_missing');
   block(!!dividendBase && !baseShapeValid, 'dividend_base_unverified');
   const baseUsable = baseShapeValid && !blockers.length;
   const d1Micros = baseUsable ? Number(BigInt(dividendBase!.dpsMicros!) * BigInt(10000 - taxBps) / 10000n) : undefined;
@@ -707,7 +710,8 @@ export function invalidateOutdatedDividendPricing(result: DividendPricingResult)
   const { value, shapeValid } = completeDividendPricingShape(result);
   if (!shapeValid) return { ...value, canApply: false,
     blockers: [...new Set([...value.blockers, 'pricing_calculation_stale' as const])] };
-  if (value.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && value.pricingBasis === 'recent_batches') {
+  const obsoleteOfficialExtraction = dividendLedgerNeedsOfficialReparse(value.ledger);
+  if (!obsoleteOfficialExtraction && value.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && value.pricingBasis === 'recent_batches') {
     if (Array.isArray(value.buyYieldBps) && Array.isArray(value.sellYieldBps)) return value;
     // v5 originally used only the classic ladder. Restore its missing metadata
     // without changing dated evidence, prices or any persisted user plan.

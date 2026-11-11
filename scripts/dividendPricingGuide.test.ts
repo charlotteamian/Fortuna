@@ -70,5 +70,14 @@ test('a valid cached calculation cannot overrule a newer local check that lacks 
   assert.equal(guide.status, 'waiting');
   assert.equal(guide.grossDpsMicros, undefined);
   assert.equal(guide.exampleBuyPriceMinor, undefined);
-  assert.deepEqual(guide.gaps.map(gap => gap.kind), ['cash']);
+  assert.deepEqual(guide.gaps.map(gap => gap.kind), ['refresh']);
+});
+
+test('a feed report-period recognition failure is distinct from missing cash and share-change amounts', () => {
+  const source = pricing();
+  source.status = 'blocked'; source.canApply = false; source.blockers = ['dividend_base_unverified'];
+  source.dividendBase = { ...source.dividendBase!, verified: false, frequency: 'unknown', flags: ['FREQUENCY_UNKNOWN'] };
+  source.ledger = { code: source.code, asOf, complete: true, issues: [], sourceUrls: [], events: [{ id: 'quarter-label', batchId: 'quarter-label', code: source.code,
+    reportDate: '2025-09-30', period: 'quarterly', implemented: true, verification: 'unverified', sources: [], issues: [], cashPer10Micros: 2100000, bonusPer10Bps: 0, transferPer10Bps: 0 }] };
+  assert.deepEqual(dividendPricingGuide(source).gaps.map(gap => gap.kind), ['source_period']);
 });

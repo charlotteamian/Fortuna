@@ -28,7 +28,7 @@ export async function loadDividendGridBases(codes: string[], asOf: string): Prom
         if (evidence.status === 'invalid') throw new Error('DIVIDEND_LEDGER_INVALID');
         const annual = pricing?.annuals[0];
         const base = dividendLedgerBase(ledger, ledger.asOf < asOf ? ledger.asOf : asOf, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps });
-        return [code, { ...base, verified: base.verified && evidence.usable, evidenceStatus: evidence.status, evidenceIssues: evidence.reasons,
+        return [code, { ...base, officialParserVersion: ledger.officialParserVersion, verified: base.verified && evidence.usable, evidenceStatus: evidence.status, evidenceIssues: evidence.reasons,
           ...(cacheError ? { error: cacheError } : {}) } satisfies DividendGridBasisResult] as const;
       }
       if (pricing?.dividendBase) {

@@ -19,6 +19,7 @@ export default defineConfig({
       '/dividend-trend-api': { target: 'https://web.ifzq.gtimg.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-trend-api/, '') },
       '/dividend-tencent-api': { target: 'https://proxy.finance.qq.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-tencent-api/, '') },
       '/dividend-api': { target: 'https://datacenter.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-api/, '') },
+      '/dividend-announcement-api': { target: 'https://np-anotice-stock.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-announcement-api/, '') },
       '/dividend-schedule-api': { target: 'https://emweb.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-schedule-api/, '') },
       '/dividend-index-api': { target: 'https://oss-ch.csindex.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-index-api/, '') },
       '/dividend-search-api': { target: 'https://searchapi.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-search-api/, '') },

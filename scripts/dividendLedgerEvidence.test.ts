@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { createHash } from 'node:crypto';
 import Dexie from 'dexie';
-import { dividendLedgerBase } from '../src/lib/dividendLedger.ts';
+import { dividendLedgerBase, DIVIDEND_OFFICIAL_PARSER_VERSION } from '../src/lib/dividendLedger.ts';
 import { dividendEvidenceStatus } from '../src/lib/dividendEvidenceStatus.ts';
 registerHooks({ resolve(specifier, context, nextResolve) {
   if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL) {
@@ -42,6 +42,47 @@ test('structured research never calls retired official transports and saves usab
   assert.equal(dividendLedgerBase(ledger,scope).dpsMicros,609000);
   assert.equal(dividendEvidenceStatus(ledger,scope).usable,true);
   assert.deepEqual(await loadSavedDividendLedger('000001'),ledger);
+});
+
+test('an existing complete Changjiang batch uses its implementation title rather than asking for the same cash again', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/dividend-changjiang-2026-11-11.json', import.meta.url), 'utf8'));
+  let requests = 0;
+  const ledger = await researchDividendLedger(fixture.distribution, '600900', fixture.capturedAt, {
+    readAnnouncementIndex: async url => { requests++; assert.equal(new URL(url).searchParams.get('begin_time'), '2026-02-05'); return fixture.announcements; },
+    post: async () => { throw new Error('must not request cninfo'); }, readPdf: async () => { throw new Error('must not download PDF'); },
+  });
+  const base = dividendLedgerBase(ledger, fixture.capturedAt);
+  assert.equal(requests, 1); assert.equal(base.frequency, 'semiannual'); assert.equal(base.dpsMicros, 1000000); assert.equal(base.verified, true);
+  assert.deepEqual(base.reportPeriods, ['2025-12-31', '2025-06-30']);
+  const corrected = ledger.events.find(event => event.exDate === '2026-02-12')!;
+  assert.equal(corrected.sourceReportDate, '2025-09-30'); assert.equal(corrected.reportDate, '2025-06-30');
+  assert.ok(corrected.sources.some(source => source.title?.includes('2025年中期权益分派实施公告')));
+  await researchDividendLedger(fixture.distribution, '600900', fixture.capturedAt, { readAnnouncementIndex: async () => { throw new Error('cached exact title must be reused'); } });
+  assert.equal((await loadSavedDividendLedger('600900'))?.events.find(event => event.exDate === '2026-02-12')?.reportDate, '2025-06-30');
+});
+
+test('a foreign, ambiguous or actual quarterly title cannot be guessed into an interim distribution', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/dividend-changjiang-2026-11-11.json', import.meta.url), 'utf8'));
+  for (const announcements of [
+    { ...fixture.announcements, data: { list: fixture.announcements.data.list.map((item: object) => ({ ...item, codes: [{ stock_code: '000001' }] })) } },
+    { ...fixture.announcements, data: { list: [...fixture.announcements.data.list, { ...fixture.announcements.data.list[0], title: '长江电力2025年第三季度权益分派实施公告' }] } },
+    { ...fixture.announcements, data: { list: fixture.announcements.data.list.map((item: object) => ({ ...item, title: '长江电力2025年第三季度权益分派实施公告' })) } },
+  ]) {
+    const ledger = await researchDividendLedger(fixture.distribution, '600900', fixture.capturedAt, { readAnnouncementIndex: async () => announcements });
+    assert.equal(dividendLedgerBase(ledger, fixture.capturedAt).verified, false);
+  }
+});
+
+test('an obsolete cached PDF extraction cannot override complete gross cash, and its original document is retained', async () => {
+  const value = { url: 'https://static.cninfo.com.cn/finalpage/2026-06-05/obsolete.PDF', sha256: 'old', checkedAt: scope,
+    event: { code: '000001', reportDate: '2025-12-31', period: 'annual', announcementDate: '2026-06-05', recordDate: '2026-06-11', exDate: '2026-06-12',
+      cashPer10Micros: 3240000, bonusPer10Bps: 0, transferPer10Bps: 0, sourceUrl: 'https://static.cninfo.com.cn/finalpage/2026-06-05/obsolete.PDF', verifiedAt: scope } };
+  await stored.table('documents').put(value);
+  const ledger = await researchDividendLedger(raw, '000001', scope);
+  assert.equal(ledger.officialParserVersion, DIVIDEND_OFFICIAL_PARSER_VERSION);
+  assert.equal(dividendLedgerBase(ledger, scope).dpsMicros, 609000);
+  assert.deepEqual(await stored.table('documents').get(value.url), value);
+  assert.ok(ledger.events.every(event => event.sources.every(source => source.url !== value.url)));
 });
 
 test('previous official receipts stay immutable optional evidence without a new official request', async () => {

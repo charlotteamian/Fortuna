@@ -42,6 +42,19 @@ test('the base-change alert uses a strict exact >10% boundary in either directio
   assert.deepEqual(zero.staleReasons, ['base_changed']); assert.equal(zero.basisChangeBps, 10000, 'a verified removal of all cash is a 100% change, not unknown');
 });
 
+test('a corrected extraction invalidates affected legacy grids even below the normal ten-percent threshold', () => {
+  const saved = { ...stock(), gridProvenance: { ...origin(), grossDpsMicros: 7672300 } }, before = structuredClone(saved);
+  const corrected = { ...basis(8368000), officialParserVersion: 2 };
+  const review = reviewDividendGrid(saved, corrected, { asOf });
+  assert.ok(review.basisChangeBps! < 1000);
+  assert.deepEqual(review.staleReasons, ['dividend_extraction_changed']);
+  assert.equal(review.basisState, 'saved_unverified');
+  assert.deepEqual(saved, before);
+  assert.deepEqual(reviewDividendGrid(saved, { ...corrected, dpsMicros: 7672300 }, { asOf }).staleReasons, []);
+  assert.deepEqual(reviewDividendGrid({ ...saved, gridProvenance: { ...saved.gridProvenance, officialParserVersion: 2 } }, corrected, { asOf }).staleReasons, [], 'current extraction retains the normal base-change rule');
+  assert.deepEqual(reviewDividendGrid({ ...saved, gridProvenance: { ...saved.gridProvenance, userConfirmedAt: '2026-10-01' } }, corrected, { asOf }).staleReasons, [], 'manual facts were not produced by the automatic parser');
+});
+
 test('an ex-date after generation retires the basis even when a complete recomputation is unavailable', () => {
   const saved = stock();
   assert.deepEqual(reviewDividendGrid(saved, { asOf, latestExDate: '2026-10-28', verified: false }, { asOf }).staleReasons, ['ex_dividend_since_generation']);

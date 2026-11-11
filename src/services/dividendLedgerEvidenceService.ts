@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
-import { buildDividendLedger, parseDividendOfficialAnnouncementText, type DividendLedger, type DividendOfficialEvent } from '../lib/dividendLedger';
+import { buildDividendLedger, dividendReportPeriodFromTitle, parseDividendOfficialAnnouncementText, DIVIDEND_OFFICIAL_PARSER_VERSION,
+  type DividendLedger, type DividendOfficialEvent, type DividendReportPeriodEvidence } from '../lib/dividendLedger';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
@@ -13,9 +14,11 @@ export interface DividendOfficialEvidenceOptions extends DividendRequestControl 
   retryFailedDocuments?: boolean;
   /** Continue cached-document pagination within one bounded explicit request. */
   maxEvidencePasses?: number;
+  /** Lightweight structured announcement titles; no document download. */
+  readAnnouncementIndex?: (url: string) => Promise<unknown>;
 }
 
-interface DocumentEvidence { url: string; sha256: string; checkedAt: string; event?: DividendOfficialEvent; issue?: string }
+interface DocumentEvidence { url: string; sha256: string; checkedAt: string; parserVersion?: number; event?: DividendOfficialEvent; issue?: string }
 const database = new Dexie('FortunaDividendLedger');
 database.version(1).stores({ documents: 'url', ledgers: 'code' });
 const documents: Table<DocumentEvidence, string> = database.table('documents');
@@ -91,7 +94,7 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
   };
   const download = options.readPdf ?? ((url: string) => readPdf(url, options));
   const extract = options.extractPdf ?? ((bytes: Uint8Array) => extractDividendAnnouncementPdf(bytes, options));
-  const cached = (await documents.toArray()).flatMap(record => record.event?.code === code ? [record.event] : []);
+  const cached = (await documents.toArray()).flatMap(record => record.parserVersion === DIVIDEND_OFFICIAL_PARSER_VERSION && record.event?.code === code ? [record.event] : []);
   const issues: string[] = [], unverifiedAnnouncementDates: string[] = [];
   const noticeDate = (item: Announcement) => item.announcementTime ? dateInChina(new Date(item.announcementTime)) : item.adjunctUrl?.match(/finalpage\/(\d{4}-\d{2}-\d{2})\//)?.[1] ?? 'unknown';
   try {
@@ -119,7 +122,7 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
       assertDividendRequestCurrent(options);
       const url = new URL(item.adjunctUrl!, 'https://static.cninfo.com.cn/').href;
       const saved = await documents.get(url);
-      if (saved?.event || saved?.checkedAt === asOf && !options.retryFailedDocuments) { if (saved.issue) { issues.push(saved.issue); unverifiedAnnouncementDates.push(noticeDate(item)); } continue; }
+      if (saved?.parserVersion === DIVIDEND_OFFICIAL_PARSER_VERSION && (saved.event || saved.checkedAt === asOf && !options.retryFailedDocuments)) { if (saved.issue) { issues.push(saved.issue); unverifiedAnnouncementDates.push(noticeDate(item)); } continue; }
       pending.push(item);
     }
     // Continue through older uncached documents on subsequent checks; completed evidence remains immutable.
@@ -137,18 +140,20 @@ export async function fetchDividendOfficialEvidence(code: string, asOf: string, 
           const sha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(bytes).buffer))].map(value => value.toString(16).padStart(2, '0')).join('');
           const text = await awaitDividendRequest(extract(bytes), options);
           const announcementDate = item.announcementTime ? dateInChina(new Date(item.announcementTime)) : url.match(/finalpage\/(\d{4}-\d{2}-\d{2})\//)?.[1];
-          const event = announcementDate ? parseDividendOfficialAnnouncementText(text, { code, announcementDate, sourceUrl: url, verifiedAt: asOf }) : undefined;
+          const previous = await documents.get(url);
+          const event = announcementDate ? parseDividendOfficialAnnouncementText(text, { code, announcementDate, sourceUrl: url, verifiedAt: previous?.event?.verifiedAt ?? asOf }) : undefined;
           await beforeDividendCacheWrite(options);
           if (currentDocument()) await database.transaction('rw', documents, async () => {
             assertDividendRequestCurrent(options);
-            await documents.put({ url, sha256, checkedAt: asOf, ...(event ? { event } : { issue: 'ANNOUNCEMENT_FIELDS_UNVERIFIED' }) });
+            if (event || !previous?.event) await documents.put({ url, sha256, checkedAt: previous?.event ? previous.checkedAt : asOf,
+              parserVersion: DIVIDEND_OFFICIAL_PARSER_VERSION, ...(event ? { event } : { issue: 'ANNOUNCEMENT_FIELDS_UNVERIFIED' }) });
             assertDividendRequestCurrent(options);
           });
           if (!event) { issues.push('ANNOUNCEMENT_FIELDS_UNVERIFIED'); unverifiedAnnouncementDates.push(noticeDate(item)); }
         } catch { assertDividendRequestCurrent(options); issues.push('ANNOUNCEMENT_DOWNLOAD_FAILED'); unverifiedAnnouncementDates.push(noticeDate(item)); }
       }
     }));
-    return { events: (await documents.toArray()).flatMap(record => record.event?.code === code ? [record.event] : []), issues: [...new Set(issues)], unverifiedAnnouncementDates: [...new Set(unverifiedAnnouncementDates)] };
+    return { events: (await documents.toArray()).flatMap(record => record.parserVersion === DIVIDEND_OFFICIAL_PARSER_VERSION && record.event?.code === code ? [record.event] : []), issues: [...new Set(issues)], unverifiedAnnouncementDates: [...new Set(unverifiedAnnouncementDates)] };
   } catch (error) {
     assertDividendRequestCurrent(options);
     const reason = error instanceof Error ? error.message : 'ANNOUNCEMENT_DOWNLOAD_FAILED';
@@ -163,6 +168,63 @@ async function rememberFailedLedgerAttempt(code: string, asOf: string, issues: s
     issues: [...new Set(issues)], sourceUrls: previous?.sourceUrls ?? [] });
 }
 
+export function dividendAnnouncementIndexUrl(code: string, announcementDate: string): string {
+  if (!/^\d{6}$/.test(code) || !/^\d{4}-\d{2}-\d{2}$/.test(announcementDate)) throw new Error('INVALID_DIVIDEND_ANNOUNCEMENT_SCOPE');
+  return `https://np-anotice-stock.eastmoney.com/api/security/ann?${new URLSearchParams({ sr: '-1', page_size: '100', page_index: '1',
+    ann_type: 'A', client_source: 'web', stock_list: code, begin_time: announcementDate, end_time: announcementDate })}`;
+}
+
+async function readAnnouncementIndex(url: string, control: DividendRequestControl): Promise<unknown> {
+  assertDividendRequestCurrent(control);
+  if (Capacitor.isNativePlatform()) {
+    const response = await awaitDividendRequest(CapacitorHttp.get({ url, responseType: 'json', connectTimeout: 8000, readTimeout: 8000 }), control);
+    if (response.status !== 200) throw new Error(`DIVIDEND_ANNOUNCEMENT_HTTP_${response.status}`);
+    return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+  }
+  const response = await fetch(url.replace('https://np-anotice-stock.eastmoney.com', '/dividend-announcement-api'), { cache: 'no-store', signal: dividendRequestSignal(control, 10000) });
+  if (!response.ok) throw new Error(`DIVIDEND_ANNOUNCEMENT_HTTP_${response.status}`);
+  return awaitDividendRequest(response.json(), control);
+}
+
+/** Resolve ambiguous quarter labels from matching structured implementation titles only. */
+async function resolveDividendReportPeriods(ledger: DividendLedger, options: DividendOfficialEvidenceOptions): Promise<DividendReportPeriodEvidence[]> {
+  const recent = ledger.events.filter(event => event.implemented && event.period !== 'special' && event.cashPer10Micros !== 0).slice(0, 6);
+  const latestYear = Number(recent[0]?.reportDate?.slice(0, 4));
+  const ambiguous = recent.filter(event => event.period === 'quarterly' && event.reportDate && event.announcementDate
+    && latestYear - Number(event.reportDate.slice(0, 4)) <= 2);
+  if (!ambiguous.length) return [];
+  const saved = await ledgers.get(ledger.code).catch(() => undefined);
+  const result: DividendReportPeriodEvidence[] = [];
+  for (const event of ambiguous) {
+    assertDividendRequestCurrent(options);
+    const cached = saved?.events.find(item => item.sourceReportDate === event.reportDate && item.exDate === event.exDate
+      && item.announcementDate === event.announcementDate && item.cashPer10Micros === event.cashPer10Micros);
+    const titleSource = cached?.sources.find(source => source.title && dividendReportPeriodFromTitle(source.title) === cached.reportDate);
+    if (cached?.reportDate && titleSource?.title) {
+      result.push({ code: ledger.code, announcementDate: event.announcementDate!, sourceReportDate: event.reportDate!,
+        reportDate: cached.reportDate, title: titleSource.title, sourceUrl: titleSource.url });
+      continue;
+    }
+    try {
+      const url = dividendAnnouncementIndexUrl(ledger.code, event.announcementDate!);
+      const raw = await awaitDividendRequest(options.readAnnouncementIndex ? options.readAnnouncementIndex(url) : readAnnouncementIndex(url, options), options) as {
+        success?: boolean | number; data?: { list?: { art_code?: string; codes?: { stock_code?: string }[]; title?: string; notice_date?: string }[] } };
+      if (!(raw.success === true || raw.success === 1) || !Array.isArray(raw.data?.list)) continue;
+      const matches = raw.data.list.flatMap(item => {
+        if (!Array.isArray(item.codes) || !item.codes.some(stock => stock.stock_code === ledger.code)
+          || item.notice_date?.slice(0, 10) !== event.announcementDate || typeof item.title !== 'string' || !/^AN\d+$/.test(item.art_code ?? '')) return [];
+        const reportDate = dividendReportPeriodFromTitle(item.title);
+        if (!reportDate || reportDate.slice(0, 4) !== event.reportDate!.slice(0, 4)) return [];
+        return [{ code: ledger.code, announcementDate: event.announcementDate!, sourceReportDate: event.reportDate!, reportDate,
+          title: item.title, sourceUrl: `https://data.eastmoney.com/notices/detail/${ledger.code}/${item.art_code}.html` }];
+      });
+      // Conflicting titles cannot pick a period or turn a genuine quarterly payer into a semiannual one.
+      if (new Set(matches.map(item => item.reportDate)).size === 1) result.push(...matches);
+    } catch { assertDividendRequestCurrent(options); }
+  }
+  return result;
+}
+
 export async function researchDividendLedger(raw: unknown, code: string, asOf: string, options: DividendOfficialEvidenceOptions = {}): Promise<DividendLedger> {
   assertDividendRequestCurrent(options);
   const current = claimDividendRequest(`ledger:${code}`);
@@ -172,9 +234,16 @@ export async function researchDividendLedger(raw: unknown, code: string, asOf: s
   // research; previously cached official documents, if any, are still merged
   // as immutable extra evidence.
   const cachedEvents: DividendOfficialEvent[] = (await documents.toArray().catch(() => []))
-    .flatMap(record => record.event?.code === code ? [record.event] : []);
+    // The old parser could capture tax-after text as the gross distribution.
+    // Preserve those documents, but do not let their obsolete extraction
+    // override a complete current structured cash row.
+    .flatMap(record => record.parserVersion === DIVIDEND_OFFICIAL_PARSER_VERSION && record.event?.code === code ? [record.event] : []);
   let ledger: DividendLedger;
-  try { ledger = buildDividendLedger(raw, code, asOf, { officialEvents: cachedEvents }); }
+  try {
+    ledger = buildDividendLedger(raw, code, asOf, { officialEvents: cachedEvents });
+    const reportPeriods = await resolveDividendReportPeriods(ledger, options);
+    if (reportPeriods.length) ledger = buildDividendLedger(raw, code, asOf, { officialEvents: cachedEvents, reportPeriods });
+  }
   catch (error) {
     await beforeDividendCacheWrite(control);
     await rememberFailedLedgerAttempt(code, asOf, [error instanceof Error ? error.message : 'INVALID_DIVIDEND_LEDGER_SOURCE', 'DIVIDEND_SOURCE_REFRESH_FAILED'], control);

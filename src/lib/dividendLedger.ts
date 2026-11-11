@@ -1,7 +1,8 @@
 /** One row per disclosed distribution; money is integer CNY micros throughout. */
 export type DividendLedgerPeriod = 'annual' | 'interim' | 'quarterly' | 'special' | 'unknown';
 export type DividendLedgerVerification = 'verified' | 'unverified' | 'conflict';
-export interface DividendLedgerSource { provider: 'eastmoney' | 'cninfo' | 'issuer'; url: string; announcementDate?: string; verifiedAt?: string }
+export interface DividendLedgerSource { provider: 'eastmoney' | 'cninfo' | 'issuer'; url: string; announcementDate?: string; verifiedAt?: string; title?: string }
+export interface DividendReportPeriodEvidence { code: string; announcementDate: string; sourceReportDate: string; reportDate: string; title: string; sourceUrl: string }
 export interface DividendOfficialEvent {
   code: string; reportDate: string; period: DividendLedgerPeriod; announcementDate: string;
   recordDate: string; exDate: string; cashPer10Micros: number;
@@ -10,15 +11,20 @@ export interface DividendOfficialEvent {
 }
 export interface DividendLedgerEvent {
   id: string; batchId: string; code: string; reportDate?: string; period: DividendLedgerPeriod;
-  announcementDate?: string; recordDate?: string; exDate?: string; cashPer10Micros?: number;
+  announcementDate?: string; recordDate?: string; exDate?: string; cashPer10Micros?: number; sourceReportDate?: string;
   bonusPer10Bps?: number; transferPer10Bps?: number; shareFactor?: number; normalizedDpsMicros?: number;
   implemented: boolean; proposal?: boolean; stage?: 'implemented' | 'proposal' | 'cancelled' | 'no_dividend' | 'unknown'; verification: DividendLedgerVerification; sources: DividendLedgerSource[]; issues: string[];
 }
-export interface DividendLedger { code: string; asOf: string; events: DividendLedgerEvent[]; complete: boolean; issues: string[]; sourceUrls: string[] }
+export interface DividendLedger { code: string; asOf: string; events: DividendLedgerEvent[]; complete: boolean; issues: string[]; sourceUrls: string[]; officialParserVersion?: number }
 export interface DividendLedgerBase {
   dpsMicros?: number; asOf: string; frequency: 'semiannual' | 'annual' | 'unknown'; requiredBatches: number;
   selectedBatchIds: string[]; latestExDate?: string; verified: boolean; flags: string[]; sourceUrls: string[]; reportPeriods: string[];
   crosscheckDpsMicros?: number; crosscheckDeviationBps?: number;
+}
+/** Historical PDF extractions remain readable, but their amounts cannot supply current arithmetic. */
+export function dividendLedgerNeedsOfficialReparse(ledger: DividendLedger | undefined): boolean {
+  return !!ledger && ledger.officialParserVersion !== DIVIDEND_OFFICIAL_PARSER_VERSION && Array.isArray(ledger.events)
+    && ledger.events.some(event => Array.isArray(event?.sources) && event.sources.some(source => source?.provider === 'cninfo' || source?.provider === 'issuer'));
 }
 const day = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -34,6 +40,13 @@ const distinct = <T>(values: T[]): T[] => [...new Set(values)];
 const periodFor = (reportDate?: string, title = ''): DividendLedgerPeriod => /特别|special/i.test(title) ? 'special'
   : reportDate?.endsWith('-12-31') ? 'annual' : reportDate?.endsWith('-06-30') ? 'interim'
   : /-(?:03-31|09-30)$/.test(reportDate ?? '') ? 'quarterly' : 'unknown';
+/** Announcement titles identify the distribution period, unlike a feed's latest financial report date. */
+export function dividendReportPeriodFromTitle(title: string): string | undefined {
+  if (/优先股|可转债|债券|H股|B股|法律意见|英文|更正前|摘要/.test(title)) return undefined;
+  const match = title.replace(/\s+/g, '').match(/(20\d{2})年?(半年度|中期|年度|前三季度|第三季度|三季度|第一季度|一季度)(?:(?:A股)?(?:权益分派|利润分配|分红派息|派息)|分红(?:A股)?)实施公告/);
+  if (!match) return undefined;
+  return `${match[1]}-${/半年度|中期/.test(match[2]) ? '06-30' : /前三季度|第三季度|三季度/.test(match[2]) ? '09-30' : /第一季度|一季度/.test(match[2]) ? '03-31' : '12-31'}`;
+}
 const officialSource = (url: string) => {
   try { const value = new URL(url); return value.protocol === 'https:' && ['cninfo.com.cn', 'sse.com.cn', 'szse.cn', 'hkexnews.hk'].some(host => value.hostname === host || value.hostname.endsWith(`.${host}`)); }
   catch { return false; }
@@ -50,16 +63,17 @@ function validOfficial(event: DividendOfficialEvent, code: string, asOf: string)
 }
 
 export function buildDividendLedger(distributionRaw: unknown, code: string, asOf: string,
-  options: { officialEvents?: DividendOfficialEvent[] } = {}): DividendLedger {
+  options: { officialEvents?: DividendOfficialEvent[]; reportPeriods?: DividendReportPeriodEvidence[] } = {}): DividendLedger {
   if (!/^\d{6}$/.test(code) || day(asOf) !== asOf) throw new Error('INVALID_DIVIDEND_LEDGER_SCOPE');
   const payload = distributionRaw as { success?: boolean; result?: { pages?: number; data?: Record<string, unknown>[] } };
   if (!payload?.success || !Array.isArray(payload.result?.data) || payload.result.data.some(row => row.SECURITY_CODE !== code)) throw new Error('INVALID_DIVIDEND_LEDGER_SOURCE');
   const sourceUrl = `https://data.eastmoney.com/yjfp/detail/${code}.html`;
-  const ledger: DividendLedger = { code, asOf, events: [], complete: payload.result.pages === undefined || payload.result.pages === 1, issues: [], sourceUrls: [sourceUrl] };
+  const ledger: DividendLedger = { code, asOf, events: [], complete: payload.result.pages === undefined || payload.result.pages === 1, issues: [], sourceUrls: [sourceUrl],
+    officialParserVersion: DIVIDEND_OFFICIAL_PARSER_VERSION };
   if (!ledger.complete) ledger.issues.push('SOURCE_PAGES_INCOMPLETE');
   const events = new Map<string, DividendLedgerEvent>();
   for (const row of payload.result.data) {
-    const reportDate = day(row.REPORT_DATE), announcementDate = day(row.NOTICE_DATE) ?? day(row.PLAN_NOTICE_DATE);
+    const sourceReportDate = day(row.REPORT_DATE), announcementDate = day(row.NOTICE_DATE) ?? day(row.PLAN_NOTICE_DATE);
     if (announcementDate && announcementDate > asOf) continue;
     const exDate = day(row.EX_DIVIDEND_DATE), recordDate = day(row.EQUITY_RECORD_DATE);
     const implemented = ['实施', '实施分配'].includes(String(row.ASSIGN_PROGRESS)) && !!exDate && exDate <= asOf;
@@ -70,10 +84,21 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
     const progress = String(row.ASSIGN_PROGRESS);
     const stage: DividendLedgerEvent['stage'] = /取消|终止/.test(progress) ? 'cancelled' : /不分配|不分红/.test(progress) ? 'no_dividend' : implemented ? 'implemented'
       : /预案|股东|董事/.test(progress) || /实施/.test(progress) && !!exDate && exDate > asOf ? 'proposal' : 'unknown';
+    // Some structured rows use the latest financial-report date for an interim
+    // distribution. Only a matching implementation title may correct that label.
+    const candidates = (options.reportPeriods ?? []).filter(item => item.code === code && item.announcementDate === announcementDate
+      && item.sourceReportDate === sourceReportDate && item.reportDate.slice(0, 4) === sourceReportDate?.slice(0, 4)
+      && dividendReportPeriodFromTitle(item.title) === item.reportDate && item.sourceUrl.startsWith(`https://data.eastmoney.com/notices/detail/${code}/`));
+    const correction = distinct(candidates.map(item => item.reportDate)).length === 1 ? candidates[0] : undefined;
+    const reportDate = correction?.reportDate ?? sourceReportDate;
     const period = periodFor(reportDate, String(row.IMPL_PLAN_PROFILE ?? ''));
     const batchId = `${code}:${reportDate ?? 'unknown'}:${exDate ?? 'pending'}:${period}`;
     const event: DividendLedgerEvent = { id: batchId, batchId, code, reportDate, period, announcementDate, recordDate, exDate, cashPer10Micros,
       bonusPer10Bps, transferPer10Bps, shareFactor, implemented, proposal: stage === 'proposal', stage, verification: 'unverified', sources: [{ provider: 'eastmoney', url: sourceUrl, announcementDate }], issues: [] };
+    if (correction && reportDate !== sourceReportDate) {
+      event.sourceReportDate = sourceReportDate;
+      event.sources.push({ provider: 'eastmoney', url: correction.sourceUrl, announcementDate, title: correction.title });
+    }
     if (!reportDate || !announcementDate || !recordDate || !exDate || cashPer10Micros === undefined) event.issues.push('EVENT_FIELDS_INCOMPLETE');
     if (shareFactor === undefined) event.issues.push('CAPITAL_ACTIONS_UNVERIFIED');
     if (recordDate && exDate && recordDate >= exDate) event.issues.push('EVENT_DATES_INVALID');
@@ -245,12 +270,15 @@ export function dividendLedgerHistoryDiagnostics(ledger: DividendLedger, prices:
   return { observations, samples, exclusionReasons: distinct(observations.filter(observation => !observation.usable).flatMap(observation => observation.flags)), priceSampleCount: unique.length, sampleCount: samples.length, from, through, spanYears, ageDays, reasons: usable ? [] : distinct(reasons), usable };
 }
 
+/** Parsed document caches before this version could mistake a tax example for gross cash. */
+export const DIVIDEND_OFFICIAL_PARSER_VERSION = 2;
+
 /** Conservative Shenzhen/Shanghai cash implementation parser. Unsupported layouts stay unverified. */
 export function parseDividendOfficialAnnouncementText(text: string, metadata: { code: string; announcementDate: string; sourceUrl: string; verifiedAt: string }): DividendOfficialEvent | undefined {
   if (!officialSource(metadata.sourceUrl) || !/^\d{6}$/.test(metadata.code) || !text.includes(metadata.code)) return undefined;
   const compact = text.replace(/(?:^|\n)\s*\d{1,3}\s*(?=\n|$)/g, '').replace(/\s+/g, '');
   if (!new RegExp(`(?:证券|股票)代码[：:]?${metadata.code}(?=\\D|$)`).test(compact)) return undefined;
-  const title = compact.match(/(20\d{2})(?:年(半年度|中期|年度|前三季度|第三季度|三季度|第一季度|一季度)|(年度|半年度|中期))(?:A股)?(?:权益分派|利润分配|分红派息|派息)实施公告/);
+  const title = compact.match(/(20\d{2})(?:年(半年度|中期|年度|前三季度|第三季度|三季度|第一季度|一季度)|(年度|半年度|中期))(?:A股)?(?:权益分派|利润分配|分红(?:派息)?|派息)(?:A股)?实施公告/);
   if (!title) return undefined;
   const periodText = title[2] || title[3];
   const period: DividendOfficialEvent['period'] = /半年度|中期/.test(periodText)
@@ -267,14 +295,22 @@ export function parseDividendOfficialAnnouncementText(text: string, metadata: { 
           ? '03-31'
           : '12-31'
   }`;
-  const section = compact.match(/二[、.．](?:本次实施的)?(?:A股)?(?:权益分派方案|利润分配方案|分红派息方案|分配方案)([\s\S]*?)(?:三[、.．]|$)/)?.[1];
+  const section = compact.match(/二[、.．](?:本次实施的)?(?:A股)?(?:中期|半年度)?(?:权益分派方案|利润分配方案|分红派息方案|分配方案)([\s\S]*?)(?:三[、.．]|$)/)?.[1];
   if (!section) return undefined;
-  const perTen = section.match(/每10股派(?:发)?(?:现金(?:股利|红利)?)?(?:人民币)?([\d.]+)元/);
-  // A Shanghai final implementation can mention both this cash and the annual
-  // total including interim cash. Read the first current implementation amount.
+  // Never use an annual aggregate or an investor-specific tax example as gross
+  // cash. Explicit gross labels can still identify a scheme stated after tax
+  // notes; unsupported table layouts and ambiguous amounts remain unknown.
   const currentScheme = section.split(/连同已派|全年/)[0];
-  const perShare = currentScheme.match(/每股派(?:发)?现金(?:股利|红利)?(?:人民币)?([\d.]+)元/);
-  const cashPer10Micros = perTen ? amount(perTen[1], 1e6) : perShare ? amount(perShare[1], 1e7) : undefined;
+  const firstTaxNote = currentScheme.search(/扣税后|税后/);
+  const cashCandidates = [...currentScheme.matchAll(/每(10)?股派(?:发)?(?:现金(?:股利|红利|分红)?)?(?:[（(](?:含税|税前)[）)])?(?:人民币)?([\d.]+)元/g)];
+  const cash = cashCandidates.find(candidate => {
+    const prefix = currentScheme.slice(0, candidate.index), suffix = currentScheme.slice(candidate.index! + candidate[0].length);
+    const afterTax = /(?:扣税后|税后)[：:]?$/.test(prefix) || /^[（(]?(?:扣税后|税后)/.test(suffix);
+    const explicitlyGross = /(?:税前|含税)[：:]?$/.test(prefix) || /[（(](?:含税|税前)[）)]/.test(candidate[0])
+      || /^[（(](?:含税|税前)(?:[）)；;，,]|$)/.test(suffix);
+    return !afterTax && (firstTaxNote < 0 || candidate.index! < firstTaxNote || explicitlyGross);
+  });
+  const cashPer10Micros = cash ? amount(cash[2], cash[1] ? 1e6 : 1e7) : undefined;
   const datePattern = '(20\\d{2})年(\\d{1,2})月(\\d{1,2})日';
   const readDate = (label: string) => { const match = compact.match(new RegExp(`${label}(?:为|是)?[：:]?${datePattern}`)); return match ? day(`${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`) : undefined; };
   let recordDate = readDate('(?:A股)?股权登记日'), exDate = readDate('(?:A股)?(?:除权除息日|除权[（(]息[）)]日|除息日)');
@@ -285,7 +321,7 @@ export function parseDividendOfficialAnnouncementText(text: string, metadata: { 
   const bonus = section.match(/每10股(?:派[^，。;；]*[,，])?送(?:红股)?([\d.]+)股/), transfer = section.match(/每10股(?:转增|以资本公积金转增)([\d.]+)股/);
   // An allocation section that explicitly states cash distribution without any
   // bonus/transfer share keywords is a cash-only scheme; ambiguous clauses stay unverified.
-  const cashOnlyScheme = (!!perShare || !!perTen) && /本次(?:实施的)?(?:A股)?(?:权益分派|利润分配|分红派息|分配)/.test(compact) && !/送(?:红)?股|转增/.test(section);
+  const cashOnlyScheme = !!cash && /本次(?:实施的)?(?:A股)?(?:中期|半年度)?(?:权益分派|利润分配|分红派息|分配)/.test(compact) && !/送(?:红)?股|转增/.test(section);
   const bonusPer10Bps = bonus ? amount(bonus[1], 1000) : /不送红股|不送股/.test(compact) || cashOnlyScheme ? 0 : undefined;
   const transferPer10Bps = transfer ? amount(transfer[1], 1000) : /不以(?:资本)?公积金转增股本|不转增股本/.test(compact) || cashOnlyScheme ? 0 : undefined;
   if (!recordDate || !exDate || cashPer10Micros === undefined || bonusPer10Bps === undefined || transferPer10Bps === undefined) return undefined;

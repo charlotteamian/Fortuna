@@ -1,0 +1,35 @@
+{
+  "version": "8.0.8",
+  "versionCode": 52,
+  "verifiedAt": "2026-11-11T03:18:34.470201+00:00",
+  "tests": {
+    "passed": 917,
+    "failed": 0
+  },
+  "lint": true,
+  "typescriptAndWebBuild": true,
+  "gitDiffCheck": true,
+  "androidFinalWebSync": true,
+  "iosFinalWebSyncAndVerify": true,
+  "iosBuildNumber": 52,
+  "webResourceCount": 48,
+  "screenshotRegressions": [
+    "zero holdings preserve tier one despite zero-lot targets",
+    "next tier status is independent from other touched tiers",
+    "existing interim cash resolved from exact implementation title",
+    "gross cash cannot come from after-tax examples for any security",
+    "outdated extraction cannot feed pricing or cash yield",
+    "corrected legacy saved base below 10 percent change requires confirmation"
+  ],
+  "liveDataCheck": {
+    "code": "600900",
+    "source": "Eastmoney structured distributions and matching announcement index",
+    "date": "2026-11-11",
+    "implementedGrossDpsMicros": 1000000,
+    "requiredBatches": 2,
+    "downloadsNewPdf": false
+  },
+  "physicalDeviceTested": false,
+  "physicalDeviceReason": "No Android device connected; adb devices returned an empty list.",
+  "scope": "Unit/integration tests use isolated IndexedDB. Browser validation uses synthetic fixtures and isolated Chrome contexts. No real user database was changed."
+}

@@ -36,6 +36,19 @@ test('today ledger recomputes the current batch base without fetching or changin
   assert.deepEqual(await store.table('ledgers').get('000001'), ledger);
 });
 
+test('an old PDF-derived ledger remains historical evidence until current structured inputs repair its gross cash', async () => {
+  const ledger = pingAnOfficialLedger('2026-10-30'); delete ledger.officialParserVersion;
+  await store.table('ledgers').put(ledger);
+  const basis = (await loadDividendGridBases(['000001'], '2026-10-30'))['000001'];
+  assert.equal(basis.verified, false); assert.equal(basis.evidenceStatus, 'incomplete');
+  assert.ok(basis.evidenceIssues.includes('DIVIDEND_OFFICIAL_EXTRACTION_OUTDATED'));
+  assert.deepEqual(await store.table('ledgers').get('000001'), ledger);
+  const raw = JSON.parse(readFileSync(new URL('./fixtures/dividend-pricing-pingan-2026-10-23.json', import.meta.url), 'utf8')).sources.distribution.data;
+  await researchDividendLedger(raw, '000001', '2026-10-30');
+  const repaired = (await loadDividendGridBases(['000001'], '2026-10-30'))['000001'];
+  assert.equal(repaired.verified, true); assert.equal(repaired.dpsMicros, 609000);
+});
+
 test('one malformed ledger is an explicit per-stock failure while another stock remains readable', async () => {
   const good = pingAnOfficialLedger('2026-10-30');
   const bad = { code: '600036', asOf: 'not-a-date', complete: true, events: [], issues: [], sourceUrls: [] };

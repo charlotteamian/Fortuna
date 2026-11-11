@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
+import { DIVIDEND_OFFICIAL_PARSER_VERSION } from '../src/lib/dividendLedger.ts';
 import {
   defaultDividendSelectionPrinciples, dividendResearchReadableSnapshot, evaluateDividendResearch, isDividendSelectionPrinciples,
   parseDividendDistributionResearch, parseDividendFinancialResearch, parseDividendResearchCodes,
@@ -371,7 +372,7 @@ test('current research yields require verified recent batches on the dated quote
         recordDate: new Date(Date.parse(exDate) - 86400000).toISOString().slice(0, 10), exDate,
         cashPer10Micros: Number(row.PRETAX_BONUS_RMB) * 1000000, bonusPer10Bps: Number(row.BONUS_RATIO) * 1000,
         transferPer10Bps: Number(row.IT_RATIO) * 1000, sourceUrl, verifiedAt: '2026-10-24' };
-      await cache.table('documents').put({ url: sourceUrl, sha256: 'synthetic-cash-basis-evidence', checkedAt: '2026-10-24', event });
+      await cache.table('documents').put({ url: sourceUrl, sha256: 'synthetic-cash-basis-evidence', checkedAt: '2026-10-24', parserVersion: DIVIDEND_OFFICIAL_PARSER_VERSION, event });
     }
     globalThis.fetch = async input => {
       const url = String(input);

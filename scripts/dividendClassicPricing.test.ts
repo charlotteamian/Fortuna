@@ -77,6 +77,23 @@ test('captured official Ping An final and interim announcements create the defau
   assert.deepEqual(dividendPricingMarketComparison(p).reachedBuyLevels, []);
 });
 
+test('direct pricing rejects obsolete official extraction before deriving cash or prices for every symbol', () => {
+  for (const code of ['000001', '300750', '600036']) {
+    const current = pingAnOfficialLedger(asOf);
+    current.code = code; current.events = current.events.map(event => ({ ...event, code }));
+    const valid = calculateDividendPricing(input({ code, ledger: current, dividendBase: undefined }));
+    assert.equal(valid.canApply, true);
+    const legacy = structuredClone(current); delete legacy.officialParserVersion;
+    const original = structuredClone(legacy);
+    const rejected = calculateDividendPricing(input({ code, ledger: legacy, dividendBase: valid.dividendBase }));
+    assert.equal(rejected.canApply, false); assert.equal(rejected.d1Micros, undefined);
+    assert.equal(rejected.dividendBase, undefined); assert.deepEqual(rejected.grid, []);
+    assert.equal(rejected.theoreticalPriceMinor, undefined); assert.equal(dividendPricingPlan(rejected), null);
+    assert.deepEqual(rejected.blockers, ['pricing_calculation_stale']);
+    assert.deepEqual(legacy, original, 'input rejection preserves original historical evidence and its dates');
+  }
+});
+
 test('historical TTM parser includes implemented ex-date cash once, excludes the lower boundary, plans and future disclosures', () => {
   const recent = event('2026-06-12', 3.6);
   const data = [firstObserved, event('2025-10-23', 9), recent, { ...recent }, event(asOf, 2.49),

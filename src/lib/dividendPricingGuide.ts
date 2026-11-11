@@ -2,7 +2,7 @@ import type { DividendCheckSummary } from './dividendCheckSummary.ts';
 import { invalidateOutdatedDividendPricing, type DividendPricingResult } from './dividendPricing.ts';
 import { dividendPricingPlan, dividendPricingPlanForCheck } from './dividendPricingPlan.ts';
 
-export type DividendPricingGapKind = 'conflict' | 'crosscheck' | 'frequency' | 'cash' | 'calculation' | 'other';
+export type DividendPricingGapKind = 'conflict' | 'crosscheck' | 'frequency' | 'source_period' | 'cash' | 'refresh' | 'calculation' | 'other';
 export interface DividendPricingGuide {
   status: 'ready' | 'conflict' | 'waiting';
   grossDpsMicros?: number;
@@ -32,11 +32,14 @@ export function dividendPricingGuide(source: DividendPricingResult, check?: Divi
   const plan = dividendPricingPlanForCheck(pricing, check?.kind === 'stock' ? check.currentPlan : undefined);
   const currentEvidenceChanged = !!calculatedPlan && !plan;
   const grouped = new Map<DividendPricingGapKind, string[]>();
-  for (const reason of new Set([...pricing.blockers, ...currentEvidenceChanged ? ['dividend_base_unverified'] : []])) {
-    const kind = kindFor(reason), reasons = grouped.get(kind) ?? [];
+  for (const reason of new Set([...pricing.blockers, ...currentEvidenceChanged ? ['current_evidence_changed'] : []])) {
+    const unresolvedPeriod = reason === 'dividend_base_unverified' && pricing.dividendBase?.flags.includes('FREQUENCY_UNKNOWN');
+    const kind = reason === 'current_evidence_changed' ? 'refresh' : unresolvedPeriod
+      ? pricing.ledger?.events.some(event => event.implemented && event.period === 'quarterly') ? 'source_period' : 'frequency'
+      : kindFor(reason), reasons = grouped.get(kind) ?? [];
     reasons.push(reason); grouped.set(kind, reasons);
   }
-  const priority: DividendPricingGapKind[] = ['conflict', 'crosscheck', 'frequency', 'cash', 'calculation', 'other'];
+  const priority: DividendPricingGapKind[] = ['conflict', 'crosscheck', 'source_period', 'frequency', 'cash', 'refresh', 'calculation', 'other'];
   const base = pricing.dividendBase;
   const verifiedBase = !currentEvidenceChanged && base?.verified && Number.isSafeInteger(base.dpsMicros) && base.dpsMicros! >= 0;
   const advisoryReasons = check ? [...check.risk.attention, ...check.risk.evidenceInsufficient]

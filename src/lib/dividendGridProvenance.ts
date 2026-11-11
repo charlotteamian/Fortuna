@@ -7,6 +7,7 @@ export interface DividendGridProvenance {
   taxBps: 0 | 1000 | 2000;
   parameterVersion: number;
   basisKind: 'recent_batches' | 'classic_ttm';
+  officialParserVersion?: number;
   userConfirmedAt?: string;
   userConfirmedExpiresOn?: string;
 }
@@ -16,10 +17,11 @@ export interface DividendGridBasisCheck {
   asOf: string;
   latestExDate?: string;
   verified: boolean;
+  officialParserVersion?: number;
 }
 
 export type DividendGridBasisState = 'verified' | 'saved_unverified' | 'unavailable';
-export type DividendGridStaleReason = 'base_changed' | 'ex_dividend_since_generation' | 'parameters_changed' | 'tax_changed' | 'basis_kind_changed';
+export type DividendGridStaleReason = 'base_changed' | 'dividend_extraction_changed' | 'ex_dividend_since_generation' | 'parameters_changed' | 'tax_changed' | 'basis_kind_changed';
 
 const integer = (value: unknown, min = 0): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= min;
 const date = (value: unknown): value is string => {
@@ -35,6 +37,7 @@ export function isDividendGridProvenance(value: unknown): value is DividendGridP
   return integer(origin.generatedAt, 1) && Number.isFinite(new Date(origin.generatedAt).getTime())
     && integer(origin.grossDpsMicros, 1) && [0, 1000, 2000].includes(origin.taxBps)
     && integer(origin.parameterVersion, 1) && ['recent_batches', 'classic_ttm'].includes(origin.basisKind)
+    && (origin.officialParserVersion === undefined || integer(origin.officialParserVersion, 1))
     && (origin.userConfirmedAt === undefined || date(origin.userConfirmedAt))
     && (origin.userConfirmedExpiresOn === undefined || date(origin.userConfirmedExpiresOn));
 }
@@ -62,6 +65,10 @@ export function reviewDividendGrid(stock: Pick<DividendStock, 'buyLevels' | 'sel
       basisChangeBps = Number((difference * 10000n + previous / 2n) / previous);
       // Use exact integers for the >10% decision, independent of the rounded display.
       if (difference * 10000n > previous * 1000n) staleReasons.push('base_changed');
+      // A corrected extraction is not a routine dividend fluctuation. An old
+      // parsed amount must be reviewed even when its error was below 10%.
+      if (difference > 0n && !origin.userConfirmedAt && basis!.officialParserVersion !== undefined
+        && basis!.officialParserVersion > (origin.officialParserVersion ?? 1)) staleReasons.push('dividend_extraction_changed');
     }
     // Ex-date evidence can retire an old grid even when the cash base cannot be recomputed.
     if (basis?.latestExDate && date(basis.latestExDate) && basis.latestExDate <= asOf && generatedDate && basis.latestExDate > generatedDate) staleReasons.push('ex_dividend_since_generation');

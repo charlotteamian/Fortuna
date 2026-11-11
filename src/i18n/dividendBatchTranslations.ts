@@ -37,6 +37,7 @@ export const dividendBatchZh = {
   div_batch_saved_waiting: '按已保存网格：未触发（基数未核对）',
   div_batch_saved_unknown: '按旧网格判断，行情或档价待核实',
   div_batch_stale_base_changed: '分红基数变化超过10%',
+  div_batch_stale_dividend_extraction_changed: '分红提取已修正，请确认重新生成价格',
   div_batch_stale_ex_dividend_since_generation: '网格生成后发生过除息或送转',
   div_batch_stale_parameters_changed: '参数版本已变化',
   div_batch_stale_tax_changed: '所选税率已变化',
@@ -71,6 +72,6 @@ export const dividendBatchEn: Record<keyof typeof dividendBatchZh, string> = {
   div_batch_history_announcement_unverified: 'Historical batch announcements unverified', div_batch_history_ledger_conflict: 'Historical dividend sources conflict',
   div_batch_saved_triggered: 'Saved grid: levels {{levels}} reached (base unchecked)', div_batch_saved_waiting: 'Saved grid: not triggered (base unchecked)',
   div_batch_saved_unknown: 'Old grid; quote or prices need checking',
-  div_batch_stale_base_changed: 'Dividend base changed by over 10%', div_batch_stale_ex_dividend_since_generation: 'An ex-date or share change followed generation',
+  div_batch_stale_base_changed: 'Dividend base changed by over 10%', div_batch_stale_dividend_extraction_changed: 'Dividend extraction corrected; confirm regenerated prices', div_batch_stale_ex_dividend_since_generation: 'An ex-date or share change followed generation',
   div_batch_stale_parameters_changed: 'Parameter version changed', div_batch_stale_tax_changed: 'Selected tax changed', div_batch_stale_basis_kind_changed: 'Dividend base method changed',
 };

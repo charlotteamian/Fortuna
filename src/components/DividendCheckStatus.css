@@ -32,3 +32,4 @@
 .div-check-status-evidence > summary:focus-visible { outline: 2px solid var(--asset-color); outline-offset: 2px; }
 
 .div-check-advisory { margin: var(--sp-2) 0; padding-left: var(--sp-4); color: var(--text-secondary); font-size: var(--fs-xs); }
+.div-check-data-date { color: var(--text-muted); font-size: var(--fs-xs); line-height: var(--lh-relaxed); overflow-wrap: anywhere; }

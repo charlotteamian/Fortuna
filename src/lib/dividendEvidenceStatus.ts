@@ -1,4 +1,4 @@
-import { dividendLedgerBase, type DividendLedger } from './dividendLedger.ts';
+import { dividendLedgerBase, dividendLedgerNeedsOfficialReparse, type DividendLedger } from './dividendLedger.ts';
 
 export interface DividendEvidenceStatus {
   status: 'current' | 'stale' | 'incomplete' | 'failed' | 'missing' | 'invalid';
@@ -24,6 +24,9 @@ export function dividendEvidenceStatus(ledger: DividendLedger | undefined, asOf:
     return { status: 'invalid', usable: false, reasons: ['DIVIDEND_LEDGER_INVALID'] };
   }
   const reasons = [...new Set(ledger.issues)];
+  if (dividendLedgerNeedsOfficialReparse(ledger)) {
+    return { status: 'incomplete', usable: false, reasons: [...reasons, 'DIVIDEND_OFFICIAL_EXTRACTION_OUTDATED'] };
+  }
   // Usability follows the key pricing inputs only: whether the required recent
   // batches normalise to a positive cash base. Pagination, announcement-fetch
   // failures and cross-day staleness stay visible as reasons but never block.

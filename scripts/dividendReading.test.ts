@@ -44,12 +44,12 @@ const stock = { ...defaultDividendStocks()[0], weightBps: 10000, buyPaused: true
 const summary = (shares = 500) => dividendCheckSummary({ stock, totalBudgetMinor: 1000000, shares, asOf, now });
 const render = (value: DividendCheckSummary, amountVisible = true) => renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(CompactPlan, { summary: value, amountVisible })));
 
-test('compact targets keep original holding target, deepest observed touch and current cumulative difference distinct', () => {
+test('compact targets show original holding target and price status without redundant touch commentary', () => {
   const value = summary(), html = render(value);
   assert.equal(value.grid.nextBuy?.index, 3);
-  assert.match(html, /原第3档/); assert.match(html, /最深触价：原第4档/);
+  assert.match(html, /原第3档/); assert.match(html, /到价/);
   assert.match(html, new RegExp(`累计持仓目标 ${value.grid.nextBuy!.targetShares!.toLocaleString('zh')} 股`));
-  assert.match(html, new RegExp(`本轮累计差额 ${value.actionCheck.additionalBuyShares!.toLocaleString('zh')} 股`));
+  assert.doesNotMatch(html, /最深触价|本轮累计差额|本轮累计卖出/);
   assert.match(html, /手动暂停新增买入/); assert.doesNotMatch(html, /已成交|已执行|<table/);
 });
 
@@ -73,12 +73,30 @@ test('stale quotes retain source time without a current deepest touch or fabrica
   assert.doesNotMatch(html, /最深触价|已成交/);
 });
 
-test('compact reading displays at most three primary reasons with one complete evidence entrance', () => {
+test('compact reading keeps actionable problems and one data-date location without evidence disclosures', () => {
   const html = render(summary());
   const primary = html.match(/<ul class="div-check-primary-reasons">(.*?)<\/ul>/s)![1];
   assert.ok((primary.match(/<li/g) ?? []).length <= 3);
-  assert.equal((html.match(/<details class="div-check-status-evidence">/g) ?? []).length, 1);
-  assert.match(html, /查看全部依据/); assert.match(html, /本次检查日|核验|来源/);
+  assert.equal((html.match(/class="div-check-data-date"/g) ?? []).length, 1);
+  assert.match(html, /数据更新：行情 2026-11-01 10:00/);
+  assert.doesNotMatch(html, /查看全部依据|检查生成|研究生成|<details|价格依据/);
+});
+
+test('zero holdings with an expensive stock retains tier one and explains the lot constraint without zero-share targets', () => {
+  const html = render(dividendCheckSummary({ stock: { ...stock, buyPaused: false,
+    buyLevels: [12554, 12008, 11508, 10623].map(priceMinor => ({ priceMinor, yieldBps: 550, portionBps: 2500 })),
+    quote: { priceMinor: 24713, date: `${asOf} 10:00`, fetchedAt: now } }, totalBudgetMinor: 2083000, shares: 0, asOf, now }));
+  assert.match(html, /原第1档 · ¥125.54/);
+  assert.match(html, /该档预算不足 1 手/);
+  assert.match(html, /未到价/);
+  assert.doesNotMatch(html, /原第3档|累计持仓目标 0 股|最深触价/);
+});
+
+test('the next tier does not inherit a price touch from an earlier covered tier', () => {
+  const buy = render(dividendCheckSummary({ stock: { ...stock, quote: { ...stock.quote, priceMinor: 900 } }, totalBudgetMinor: 1000000, shares: 500, asOf, now }));
+  assert.match(buy, /原第3档 · ¥6<\/span><small>累计持仓目标 [\d,]+ 股<\/small><small>未到价/);
+  const sell = render(dividendCheckSummary({ stock: { ...stock, quote: { ...stock.quote, priceMinor: 1400 } }, totalBudgetMinor: 1000000, shares: 100, asOf, now }));
+  assert.match(sell, /原第4档 · ¥18<\/span><small>累计卖出目标 100 股<\/small><small>未到价/);
 });
 
 test('manual amount masking preserves public stock prices and the chosen tier without exposing monetary or share amounts', () => {

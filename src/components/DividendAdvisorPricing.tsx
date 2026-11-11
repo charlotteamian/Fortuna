@@ -125,6 +125,12 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
   const plan = dividendPricingPlanForCheck(pricing, check?.currentPlan);
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
   const pct = (value: number) => `${Number((value / 100).toFixed(2))}%`;
+  const comparison = dividendPricingMarketComparison(pricing);
+  const firstBuy = plan?.buyLevels[0];
+  const comparisonPrice = check?.trigger.quote.status === 'current' ? check.trigger.quote.priceMinor
+    : comparison.quoteUsable ? pricing.currentPriceMinor : undefined;
+  const belowQuoteBps = comparisonPrice !== undefined && firstBuy?.priceMinor !== undefined && comparisonPrice > firstBuy.priceMinor
+    ? Math.round((comparisonPrice - firstBuy.priceMinor) * 10000 / comparisonPrice) : undefined;
   const proposal: DividendPlanProposal | null = plan ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: `¥${((pricing.d1Micros ?? 0) / 1e6).toFixed(6)}`, price: yuan(pricing.theoreticalPriceMinor) }), ...plan,
     gridProvenance: dividendPricingProvenance(pricing, generatedAt),
@@ -135,8 +141,9 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
     {pricing.userConfirmedEvidence && <p className="div-ai-muted">{t('div_manual_used', { date: pricing.userConfirmedEvidence.confirmedAt, expiry: pricing.userConfirmedEvidence.expiresOn })}</p>}
     {filling && onResearchUpdated && <DividendPricingInputsDialog code={code} pricing={pricing} onClose={() => setFilling(false)} onSaved={onResearchUpdated} />}
     {pricing.blockers.includes('pricing_calculation_stale') ? <p className="div-warning">{t('div_v2_pricing_model_stale')}</p> : <>
-      <p className="div-ai-muted">{t('div_check_grid_caption')}</p>
-      {plan && <><p className="div-ai-muted">{t('div_batch_columns_note', { tax: pct(pricing.taxBps ?? 0) })}</p>
+      {plan && <><p className="div-ai-muted">{t('div_price_guide_formula_short', { gross: (pricing.dividendBase!.dpsMicros! / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }), tax: pct(pricing.taxBps),
+        net: (pricing.d1Micros! / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }), yield: pct(firstBuy!.yieldBps), price: yuan(firstBuy!.priceMinor) })}</p>
+        {belowQuoteBps !== undefined && <p className="div-ai-muted">{t('div_price_guide_market_gap', { gap: pct(belowQuoteBps) })}</p>}
         {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)}</caption><thead><tr>
           <th scope="col">{t('div_grid_level_column')}</th><th scope="col">{t('div_batch_gross_price')}</th><th scope="col">{t('div_batch_net_price')}</th>
         </tr></thead><tbody>{plan[side === 'buy' ? 'buyLevels' : 'sellLevels'].map((level, index) => {

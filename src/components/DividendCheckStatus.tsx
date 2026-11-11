@@ -91,20 +91,33 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
     </span>}
   </li>;
   const gridKey = summary.grid.userConfirmedAt && summary.grid.status === 'verified' ? 'div_manual_grid_confirmed' : summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
-  return <section className={`div-check-status${mode === 'row' ? ' div-check-status-row' : ''}`} aria-label={t('div_check_status_title')}>
-    {mode === 'row' && <p className={`div-focus-check-title is-${summary.eligibility.status}`}>{t(`div_focus_eligibility_${summary.eligibility.status}`)}</p>}
-    {mode !== 'row' && <dl className="div-check-status-main"><div><dt>{t(summary.kind === 'fund' ? 'div_check_fund_eligibility' : 'div_check_eligibility')}</dt>
+  if (mode === 'row') {
+    const actionable = [...new Set([
+      ...reasons.filter(reason => reason === 'manual_pause'),
+      ...summary.grid.reasons.filter(reason => ['dividend_extraction_changed', 'base_changed', 'tax_changed', 'parameters_changed', 'basis_kind_changed', 'ex_dividend_since_generation'].includes(reason)),
+      ...genuineRisks.map(item => item.reason),
+      ...primaryReasons,
+    ])].slice(0, 2);
+    const evidenceDates = [...new Set(dates.evidenceVerifiedDates)].sort();
+    const evidenceDate = evidenceDates.length > 1 ? `${evidenceDates[0]} – ${evidenceDates.at(-1)}` : evidenceDates[0];
+    return <section className="div-check-status div-check-status-row" aria-label={t('div_check_status_title')}>
+      <p className={`div-focus-check-title is-${summary.eligibility.status}`}>{t(`div_focus_eligibility_${summary.eligibility.status}`)}</p>
+      {actionable.length > 0 && <ul className="div-check-primary-reasons">{actionable.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong></li>)}</ul>}
+      <p className="div-check-data-date">{t('div_read_data_updated', { quote: dates.quoteSourceAt ?? quote.date ?? t('div_check_date_unknown'),
+        dividend: evidenceDate ?? summary.grid.userConfirmedAt ?? t('div_check_date_unknown') })}</p>
+      {children}
+    </section>;
+  }
+  return <section className="div-check-status" aria-label={t('div_check_status_title')}>
+    <dl className="div-check-status-main"><div><dt>{t(summary.kind === 'fund' ? 'div_check_fund_eligibility' : 'div_check_eligibility')}</dt>
       <dd className={`is-${summary.eligibility.status}`}>{t(`div_check_${summary.kind === 'fund' ? 'fund_' : ''}eligibility_${summary.eligibility.status}`)}</dd></div>
       <div><dt>{t('div_check_grid')}</dt><dd>{t(gridKey)} <small>· {t(`div_check_origin_${summary.grid.origin}`)}</small></dd></div>
       <div><dt>{t(quote.status === 'current' ? 'div_check_observation_today' : 'div_check_observation_unknown')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side} className={`div-check-status-observation is-${summary.trigger[side]}`}>{t(`div_check_${side}`)} · {t(`div_check_trigger_${summary.trigger[side]}`)}</span>)}</dd></div>
       <div><dt>{t('div_check_action')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side} className="div-check-status-observation">{t(`div_check_${side}`)} · {t(`div_check_action_${summary.actionCheck[side].status}`)}</span>)}</dd></div>
-    </dl>}
-    {primaryReasons.length > 0 && (mode === 'row' ? <ul className="div-check-primary-reasons">{primaryReasons.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong></li>)}</ul> : reasonItems(primaryReasons))}
-    {mode !== 'row' && <p className="div-check-status-note">{t('div_check_observation_note')}</p>}
-    <details className="div-check-status-evidence"><summary>{t(mode === 'row' ? 'div_read_evidence' : 'div_check_evidence')}</summary>
-      {mode === 'row' && <dl className="div-check-status-main"><div><dt>{t('div_check_grid')}</dt><dd>{t(gridKey)}</dd></div>
-        <div><dt>{t(quote.status === 'current' ? 'div_check_observation_today' : 'div_check_observation_unknown')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side}>{t(`div_check_${side}`)} · {t(`div_check_trigger_${summary.trigger[side]}`)}</span>)}</dd></div>
-        <div><dt>{t('div_check_action')}</dt><dd>{(['buy', 'sell'] as const).map(side => <span key={side}>{t(`div_check_${side}`)} · {t(`div_check_action_${summary.actionCheck[side].status}`)}</span>)}</dd></div></dl>}
+    </dl>
+    {primaryReasons.length > 0 && reasonItems(primaryReasons)}
+    <p className="div-check-status-note">{t('div_check_observation_note')}</p>
+    <details className="div-check-status-evidence"><summary>{t('div_check_evidence')}</summary>
       {remainingReasons.length > 0 && <div><h4>{t('div_check_more_reasons')}</h4>{reasonItems(remainingReasons)}</div>}
       <p>{quote.status === 'unknown' ? t('div_check_quote_unknown') : t(quote.status === 'current' ? 'div_check_current_quote' : 'div_check_last_quote', { price: publicPrice, date: dates.quoteSourceAt ?? quote.date ?? t('div_check_date_unknown') })}</p>
       {quote.status !== 'current' && summary.trigger.lastAvailable && <p>{t('div_check_last_observation', { date: summary.trigger.lastAvailable.date,

@@ -69,7 +69,6 @@ jobs:
 
       - name: Test data and update behavior
         run: npm test
-        continue-on-error: true
 
       - name: Lint and build web app
         run: npm run release:web

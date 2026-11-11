@@ -1,0 +1,310 @@
+{
+  "success": true,
+  "scope": "Isolated Chrome contexts and synthetic fixtures only. External traffic blocked. No real user database, live research or physical device.",
+  "checks": [
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Paused stocks keep the resume-review controls in the expanded plan",
+      "passed": true
+    },
+    {
+      "name": "Manage action opens the synthetic saved stock",
+      "passed": true
+    },
+    {
+      "name": "Discuss action opens chat from the selected stock",
+      "passed": true
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Screenshot regression and pricing explanation",
+      "passed": true,
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "synthetic": {
+        "code": "000005",
+        "budgetMinor": 2083000,
+        "quoteMinor": 24713,
+        "grossDpsMicros": 8368000,
+        "firstBuyMinor": 13693,
+        "savedGrossDpsMicros": 7672300,
+        "savedFirstBuyMinor": 12554
+      },
+      "nextBuyTier": 1,
+      "nextBuyState": "below_lot"
+    },
+    {
+      "name": "Eight width/font/theme combinations keep one date line, correct first tier, readable layouts and working expand/collapse",
+      "passed": true
+    }
+  ],
+  "layouts": [
+    {
+      "name": "selection collapsed",
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "name": "selection collapsed",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "name": "selection expanded",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    }
+  ],
+  "screenshots": [
+    "stock-collapsed-320-1-light.png",
+    "stock-expanded-320-1-light.png",
+    "stock-collapsed-320-1-dark.png",
+    "stock-expanded-320-1-dark.png",
+    "stock-collapsed-320-1.3-light.png",
+    "stock-expanded-320-1.3-light.png",
+    "stock-collapsed-320-1.3-dark.png",
+    "stock-expanded-320-1.3-dark.png",
+    "stock-collapsed-390-1-light.png",
+    "stock-expanded-390-1-light.png",
+    "stock-collapsed-390-1-dark.png",
+    "stock-expanded-390-1-dark.png",
+    "stock-collapsed-390-1.3-light.png",
+    "stock-expanded-390-1.3-light.png",
+    "stock-collapsed-390-1.3-dark.png",
+    "stock-expanded-390-1.3-dark.png"
+  ],
+  "errors": [],
+  "fixtureInspection": {
+    "basisDpsMicros": 8368000,
+    "cachedDpsMicros": 8368000,
+    "basisVerified": true,
+    "pricingCanApply": true,
+    "currentFirstBuyMinor": 13693,
+    "savedFirstBuyMinor": 12554,
+    "savedGridReasons": [
+      "dividend_extraction_changed"
+    ]
+  }
+}

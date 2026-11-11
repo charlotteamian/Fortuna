@@ -208,6 +208,35 @@ test('multiple reached buy tiers preserve the outstanding target separately from
   assert.ok(result.actionCheck.additionalBuyShares! > result.grid.nextBuy!.targetShares!);
 });
 
+test('a zero holding keeps the first buy price when the first two allocations cannot buy a full lot', () => {
+  const zeroHolding: DividendStock = { ...stock, code: '300750', name: 'Synthetic CATL screenshot', manualShares: 0,
+    buyLevels: [13694, 13098, 12552, 11587].map((priceMinor, index) => ({ priceMinor, yieldBps: [550, 575, 600, 650][index], portionBps: 2500 })),
+    quote: { ...stock.quote!, priceMinor: 24713 } };
+  const result = summarize({ stock: zeroHolding, totalBudgetMinor: 2083000, shares: 0,
+    research: { ...research, code: zeroHolding.code, pricing: { ...pricing, currentPriceMinor: 24713 } } });
+  assert.deepEqual(result.displayPlan.buy.map(row => row.targetShares), [0, 0, 100, 100]);
+  assert.deepEqual(result.grid.nextBuy, { index: 1, priceMinor: 13694, basis: 'cumulative_target', targetShares: 0 });
+  assert.equal(result.grid.nextBuyState, 'below_lot');
+  assert.equal(result.trigger.buy, 'not_triggered');
+  assert.deepEqual(result.trigger.buyLevels, []);
+  assert.equal(result.actionCheck.additionalBuyShares, 0);
+  assert.equal(result.actionCheck.buy.status, 'wait');
+  assert.equal(result.actionCheck.shares, 0);
+  assert.equal(result.actionCheck.budgetMinor, 2083000);
+});
+
+test('a first tier with zero lots stays visible after a price touch without inventing a purchase', () => {
+  const result = summarize({ totalBudgetMinor: 10000, shares: 0,
+    stock: { ...stock, quote: { ...stock.quote!, priceMinor: plan.buyLevels[0].priceMinor } },
+    research: { ...research, pricing: { ...pricing, currentPriceMinor: plan.buyLevels[0].priceMinor } }, quoteSession: 'confirmed' });
+  assert.equal(result.displayPlan.buy[0].targetShares, 0);
+  assert.equal(result.grid.nextBuy?.index, 1);
+  assert.equal(result.grid.nextBuyState, 'below_lot');
+  assert.equal(result.trigger.buy, 'triggered');
+  assert.equal(result.actionCheck.additionalBuyShares, 0);
+  assert.notEqual(result.actionCheck.buy.status, 'confirmation_candidate');
+});
+
 test('pausing does not change next prices or cumulative targets and never unlocks a buy', () => {
   const active = summarize(), paused = summarize({ stock: { ...stock, buyPaused: true } });
   assert.deepEqual(paused.grid.nextBuy, active.grid.nextBuy); assert.deepEqual(paused.grid.nextSell, active.grid.nextSell);
@@ -224,7 +253,8 @@ test('missing budget, empty budget and a sub-lot gap are distinct from fully cov
   const smallGap = summarize({ shares: firstTarget - 50 });
   assert.equal(smallGap.grid.nextBuyState, 'below_lot'); assert.equal(smallGap.grid.nextBuy?.index, 1);
   const tinyBudget = summarize({ totalBudgetMinor: 1, shares: 0 });
-  assert.equal(tinyBudget.grid.nextBuyState, 'below_lot'); assert.equal(tinyBudget.grid.nextBuy, undefined);
+  assert.equal(tinyBudget.grid.nextBuyState, 'below_lot');
+  assert.deepEqual(tinyBudget.grid.nextBuy, { index: 1, priceMinor: plan.buyLevels[0].priceMinor, basis: 'cumulative_target', targetShares: 0 });
 });
 
 test('next sell respects current holdings and original lot rounding without inventing executed tier progress', () => {
