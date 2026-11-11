@@ -1113,6 +1113,10 @@ input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .guide-disclaimer { margin-top: var(--sp-4); padding: 0.875rem; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); font-size: var(--fs-sm); line-height: var(--lh-relaxed); }
 
 .startup-error { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--sp-3); padding: var(--sp-8); text-align: center; }
+.app-ui-error { min-height: 60dvh; }
+.app-ui-error-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-3); margin-top: var(--sp-2); }
+.app-ui-error-details { max-width: min(100%, 34em); text-align: left; color: var(--text-muted); font-size: var(--fs-sm); }
+.app-ui-error-details code { display: block; margin-top: var(--sp-2); overflow-wrap: anywhere; }
 
 /* ---- Large text, narrow screens, and assistive interaction ---- */
 :focus-visible { outline: 3px solid var(--focus-color); outline-offset: 2px; }

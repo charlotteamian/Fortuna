@@ -7,7 +7,7 @@ import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
 import { buildDividendLedger } from '../src/lib/dividendLedger.ts';
 import { pingAnOfficialLedger, verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
 import { DIVIDEND_PRICING_CALCULATION_VERSION, calculateDividendPricing, defaultDividendPricingMethod, dividendPricingAnnuals, dividendPricingPriceHistory, dividendPricingYieldHistory, dividendPricingTrailingDividend, dividendPricingHistoryCoverage, dividendPricingMarketComparison, invalidateOutdatedDividendPricing,
-  parseDividendTreasury, parseDividendOpportunityRows, dividendPricingReadable, type DividendYieldHistory, type DividendPricingAnnual } from '../src/lib/dividendPricing.ts';
+  parseDividendTreasury, parseDividendOpportunityRows, dividendPricingReadable, type DividendYieldHistory, type DividendPricingAnnual, type DividendPricingResult } from '../src/lib/dividendPricing.ts';
 
 const asOf = '2026-10-21';
 const annuals: DividendPricingAnnual[] = Array.from({length:5},(_,i) => ({year:2025-i,reportDate:`${2025-i}-12-31`,noticeDate:`${2026-i}-03-20`,
@@ -462,4 +462,21 @@ test('empty monthly data fails parsing and repeated monthly rows cannot manufact
   assert.throws(()=>dividendPricingPriceHistory({code:0,data:{sh600036:{month:[]}}},'sh600036',asOf),/PRICE_HISTORY_EMPTY/);
   const rows=[['2026-09-29','40','41'],['2026-09-30','40','42'],null,['2026-10-22','40','43']];
   assert.deepEqual(dividendPricingPriceHistory({code:0,data:{sh600036:{month:rows}}},'sh600036',asOf),[{date:'2026-09-30',priceMinor:4200}]);
+});
+test('partial cached pricing objects stay readable evidence without blanking the selection view', () => {
+  const current = calculateDividendPricing(input());
+  for (const missing of ['blockers', 'warnings', 'grid', 'annuals', 'anchors', 'sourceUrls'] as const) {
+    const partial: Record<string, unknown> = { ...current };
+    delete partial[missing];
+    const guarded = invalidateOutdatedDividendPricing(partial as unknown as DividendPricingResult);
+    assert.equal(guarded.canApply, false, `${missing} must not create a confirmable plan`);
+    assert.ok(guarded.blockers.includes('pricing_calculation_stale'), `${missing} must be marked stale`);
+    assert.ok(Array.isArray(guarded.blockers) && Array.isArray(guarded.warnings) && Array.isArray(guarded.grid) && Array.isArray(guarded.annuals));
+    assert.ok(guarded.anchors && typeof guarded.anchors === 'object');
+    assert.equal(dividendPricingPlan(guarded), null);
+    assert.equal(dividendPricingMarketComparison(guarded).quoteUsable, false);
+    assert.doesNotThrow(() => dividendPricingReadable(guarded));
+    assert.equal(current[missing] !== undefined, true, 'the source result must not be mutated');
+  }
+  assert.doesNotThrow(() => invalidateOutdatedDividendPricing({} as DividendPricingResult));
 });

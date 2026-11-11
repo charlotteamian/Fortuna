@@ -678,19 +678,47 @@ export function humanizeDividendPricingIssues(text: string, language: string): s
 }
 
 /** Preserve dated inputs and numbers while preventing reuse of obsolete arithmetic. */
+/** A research snapshot saved by an older build, or by an interrupted fetch, can
+ * lack fields that the type declares as required. Repair only the object's shape;
+ * never invent evidence, dates or prices. An incomplete object is historical
+ * evidence and must never produce a confirmable grid. */
+function completeDividendPricingShape(result: DividendPricingResult): { value: DividendPricingResult; shapeValid: boolean } {
+  const source: Partial<DividendPricingResult> = result;
+  const shapeValid = Array.isArray(source.blockers) && Array.isArray(source.warnings)
+    && Array.isArray(source.grid) && Array.isArray(source.annuals) && Array.isArray(source.sourceUrls)
+    && !!source.anchors && typeof source.anchors === 'object'
+    && (source.status === 'ready' || source.status === 'blocked') && typeof source.canApply === 'boolean';
+  const value: DividendPricingResult = {
+    ...result,
+    blockers: Array.isArray(source.blockers) ? source.blockers : [],
+    warnings: Array.isArray(source.warnings) ? source.warnings : [],
+    pauseReasons: Array.isArray(source.pauseReasons) ? source.pauseReasons : undefined,
+    grid: Array.isArray(source.grid) ? source.grid : [],
+    annuals: Array.isArray(source.annuals) ? source.annuals : [],
+    sourceUrls: Array.isArray(source.sourceUrls) ? source.sourceUrls : [],
+    anchors: source.anchors && typeof source.anchors === 'object' ? source.anchors : {},
+    status: source.status === 'ready' ? 'ready' : 'blocked',
+    canApply: source.canApply === true,
+  };
+  return { value, shapeValid };
+}
+
 export function invalidateOutdatedDividendPricing(result: DividendPricingResult): DividendPricingResult {
-  if (result.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && result.pricingBasis === 'recent_batches') {
-    if (Array.isArray(result.buyYieldBps) && Array.isArray(result.sellYieldBps)) return result;
+  const { value, shapeValid } = completeDividendPricingShape(result);
+  if (!shapeValid) return { ...value, canApply: false,
+    blockers: [...new Set([...value.blockers, 'pricing_calculation_stale' as const])] };
+  if (value.calculationVersion === DIVIDEND_PRICING_CALCULATION_VERSION && value.pricingBasis === 'recent_batches') {
+    if (Array.isArray(value.buyYieldBps) && Array.isArray(value.sellYieldBps)) return value;
     // v5 originally used only the classic ladder. Restore its missing metadata
     // without changing dated evidence, prices or any persisted user plan.
-    if (result.buyYieldBps === undefined && result.sellYieldBps === undefined
-      && Array.isArray(result.grid) && result.grid.length === CLASSIC_DIVIDEND_BUY_YIELDS.length
-      && result.grid.every((level, index) => level.yieldBps === CLASSIC_DIVIDEND_BUY_YIELDS[index])) {
-      return { ...result, buyYieldBps: [...CLASSIC_DIVIDEND_BUY_YIELDS], sellYieldBps: [...CLASSIC_DIVIDEND_SELL_YIELDS] };
+    if (value.buyYieldBps === undefined && value.sellYieldBps === undefined
+      && value.grid.length === CLASSIC_DIVIDEND_BUY_YIELDS.length
+      && value.grid.every((level, index) => level.yieldBps === CLASSIC_DIVIDEND_BUY_YIELDS[index])) {
+      return { ...value, buyYieldBps: [...CLASSIC_DIVIDEND_BUY_YIELDS], sellYieldBps: [...CLASSIC_DIVIDEND_SELL_YIELDS] };
     }
   }
-  return { ...result, status: 'blocked', canApply: false,
-    blockers: [...new Set([...result.blockers, 'pricing_calculation_stale' as const])] };
+  return { ...value, status: 'blocked', canApply: false,
+    blockers: [...new Set([...value.blockers, 'pricing_calculation_stale' as const])] };
 }
 
 /** A dividend-price limit can already be reached; it is never a forecast or a higher execution price. */
