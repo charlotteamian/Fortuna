@@ -309,3 +309,7 @@
 .div-daily-result .div-advisor-markdown h1, .div-daily-result .div-advisor-markdown h2, .div-daily-result .div-advisor-markdown h3 { font-size: var(--fs-xl); }
 .div-ai-research-card > header .div-ai-research-toggle { min-height: var(--btn-h); font-size: var(--fs-sm); }
 .div-ai-research-card .div-check-status-evidence > summary { min-height: var(--btn-h); font-size: var(--fs-sm); }
+.div-price-update { display: grid; gap: var(--sp-1); margin: var(--sp-2) 0; padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); font-size: var(--fs-sm); line-height: var(--lh-relaxed); min-width: 0; overflow-wrap: anywhere; }
+.div-price-update > p { margin: 0; font-variant-numeric: tabular-nums; }
+.div-price-update .btn { width: 100%; min-width: 0; white-space: normal; min-height: var(--btn-h); font-size: var(--fs-sm); }
+.div-price-update.is-changed, .div-price-update.is-unsaved { border-color: var(--asset-color); }

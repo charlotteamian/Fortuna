@@ -1,0 +1,550 @@
+{
+  "success": true,
+  "mode": "eight width/font/theme combinations",
+  "scope": "Isolated synthetic Chrome contexts and mocked HTTP responses. The real research, cache, validation and apply modules execute. No user database, live service or physical device.",
+  "checks": [
+    {
+      "name": "Existing-evidence daily merge preserves old financial date while current cash enables UI confirmation and persisted eight-price reload",
+      "passed": true,
+      "contexts": {
+        "financialGeneratedAt": 1793415600000,
+        "pricingGeneratedAt": 1793502000000,
+        "context": {
+          "generatedAt": 1793502000000,
+          "pricingMethod": {
+            "strategy": "recent_batches",
+            "requiredReturnBps": 800,
+            "growthBps": 0,
+            "holdingPeriod": "month_to_year",
+            "safetyMarginBps": 1500,
+            "riskPremiumBps": {
+              "bondlike": 175,
+              "bank": 225,
+              "cyclical": 350,
+              "other": 300
+            },
+            "historicalPercentileBps": 7500,
+            "stockOverrides": {},
+            "buyYieldBps": [
+              550,
+              575,
+              600,
+              650
+            ],
+            "sellYieldBps": [
+              480,
+              450,
+              420,
+              400
+            ]
+          },
+          "usable": true,
+          "attemptedAt": 1793502000000
+        },
+        "currentPriceReady": true,
+        "grossDpsMicros": 8368000,
+        "issues": [
+          {
+            "kind": "technical",
+            "reason": "request_failed"
+          },
+          {
+            "kind": "financial",
+            "reason": "request_failed"
+          },
+          {
+            "kind": "financial",
+            "reason": "request_failed"
+          },
+          {
+            "kind": "technical",
+            "reason": "request_failed"
+          }
+        ]
+      },
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "protectedStatePreserved": true,
+      "auxiliaryFailureCount": 6,
+      "cashSuccessCount": 1
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    }
+  ],
+  "layouts": [
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 320,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 320,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 390,
+      "scale": 1,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 390,
+      "scale": 1.3,
+      "theme": "dark",
+      "overflow": []
+    }
+  ],
+  "screenshots": [
+    "existing-evidence-ready-390-light.png",
+    "after-refresh-320-1.3-light.png",
+    "ready-to-confirm-320-1.3-light.png",
+    "confirmed-after-reload-320-1.3-light.png",
+    "after-refresh-390-1-dark.png",
+    "ready-to-confirm-390-1-dark.png",
+    "confirmed-after-reload-390-1-dark.png"
+  ],
+  "errors": []
+}

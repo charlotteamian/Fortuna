@@ -11,7 +11,7 @@ import { defaultDividendSelectionPrinciples, isDividendSelectionPrinciples, type
 import { requestPortableSnapshot } from './portableSnapshotEvents.ts';
 import { defaultDividendPricingMethod, isDividendPricingMethod, type DividendPricingMethod, type DividendPricingResult } from '../lib/dividendPricing.ts';
 import { dividendPricingPlan, dividendPricingProvenance } from '../lib/dividendPricingPlan.ts';
-import { dividendResearchSnapshotForStock, loadDividendResearchCache } from './dividendResearchCacheService.ts';
+import { dividendPricingMatchesMethod, dividendPricingSnapshotForStock, loadDividendResearchCache } from './dividendResearchCacheService.ts';
 
 export interface DividendPriceProposalContext {
   pricing: DividendPricingResult;
@@ -30,14 +30,15 @@ export async function validateDividendPricingProposal(proposal: DividendPlanProp
   if (!context || !Number.isSafeInteger(context.generatedAt) || context.generatedAt <= 0 || context.generatedAt > Date.now()
     || !context.method || !isDividendPricingMethod(context.method)
     || JSON.stringify(context.method) !== JSON.stringify(currentMethod) || pricing?.dividendBase?.asOf !== dateInChina()
-    || pricing.taxBps !== (currentMethod.holdingPeriod === 'over_year' ? 0 : currentMethod.holdingPeriod === 'month_to_year' ? 1000 : 2000)
+    || !dividendPricingMatchesMethod(pricing, currentMethod)
     || !sameSides(plan)) throw new Error('DIVIDEND_REVIEW_CHANGED');
   // A later check may replace the same day's cash evidence. An older answer
   // keeps its prose, but cannot overwrite the newer known numerical result.
   const cache = await loadDividendResearchCache();
   if (cache) {
-    const latest = dividendResearchSnapshotForStock(cache, proposal.code);
-    if (latest.stocks.length && latest.generatedAt >= context.generatedAt
+    const latest = dividendPricingSnapshotForStock(cache, proposal.code);
+    const attemptedAt = cache.pricingContexts?.[proposal.code]?.attemptedAt ?? latest.generatedAt;
+    if (latest.stocks.length && attemptedAt >= context.generatedAt
       && (!sameSides(latest.stocks[0].pricing ? dividendPricingPlan(latest.stocks[0].pricing) : null)
         || latest.stocks[0].pricing?.dividendBase?.dpsMicros !== pricing.dividendBase?.dpsMicros
         || latest.stocks[0].pricing?.dividendBase?.asOf !== pricing.dividendBase?.asOf

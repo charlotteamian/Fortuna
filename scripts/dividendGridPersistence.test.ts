@@ -29,7 +29,7 @@ registerHooks({
 const { db, initializeSettings, updateSettings, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
 const { previewDividendPlanChange, applyDividendPlanChange, validateDividendPricingProposal, loadDividendPricingMethod, saveDividendPricingMethod } = await import('../src/services/dividendAdvisorActionsService.ts');
 const { saveDividendStock, saveDividendBudget } = await import('../src/services/dividendService.ts');
-const { saveDividendResearchCache, closeDividendResearchCache } = await import('../src/services/dividendResearchCacheService.ts');
+const { saveDividendResearchCache, closeDividendResearchCache, dividendPricingSnapshotForStock, dividendResearchSnapshotForStock } = await import('../src/services/dividendResearchCacheService.ts');
 const { parseDividendAdvisorActions } = await import('../src/lib/dividendAdvisorActions.ts');
 const { defaultDividendSelectionPrinciples } = await import('../src/lib/dividendResearch.ts');
 const ledgerStore = new Dexie('FortunaDividendLedger'); ledgerStore.version(1).stores({ documents: 'url', ledgers: 'code' });
@@ -157,6 +157,57 @@ test('a newer batch selection retires an old draft even when its total cash and 
   await assert.rejects(validateDividendPricingProposal(draft, evidence), /DIVIDEND_REVIEW_CHANGED/);
   await validateDividendPricingProposal(updated.draft, updated.evidence);
   assert.deepEqual(await state(), before);
+});
+
+test('today cash can be confirmed after a partial daily refresh while the previous financial review date stays unchanged', async () => {
+  const now = Date.now(), yesterday = dateInChina(new Date(now - 86400000));
+  const previous = pricedDraft({ ...verifiedBase(500000), asOf: yesterday, latestExDate: yesterday }, now - 86400000);
+  const current = pricedDraft(verifiedBase(), now - 1000);
+  const snapshot = (value: typeof current) => ({ generatedAt: value.evidence.generatedAt, pricingMethod: value.evidence.method,
+    principles: defaultDividendSelectionPrinciples(), indices: [], stocks: [{ code: '000001', name: 'Synthetic bank', pricing: value.evidence.pricing,
+      checks: [], status: 'unknown' as const, sources: [], issues: [] as { kind: 'financial'; reason: 'request_failed' }[] }] });
+  await saveDividendResearchCache({ scope: 'plan', candidateInput: '', snapshot: snapshot(previous) });
+  const next = snapshot(current); next.stocks[0].issues = [{ kind: 'financial', reason: 'request_failed' }];
+  const merged = await saveDividendResearchCache({ scope: 'plan', candidateInput: '', snapshot: next }, { preserveFailedSources: true });
+  assert.equal(dividendResearchSnapshotForStock(merged, '000001').generatedAt, previous.evidence.generatedAt);
+  const price = dividendPricingSnapshotForStock(merged, '000001');
+  assert.equal(price.generatedAt, current.evidence.generatedAt);
+  await validateDividendPricingProposal(current.draft, { pricing: price.stocks[0].pricing!, method: price.pricingMethod, generatedAt: price.generatedAt });
+  const preview = await previewDividendPlanChange(current.draft);
+  await applyDividendPlanChange(current.draft, preview.fingerprint);
+  assert.deepEqual((await db.dividendStocks.get('000001'))?.buyLevels, current.draft.buyLevels);
+});
+
+test('a newer cash failure rejects a previously open valid price proposal instead of silently applying retained numbers', async () => {
+  const current = pricedDraft(verifiedBase(), Date.now() - 2000);
+  const snapshot = { generatedAt: current.evidence.generatedAt, pricingMethod: current.evidence.method,
+    principles: defaultDividendSelectionPrinciples(), indices: [], stocks: [{ code: '000001', name: 'Synthetic bank', pricing: current.evidence.pricing,
+      checks: [], status: 'unknown' as const, sources: [], issues: [] }] };
+  await saveDividendResearchCache({ scope: 'plan', candidateInput: '', snapshot });
+  const { pricing: omitted, ...row } = snapshot.stocks[0]; void omitted;
+  await saveDividendResearchCache({ scope: 'plan', candidateInput: '', snapshot: { ...snapshot, generatedAt: Date.now() - 1000,
+    stocks: [{ ...row, issues: [{ kind: 'dividend', reason: 'request_failed' }] }] } }, { preserveFailedSources: true });
+  const before = await state();
+  await assert.rejects(validateDividendPricingProposal(current.draft, current.evidence), /DIVIDEND_REVIEW_CHANGED/);
+  assert.deepEqual(await state(), before);
+});
+
+test('a current method context cannot legitimise prices calculated under an older tax or yield ladder', async () => {
+  const old = pricedDraft();
+  for (const method of [
+    { ...defaultDividendPricingMethod(), holdingPeriod: 'over_year' as const },
+    { ...defaultDividendPricingMethod(), buyYieldBps: [600, 625, 650, 700] },
+    { ...defaultDividendPricingMethod(), sellYieldBps: [470, 440, 410, 390] },
+  ]) {
+    await saveDividendPricingMethod(method);
+    await assert.rejects(validateDividendPricingProposal(old.draft, { ...old.evidence, method }), /DIVIDEND_REVIEW_CHANGED/);
+    const pricing = calculateDividendPricing({ code: '000001', name: 'Synthetic bank', financialSector: true, asOf: dateInChina(),
+      annuals: [], dividendBase: verifiedBase(), method });
+    const generatedAt = Date.now();
+    const draft = { id: 'current-method', code: '000001', reason: 'Current method', ...dividendPricingPlan(pricing),
+      gridProvenance: dividendPricingProvenance(pricing, generatedAt) };
+    await validateDividendPricingProposal(draft, { pricing, method, generatedAt });
+  }
 });
 
 

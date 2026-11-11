@@ -1,6 +1,6 @@
 import { CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS, DIVIDEND_PRICING_CALCULATION_VERSION, invalidateOutdatedDividendPricing, type DividendPricingResult } from './dividendPricing.ts';
 import type { DividendGridProvenance } from './dividendGridProvenance.ts';
-import type { GridLevel } from './dividendWorkbench.ts';
+import type { DividendStock, GridLevel } from './dividendWorkbench.ts';
 import { DIVIDEND_OFFICIAL_PARSER_VERSION } from './dividendLedger.ts';
 
 /** Both sides use the same verified recent-batch base and the user's fixed cash-yield ladder. */
@@ -41,6 +41,20 @@ export function dividendPricingPlanForCheck(source: DividendPricingResult, check
       const checked = checkedPlan[side][index];
       return level.priceMinor === checked.priceMinor && level.yieldBps === checked.yieldBps && level.portionBps === checked.portionBps;
     })) ? plan : null;
+}
+
+/** Compare all eight displayed prices and their parameters without changing a saved plan. */
+export function dividendPricingPlanChange(plan: NonNullable<ReturnType<typeof dividendPricingPlan>>, saved?: Pick<DividendStock, 'buyLevels' | 'sellLevels'>) {
+  const hasSaved = (['buyLevels', 'sellLevels'] as const).some(side => saved?.[side]?.some(row => row.priceMinor !== undefined));
+  const rows = (['buy', 'sell'] as const).flatMap(side => plan[`${side}Levels`].map((row, index) => ({
+    side, index: index + 1, row, previous: saved?.[`${side}Levels`]?.[index],
+  })));
+  const priceChanges = rows.filter(({ row, previous }) => row.priceMinor !== previous?.priceMinor);
+  const extraRows = (['buyLevels', 'sellLevels'] as const).some(side => (saved?.[side]?.length ?? 0) !== plan[side].length);
+  const parameterChanges = extraRows || rows.some(({ row, previous }) => row.yieldBps !== previous?.yieldBps || row.portionBps !== previous?.portionBps);
+  return { status: !hasSaved ? 'unsaved' as const : priceChanges.length || extraRows ? 'changed' as const : parameterChanges ? 'parameters' as const : 'same' as const,
+    changedCount: priceChanges.length, firstChange: priceChanges[0] && { side: priceChanges[0].side, index: priceChanges[0].index,
+      previousPriceMinor: priceChanges[0].previous?.priceMinor, priceMinor: priceChanges[0].row.priceMinor }, firstBuyPriceMinor: plan.buyLevels[0]?.priceMinor };
 }
 
 /** Origin is created by deterministic code, never copied from a model-supplied JSON field. */

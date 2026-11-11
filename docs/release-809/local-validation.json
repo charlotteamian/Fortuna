@@ -1,0 +1,25 @@
+{
+  "version": "8.0.9",
+  "buildNumber": 53,
+  "verifiedAt": "2026-11-11T06:27:20.200903+00:00",
+  "tests": {
+    "passed": 932,
+    "failed": 0
+  },
+  "lint": true,
+  "typescriptAndWebBuild": true,
+  "androidFinalWebSync": true,
+  "iosFinalWebSyncAndVerify": true,
+  "browser": {
+    "layouts": 24,
+    "cases": 9,
+    "result": "passed",
+    "realResearchCacheValidationAndApplyModules": true,
+    "network": "controlled HTTP fixtures",
+    "confirmAllEightPricesAndReload": true,
+    "protectedBudgetSharesPauseAndOtherPlans": true,
+    "targetedStructuredDividendDateCheck": "passed"
+  },
+  "physicalDeviceTested": false,
+  "reason": "No connected Android device; no real user database was changed."
+}

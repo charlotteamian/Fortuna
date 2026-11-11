@@ -4,8 +4,8 @@ import type { DividendCheckSummary } from '../lib/dividendCheckSummary';
 import DividendCheckStatus from './DividendCheckStatus';
 
 /** Presents the next price tier separately from the quantity allowed by the budget. */
-export default function DividendCompactPlan({ summary, amountVisible, source, children }: {
-  summary: DividendCheckSummary; amountVisible: boolean; source?: string; children?: ReactNode;
+export default function DividendCompactPlan({ summary, amountVisible, source, children, pricingUpdate }: {
+  summary: DividendCheckSummary; amountVisible: boolean; source?: string; children?: ReactNode; pricingUpdate?: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
   const number = (value: number) => value.toLocaleString(i18n.language, { maximumFractionDigits: 4 });
@@ -35,7 +35,8 @@ export default function DividendCompactPlan({ summary, amountVisible, source, ch
       <small>{source ?? t(quote.date ? 'div_read_market_source' : 'div_check_quote_unknown')}</small></span></div>
     <div className="div-home-plan-budget"><span>{t(summary.kind === 'fund' ? 'df_target_amount' : 'div_stock_budget')} <strong>{summary.actionCheck.budgetMinor === undefined ? '—' : amountVisible ? price(summary.actionCheck.budgetMinor) : '••••'}</strong></span>
       <span>{summary.actionCheck.shares === null ? t('div_check_reason_holding_unknown') : t('div_home_held_shares', { shares: quantity(summary.actionCheck.shares) })}</span></div>
-    <dl className="div-compact-targets">{(['buy', 'sell'] as const).map(side => <div key={side}><dt>{t(summary.kind === 'fund' ? side === 'buy' ? 'div_read_fund_entry' : 'div_read_fund_exit' : `div_read_next_${side}`)}</dt>
+    {pricingUpdate}
+    <dl className="div-compact-targets">{(['buy', 'sell'] as const).map(side => <div key={side}><dt>{t(summary.kind === 'fund' ? side === 'buy' ? 'div_read_fund_entry' : 'div_read_fund_exit' : summary.grid.origin === 'saved' ? `div_read_saved_${side}` : `div_read_draft_${side}`)}</dt>
       <dd>{target(side)}</dd></div>)}</dl>
     <DividendCheckStatus summary={summary} mode="row">{children}</DividendCheckStatus>
   </div>;

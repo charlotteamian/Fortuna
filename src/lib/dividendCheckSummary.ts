@@ -47,7 +47,7 @@ interface DividendCheckSummaryBase {
   actionCheck: { buy: DividendActionCheck; sell: DividendActionCheck; budgetMinor?: number; shares: number | null; additionalBuyShares?: number; sellShares?: number };
   freshness: {
     generatedAt: number; asOf: string; researchGeneratedAt?: number; quoteSourceAt?: string; quoteFetchedAt?: number;
-    reportPeriod?: string; noticeDate?: string; verifiedAt?: string; evidenceVerifiedDates: string[]; sources: string[];
+    reportPeriod?: string; noticeDate?: string; verifiedAt?: string; dividendDataAt?: string; evidenceVerifiedDates: string[]; sources: string[];
     evidenceStatus?: DividendEvidenceStatus['status']; semanticFingerprint: string;
   };
 }
@@ -283,7 +283,8 @@ export function dividendCheckSummary(input: {
     risk, actionCheck: { buy: buyAction, sell: sellAction, budgetMinor: displayPlan.budgetMinor, shares, additionalBuyShares: displayPlan.additionalBuyShares, sellShares: displayPlan.sellShares },
     freshness: { generatedAt: now, asOf, researchGeneratedAt: input.researchGeneratedAt, quoteSourceAt: quote.date, quoteFetchedAt: quote.fetchedAt,
       reportPeriod: research?.financial?.latest?.reportDate, noticeDate: research?.financial?.latest?.noticeDate,
-      verifiedAt: evidenceVerifiedDates.at(-1), evidenceVerifiedDates, sources: [...sources], evidenceStatus: evidence?.status, semanticFingerprint: '' },
+      verifiedAt: evidenceVerifiedDates.at(-1), dividendDataAt: userConfirmed ? pricing?.userConfirmedEvidence?.confirmedAt : ledger?.asOf,
+      evidenceVerifiedDates, sources: [...sources], evidenceStatus: evidence?.status, semanticFingerprint: '' },
     displayPlan, gridReview, currentPlan,
   };
   summary.freshness.semanticFingerprint = fingerprint(summary);

@@ -82,6 +82,15 @@ test('compact reading keeps actionable problems and one data-date location witho
   assert.doesNotMatch(html, /查看全部依据|检查生成|研究生成|<details|价格依据/);
 });
 
+test('structured dividend coverage has its own update date without relabelling original document verification', () => {
+  const value = summary();
+  value.freshness.dividendDataAt = '2026-11-01';
+  value.freshness.evidenceVerifiedDates = ['2026-10-23'];
+  const html = render(value);
+  assert.match(html, /分红 2026-11-01/);
+  assert.deepEqual(value.freshness.evidenceVerifiedDates, ['2026-10-23']);
+});
+
 test('zero holdings with an expensive stock retains tier one and explains the lot constraint without zero-share targets', () => {
   const html = render(dividendCheckSummary({ stock: { ...stock, buyPaused: false,
     buyLevels: [12554, 12008, 11508, 10623].map(priceMinor => ({ priceMinor, yieldBps: 550, portionBps: 2500 })),

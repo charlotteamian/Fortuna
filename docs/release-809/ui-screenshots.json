@@ -1,0 +1,132 @@
+{
+  "success": true,
+  "mode": "representative screenshot workflows",
+  "scope": "Isolated synthetic Chrome contexts and mocked HTTP responses. The real research, cache, validation and apply modules execute. No user database, live service or physical device.",
+  "checks": [
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    },
+    {
+      "name": "Real UI refresh, explicit confirmation and persisted eight-price reload",
+      "passed": true,
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "beforeBuy": [
+        12554,
+        12008,
+        11508,
+        10623
+      ],
+      "computedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedBuy": [
+        13693,
+        13097,
+        12552,
+        11586
+      ],
+      "persistedSell": [
+        15690,
+        16736,
+        17932,
+        18828
+      ],
+      "budgetMinor": 20830000,
+      "sharesAndPausePreserved": true,
+      "otherPlansPreserved": true,
+      "auxiliaryFailureCount": 73,
+      "cashSuccessCount": 10
+    }
+  ],
+  "layouts": [
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 320,
+      "scale": 1.3,
+      "theme": "light",
+      "overflow": []
+    },
+    {
+      "phase": "updated prices awaiting confirmation",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "current cash prices with failed auxiliary feeds",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    },
+    {
+      "phase": "confirmed prices after reload",
+      "width": 390,
+      "scale": 1,
+      "theme": "dark",
+      "overflow": []
+    }
+  ],
+  "screenshots": [
+    "after-refresh-320-1.3-light.png",
+    "ready-to-confirm-320-1.3-light.png",
+    "confirmed-after-reload-320-1.3-light.png",
+    "after-refresh-390-1-dark.png",
+    "ready-to-confirm-390-1-dark.png",
+    "confirmed-after-reload-390-1-dark.png"
+  ],
+  "errors": []
+}

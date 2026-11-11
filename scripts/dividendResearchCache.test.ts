@@ -6,7 +6,7 @@ import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/l
 import { dividendPricingPlan } from '../src/lib/dividendPricingPlan.ts';
 import { pingAnOfficialLedger } from './helpers/dividendPricingFixture.ts';
 import { defaultDividendSelectionPrinciples, type DividendResearchSnapshot, type DividendStockResearch } from '../src/lib/dividendResearch.ts';
-import { closeDividendResearchCache, dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache,
+import { closeDividendResearchCache, dividendPricingSnapshotForStock, dividendResearchScopeStocks, dividendResearchSnapshotForStock, loadDividendResearchCache,
   loadDividendResearchCollapsePreference, saveDividendResearchCache, saveDividendResearchCollapse } from '../src/services/dividendResearchCacheService.ts';
 
 const stored = new Dexie('FortunaDividendResearchCache');
@@ -20,6 +20,107 @@ const stock = (code: string, name = code): DividendStockResearch => ({ code, nam
 const snapshot = (generatedAt: number, stocks: DividendStockResearch[]): DividendResearchSnapshot => ({ generatedAt,
   principles: defaultDividendSelectionPrinciples(), indices: [], stocks });
 const save = (value: DividendResearchSnapshot) => saveDividendResearchCache({ snapshot: value, scope: 'candidates', candidateInput: '招商银行' });
+const dayStamp = (day: string) => Date.parse(`${day}T02:00:00Z`);
+function cashSnapshot(day: string, dpsMicros = 609000, method = defaultDividendPricingMethod()): DividendResearchSnapshot {
+  const code = '000001';
+  const pricing = calculateDividendPricing({ code, name: code, financialSector: true, method, asOf: day, annuals: [],
+    dividendBase: { dpsMicros, asOf: day, frequency: 'annual', requiredBatches: 1, selectedBatchIds: ['annual'], latestExDate: '2026-06-12',
+      verified: true, flags: [], sourceUrls: ['https://data.eastmoney.com/yjfp/detail/000001.html'], reportPeriods: ['2025-12-31'] } });
+  return { ...snapshot(dayStamp(day), [{ ...stock(code), pricing, issues: [], sources: [{ kind: 'financial', provider: 'Eastmoney',
+    url: 'https://example.test/financial', fetchedAt: dayStamp('2026-10-01'), asOf: '2026-06-30' }] }]), pricingMethod: method };
+}
+
+test('a current usable cash calculation gets its own context while a partial review keeps financial evidence dates', async () => {
+  const previous = cashSnapshot('2026-11-10', 500000), next = cashSnapshot('2026-11-11');
+  next.stocks[0].issues = [{ kind: 'technical', reason: 'request_failed' }];
+  await save(previous);
+  const merged = await saveDividendResearchCache({ snapshot: next, scope: 'plan', candidateInput: '' }, { preserveFailedSources: true });
+  assert.equal(dividendResearchSnapshotForStock(merged, '000001').generatedAt, previous.generatedAt);
+  const price = dividendPricingSnapshotForStock(merged, '000001');
+  assert.equal(price.generatedAt, next.generatedAt); assert.equal(price.stocks[0].pricing?.canApply, true);
+  assert.equal(price.stocks[0].pricing?.grid[0].priceMinor, 996);
+  assert.equal(price.stocks[0].sources.find(source => source.kind === 'financial')?.fetchedAt, dayStamp('2026-10-01'));
+  assert.deepEqual(dividendPricingSnapshotForStock((await loadDividendResearchCache())!, '000001'), JSON.parse(JSON.stringify(price)));
+});
+
+test('an actual cash failure retains historical numbers but cannot revive them as a current price calculation', async () => {
+  const previous = cashSnapshot('2026-11-10'), next = cashSnapshot('2026-11-11');
+  next.stocks[0].issues = [{ kind: 'dividend', reason: 'request_failed' }]; delete next.stocks[0].pricing;
+  await save(previous);
+  const merged = await saveDividendResearchCache({ snapshot: next, scope: 'plan', candidateInput: '' }, { preserveFailedSources: true });
+  assert.equal(merged.snapshot.stocks[0].pricing?.grid[0].priceMinor, 996, 'last dated numbers remain evidence');
+  assert.equal(dividendPricingSnapshotForStock(merged, '000001').stocks[0].pricing?.canApply, false);
+  assert.equal(dividendPricingPlan(dividendPricingSnapshotForStock(merged, '000001').stocks[0].pricing!), null);
+  assert.equal(merged.pricingContexts?.['000001'].attemptedAt, next.generatedAt);
+  const older = cashSnapshot('2026-11-10', 900000); older.generatedAt += 1000;
+  await save(older);
+  assert.equal(dividendPricingSnapshotForStock((await loadDividendResearchCache())!, '000001').stocks[0].pricing?.canApply, false);
+});
+
+test('a late complete review cannot replace a newer price that arrived in a partial source refresh', async () => {
+  await save(cashSnapshot('2026-11-09', 500000));
+  const next = cashSnapshot('2026-11-11', 700000); next.stocks[0].issues = [{ kind: 'technical', reason: 'request_failed' }];
+  await saveDividendResearchCache({ snapshot: next, scope: 'plan', candidateInput: '' }, { preserveFailedSources: true });
+  await save(cashSnapshot('2026-11-10', 600000));
+  const restored = (await loadDividendResearchCache())!, price = dividendPricingSnapshotForStock(restored, '000001');
+  assert.equal(price.generatedAt, next.generatedAt); assert.equal(price.stocks[0].pricing?.dividendBase?.dpsMicros, 700000);
+});
+
+test('a method change updates only the pricing context during an otherwise partial review', async () => {
+  const previous = cashSnapshot('2026-11-10');
+  const method = { ...defaultDividendPricingMethod(), holdingPeriod: 'over_year' as const, buyYieldBps: [600, 625, 650, 700] };
+  const next = cashSnapshot('2026-11-11', 609000, method); next.stocks[0].issues = [{ kind: 'financial', reason: 'request_failed' }];
+  await save(previous);
+  const merged = await saveDividendResearchCache({ snapshot: next, scope: 'plan', candidateInput: '' }, { preserveFailedSources: true });
+  assert.deepEqual(dividendResearchSnapshotForStock(merged, '000001').pricingMethod, previous.pricingMethod);
+  const price = dividendPricingSnapshotForStock(merged, '000001');
+  assert.deepEqual(price.pricingMethod, method); assert.equal(price.stocks[0].pricing?.taxBps, 0);
+  assert.deepEqual(price.stocks[0].pricing?.buyYieldBps, method.buyYieldBps);
+});
+
+test('a newly saved calculation replaces inherited price metadata instead of keeping an earlier failed attempt', async () => {
+  const old = cashSnapshot('2026-11-10');
+  const cached = await save(old);
+  const next = cashSnapshot('2026-11-11');
+  const merged = await saveDividendResearchCache({ ...cached, snapshot: next, stockContexts: undefined });
+  const price = dividendPricingSnapshotForStock(merged, '000001');
+  assert.equal(price.generatedAt, next.generatedAt); assert.equal(price.stocks[0].pricing?.canApply, true);
+  assert.equal(merged.pricingContexts?.['000001'].attemptedAt, next.generatedAt);
+});
+
+test('a conflicted current cash calculation cannot reuse an earlier ready price through auxiliary-source retention', async () => {
+  await save(cashSnapshot('2026-11-10'));
+  const next = cashSnapshot('2026-11-11');
+  next.stocks[0].issues = [{ kind: 'technical', reason: 'request_failed' }];
+  next.stocks[0].pricing = { ...next.stocks[0].pricing!, canApply: false, status: 'blocked', blockers: ['dividend_source_conflict'] };
+  const merged = await saveDividendResearchCache({ snapshot: next, scope: 'plan', candidateInput: '' }, { preserveFailedSources: true });
+  assert.equal(dividendPricingSnapshotForStock(merged, '000001').stocks[0].pricing?.canApply, false);
+  assert.equal(merged.pricingContexts?.['000001'].usable, false);
+});
+
+test('legacy 8.0.8 mixed contexts recover only from fresh matching structured evidence, without redating financial research', async () => {
+  const previous = cashSnapshot('2026-11-10'), latest = cashSnapshot('2026-11-11');
+  const ledger = pingAnOfficialLedger('2026-11-11');
+  latest.stocks[0].pricing = calculateDividendPricing({ code: '000001', name: 'Synthetic', financialSector: true, asOf: ledger.asOf,
+    ledger, annuals: [], method: latest.pricingMethod! });
+  latest.stocks[0].issues = [{ kind: 'technical', reason: 'request_failed' }];
+  latest.stocks[0].sources.push({ kind: 'dividend', provider: 'Eastmoney', url: 'https://example.test/distributions', fetchedAt: latest.generatedAt + 1000 });
+  const legacy = { id: 'latest', snapshot: latest, stockContexts: { '000001': previous }, scope: 'plan', candidateInput: '' };
+  await stored.table('results').put(legacy);
+  const restored = (await loadDividendResearchCache())!;
+  assert.equal(dividendResearchSnapshotForStock(restored, '000001').generatedAt, previous.generatedAt);
+  assert.equal(dividendPricingSnapshotForStock(restored, '000001').generatedAt, latest.generatedAt);
+  assert.equal(dividendPricingSnapshotForStock(restored, '000001').stocks[0].pricing?.canApply, true);
+  assert.deepEqual(await stored.table('results').get('latest'), legacy, 'migration reads do not rewrite original receipts');
+  for (const corrupt of [
+    (value: typeof legacy) => { value.snapshot.stocks[0].sources = value.snapshot.stocks[0].sources.filter(source => source.kind !== 'dividend'); },
+    (value: typeof legacy) => { value.snapshot.pricingMethod = { ...latest.pricingMethod!, holdingPeriod: 'over_year' }; },
+    (value: typeof legacy) => { value.snapshot.stocks[0].issues = [{ kind: 'dividend', reason: 'request_failed' }]; },
+  ]) {
+    const value = structuredClone(legacy); corrupt(value); await stored.table('results').put(value);
+    assert.equal(dividendPricingSnapshotForStock((await loadDividendResearchCache())!, '000001').stocks[0].pricing?.canApply, false);
+  }
+});
 
 test('legacy absent research preferences are distinguishable, and first UI expansion updates only the preference', async () => {
   const legacy = { id: 'latest', snapshot: snapshot(1000, [stock('600036'), stock('000333')]), scope: 'plan', candidateInput: '' };

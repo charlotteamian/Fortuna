@@ -1,7 +1,11 @@
 import Dexie, { type Table } from 'dexie';
 import { evaluateDividendResearch, isDividendSelectionPrinciples, type DividendResearchSnapshot } from '../lib/dividendResearch.ts';
-import { mainlandCode } from '../lib/dividendWorkbench.ts';
-import { invalidateOutdatedDividendPricing } from '../lib/dividendPricing.ts';
+import { dateInChina, mainlandCode } from '../lib/dividendWorkbench.ts';
+import { CLASSIC_DIVIDEND_BUY_YIELDS, CLASSIC_DIVIDEND_SELL_YIELDS, invalidateOutdatedDividendPricing, isDividendPricingMethod,
+  type DividendPricingMethod, type DividendPricingResult } from '../lib/dividendPricing.ts';
+import { dividendPricingPlan } from '../lib/dividendPricingPlan.ts';
+import { hasCurrentUserDividendEvidence } from '../lib/dividendManualInputs.ts';
+import { dividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 import { assertDividendRequestCurrent, beforeDividendCacheWrite, type DividendRequestControl } from './dividendRequestControl.ts';
 
 export interface SavedDividendResearch {
@@ -10,7 +14,22 @@ export interface SavedDividendResearch {
   candidateInput: string;
   reviewedCodes?: string[];
   stockContexts?: Record<string, Omit<DividendResearchSnapshot, 'stocks'>>;
+  pricingContexts?: Record<string, DividendPricingContext>;
   collapsedCodes?: string[];
+}
+
+export interface DividendPricingContext {
+  generatedAt: number;
+  pricingMethod?: DividendPricingMethod;
+  /** Latest attempt owns pricing, including a failure that retains historical numbers. */
+  attemptedAt?: number;
+  usable?: boolean;
+}
+
+export function dividendPricingMatchesMethod(pricing: DividendPricingResult, method: DividendPricingMethod): boolean {
+  return pricing.taxBps === ({ over_year: 0, month_to_year: 1000, up_to_month: 2000 }[method.holdingPeriod])
+    && JSON.stringify(pricing.buyYieldBps) === JSON.stringify(method.buyYieldBps ?? CLASSIC_DIVIDEND_BUY_YIELDS)
+    && JSON.stringify(pricing.sellYieldBps) === JSON.stringify(method.sellYieldBps ?? CLASSIC_DIVIDEND_SELL_YIELDS);
 }
 
 // A dated research result is separate from the asset ledger and contains no API credentials.
@@ -23,6 +42,13 @@ function validContext(value: Omit<DividendResearchSnapshot, 'stocks'>): boolean 
     && isDividendSelectionPrinciples(value.principles) && Array.isArray(value.indices);
 }
 
+function validPricingContext(value: DividendPricingContext): boolean {
+  return !!value && Number.isSafeInteger(value.generatedAt) && value.generatedAt > 0
+    && (value.pricingMethod === undefined || isDividendPricingMethod(value.pricingMethod))
+    && (value.attemptedAt === undefined || Number.isSafeInteger(value.attemptedAt) && value.attemptedAt >= value.generatedAt)
+    && (value.usable === undefined || typeof value.usable === 'boolean');
+}
+
 function valid(value: SavedDividendResearch): boolean {
   const snapshot = value?.snapshot;
   return !!snapshot && ['plan', 'candidates'].includes(value.scope) && typeof value.candidateInput === 'string'
@@ -31,6 +57,8 @@ function valid(value: SavedDividendResearch): boolean {
       && ['pass', 'risk', 'unknown'].includes(stock.status) && Array.isArray(stock.checks) && Array.isArray(stock.sources) && Array.isArray(stock.issues))
     && (value.stockContexts === undefined || (!!value.stockContexts && typeof value.stockContexts === 'object'
       && Object.entries(value.stockContexts).every(([code, context]) => mainlandCode(code) === code && validContext(context))))
+    && (value.pricingContexts === undefined || (!!value.pricingContexts && typeof value.pricingContexts === 'object'
+      && Object.entries(value.pricingContexts).every(([code, context]) => mainlandCode(code) === code && validPricingContext(context))))
     && (value.collapsedCodes === undefined || (Array.isArray(value.collapsedCodes)
       && value.collapsedCodes.every(code => typeof code === 'string' && mainlandCode(code) === code)))
     && (value.reviewedCodes === undefined || (Array.isArray(value.reviewedCodes)
@@ -56,11 +84,49 @@ function cleanResearch(value: SavedDividendResearch): SavedDividendResearch {
   return JSON.parse(JSON.stringify({ snapshot, scope: value.scope, candidateInput: value.candidateInput,
     reviewedCodes: reviewedCodes(value),
     stockContexts: Object.fromEntries(value.snapshot.stocks.map(stock => [stock.code, contextOf(value.stockContexts?.[stock.code] ?? value.snapshot)])),
+    pricingContexts: Object.fromEntries(value.snapshot.stocks.flatMap(stock => {
+      if (!stock.pricing) return [];
+      const existing = value.pricingContexts?.[stock.code];
+      if (existing) return [[stock.code, { ...existing, usable: existing.usable !== false && pricingUsable(stock, stock.pricing, existing.generatedAt)
+        && (!existing.pricingMethod || dividendPricingMatchesMethod(stock.pricing, existing.pricingMethod)) }]];
+      const research = value.stockContexts?.[stock.code] ?? value.snapshot;
+      const latest = value.snapshot;
+      const pricing = invalidateOutdatedDividendPricing(stock.pricing);
+      // v8.0.8 could save today's usable cash with yesterday's research context.
+      // Recover only when this exact batch's dated dividend source and current
+      // ledger prove the price belongs to the latest method. Financial dates stay intact.
+      const currentCashSource = stock.sources.some(source => source.kind === 'dividend' && Number.isSafeInteger(source.fetchedAt) && source.fetchedAt >= latest.generatedAt
+        && dateInChina(new Date(source.fetchedAt)) === pricing.dividendBase?.asOf);
+      const canRecover = research.generatedAt < latest.generatedAt && !!latest.pricingMethod && currentCashSource
+        && pricing.ledger?.code === stock.code && pricing.ledger.asOf === pricing.dividendBase?.asOf
+        && dividendEvidenceStatus(pricing.ledger, pricing.ledger.asOf).usable
+        && dividendPricingMatchesMethod(pricing, latest.pricingMethod) && pricingUsable(stock, pricing, latest.generatedAt);
+      const context = canRecover ? latest : research;
+      return [[stock.code, { generatedAt: context.generatedAt, attemptedAt: context.generatedAt,
+        ...(context.pricingMethod ? { pricingMethod: context.pricingMethod } : {}), usable: pricingUsable(stock, pricing, context.generatedAt)
+          && (!context.pricingMethod || dividendPricingMatchesMethod(pricing, context.pricingMethod)) }]];
+    })),
     collapsedCodes: [...new Set(value.collapsedCodes ?? [])].filter(code => value.snapshot.stocks.some(stock => stock.code === code)) }));
+}
+
+function pricingUsable(stock: DividendResearchSnapshot['stocks'][number], pricing: DividendPricingResult | undefined, generatedAt: number): boolean {
+  if (!pricing?.dividendBase?.verified || pricing.dividendBase.asOf !== dateInChina(new Date(generatedAt)) || !dividendPricingPlan(pricing)) return false;
+  const cashFailed = stock.issues.some(issue => issue.kind === 'dividend' && ['request_failed', 'invalid_data', 'deferred'].includes(issue.reason));
+  return !cashFailed || hasCurrentUserDividendEvidence(pricing, dateInChina(new Date(generatedAt)));
 }
 
 export function dividendResearchSnapshotForStock(value: SavedDividendResearch, code: string): DividendResearchSnapshot {
   return { ...contextOf(value.stockContexts?.[code] ?? value.snapshot), stocks: value.snapshot.stocks.filter(stock => stock.code === code) };
+}
+
+/** Price freshness is independent of unchanged historical financial/research evidence. */
+export function dividendPricingSnapshotForStock(value: SavedDividendResearch, code: string): DividendResearchSnapshot {
+  const research = dividendResearchSnapshotForStock(value, code);
+  const context = value.pricingContexts?.[code];
+  if (!context) return research;
+  return { ...research, generatedAt: context.generatedAt, pricingMethod: context.pricingMethod,
+    stocks: research.stocks.map(stock => context.usable === false && stock.pricing ? { ...stock, pricing: { ...stock.pricing,
+      status: 'blocked', canApply: false, blockers: [...new Set([...stock.pricing.blockers, 'dividend_base_unverified' as const])] } } : stock) };
 }
 
 /** History stays available for evidence, but never becomes membership or a refresh target. */
@@ -74,27 +140,39 @@ function mergeResearch(previous: SavedDividendResearch | null, incoming: SavedDi
   const saved = cleanResearch(previous), next = cleanResearch(incoming);
   const stocks = new Map(saved.snapshot.stocks.map(stock => [stock.code, stock]));
   const contexts = { ...saved.stockContexts };
+  const pricingContexts = { ...saved.pricingContexts };
   for (const stock of next.snapshot.stocks) {
     const context = next.stockContexts![stock.code];
     // A slow single-stock review may finish after a newer batch. Compare each stock's own evidence date.
-    if (!contexts[stock.code] || context.generatedAt >= contexts[stock.code].generatedAt) {
+    const previousPricing = pricingContexts[stock.code];
+    const previousAttempt = previousPricing?.attemptedAt ?? previousPricing?.generatedAt ?? 0;
+    if (context.generatedAt >= Math.max(contexts[stock.code]?.generatedAt ?? 0, previousAttempt)) {
       const old = stocks.get(stock.code);
       if (preserveFailedSources && old && stock.issues.length) {
         // Failed attempts describe this batch; they do not redate historical
         // source data or throw away the last successful financial/price fields.
+        const usable = pricingUsable(stock, stock.pricing, context.generatedAt)
+          && (!context.pricingMethod || !!stock.pricing && dividendPricingMatchesMethod(stock.pricing, context.pricingMethod));
         stocks.set(stock.code, { ...stock, technical: stock.technical ?? old.technical, financial: stock.financial ?? old.financial,
           distributions: stock.distributions ?? old.distributions,
-          pricing: stock.pricing?.dividendBase?.verified ? stock.pricing : old.pricing ?? stock.pricing,
+          pricing: usable ? stock.pricing : old.pricing ?? stock.pricing,
           sources: [...new Map([...old.sources, ...stock.sources].map(source => [source.url, source])).values()] });
         // A partially successful attempt is still not a newly completed
         // per-stock review. Fresh source timestamps live on those sources;
         // the previous review date and its context remain the last success.
         contexts[stock.code] = contexts[stock.code] ?? context;
-      } else { stocks.set(stock.code, stock); contexts[stock.code] = context; }
+        pricingContexts[stock.code] = usable ? { generatedAt: context.generatedAt, pricingMethod: context.pricingMethod, usable: true, attemptedAt: context.generatedAt }
+          : { ...(previousPricing ?? next.pricingContexts?.[stock.code] ?? { generatedAt: context.generatedAt, pricingMethod: context.pricingMethod }), usable: false, attemptedAt: context.generatedAt };
+      } else {
+        stocks.set(stock.code, stock); contexts[stock.code] = context;
+        if (stock.pricing) pricingContexts[stock.code] = { generatedAt: context.generatedAt, pricingMethod: context.pricingMethod, attemptedAt: context.generatedAt,
+          usable: pricingUsable(stock, stock.pricing, context.generatedAt) && (!context.pricingMethod || dividendPricingMatchesMethod(stock.pricing, context.pricingMethod)) };
+        else if (previousPricing) pricingContexts[stock.code] = { ...previousPricing, attemptedAt: context.generatedAt, usable: false };
+      }
     }
   }
   const latest = next.snapshot.generatedAt >= saved.snapshot.generatedAt ? next : saved;
-  return { ...latest, snapshot: { ...latest.snapshot, stocks: [...stocks.values()] }, stockContexts: contexts,
+  return { ...latest, snapshot: { ...latest.snapshot, stocks: [...stocks.values()] }, stockContexts: contexts, pricingContexts,
     collapsedCodes: previous.collapsedCodes === undefined ? incoming.collapsedCodes ?? saved.collapsedCodes : saved.collapsedCodes };
 }
 

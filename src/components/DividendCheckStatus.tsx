@@ -104,7 +104,7 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
       <p className={`div-focus-check-title is-${summary.eligibility.status}`}>{t(`div_focus_eligibility_${summary.eligibility.status}`)}</p>
       {actionable.length > 0 && <ul className="div-check-primary-reasons">{actionable.map(reason => <li key={reason}><strong>{reasonLabel(reason)}</strong></li>)}</ul>}
       <p className="div-check-data-date">{t('div_read_data_updated', { quote: dates.quoteSourceAt ?? quote.date ?? t('div_check_date_unknown'),
-        dividend: evidenceDate ?? summary.grid.userConfirmedAt ?? t('div_check_date_unknown') })}</p>
+        dividend: dates.dividendDataAt ?? summary.grid.userConfirmedAt ?? evidenceDate ?? t('div_check_date_unknown') })}</p>
       {children}
     </section>;
   }
