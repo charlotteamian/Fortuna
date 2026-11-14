@@ -64,8 +64,8 @@ test('captured official Ping An final and interim announcements create the defau
   assert.deepEqual(base.reportPeriods, ['2026-06-30', '2025-12-31']);
   assert.ok(base.sourceUrls.some(url => url.includes('1225352449'))); assert.ok(base.sourceUrls.some(url => url.includes('1225568476')));
   const p = calculateDividendPricing(input({ code: '000001', name: '平安银行', ledger: value, dividendBase: undefined }));
-  assert.equal(DIVIDEND_PRICING_CALCULATION_VERSION, 5);
-  assert.equal(p.calculationVersion, 5); assert.equal(p.pricingBasis, 'recent_batches'); assert.equal(p.canApply, true);
+  assert.equal(DIVIDEND_PRICING_CALCULATION_VERSION, 6);
+  assert.equal(p.calculationVersion, 6); assert.equal(p.pricingBasis, 'recent_batches'); assert.equal(p.canApply, true);
   assert.equal(p.dividendBase?.dpsMicros, 609000); assert.equal(p.taxBps, 1000); assert.equal(p.d1Micros, 548100); assert.equal(p.earningsDividendMicros, undefined);
   assert.equal(p.anchors.selectedBps, 500); assert.equal(p.anchors.selection, 'fixed_classic');
   assert.deepEqual(prices(p), { neutral: 1096, buys: [996, 953, 913, 843], sells: [1142, 1218, 1305, 1371] });

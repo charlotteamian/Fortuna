@@ -2,13 +2,10 @@ import type { ClassicGridTierRow, ClassicStockPlan } from './dividendClassicStra
 import { dividendQuoteUsability } from './dividendQuoteUsability.ts';
 import { dateInChina } from './dividendWorkbench.ts';
 
-type ClassicAdviceStatus = 'buy' | 'sell' | 'waiting' | 'paused' | 'no_budget' | 'covered' | 'below_lot' | 'quote_unverified' | 'reference_only';
+type ClassicAdviceStatus = 'buy' | 'sell' | 'waiting' | 'paused' | 'no_budget' | 'covered' | 'below_lot' | 'quote_unverified' | 'reference_only' | 'no_base';
 
 export function getClassicAdviceFacts(plan: ClassicStockPlan, asOf: string, now = Date.now()) {
-  const latestExDate = plan.base.batches.reduce<string | undefined>(
-    (latest, batch) => batch.exDate && batch.exDate <= asOf && (!latest || batch.exDate > latest) ? batch.exDate : latest,
-    undefined,
-  );
+  const latestExDate = plan.base.latestExDate && plan.base.latestExDate <= asOf ? plan.base.latestExDate : undefined;
   const quoteCurrent = plan.quoteSource === 'live' && !!plan.quoteDate && dividendQuoteUsability({
     quote: { date: plan.quoteDate, priceMinor: plan.quotePriceMinor },
     latestExDate, asOf, now,
@@ -21,10 +18,11 @@ export function getClassicAdviceFacts(plan: ClassicStockPlan, asOf: string, now 
   const buyGap = buy1?.gapFromQuoteBps;
   const buy1GapBps = quoteCurrent && !buy1?.touched && buyGap !== undefined ? Math.abs(buyGap) : undefined;
   const sell1GapBps = quoteCurrent && sell1 && !sell1.touched ? sell1.gapFromQuoteBps : undefined;
-  const impliedYield = (row?: ClassicGridTierRow) => row && Math.round(plan.base.netDpsMicros / row.priceMinor);
+  const impliedYield = (row?: ClassicGridTierRow) => row && plan.base.netDpsMicros !== undefined && row.priceMinor > 0 ? Math.round(plan.base.netDpsMicros / row.priceMinor) : undefined;
   let status: ClassicAdviceStatus = 'waiting';
-  if (!quoteCurrent) status = 'quote_unverified';
-  else if (plan.base.tier === 'baseline_fallback') status = 'reference_only';
+  if (action.type === 'unavailable') status = 'no_base';
+  else if (!quoteCurrent) status = 'quote_unverified';
+  else if (plan.base.tier !== 'recent_batches') status = 'reference_only';
   else if (action.type === 'sell') status = 'sell';
   else if (plan.buyPaused) status = 'paused';
   else if (!plan.budgetMinor) status = 'no_budget';
@@ -69,7 +67,7 @@ function statusText(plan: ClassicStockPlan, facts: ReturnType<typeof getClassicA
     case 'sell': {
       const buy = facts.status === 'buy';
       const row = buy ? plan.buyRows[facts.touchedBuyLevel - 1] : plan.sellRows[facts.touchedSellLevel - 1];
-      const yieldAtPrice = Math.round(plan.base.netDpsMicros / row.priceMinor);
+      const yieldAtPrice = row && plan.base.netDpsMicros !== undefined && row.priceMinor > 0 ? Math.round(plan.base.netDpsMicros / row.priceMinor) : undefined;
       const quantity = zh ? `网格数量 ${facts.shares} 股` : `Grid quantity ${facts.shares} shares`;
       return `${tierText(plan, row, yieldAtPrice, zh)} · ${quantity}`;
     }
@@ -79,7 +77,8 @@ function statusText(plan: ClassicStockPlan, facts: ReturnType<typeof getClassicA
       : (zh ? '仅观察 · 未分配预算' : 'Watch only · no budget assigned');
     case 'covered': return zh ? '已触及买档 · 持仓已覆盖本档目标' : 'Buy tier touched · current holdings cover this tier';
     case 'below_lot': return zh ? '已触及网格 · 本档数量不足一手' : 'Tier touched · quantity below one lot';
-    case 'reference_only': return zh ? '分红基数来自内置参考，仅供观察' : 'Built-in dividend basis · reference only';
+    case 'reference_only': return zh ? '按已保存网格 · 分红基数未核对，仅参考' : 'Saved grid · dividend basis unchecked, reference only';
+    case 'no_base': return zh ? '无已核验分红基数 · 无法判断' : 'No verified dividend basis · cannot judge';
     case 'quote_unverified': return zh ? '缺少当日有效行情' : 'Current-day quote unavailable';
     case 'waiting': return zh ? '等待触价' : 'Waiting for a price trigger';
   }
@@ -99,14 +98,12 @@ export function buildClassicDailyAdviceMarkdown(
 
   if (options.selectedCode) {
     const { plan, facts } = rows[0];
-    const quoteLabel = facts.quoteCurrent ? (zh ? '当日报价' : 'Current-day quote')
-      : plan.quoteSource === 'baseline_reference' ? (zh ? '内置参考价' : 'Built-in reference price')
-        : (zh ? '未核验报价' : 'Unverified quote');
+    const quoteLabel = facts.quoteCurrent ? (zh ? '当日报价' : 'Current-day quote') : (zh ? '未核验报价' : 'Unverified quote');
     lines.push(`### ${nameOf(plan, zh)}`, '', statusText(plan, facts, zh), '',
-      `- ${quoteLabel} ${yuan(plan.quotePriceMinor)}${plan.quoteDate && plan.quoteSource !== 'baseline_reference' ? ` · ${plan.quoteDate}` : ''}`);
+      `- ${quoteLabel} ${yuan(plan.quotePriceMinor)}${plan.quoteDate ? ` · ${plan.quoteDate}` : ''}`);
     if (facts.buy1) lines.push(`- ${tierText(plan, facts.buy1, facts.buy1ImpliedYieldBps, zh)}${facts.buy1GapBps === undefined ? '' : zh ? ` · 再回落 ${pullback(facts.buy1GapBps)}` : ` · ${pullback(facts.buy1GapBps)} lower`}`);
     if (facts.sell1) lines.push(`- ${tierText(plan, facts.sell1, facts.sell1ImpliedYieldBps, zh)}${facts.sell1GapBps === undefined ? '' : zh ? ` · 再上涨 ${pullback(facts.sell1GapBps)}` : ` · ${pullback(facts.sell1GapBps)} higher`}`);
-    if (plan.base.fallbackApplied) lines.push(`- ${zh ? plan.base.strategyNoteZh : plan.base.strategyNoteEn}`);
+    if (plan.base.cappedAtEarnings || plan.base.tier !== 'recent_batches') lines.push(`- ${zh ? plan.base.strategyNoteZh : plan.base.strategyNoteEn}`);
     return lines.join('\n');
   }
 
@@ -121,7 +118,7 @@ export function buildClassicDailyAdviceMarkdown(
   if (buys.length || sells.length) {
     lines.push('', zh ? '### 已触价' : '### Price triggers');
     for (const { plan, facts } of [...buys, ...sells]) {
-      const basisNote = plan.base.fallbackApplied ? (zh ? ' · 分红基数为估算' : ' · Estimated dividend basis') : '';
+      const basisNote = plan.base.cappedAtEarnings ? (zh ? ' · 基数已按每股收益封顶' : ' · Base limited to annual EPS') : '';
       lines.push(`- **${nameOf(plan, zh)}** · ${statusText(plan, facts, zh)}${basisNote}`);
     }
   }

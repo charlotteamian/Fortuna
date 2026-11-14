@@ -98,11 +98,14 @@ export function reviewDividendGrid(stock: Pick<DividendStock, 'buyLevels' | 'sel
   const belowBuyGapBps = current !== undefined && minimumBuy !== undefined && current < minimumBuy
     ? Math.round((minimumBuy - current) / minimumBuy * 10000) : undefined;
   const distance = options.marketDistanceBps ?? 2000;
-  // Above every saved sell price is already a concrete mismatch; a lower price
-  // warns only after the configurable distance below the final buy level.
-  const marketDeviation: 'above_sell_grid' | 'below_buy_grid' | null = current !== undefined && maximumSell !== undefined && current > maximumSell ? 'above_sell_grid'
-    : current !== undefined && minimumBuy !== undefined && current < minimumBuy && integer(distance)
-      && BigInt(minimumBuy - current) * 10000n >= BigInt(minimumBuy) * BigInt(distance) ? 'below_buy_grid' : null;
+  // Both sides warn on the same symmetric condition: the price has run past the
+  // outermost saved tier by the configured distance (default 20%).
+  const aboveSellGapMet = current !== undefined && maximumSell !== undefined && current > maximumSell && integer(distance)
+    && BigInt(current - maximumSell) * 10000n >= BigInt(maximumSell) * BigInt(distance);
+  const belowBuyGapMet = current !== undefined && minimumBuy !== undefined && current < minimumBuy && integer(distance)
+    && BigInt(minimumBuy - current) * 10000n >= BigInt(minimumBuy) * BigInt(distance);
+  const marketDeviation: 'above_sell_grid' | 'below_buy_grid' | null = aboveSellGapMet ? 'above_sell_grid'
+    : belowBuyGapMet ? 'below_buy_grid' : null;
   return { hasSavedGrid, hasCompleteSavedGrid, generatedDate, provenanceMissing, currentBasisVerified, basisState,
     stale, staleReasons, basisChangeBps, quoteUsable, buyState: priceState(buy, buyTriggeredLevels), sellState: priceState(sell, sellTriggeredLevels),
     buyTriggeredLevels, sellTriggeredLevels, marketDeviation, belowBuyGapBps };

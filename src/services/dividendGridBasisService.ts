@@ -6,6 +6,12 @@ import type { DividendGridBasisCheck } from '../lib/dividendGridProvenance';
 import { dividendEvidenceStatus, type DividendEvidenceStatus } from '../lib/dividendEvidenceStatus.ts';
 
 export interface DividendGridBasisResult extends DividendGridBasisCheck {
+  implementedDpsMicros?: number;
+  earningsCap?: { epsMicros: number; reportDate: string };
+  flags?: string[];
+  reportPeriods?: string[];
+  frequency?: 'semiannual' | 'annual' | 'unknown';
+  selectedBatchIds?: string[];
   evidenceStatus: DividendEvidenceStatus['status'];
   evidenceIssues: string[];
   error?: string;

@@ -84,7 +84,7 @@ test('preview stays read-only and confirmation saves both rounded ladders and de
   await applyDividendPlanChange(draft, preview.fingerprint);
   const confirmed = await db.dividendStocks.get('000001');
   assert.deepEqual(confirmed, { ...original, buyLevels: draft.buyLevels, sellLevels: draft.sellLevels, gridProvenance: draft.gridProvenance });
-  assert.deepEqual(confirmed!.gridProvenance, { generatedAt: evidence.generatedAt, grossDpsMicros: 609000, taxBps: 1000, parameterVersion: 5, basisKind: 'recent_batches', officialParserVersion: 2 });
+  assert.deepEqual(confirmed!.gridProvenance, { generatedAt: evidence.generatedAt, grossDpsMicros: 609000, taxBps: 1000, parameterVersion: 6, basisKind: 'recent_batches', officialParserVersion: 2 });
   assert.deepEqual(await state(), { ...before, dividendStocks: [confirmed] });
   const json = await exportData(), excel = await exportToExcel();
   for (const restore of [() => importData(json), () => importFromExcel(excel)]) {

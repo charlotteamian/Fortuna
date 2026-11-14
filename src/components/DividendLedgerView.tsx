@@ -7,6 +7,7 @@ const ISSUE_KEYS: Record<string, string> = {
   PROPOSAL_NOT_COUNTED: 'div_ledger_issue_proposal', SOURCE_CONFLICT: 'div_ledger_issue_conflict', ANNOUNCEMENT_UNVERIFIED: 'div_ledger_issue_announcement',
   CAPITAL_OR_CASH_UNVERIFIED: 'div_ledger_issue_capital_cash', CROSSCHECK_MISSING: 'div_ledger_issue_crosscheck_missing', CROSSCHECK_MISMATCH: 'div_ledger_issue_crosscheck_mismatch',
   EVENT_FIELDS_INCOMPLETE: 'div_ledger_issue_fields', CAPITAL_ACTIONS_UNVERIFIED: 'div_ledger_issue_capital', EVENT_DATES_INVALID: 'div_ledger_issue_dates', OFFICIAL_EVIDENCE_INVALID: 'div_ledger_issue_official',
+  EARNINGS_CAP_UNCHECKED: 'div_ledger_issue_earnings_unchecked', EARNINGS_NON_POSITIVE: 'div_ledger_issue_earnings_non_positive', CAPPED_AT_EARNINGS: 'div_ledger_issue_capped',
 };
 const sourceUrl = (value: string) => { try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) ? url.href : undefined; } catch { return undefined; } };
 
@@ -52,7 +53,10 @@ export default function DividendLedgerView({ ledger, base }: { ledger: DividendL
     <h4>{t('div_ledger_title')}</h4><p className="div-ledger-caption">{t('div_ledger_intro')}</p><p className="div-ledger-caption">{t('div_ledger_asof', { date: ledger.asOf })}</p>
     {base && <div className={`div-ledger-summary${base.verified ? ' is-verified' : ''}`}>
       <strong>{t(base.verified ? 'div_ledger_base_verified' : 'div_ledger_base_unverified')}</strong>
-      <dl><div><dt>{t('div_ledger_base')}</dt><dd>{cash(base.dpsMicros)}</dd></div><div><dt>{t('div_ledger_frequency')}</dt><dd>{t(`div_ledger_frequency_${base.frequency}`)}</dd></div></dl>
+      <dl><div><dt>{t('div_ledger_base')}</dt><dd>{cash(base.dpsMicros)}</dd></div>
+        {base.implementedDpsMicros !== undefined && base.implementedDpsMicros !== base.dpsMicros && <div><dt>{t('div_ledger_implemented')}</dt><dd>{cash(base.implementedDpsMicros)}</dd></div>}
+        {base.earningsCap && <div><dt>{t('div_ledger_earnings_cap')}</dt><dd>{cash(base.earningsCap.epsMicros)}</dd></div>}
+        <div><dt>{t('div_ledger_frequency')}</dt><dd>{t(`div_ledger_frequency_${base.frequency}`)}</dd></div></dl>
       <p>{t('div_ledger_base_asof', { date: base.asOf })}{base.requiredBatches > 0 && ` · ${t('div_ledger_batches', { count: base.selectedBatchIds.length, required: base.requiredBatches })}`}</p>
       {base.reportPeriods.length > 0 && <p>{t('div_ledger_selected_periods', { periods: base.reportPeriods.join(' / ') })}</p>}
       {base.crosscheckDpsMicros !== undefined && <p>{t('div_ledger_crosscheck')}：{cash(base.crosscheckDpsMicros)}{base.crosscheckDeviationBps !== undefined && ` · ${t('div_ledger_crosscheck_gap', { percent: number(base.crosscheckDeviationBps / 100, 2) })}`}</p>}

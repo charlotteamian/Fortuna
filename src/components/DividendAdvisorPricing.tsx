@@ -22,6 +22,7 @@ const GAP_HELP: Record<DividendPricingBlocker, string> = {
   trailing_dividend_missing: 'dividend', trailing_dividend_invalid: 'dividend', trailing_dividend_stale: 'dividend',
   trailing_dividend_zero: 'dividend', cash_distributions_incomplete: 'dividend',
   annual_eps_missing: 'financials', annual_payout_missing: 'financials', non_positive_earnings: 'risk',
+  dividend_capped_at_earnings: 'risk', latest_annual_loss: 'risk', earnings_cap_unchecked: 'financials',
   payout_above_100: 'risk', fcf_missing: 'cashflow', fcf_below_150: 'cashflow', fcf_non_positive: 'cashflow', fcf_dividend_capped: 'cashflow', financial_sector_review: 'sector',
   treasury_missing: 'macro', treasury_stale: 'macro', yield_history_missing: 'history', capital_actions_unverified: 'history',
   opportunity_cost_missing: 'opportunity', opportunity_cost_stale: 'opportunity', anchors_conflict: 'anchors', anchors_missing: 'anchors', growth_return_conflict: 'method',
@@ -143,6 +144,9 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
     {pricing.blockers.includes('pricing_calculation_stale') ? <p className="div-warning">{t('div_v2_pricing_model_stale')}</p> : <>
       {plan && <><p className="div-ai-muted">{t('div_price_guide_formula_short', { gross: (pricing.dividendBase!.dpsMicros! / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }), tax: pct(pricing.taxBps),
         net: (pricing.d1Micros! / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }), yield: pct(firstBuy!.yieldBps), price: yuan(firstBuy!.priceMinor) })}</p>
+        {pricing.dividendBase!.implementedDpsMicros !== undefined && pricing.dividendBase!.implementedDpsMicros !== pricing.dividendBase!.dpsMicros && pricing.dividendBase!.earningsCap &&
+          <p className="div-ai-muted">{t('div_classic_earnings_limit_applied', { implemented: (pricing.dividendBase!.implementedDpsMicros / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }),
+            cap: (pricing.dividendBase!.earningsCap.epsMicros / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 }), report: pricing.dividendBase!.earningsCap.reportDate })}</p>}
         {belowQuoteBps !== undefined && <p className="div-ai-muted">{t('div_price_guide_market_gap', { gap: pct(belowQuoteBps) })}</p>}
         {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)}</caption><thead><tr>
           <th scope="col">{t('div_grid_level_column')}</th><th scope="col">{t('div_batch_gross_price')}</th><th scope="col">{t('div_batch_net_price')}</th>
@@ -172,7 +176,7 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
   const base = pricing.dividendBase;
   const dividendSources = base?.sourceUrls ?? [];
   const advisory = [...new Set([...(pricing.pauseReasons ?? []), ...(pricing.warnings ?? [])])].filter(issue => !pricing.blockers.includes(issue));
-  const riskKeys = new Set<DividendPricingBlocker>(['non_positive_earnings', 'payout_above_100', 'fcf_below_150', 'fcf_non_positive', 'fcf_dividend_capped', 'anchors_conflict', 'growth_return_conflict', 'implausible_yield']);
+  const riskKeys = new Set<DividendPricingBlocker>(['non_positive_earnings', 'payout_above_100', 'fcf_below_150', 'fcf_non_positive', 'fcf_dividend_capped', 'anchors_conflict', 'growth_return_conflict', 'implausible_yield', 'dividend_capped_at_earnings', 'latest_annual_loss']);
   const isRisk = (issue: DividendPricingBlocker) => issue === 'financial_sector_review' ? pricing.financialReview?.status === 'risk' : riskKeys.has(issue);
   const groups = [
     { title: 'div_classic_risks', issues: advisory.filter(isRisk) },
@@ -184,6 +188,8 @@ export function DividendPricingEvidence({ code, pricing: sourcePricing }: { code
     <h4>{t('div_classic_title')}</h4>
     {pricing.ledger && <DividendLedgerView ledger={pricing.ledger} base={base} />}
     <dl className="div-ai-metrics"><div><dt>{t('div_classic_gross_dividend')}</dt><dd>{yuan(base?.dpsMicros, 1e6)}</dd></div>
+      {base?.implementedDpsMicros !== undefined && base.implementedDpsMicros !== base.dpsMicros && <div><dt>{t('div_classic_implemented_dividend')}</dt><dd>{yuan(base.implementedDpsMicros, 1e6)}</dd></div>}
+      {base?.earningsCap && <div><dt>{t('div_classic_earnings_limit')}</dt><dd>{yuan(base.earningsCap.epsMicros, 1e6)}</dd></div>}
       <div><dt>{t('div_classic_net_dividend')}</dt><dd>{yuan(pricing.d1Micros, 1e6)}</dd></div></dl>
     <p className="div-ai-muted">{t('div_classic_dividend_basis', { tax: pct(pricing.taxBps) })}</p>
     <p className="div-ai-muted">{t('div_classic_price_rule')}</p>

@@ -8,7 +8,7 @@ const code = '000001', asOf = '2026-10-29';
 const officialUrl = 'https://static.cninfo.com.cn/finalpage/2026-06-05/1225352449.PDF';
 const row = (report: string, ex: string, cash: number, extra: Record<string, unknown> = {}) => ({ SECURITY_CODE: code, REPORT_DATE: report,
   EX_DIVIDEND_DATE: ex, EQUITY_RECORD_DATE: shift(ex, -1), NOTICE_DATE: shift(ex, -7), PRETAX_BONUS_RMB: cash,
-  BONUS_RATIO: 0, IT_RATIO: 0, ASSIGN_PROGRESS: '实施分配', ...extra });
+  BONUS_RATIO: 0, IT_RATIO: 0, BASIC_EPS: 10, ASSIGN_PROGRESS: '实施分配', ...extra });
 function shift(date: string, offset: number) { return new Date(Date.parse(`${date}T00:00:00Z`) + offset * 86400000).toISOString().slice(0, 10); }
 const payload = (data: Record<string, unknown>[], pages = 1) => ({ success: true, result: { data, pages } });
 const official = (value: ReturnType<typeof row>): DividendOfficialEvent => ({ code, reportDate: value.REPORT_DATE, period: value.REPORT_DATE.endsWith('-06-30') ? 'interim' : 'annual',

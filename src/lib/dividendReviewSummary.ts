@@ -21,7 +21,7 @@ const pricingTopic: Record<DividendPricingBlocker, string> = {
   dividend_ledger_missing: 'dividend_ledger', dividend_base_unverified: 'dividend_ledger', dividend_base_incomplete: 'dividend_ledger',
   dividend_source_conflict: 'dividend_ledger', dividend_frequency_unknown: 'dividend_ledger', dividend_crosscheck_mismatch: 'dividend_ledger',
   annual_eps_missing: 'earnings', non_positive_earnings: 'earnings', cyclical_normalisation_required: 'earnings',
-  annual_payout_missing: 'payout', payout_above_100: 'payout',
+  annual_payout_missing: 'payout', payout_above_100: 'payout', dividend_capped_at_earnings: 'payout', earnings_cap_unchecked: 'payout', latest_annual_loss: 'earnings',
   trailing_dividend_missing: 'trailing_dividend', trailing_dividend_invalid: 'trailing_dividend', trailing_dividend_stale: 'trailing_dividend',
   trailing_dividend_zero: 'trailing_dividend', cash_distributions_incomplete: 'trailing_dividend',
   fcf_missing: 'cashflow', fcf_below_150: 'cashflow', fcf_non_positive: 'cashflow', fcf_dividend_capped: 'cashflow',

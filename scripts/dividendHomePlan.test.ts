@@ -14,6 +14,7 @@ import { dividendHomeZh, dividendHomeEn } from '../src/i18n/dividendHomeTranslat
 import { dividendGridZh, dividendGridEn } from '../src/i18n/dividendGridTranslations.ts';
 import { dividendCheckZh, dividendCheckEn } from '../src/i18n/dividendCheckTranslations.ts';
 import { dividendCheckSummary } from '../src/lib/dividendCheckSummary.ts';
+import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../src/lib/dividendPricing.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -117,7 +118,7 @@ test('home distinguishes verified, provisional, unavailable and stale saved base
   const originStock = { ...stock,
     buyLevels: [550, 575, 600, 650].map((yieldBps, index) => ({ yieldBps, priceMinor: [1000, 800, 700, 600][index], portionBps: 2500 })),
     sellLevels: [480, 450, 420, 400].map((yieldBps, index) => ({ yieldBps, priceMinor: [1200, 1400, 1600, 1800][index], portionBps: 2500 })),
-    gridProvenance: { generatedAt, grossDpsMicros: 600000, taxBps: 1000 as const, parameterVersion: 5, basisKind: 'recent_batches' as const } };
+    gridProvenance: { generatedAt, grossDpsMicros: 600000, taxBps: 1000 as const, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches' as const } };
   const savedLevels = structuredClone(originStock.buyLevels);
   const renderBasis = (value: typeof stock, basis?: { asOf: string; dpsMicros?: number; latestExDate?: string; verified: boolean }) => renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(DividendHomePlan, { stock: value, basis, totalBudgetMinor: 1000000, shares: 200, amountVisible: true, asOf: '2026-10-21', onEdit: () => undefined })));
   const verified = { asOf: '2026-10-21', dpsMicros: 600000, latestExDate: '2026-09-10', verified: true };

@@ -170,6 +170,7 @@ test('quote responses merge with concurrent fund edits without restoring deleted
   const { saveDividendFund, deleteDividendFund } = await import('../src/services/dividendFundService.ts');
   const { loadDividendWorkbench, saveDividendStock } = await import('../src/services/dividendService.ts');
   await seedAccount();
+  await seedDividendStocks();
   const stock = (await loadDividendWorkbench()).stocks[0];
   await updateSettings({ dividendFundPlan: { ...defaultDividendFundPlan(), funds: ['512890', '159581', '161716'].map(code => ({ id: code, code, name: code, indexKind: 'other', weightBps: 0 })) } });
   const originalFetch = globalThis.fetch;
@@ -369,8 +370,9 @@ test('dividend budget, overrides, grid and cache survive JSON and Excel backup w
   const { exportData, importData } = await import('../src/db.ts');
   const { loadDividendWorkbench, saveDividendBudget, saveDividendStock } = await import('../src/services/dividendService.ts');
   await seedAccount();
+  await seedDividendStocks();
   const initial = await loadDividendWorkbench();
-  assert.equal(initial.stocks.length, 19);
+  assert.equal(initial.stocks.length, 5);
   assert.equal(initial.budgetMinor, 0);
   await saveDividendBudget(32100012);
   await saveDividendStock({ ...initial.stocks[0], shareMode: 'manual', manualShares: 1234, manualDpsMicros: 310300, buyLevels: [{ yieldBps: 550, portionBps: 10000, priceMinor: 512 }], note: 'my note' });
@@ -500,9 +502,25 @@ async function seedLinkedStocks() {
   }
 }
 
+// Replacement fixture: the preset dividend list is no longer auto-seeded, so
+// tests provide the stocks they actually exercise.
+function dividendStock(code: string, name: string, group: 'core' | 'watch' | 'hidden', weightBps: number) {
+  return { code, name, group, weightBps, shareMode: 'linked' as const, manualShares: 0, lotSize: 100 };
+}
+async function seedDividendStocks() {
+  await db.dividendStocks.bulkAdd([
+    dividendStock('601398', '工商银行', 'core', 1000),
+    dividendStock('600036', '招商银行', 'core', 2000),
+    dividendStock('600900', '长江电力', 'watch', 2000),
+    dividendStock('000423', '东阿阿胶', 'hidden', 1000),
+    dividendStock('601088', '中国神华', 'core', 4000),
+  ]);
+}
+
 test('held-stock import adds only selected, still-held codes and preserves existing edits and ledgers', async () => {
   const { addLinkedDividendStocks, loadDividendWorkbench, saveDividendStock } = await import('../src/services/dividendService.ts');
   await seedLinkedStocks();
+  await seedDividendStocks();
   const initial = await loadDividendWorkbench();
   const existing = { ...initial.stocks[0], shareMode: 'manual' as const, manualShares: 345, note: 'retain override' };
   await saveDividendStock(existing);
@@ -526,6 +544,7 @@ test('held-stock import adds only selected, still-held codes and preserves exist
 test('funded held-stock import uses the average positive weight and supports observation-only additions', async () => {
   const { addLinkedDividendStocks, loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
   await seedLinkedStocks();
+  await seedDividendStocks();
   const { stocks: [first, second] } = await loadDividendWorkbench();
   await db.dividendStocks.clear();
   await db.dividendStocks.bulkAdd([{ ...first, weightBps: 7000 }, { ...second, weightBps: 3000 }]);
@@ -554,6 +573,7 @@ test('the first linked stocks split an otherwise unassigned funded budget', asyn
 test('stock removal and reallocation commit together, persist on re-entry and preserve the ledger', async () => {
   const { deleteDividendStock, loadDividendWorkbench, saveDividendBudget } = await import('../src/services/dividendService.ts');
   await seedLinkedStocks();
+  await seedDividendStocks();
   const initial = await loadDividendWorkbench();
   await saveDividendBudget(32000000);
   await deleteDividendStock('601398');
@@ -596,6 +616,7 @@ test('held-stock batch rolls back completely if one selected stock cannot be wri
 
 test('market refresh preserves manual edits, keeps dated cache on failure and clears failure markers on recovery', async () => {
   const { loadDividendWorkbench, refreshDividendStock, saveDividendStock } = await import('../src/services/dividendService.ts');
+  await seedDividendStocks();
   const data = await loadDividendWorkbench();
   const stock = data.stocks.find(s => s.code === '601398')!;
   await saveDividendStock({ ...stock, manualDpsMicros: 500000, manualShares: 1234, quote: { priceMinor: 700, date: '2026-09-24 15:00', fetchedAt: 1 } });

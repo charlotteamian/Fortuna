@@ -2,6 +2,12 @@ export interface DividendTrend {
   date: string; fetchedAt: number; rsi6: number; ma5Minor: number; ma10Minor: number; ma30Minor: number;
   bollLowerMinor: number; bollMiddleMinor: number; bollUpperMinor: number;
   change5: number; change10: number; change30: number;
+  /** Technical reference lines for manual price entry; present only with 250+ trading days. */
+  ma250Minor?: number;
+  yearHighMinor?: number;
+  yearLowMinor?: number;
+  yearPercentile?: number;
+  yearBarCount?: number;
 }
 export function parseDividendTrend(raw: unknown, code: string, now = Date.now()): DividendTrend {
   const source = raw as { data?: { code?: string; klines?: string[] } };
@@ -26,7 +32,14 @@ export function parseDividendTrend(raw: unknown, code: string, now = Date.now())
   return { date: rows.at(-1)!.date, fetchedAt: now, rsi6: gain+loss === 0 ? 50 : loss === 0 ? 100 : 100-100/(1+gain/loss),
     ma5Minor: Math.round(mean(5)*100), ma10Minor: Math.round(mean(10)*100), ma30Minor: Math.round(mean(30)*100),
     bollLowerMinor: Math.round((middle-2*deviation)*100), bollMiddleMinor: Math.round(middle*100), bollUpperMinor: Math.round((middle+2*deviation)*100),
-    change5: change(5), change10: change(10), change30: change(30) };
+    change5: change(5), change10: change(10), change30: change(30),
+    ...(rows.length >= 250 ? (() => {
+      const window = closes.slice(-250), high = Math.max(...window), low = Math.min(...window);
+      return {
+        ma250Minor: Math.round(mean(250)*100), yearHighMinor: Math.round(high*100), yearLowMinor: Math.round(low*100),
+        yearPercentile: high > low ? Math.round(((last - low) / (high - low)) * 100) : 50, yearBarCount: rows.length,
+      };
+    })() : {}) };
 }
 
 export function parseTencentDividendTrend(raw: unknown, code: string, symbol: string, now = Date.now()): DividendTrend {

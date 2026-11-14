@@ -40,7 +40,7 @@ import {
   type ClassicTaxRateBps,
 } from '../lib/dividendClassicStrategy';
 import { generateClassicDividendAdvice, type ClassicAiAdviceOutput } from '../services/dividendClassicAdvisorService';
-import { loadDividendPricingMethod, saveDividendPricingMethod } from '../services/dividendAdvisorActionsService';
+import { loadDividendPricingMethod, saveDividendPricingMethod, previewDividendRiskRemoval, removeDividendRiskStocks } from '../services/dividendAdvisorActionsService';
 import { DIVIDEND_AI_SETTINGS_REQUEST_EVENT } from '../lib/dividendAdvisorNavigation';
 import DividendImportDialog from '../components/DividendImportDialog';
 import DividendFundWorkbench from '../components/DividendFundWorkbench';
@@ -51,6 +51,7 @@ import type { DividendStrategy } from '../lib/dividendFundPlan';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { loadDividendDailyAdvicePlanKey } from '../services/dividendDailyAdviceScopeService';
+import { loadDividendGridBases, type DividendGridBasisResult } from '../services/dividendGridBasisService';
 import type { DividendDailyItem } from '../lib/dividendDailyCheck';
 import { dividendBackgroundRefreshPaused } from '../services/dividendRequestControl';
 
@@ -74,6 +75,8 @@ export default function DividendPage() {
   const [dailyPlanKey, setDailyPlanKey] = useState('');
   const [checks, setChecks] = useState<Awaited<ReturnType<typeof loadDividendCheckSummaries>>>({ stocks: {}, funds: {} });
   const [taxBps, setTaxBps] = useState<ClassicTaxRateBps>(1000);
+  const [gridBases, setGridBases] = useState<Record<string, DividendGridBasisResult>>({});
+  const [yieldLadder, setYieldLadder] = useState<{ buy?: number[]; sell?: number[] }>({});
   const [selectedCode, setSelectedCode] = useState<string>('');
   const [selectorFilter, setSelectorFilter] = useState<StockSelectorFilter>('all');
   const [search, setSearch] = useState('');
@@ -90,6 +93,7 @@ export default function DividendPage() {
   const [allocationResult, setAllocationResult] = useState<{ before: DividendStock[]; after: DividendStock[] } | null>(null);
   const allocationResultRef = useRef<HTMLElement>(null);
   const [collapsedCodes, setCollapsedCodes] = useState<string[]>([]);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const collapseLoaded = useRef(false);
   const collapseState = useRef<string[]>([]);
   const [gridApplying, setGridApplying] = useState(false);
@@ -121,17 +125,23 @@ export default function DividendPage() {
       ? await repairOverallocatedDividendWeights()
       : undefined;
     const next = repair ? await loadDividendWorkbench() : workbench;
-    const fundPositions = await loadDividendFundPositions(next.fundPlan.funds);
+    const asOf = dateInChina();
+    const [fundPositions, bases] = await Promise.all([
+      loadDividendFundPositions(next.fundPlan.funds),
+      loadDividendGridBases(next.stocks.map(stock => stock.code), asOf).catch(() => ({} as Record<string, DividendGridBasisResult>)),
+    ]);
     const inspection = await loadDividendCheckSummaries(next, { fundPositions });
     const planKey = await loadDividendDailyAdvicePlanKey(next, inspection);
     if (alive.current && id === loadId.current) {
       setData(next);
+      setGridBases(bases);
       if (repair?.rebalanced) setWeightsRepaired(true);
       setChecks(inspection);
       setDailyPlanKey(planKey);
       if (pricingMethod) {
         const loadedTax: ClassicTaxRateBps = pricingMethod.holdingPeriod === 'over_year' ? 0 : pricingMethod.holdingPeriod === 'up_to_month' ? 2000 : 1000;
         setTaxBps(loadedTax);
+        setYieldLadder({ buy: pricingMethod.buyYieldBps, sell: pricingMethod.sellYieldBps });
       }
       if (!collapseLoaded.current) {
         collapseLoaded.current = true;
@@ -286,9 +296,12 @@ export default function DividendPage() {
         shares: sharesFor(stock),
         taxBps,
         asOf: today,
+        basis: gridBases[stock.code],
+        buyYieldBps: yieldLadder.buy,
+        sellYieldBps: yieldLadder.sell,
       }),
     );
-  }, [data, taxBps, today]);
+  }, [data, taxBps, today, gridBases, yieldLadder]);
 
 
   const checkedPlans = useMemo(
@@ -312,7 +325,7 @@ export default function DividendPage() {
 
   const totalWeightBps = data.stocks.reduce((sum, stock) => sum + stock.weightBps, 0);
   const annualDividendMinor = classicPlans.reduce(
-    (sum, plan) => sum + Math.round((plan.shares * plan.base.grossDpsMicros) / 10000), 0,
+    (sum, plan) => sum + Math.round((plan.shares * (plan.base.implementedDpsMicros ?? plan.base.grossDpsMicros ?? 0)) / 10000), 0,
   );
   const homePlans = checkedPlans.filter(item => matchesFilter(item, 'all'));
   const buyCount = homePlans.filter(({ facts }) => facts.status === 'buy').length;
@@ -498,6 +511,7 @@ export default function DividendPage() {
         selectionTools={<div className="div-selection-toolbar">
           <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>{t('div_cs_toolbar_import')}</button>
           <button type="button" className="btn btn-secondary" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
+          <button type="button" className="btn btn-secondary" disabled={!data.stocks.length} onClick={() => setCleanupOpen(true)}>{t('div_cs_toolbar_cleanup')}</button>
           <button type="button" className="btn btn-secondary" disabled={!data.stocks.length || data.budgetMinor <= 0}
             onClick={() => { setAllocationMode('equal'); setAllocationOpen(true); }}>{t('div_experience_reallocate')}</button>
           {untracked.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => setLinkedPickerOpen(true)}>{t('div_cs_toolbar_linked', { count: untracked.length })}</button>}
@@ -692,6 +706,7 @@ export default function DividendPage() {
           stocks={data.stocks}
           budgetMinor={data.budgetMinor}
           taxBps={taxBps}
+          basis={gridBases[mainlandCode(editor.code) || editor.code]}
           amountVisible={amountVisible}
           onConflict={load}
           onClose={() => setEditor(null)}
@@ -735,6 +750,19 @@ export default function DividendPage() {
             setAllocationResult(changed ? { before: data.stocks, after: next.stocks } : null);
             setError('');
             setMessage(t('div_import_done', result));
+          }}
+        />
+      , document.body)}
+      {cleanupOpen && createPortal(
+        <CleanupDialog
+          stocks={data.stocks}
+          onClose={() => setCleanupOpen(false)}
+          onSaved={async removed => {
+            setCleanupOpen(false);
+            const next = await load();
+            setAllocationResult({ before: data.stocks, after: next.stocks });
+            setError('');
+            setMessage(t('div_cleanup_done', { count: removed }));
           }}
         />
       , document.body)}
@@ -920,6 +948,7 @@ function StockEditor({
   stocks,
   budgetMinor,
   taxBps,
+  basis,
   amountVisible,
   onClose,
   onSaved,
@@ -930,6 +959,7 @@ function StockEditor({
   stocks: DividendStock[];
   budgetMinor: number;
   taxBps: ClassicTaxRateBps;
+  basis?: DividendGridBasisResult;
   amountVisible: boolean;
   onClose: () => void;
   onSaved: (action?: 'deleted' | 'redistributed' | 'rebalanced') => Promise<void>;
@@ -950,7 +980,7 @@ function StockEditor({
     : stocks.filter(s => s.code !== initial.code);
   const weightPreview = previewDividendWeightChanges(stocks, [{ code: mainlandCode(stock.code) || stock.code, weightBps: stock.weightBps }]);
   const previewCode = mainlandCode(stock.code) || stock.code;
-  const classicFallback = useMemo(() => buildClassicStockPlan(stock, { taxBps }), [stock, taxBps]);
+  const classicFallback = useMemo(() => buildClassicStockPlan(stock, { taxBps, basis }), [stock, taxBps, basis]);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -1142,6 +1172,32 @@ function StockEditor({
         </label>
         <details className="div-method">
           <summary>{t('div_edit_grid')}</summary>
+          <div className="div-form-fields">
+            <label>
+              {t('div_price_mode')}
+              <select
+                value={stock.priceMode ?? 'yield'}
+                onChange={e => patch({ priceMode: e.target.value as DividendStock['priceMode'] })}
+              >
+                <option value="yield">{t('div_price_mode_yield')}</option>
+                <option value="manual">{t('div_price_mode_manual')}</option>
+              </select>
+            </label>
+          </div>
+          {stock.priceMode === 'manual' && <p className="div-notice">{t('div_price_mode_manual_note')}</p>}
+          {stock.trend?.ma250Minor !== undefined && stock.trend.yearHighMinor !== undefined && stock.trend.yearLowMinor !== undefined ? (
+            <div className="div-tech-ref">
+              <h3>{t('div_tech_ref')}</h3>
+              <dl className="div-wb-stock-metrics">
+                <div><dt>{t('div_tech_ma250')}</dt><dd>¥{(stock.trend.ma250Minor / 100).toFixed(2)}</dd></div>
+                <div><dt>{t('div_tech_year_high')}</dt><dd>¥{(stock.trend.yearHighMinor / 100).toFixed(2)}</dd></div>
+                <div><dt>{t('div_tech_year_low')}</dt><dd>¥{(stock.trend.yearLowMinor / 100).toFixed(2)}</dd></div>
+                {stock.trend.yearPercentile !== undefined && <div><dt>{t('div_tech_percentile')}</dt><dd>{stock.trend.yearPercentile}%</dd></div>}
+              </dl>
+            </div>
+          ) : (
+            <p className="div-muted">{t('div_tech_ref_missing')}</p>
+          )}
           <p>{t('div_edit_grid_note')}</p>
           {(['buy', 'sell'] as const).map(side => {
             const key = side === 'buy' ? 'buyLevels' : 'sellLevels';
@@ -1413,6 +1469,81 @@ function AllocationDialog({
         <button className="btn btn-secondary" disabled={saving} onClick={onClose}>
           {t('cancel')}
         </button>
+      </div>
+    </dialog>
+  );
+}
+
+/** Lets the user retire preset stocks they no longer track; holdings stay protected. */
+function CleanupDialog({
+  stocks,
+  onClose,
+  onSaved,
+}: {
+  stocks: DividendStock[];
+  onClose: () => void;
+  onSaved: (removed: number) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [rows, setRows] = useState<{ code: string; name: string; removable: boolean }[] | null>(null);
+  const [checked, setChecked] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    dialog.current?.showModal();
+    previewDividendRiskRemoval(stocks.map(stock => stock.code))
+      .then(preview => setRows([
+        ...preview.removable.map(item => ({ ...item, removable: true })),
+        ...preview.protected.map(item => ({ ...item, removable: false })),
+      ]))
+      .catch(() => setError(t('div_cleanup_error')));
+  }, [stocks, t]);
+  const remove = async () => {
+    if (saving || !checked.length) return;
+    setSaving(true);
+    try {
+      await removeDividendRiskStocks(checked);
+      await onSaved(checked.length);
+    } catch {
+      setError(t('div_cleanup_error'));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <dialog className="div-dialog" ref={dialog} onCancel={() => { if (!saving) onClose(); }} aria-labelledby="div-cleanup-title">
+      <div className="div-stock-heading">
+        <h2 id="div-cleanup-title">{t('div_cleanup_title')}</h2>
+        <button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('close')}</button>
+      </div>
+      <p className="div-muted">{t('div_cleanup_note')}</p>
+      {rows === null ? (
+        <p className="div-muted" role="status">{t('loading')}</p>
+      ) : (
+        <ul className="div-wb-stock-list">
+          {rows.map(row => (
+            <li key={row.code} className="div-wb-stock-row">
+              <label>
+                <input
+                  type="checkbox"
+                  disabled={saving || !row.removable}
+                  checked={row.removable && checked.includes(row.code)}
+                  onChange={e => setChecked(list => e.target.checked ? [...list, row.code] : list.filter(code => code !== row.code))}
+                />
+                {row.name} ({row.code})
+                {!row.removable && <small> · {t('div_cleanup_held')}</small>}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <p className="div-warning" role="alert">{error}</p>}
+      <div className="div-actions">
+        <button type="button" className="btn btn-danger" disabled={saving || !checked.length} onClick={() => void remove()}>
+          {t('div_cleanup_confirm', { count: checked.length })}
+        </button>
+        <button type="button" className="btn btn-secondary" disabled={saving} onClick={onClose}>{t('cancel')}</button>
       </div>
     </dialog>
   );

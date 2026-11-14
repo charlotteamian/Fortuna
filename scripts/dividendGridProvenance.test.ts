@@ -74,7 +74,7 @@ test('tax, method version and basis kind changes alert without rewriting a saved
 
 test('market deviation checks need a usable quote and actual saved explicit levels', () => {
   const saved = stock();
-  assert.equal(reviewDividendGrid({ ...saved, quote: { ...saved.quote!, priceMinor: 1401 } }, basis(), { asOf }).marketDeviation, 'above_sell_grid');
+  assert.equal(reviewDividendGrid({ ...saved, quote: { ...saved.quote!, priceMinor: 1680 } }, basis(), { asOf }).marketDeviation, 'above_sell_grid');
   assert.equal(reviewDividendGrid({ ...saved, quote: { ...saved.quote!, priceMinor: 640 } }, basis(), { asOf }).marketDeviation, 'below_buy_grid');
   assert.equal(reviewDividendGrid({ ...saved, quote: { ...saved.quote!, priceMinor: 641 } }, basis(), { asOf }).marketDeviation, null);
   for (const quoteChange of [{ quoteFailedAt: 3 }, { quote: { ...saved.quote!, date: '2026-10-01' } }, { quote: { ...saved.quote!, date: '2026-10-30' } }, { quote: undefined }]) {

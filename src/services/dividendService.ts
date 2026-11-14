@@ -1,7 +1,7 @@
 import { parseTencentDividendTrend } from '../lib/dividendTrend';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { db, initializeSettings } from '../db';
-import { dateInChina, defaultDividendStocks, equalDividendWeights, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, previewDividendWeightChanges, quoteSymbol, redistributeDividendWeights, scaleDividendWeights, suggestedDividendStockWeight, type DividendStock } from '../lib/dividendWorkbench';
+import { dateInChina, equalDividendWeights, isDividendStock, linkedDividendPositions, mainlandCode, parseDividendQuote, parseDividendResponse, previewDividendWeightChanges, quoteSymbol, redistributeDividendWeights, scaleDividendWeights, suggestedDividendStockWeight, type DividendStock } from '../lib/dividendWorkbench';
 import type { DividendImportRow } from '../lib/dividendImport';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
@@ -11,13 +11,15 @@ import { previewDividendRiskRemoval } from './dividendAdvisorActionsService';
 import { assertDividendRequestCurrent, awaitDividendRequest, beforeDividendCacheWrite, claimDividendRequest, dividendRequestSignal, type DividendRequestControl } from './dividendRequestControl';
 import { buildClassicStockPlan, type ClassicStockPlan, type ClassicTaxRateBps } from '../lib/dividendClassicStrategy';
 import { DIVIDEND_PRICING_CALCULATION_VERSION } from '../lib/dividendPricing';
+import { loadDividendGridBases } from './dividendGridBasisService';
+import { researchDividendLedger } from './dividendLedgerEvidenceService';
 
 export async function loadDividendWorkbench() {
   await initializeSettings();
   await db.transaction('rw', db.settings, db.dividendStocks, async () => {
     const settings = await db.settings.get('main');
     if (!settings?.dividendWorkbenchInitialized) {
-      if (await db.dividendStocks.count() === 0) await db.dividendStocks.bulkAdd(defaultDividendStocks());
+      // No preset dividend list: only stocks the user actually adds or links.
       await db.settings.update('main', { dividendWorkbenchInitialized: true });
     }
   });
@@ -88,7 +90,7 @@ export function dividendStockEditFingerprint(stock: DividendStock): string {
   const origin = stock.gridProvenance;
   return JSON.stringify({ code: stock.code, name: stock.name, group: stock.group, weightBps: stock.weightBps,
     shareMode: stock.shareMode, manualShares: stock.manualShares, manualDpsMicros: stock.manualDpsMicros,
-    lotSize: stock.lotSize, note: stock.note, buyPaused: stock.buyPaused ?? false,
+    lotSize: stock.lotSize, note: stock.note, buyPaused: stock.buyPaused ?? false, priceMode: stock.priceMode ?? 'yield',
     buyLevels: levels(stock.buyLevels), sellLevels: levels(stock.sellLevels),
     gridProvenance: origin && { generatedAt: origin.generatedAt, grossDpsMicros: origin.grossDpsMicros,
       taxBps: origin.taxBps, parameterVersion: origin.parameterVersion, basisKind: origin.basisKind } });
@@ -283,10 +285,15 @@ export async function refreshDividendStock(code: string, control: DividendReques
   const currentDividend = claimDividendRequest(`dividend:${code}`), currentQuote = control.skipQuote ? () => false : claimDividendRequest(`quote:${code}`);
   const url = dividendSourceUrl(code);
   const schedulePath = `/PC_HSF10/BonusFinancing/PageAjax?code=${quoteSymbol(code).toUpperCase()}`;
-  const [quote, dividend, schedule] = await Promise.allSettled([
+  const trendPath = `/appstock/app/fqkline/get?param=${quoteSymbol(code)},day,,,250,qfq`;
+  const [quote, dividend, schedule, trend] = await Promise.allSettled([
     control.skipQuote ? Promise.resolve(undefined) : readSource(`https://qt.gtimg.cn/q=${quoteSymbol(code)}`, `/qt-api/q=${quoteSymbol(code)}`, control).then(text => parseDividendQuote(text, code)),
-    readSource(url, url.replace('https://datacenter.eastmoney.com', '/dividend-api'), control).then(text => parseDividendResponse(JSON.parse(text), code)),
+    readSource(url, url.replace('https://datacenter.eastmoney.com', '/dividend-api'), control).then(text => {
+      const raw = JSON.parse(text) as unknown;
+      return { raw, dividend: parseDividendResponse(raw, code) };
+    }),
     readSource(`https://emweb.eastmoney.com${schedulePath}`, `/dividend-schedule-api${schedulePath}`, control).then(text => JSON.parse(text) as unknown),
+    control.skipQuote ? Promise.resolve(undefined) : readSource(`https://web.ifzq.gtimg.cn${trendPath}`, `/dividend-trend-api${trendPath}`, control).then(text => parseTencentDividendTrend(JSON.parse(text), code, quoteSymbol(code))),
   ]);
   await beforeDividendCacheWrite(control);
   const update: Partial<DividendStock> = {};
@@ -295,15 +302,19 @@ export async function refreshDividendStock(code: string, control: DividendReques
     else update.quoteFailedAt = Date.now();
   }
   if (dividend.status === 'fulfilled') {
-    update.dividend = dividend.value;
+    update.dividend = dividend.value.dividend;
     if (schedule.status === 'fulfilled') {
-      try { update.dividend = enrichDividendPaymentDates(dividend.value, schedule.value, code); }
+      try { update.dividend = enrichDividendPaymentDates(dividend.value.dividend, schedule.value, code); }
       catch { update.dividend.scheduleFailedAt = Date.now(); }
     } else update.dividend.scheduleFailedAt = Date.now();
     update.dividendFailedAt = undefined;
     if (!isDividendDataV2(update.dividend) || !Number.isSafeInteger(update.dividend.dpsMicros)) { delete update.dividend; update.dividendFailedAt = Date.now(); }
   }
   else update.dividendFailedAt = Date.now();
+  if (!control.skipQuote) {
+    if (trend.status === 'fulfilled') { update.trend = trend.value; update.trendFailedAt = undefined; }
+    else update.trendFailedAt = Date.now();
+  }
   await db.transaction('rw', db.dividendStocks, async () => {
     assertDividendRequestCurrent(control);
     if (!currentDividend()) return;
@@ -311,6 +322,12 @@ export async function refreshDividendStock(code: string, control: DividendReques
     await db.dividendStocks.update(code, update);
     assertDividendRequestCurrent(control);
   });
+  // Every refreshed stock gets a distribution ledger, so the home grid uses the
+  // same verified recent-batch basis as the screening check without a separate
+  // research run. Ledger failures never fail the quote/dividend refresh itself.
+  if (dividend.status === 'fulfilled') {
+    try { await researchDividendLedger(dividend.value.raw, code, dateInChina(), control); } catch { /* basis stays unavailable */ }
+  }
   return (control.skipQuote || quote.status === 'fulfilled') && dividend.status === 'fulfilled' && update.dividendFailedAt === undefined;
 }
 export async function refreshDividendStocks(codes: string[], onProgress: (done: number, total: number) => void) {
@@ -349,13 +366,17 @@ export async function applyClassicDividendGrid(code: string, taxBps: ClassicTaxR
   gridFingerprint: string;
 }): Promise<void> {
   if (mainlandCode(code) !== code) throw new Error('INVALID_DIVIDEND_STOCK');
+  const asOf = dateInChina();
+  const [bases, settings] = await Promise.all([loadDividendGridBases([code], asOf), db.settings.get('main')]);
+  const method = settings?.dividendPricingMethod;
+  const basis = bases[code];
   await db.transaction('rw', db.dividendStocks, db.settings, async () => {
     const current = await db.dividendStocks.get(code);
     if (!current) throw new Error('DIVIDEND_STOCK_MISSING');
-    const asOf = expected ? dateInChina() : undefined;
-    const plan = buildClassicStockPlan(current, { taxBps, asOf });
+    if (current.priceMode === 'manual') throw new Error('DIVIDEND_MANUAL_PRICE_MODE');
+    const plan = buildClassicStockPlan(current, { taxBps, asOf, basis, buyYieldBps: method?.buyYieldBps, sellYieldBps: method?.sellYieldBps });
+    if (plan.base.tier !== 'recent_batches' || plan.base.grossDpsMicros === undefined) throw new Error('DIVIDEND_BASIS_UNVERIFIED');
     if (expected) {
-      const method = (await db.settings.get('main'))?.dividendPricingMethod;
       const period = method?.strategy === 'recent_batches' ? method.holdingPeriod : 'month_to_year';
       const currentTax = period === 'over_year' ? 0 : period === 'up_to_month' ? 2000 : 1000;
       if (asOf !== expected.asOf || taxBps !== currentTax
@@ -371,6 +392,7 @@ export async function applyClassicDividendGrid(code: string, taxBps: ClassicTaxR
         taxBps,
         parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION,
         basisKind: 'recent_batches',
+        ...(basis?.officialParserVersion ? { officialParserVersion: basis.officialParserVersion } : {}),
       },
     });
   });
@@ -378,13 +400,19 @@ export async function applyClassicDividendGrid(code: string, taxBps: ClassicTaxR
 }
 
 export async function applyAllClassicDividendGrids(taxBps: ClassicTaxRateBps = 1000): Promise<number> {
+  const asOf = dateInChina();
+  const existing = await db.dividendStocks.toArray();
+  const [bases, settings] = await Promise.all([loadDividendGridBases(existing.map(stock => stock.code), asOf), db.settings.get('main')]);
+  const method = settings?.dividendPricingMethod;
   let updatedCount = 0;
   await db.transaction('rw', db.dividendStocks, async () => {
     const stocks = await db.dividendStocks.toArray();
     const generatedAt = Date.now();
     for (const stock of stocks) {
-      const plan = buildClassicStockPlan(stock, { taxBps });
-      if (plan.base.tier === 'baseline_fallback') continue;
+      if (stock.priceMode === 'manual') continue;
+      const basis = bases[stock.code];
+      const plan = buildClassicStockPlan(stock, { taxBps, asOf, basis, buyYieldBps: method?.buyYieldBps, sellYieldBps: method?.sellYieldBps });
+      if (plan.base.tier !== 'recent_batches' || plan.base.grossDpsMicros === undefined) continue;
       await db.dividendStocks.update(stock.code, {
         buyLevels: plan.classicBuyLevels,
         sellLevels: plan.classicSellLevels,
@@ -394,6 +422,7 @@ export async function applyAllClassicDividendGrids(taxBps: ClassicTaxRateBps = 1
           taxBps,
           parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION,
           basisKind: 'recent_batches',
+          ...(basis?.officialParserVersion ? { officialParserVersion: basis.officialParserVersion } : {}),
         },
       });
       updatedCount++;

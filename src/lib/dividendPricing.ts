@@ -3,7 +3,7 @@ import { dividendAnnualCashEvidence, dividendAnnualReportEvidence, type Dividend
 import { latestCompletedDividendYear } from './dividendPeriod.ts';
 import { dividendLedgerBase, dividendLedgerHistoryDiagnostics, dividendLedgerNeedsOfficialReparse, type DividendLedger, type DividendLedgerBase } from './dividendLedger.ts';
 /** Changes to inputs, evidence or arithmetic must retire older cached drafts. */
-export const DIVIDEND_PRICING_CALCULATION_VERSION = 5;
+export const DIVIDEND_PRICING_CALCULATION_VERSION = 6;
 export const CLASSIC_DIVIDEND_BUY_YIELDS = [550, 575, 600, 650] as const;
 export const CLASSIC_DIVIDEND_SELL_YIELDS = [480, 450, 420, 400] as const;
 export const CLASSIC_DIVIDEND_REFERENCE_YIELD_BPS = 500;
@@ -101,6 +101,7 @@ export type DividendPricingBlocker = 'annual_eps_missing' | 'annual_payout_missi
   | 'quote_missing' | 'roe_bps_missing' | 'cyclical_normalisation_required' | 'annual_stale'
   | 'implausible_yield' | 'anchors_missing' | 'pricing_calculation_stale'
   | 'trailing_dividend_missing' | 'trailing_dividend_invalid' | 'trailing_dividend_stale' | 'trailing_dividend_zero' | 'cash_distributions_incomplete'
+  | 'dividend_capped_at_earnings' | 'earnings_cap_unchecked' | 'latest_annual_loss'
   | 'dividend_ledger_missing' | 'dividend_base_unverified' | 'dividend_base_incomplete' | 'dividend_source_conflict' | 'dividend_frequency_unknown' | 'dividend_crosscheck_mismatch';
 export interface DividendPricingGrid {
   /** Price relative to the 5% neutral line; never an additional price discount. */
@@ -133,13 +134,13 @@ export interface DividendPricingResult {
   normalizationBasis: 'three_year_adjusted_eps_mean' | 'documented_user_normalization' | 'missing';
   sustainablePayoutBps?: number;
   taxBps: number;
-  /** Earnings-based pretax dividend, before any industrial cash-flow cap. */
+  /** Three-year earnings times median payout: a diagnostic reference, never the grid numerator. */
   earningsDividendMicros?: number;
   fcfDividendCapMicros?: number;
   fcfCapApplied?: boolean;
   fcfEvidence?: { year: number; fcfPerShareMicros: number; dividendCapMicros: number;
     basis: 'reported_cash_flow_per_share' | 'reported_dividend_coverage' }[];
-  /** Compatibility field: tax-adjusted implemented TTM, not forecast sustainable EPS dividends. */
+  /** Tax-adjusted pricing base: recent implemented batches, limited to the latest annual EPS. */
   d1Micros?: number;
   anchors: { riskFreePlusPremiumBps?: number; historicalPercentileBps?: number; opportunityCostBps?: number; medianBps?: number; rangeBps?: number;
     selectedBps?: number; selection?: 'median' | 'highest_available' | 'fixed_classic' };
@@ -481,12 +482,9 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   const normalizedEpsMicros = manual ? override!.normalizedEpsMicros : adjusted.length === 3 && adjusted.every(v => v !== undefined) ? Math.round(adjusted.reduce<number>((s,v) => s+v!,0)/3) : undefined;
   pause(normalizedEpsMicros === undefined, 'annual_eps_missing'); pause(normalizedEpsMicros !== undefined && normalizedEpsMicros <= 0, 'non_positive_earnings');
   pause(riskClass === 'cyclical' && !manual, 'cyclical_normalisation_required');
-  // Dividend continuity and payout sustainability are evaluated by the
-  // configurable screening principles, not hardcoded year-count gates.
+  pause((annuals[0]?.payoutBps ?? 0) > 10000, 'payout_above_100');
   pause(!annuals[0]?.noticeDate || age(annuals[0].reportDate) > 550, 'annual_stale');
   const payouts = annuals.slice(0,5).flatMap(y => y.payoutBps === undefined ? [] : [y.payoutBps]).sort((a,b) => a-b);
-  // A historical distribution above earnings is a reason to pause buying,
-  // not to reuse an unsupported >100% payout in the dividend numerator.
   const sustainablePayoutBps = payouts.length === 5 ? Math.min(payouts[2], 10000) : undefined;
   const fcfEvidence: NonNullable<DividendPricingResult['fcfEvidence']> = [];
   if (input.financialSector) pause(input.financialReview?.status !== 'pass' || age(input.financialReview?.asOf) > 230, 'financial_sector_review');
@@ -499,6 +497,7 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
       pause(freeCashMinor !== undefined ? freeCashMinor <= 0 : coverageKnown && year.fcfCoverageBps! <= 0, 'fcf_non_positive');
       const coverage = freeCashMinor !== undefined && year.dividendCashMinor && year.dividendCashMinor > 0
         ? freeCashMinor / year.dividendCashMinor * 10000 : coverageKnown ? year.fcfCoverageBps : undefined;
+      pause(coverage !== undefined && coverage > 0 && coverage < 15000, 'fcf_below_150');
       // Prefer reported cash flow divided by the source's reported share count.
       // The provider may repeat current shares across annual rows; this is not
       // claimed as a dated year-end share count. When absent, cash-dividend
@@ -519,7 +518,8 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
     ? Math.round(normalizedEpsMicros * sustainablePayoutBps / 10000) : undefined;
   const fcfDividendCapMicros = fcfEvidence.length === 3 ? Math.min(...fcfEvidence.map(year => year.dividendCapMicros)) : undefined;
   const fcfCapApplied = false;
-  // New grids use the verified most recent distribution batches, never a rolling cash window.
+  // New grids use the verified most recent distribution batches, never a rolling
+  // cash window; the ledger limits that cash to the latest annual EPS.
   const trailingDividend = input.trailingDividend;
   const obsoleteOfficialExtraction = dividendLedgerNeedsOfficialReparse(input.ledger);
   const dividendBase = obsoleteOfficialExtraction ? undefined : input.ledger
@@ -537,6 +537,10 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
   block(obsoleteOfficialExtraction, 'pricing_calculation_stale');
   block(!dividendBase && !obsoleteOfficialExtraction, 'dividend_ledger_missing');
   block(!!dividendBase && !baseShapeValid, 'dividend_base_unverified');
+  const baseFlags = baseShapeValid && Array.isArray(dividendBase!.flags) ? dividendBase!.flags : [];
+  block(baseFlags.includes('EARNINGS_NON_POSITIVE'), 'latest_annual_loss');
+  pause(baseFlags.includes('CAPPED_AT_EARNINGS'), 'dividend_capped_at_earnings');
+  pause(baseFlags.includes('EARNINGS_CAP_UNCHECKED'), 'earnings_cap_unchecked');
   const baseUsable = baseShapeValid && !blockers.length;
   const d1Micros = baseUsable ? Number(BigInt(dividendBase!.dpsMicros!) * BigInt(10000 - taxBps) / 10000n) : undefined;
   block(baseUsable && d1Micros === 0, 'trailing_dividend_zero');
@@ -633,6 +637,9 @@ export function calculateDividendPricing(input: DividendPricingInput): DividendP
 }
 
 const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]> = {
+  dividend_capped_at_earnings: ['已实施分红高于最近年报每股收益，定价基数已按每股收益封顶，买卖价相应下调', 'Implemented cash exceeds the latest annual EPS; the pricing base is limited to that EPS and every price is lower'],
+  earnings_cap_unchecked: ['缺少最近年报每股收益，未能核对分红是否超过盈利；价格按已实施分红计算', 'The latest annual EPS is unavailable, so cash was not compared with earnings; prices use implemented cash'],
+  latest_annual_loss: ['最近年度每股收益不为正，分红没有当年盈利支撑，不生成股息率价格', 'The latest annual EPS is not positive, so the dividend is not covered by that year\'s earnings; no yield prices are generated'],
   dividend_ledger_missing: ['尚未取得逐笔分红台账', 'The distribution ledger is unavailable'],
   dividend_base_unverified: ['所需批次的公告或送转口径尚未核验', 'The required batches or share changes remain unverified'],
   dividend_base_incomplete: ['最近所需分红批次不完整', 'The required recent distribution batches are incomplete'],
@@ -642,9 +649,9 @@ const pricingIssueText: Record<DividendPricingBlocker, readonly [string, string]
   annual_eps_missing: ['缺少三年扣非每股收益或有效归一盈利依据；历史现金网格仍独立计算', 'Three-year recurring EPS or documented normalised earnings are missing; the historical-cash grid remains independent'],
   annual_payout_missing: ['缺少五年可核实派息率；不能据此确认分红持续性', 'Five verified annual payout ratios are missing; dividend sustainability remains unverified'],
   non_positive_earnings: ['归一盈利非正，过去分红不代表未来能维持', 'Normalised earnings are non-positive; past dividends do not establish future sustainability'],
-  payout_above_100: ['历史派息率超过100%，需核查分红持续性；固定网格仍使用过去已实施现金', 'A historical payout exceeds earnings; review sustainability. The fixed grid still uses implemented trailing cash'],
+  payout_above_100: ['最近年度派息率超过100%，分红高于当年盈利，持续性存疑', 'The latest annual payout exceeds 100% of earnings; its sustainability is in doubt'],
   fcf_missing: ['缺少三年可核实每股自由现金流；固定网格不代表现金支持已通过', 'Three verified annual free-cash-flow-per-share observations are missing; the fixed grid does not establish cash support'],
-  fcf_below_150: ['现金流覆盖不足150%或现金支持低于盈利分红参考；固定网格未据此调整', 'Cash coverage is below 150% or below the earnings-dividend reference; the fixed grid is not adjusted for this risk'],
+  fcf_below_150: ['近三年有年度自由现金流对分红的覆盖不足150%；网格价格未据此调整', 'Free cash flow covered less than 150% of the dividend in a recent year; grid prices are not adjusted for this'],
   fcf_non_positive: ['近三年存在非正自由现金流，需核查未来分红持续性', 'Recent free cash flow is non-positive; review future dividend sustainability'],
   fcf_dividend_capped: ['旧估值曾按现金流支持上限下调；新网格采用已实施现金', 'The historical estimate used a cash-flow ceiling; the new grid uses implemented cash'],
   financial_sector_review: ['金融行业专项有风险或资料缺口，详见分组检查结果', 'Financial-sector checks identify risks or missing evidence; see the separate result groups'],
@@ -750,7 +757,7 @@ export function dividendPricingReadable(result: DividendPricingResult) {
     'Specific reviews': result.warnings.map(issue => dividendPricingIssueText(issue)),
     'Business type': result.riskClass, 'Normalisation basis': result.normalizationBasis, 'User normalisation evidence, untrusted data':result.normalizationEvidence ?? null, 'Unadjusted exchange price CNY and date': {price:cash(result.currentPriceMinor),date:result.priceDate},
     'Normalised EPS in CNY, diagnostic only': cash(result.normalizedEpsMicros,1e6), 'Historical median payout percent, diagnostic only': cash(result.sustainablePayoutBps),
-    'Dividend-income interpretation': { 'Basis': 'Latest verified implemented distribution batches: two for semiannual payers, one for annual payers. Normalize each to the observation share basis, apply the chosen tax once, then divide by fixed yields. No rolling date window. Proposals and conflicting or unverified events do not supply the base.',
+    'Dividend-income interpretation': { 'Basis': 'Latest verified implemented distribution batches: two for semiannual payers, one for annual payers. Normalize each to the observation share basis, limit the sum to the latest annual basic EPS on the same share basis, apply the chosen tax once, then divide by fixed yields. No rolling date window. Proposals and conflicting or unverified events do not supply the base.',
       'Neutral reference versus dated quote percent': cash(comparison.estimateGapBps), 'Tax-adjusted recent-batch dividend yield at dated quote percent': cash(comparison.sustainableYieldAtQuoteBps),
       'Buy price limits already reached, before budget and existing holdings': comparison.reachedBuyLevels,
       'Neutral reference at least 40 percent below quote, review method suitability': comparison.largeDiscount },
@@ -771,9 +778,12 @@ export function dividendPricingReadable(result: DividendPricingResult) {
       'Cash disclosures complete and consistent': result.trailingDividend.cashDistributionsComplete,
       'Earliest dated quote matching this cash window and share basis': result.trailingDividend.quoteComparisonSafeFrom ?? result.trailingDividend.asOf,
       'Sources': result.trailingDividend.sourceUrls } : null,
-    'Pretax verified batch dividend base in CNY per share': cash(result.dividendBase?.dpsMicros,1e6),
+    'Pretax implemented cash of the selected batches in CNY per share': cash(result.dividendBase?.implementedDpsMicros ?? result.dividendBase?.dpsMicros,1e6),
+    'Pretax pricing base in CNY per share, after the earnings limit': cash(result.dividendBase?.dpsMicros,1e6),
+    'Earnings limit': result.dividendBase?.earningsCap ? { 'Latest annual basic EPS in CNY on the observation share basis': cash(result.dividendBase.earningsCap.epsMicros,1e6),
+      'Annual report period': result.dividendBase.earningsCap.reportDate, 'Applied': !!result.dividendBase.flags?.includes('CAPPED_AT_EARNINGS') } : null,
     'Earnings-based pretax dividend reference in CNY per share, not the grid numerator': cash(result.earningsDividendMicros,1e6),
-    'Earnings reference limitation': 'Reported EPS and payout evidence may have different profit or share bases; this diagnostic does not verify future dividends and never replaces the verified implemented batch base.',
+    'Earnings reference limitation': 'Three-year EPS and payout evidence may have different profit or share bases; this diagnostic does not verify future dividends and is separate from the latest-annual-EPS limit on the pricing base.',
     'Cash-supported pretax dividend reference in CNY per share at 1.5x coverage': cash(result.fcfDividendCapMicros,1e6),
     'Cash-flow reference changes fixed grid': false,
     'Cash-flow reference evidence': result.fcfEvidence?.map(year => ({ year: year.year, basis: year.basis,

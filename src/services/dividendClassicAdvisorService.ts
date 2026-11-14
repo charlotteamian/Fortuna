@@ -42,12 +42,15 @@ export async function generateClassicDividendAdvice(options: {
 
   const zh = language.startsWith('zh');
   const plans = scopeClassicAdvicePlans(options.plans, options.selectedCode);
-  const facts: DividendExplanationFact[] = plans.map(plan => {
+  const facts: DividendExplanationFact[] = plans
+    .filter(plan => plan.base.tier === 'recent_batches' && plan.base.netDpsMicros !== undefined)
+    .map(plan => {
     const subject = `stock:${plan.code}`;
     const text = buildClassicDailyAdviceMarkdown([plan], { selectedCode: plan.code, language, asOf, now })
       .replace(/\s*\n- /g, ' · ').replace(/[\r\n]+/g, ' ').replace(/\*\*|###/g, '').trim();
-    const basis = zh ? `分红基数 ${(plan.base.netDpsMicros / 1e6).toFixed(4)} 元/股（税后）`
-      : `After-tax dividend basis ¥${(plan.base.netDpsMicros / 1e6).toFixed(4)}/share`;
+    const net = plan.base.netDpsMicros as number;
+    const basis = zh ? `分红基数 ${(net / 1e6).toFixed(4)} 元/股（税后）`
+      : `After-tax dividend basis ¥${(net / 1e6).toFixed(4)}/share`;
     return { id: `${subject}:grid`, text: `${text} · ${basis}`, kind: 'check', subject, subjectName: plan.name };
   });
 

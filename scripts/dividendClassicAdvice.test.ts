@@ -2,20 +2,24 @@ import 'fake-indexeddb/auto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildClassicDailyAdviceMarkdown, getClassicAdviceFacts } from '../src/lib/dividendClassicAdvice.ts';
-import { buildClassicStockPlan } from '../src/lib/dividendClassicStrategy.ts';
+import { buildClassicStockPlan, type ClassicVerifiedBasis } from '../src/lib/dividendClassicStrategy.ts';
 import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
 import { clearDividendAdvisorConfig, saveDividendAdvisorConfig } from '../src/services/dividendAdvisorService.ts';
 import { generateClassicDividendAdvice } from '../src/services/dividendClassicAdvisorService.ts';
 
 const asOf = '2026-11-04';
 const now = Date.parse('2026-11-04T09:35:00+08:00');
+const verifiedBasis: ClassicVerifiedBasis = {
+  dpsMicros: 4_300_000, implementedDpsMicros: 4_300_000, verified: true,
+  frequency: 'annual', reportPeriods: ['2025-12-31'], latestExDate: '2026-07-10',
+};
 const makePlan = (overrides: Partial<DividendStock> = {}, totalBudgetMinor = 10_000_000) => buildClassicStockPlan({
   code: '000333', name: '美的集团', group: 'core', weightBps: 1500, lotSize: 100, shareMode: 'manual', manualShares: 0,
-  quote: { priceMinor: 8888, date: '2026-11-04 09:32' }, manualDpsMicros: 4_300_000,
+  quote: { priceMinor: 8888, date: '2026-11-04 09:32' },
   buyLevels: [{ priceMinor: 7818, yieldBps: 550, portionBps: 2500 }],
   sellLevels: [{ priceMinor: 8958, yieldBps: 480, portionBps: 2500 }],
   ...overrides,
-}, { totalBudgetMinor, asOf });
+}, { totalBudgetMinor, asOf, basis: 'basis' in overrides ? overrides.basis : verifiedBasis });
 
 test('saved screenshot prices keep their actual gap and implied net yield, with sell monitoring limited to holdings', () => {
   const watch = makePlan();
@@ -37,7 +41,7 @@ test('watchlist ranks funded, unpaused names with current quotes by remaining pu
   const noBudget = makePlan({ code: '000001', name: '预算为零', weightBps: 0 });
   const paused = makePlan({ code: '000002', name: '手动暂停', buyPaused: true });
   const reference = makePlan({ code: '600900', name: '只有参考价', quote: undefined });
-  const baseline = makePlan({ code: '601288', name: '只有参考股息', manualDpsMicros: undefined });
+  const baseline = makePlan({ code: '601288', name: '只有参考股息', buyLevels: undefined, sellLevels: undefined, basis: undefined });
   const markdown = buildClassicDailyAdviceMarkdown([farther, noBudget, paused, reference, baseline, closer], { asOf, now });
   const [, ranked, other] = markdown.split(/### 距买1最近（已分配预算）|### 其他状态/);
   assert.ok(ranked.indexOf('华能国际') < ranked.indexOf('美的集团'));
@@ -45,7 +49,7 @@ test('watchlist ranks funded, unpaused names with current quotes by remaining pu
   assert.match(other, /预算为零.*未分配预算/);
   assert.match(other, /手动暂停.*暂停买入/);
   assert.match(other, /只有参考价.*缺少当日有效行情/);
-  assert.match(other, /只有参考股息.*内置参考/);
+  assert.match(other, /只有参考股息.*无已核验分红基数/);
 });
 
 test('potential price touches cannot report sell without holdings or buy without budget, time or lots', () => {
@@ -55,8 +59,8 @@ test('potential price touches cannot report sell without holdings or buy without
   assert.equal(unheld.touchedSellLevel, 0);
   assert.equal(unheld.status, 'waiting');
   assert.equal(getClassicAdviceFacts(makePlan({ quote: sellQuote, manualShares: 1000, buyPaused: true, weightBps: 0 }), asOf, now).shares, 200);
-  const baseline = getClassicAdviceFacts(makePlan({ quote: sellQuote, manualShares: 1000, manualDpsMicros: undefined }), asOf, now);
-  assert.equal(baseline.status, 'reference_only');
+  const baseline = getClassicAdviceFacts(makePlan({ quote: sellQuote, manualShares: 1000, buyLevels: undefined, sellLevels: undefined, basis: undefined }), asOf, now);
+  assert.equal(baseline.status, 'no_base');
   assert.equal(baseline.shares, 0);
   assert.equal(getClassicAdviceFacts(makePlan({ quote: buyQuote, weightBps: 0 }), asOf, now).status, 'no_budget');
   assert.equal(getClassicAdviceFacts(makePlan({ quote: buyQuote }), asOf, now).status, 'below_lot');

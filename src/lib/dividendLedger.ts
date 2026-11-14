@@ -1,3 +1,5 @@
+import { latestCompletedDividendYear } from './dividendPeriod.ts';
+
 /** One row per disclosed distribution; money is integer CNY micros throughout. */
 export type DividendLedgerPeriod = 'annual' | 'interim' | 'quarterly' | 'special' | 'unknown';
 export type DividendLedgerVerification = 'verified' | 'unverified' | 'conflict';
@@ -13,11 +15,18 @@ export interface DividendLedgerEvent {
   id: string; batchId: string; code: string; reportDate?: string; period: DividendLedgerPeriod;
   announcementDate?: string; recordDate?: string; exDate?: string; cashPer10Micros?: number; sourceReportDate?: string;
   bonusPer10Bps?: number; transferPer10Bps?: number; shareFactor?: number; normalizedDpsMicros?: number;
+  /** Reported basic EPS of the report period, on the share count before this distribution. */
+  basicEpsMicros?: number;
   implemented: boolean; proposal?: boolean; stage?: 'implemented' | 'proposal' | 'cancelled' | 'no_dividend' | 'unknown'; verification: DividendLedgerVerification; sources: DividendLedgerSource[]; issues: string[];
 }
 export interface DividendLedger { code: string; asOf: string; events: DividendLedgerEvent[]; complete: boolean; issues: string[]; sourceUrls: string[]; officialParserVersion?: number }
 export interface DividendLedgerBase {
-  dpsMicros?: number; asOf: string; frequency: 'semiannual' | 'annual' | 'unknown'; requiredBatches: number;
+  /** Pricing numerator: implemented cash, limited to the latest annual EPS. */
+  dpsMicros?: number;
+  /** Implemented cash of the selected batches before the earnings limit. Absent on bases saved before the limit existed. */
+  implementedDpsMicros?: number;
+  earningsCap?: { epsMicros: number; reportDate: string };
+  asOf: string; frequency: 'semiannual' | 'annual' | 'unknown'; requiredBatches: number;
   selectedBatchIds: string[]; latestExDate?: string; verified: boolean; flags: string[]; sourceUrls: string[]; reportPeriods: string[];
   crosscheckDpsMicros?: number; crosscheckDeviationBps?: number;
 }
@@ -35,6 +44,11 @@ const amount = (value: unknown, scale: number): number | undefined => {
   if (value === null || value === undefined || value === '' || typeof value === 'boolean') return undefined;
   const result = Number(value) * scale;
   return Number.isFinite(result) && result >= 0 && Number.isSafeInteger(Math.round(result)) ? Math.round(result) : undefined;
+};
+const signedAmount = (value: unknown, scale: number): number | undefined => {
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean') return undefined;
+  const result = Math.round(Number(value) * scale);
+  return Number.isSafeInteger(result) ? result : undefined;
 };
 const distinct = <T>(values: T[]): T[] => [...new Set(values)];
 const periodFor = (reportDate?: string, title = ''): DividendLedgerPeriod => /特别|special/i.test(title) ? 'special'
@@ -81,6 +95,7 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
     const ratio = (key: string) => key in row ? row[key] === null || row[key] === '' ? 0 : amount(row[key], 1000) : undefined;
     const cashPer10Micros = amount(row.PRETAX_BONUS_RMB, 1e6), bonusPer10Bps = ratio('BONUS_RATIO'), transferPer10Bps = ratio('IT_RATIO');
     const shareFactor = bonusPer10Bps !== undefined && transferPer10Bps !== undefined ? 1 + (bonusPer10Bps + transferPer10Bps) / 10000 : undefined;
+    const basicEpsMicros = signedAmount(row.BASIC_EPS, 1e6);
     const progress = String(row.ASSIGN_PROGRESS);
     const stage: DividendLedgerEvent['stage'] = /取消|终止/.test(progress) ? 'cancelled' : /不分配|不分红/.test(progress) ? 'no_dividend' : implemented ? 'implemented'
       : /预案|股东|董事/.test(progress) || /实施/.test(progress) && !!exDate && exDate > asOf ? 'proposal' : 'unknown';
@@ -94,7 +109,7 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
     const period = periodFor(reportDate, String(row.IMPL_PLAN_PROFILE ?? ''));
     const batchId = `${code}:${reportDate ?? 'unknown'}:${exDate ?? 'pending'}:${period}`;
     const event: DividendLedgerEvent = { id: batchId, batchId, code, reportDate, period, announcementDate, recordDate, exDate, cashPer10Micros,
-      bonusPer10Bps, transferPer10Bps, shareFactor, implemented, proposal: stage === 'proposal', stage, verification: 'unverified', sources: [{ provider: 'eastmoney', url: sourceUrl, announcementDate }], issues: [] };
+      bonusPer10Bps, transferPer10Bps, shareFactor, ...(basicEpsMicros === undefined ? {} : { basicEpsMicros }), implemented, proposal: stage === 'proposal', stage, verification: 'unverified', sources: [{ provider: 'eastmoney', url: sourceUrl, announcementDate }], issues: [] };
     if (correction && reportDate !== sourceReportDate) {
       event.sourceReportDate = sourceReportDate;
       event.sources.push({ provider: 'eastmoney', url: correction.sourceUrl, announcementDate, title: correction.title });
@@ -166,27 +181,31 @@ export function buildDividendLedger(distributionRaw: unknown, code: string, asOf
   return ledger;
 }
 
-function normalizedCash(ledger: DividendLedger, event: DividendLedgerEvent, asOf: string): number | undefined {
-  // Structured feed rows with complete fields are accepted as the verification
-  // basis (2026-11-07): official PDF cross-checks are no longer required, so an
-  // "unverified" event is only excluded when its own fields are incomplete or
-  // a genuine source conflict exists.
-  if (!event.implemented || !event.exDate || event.exDate > asOf || event.verification === 'conflict' || event.cashPer10Micros === undefined) return undefined;
-  const actions = ledger.events.filter(other => other.implemented && !!other.exDate && other.exDate >= event.exDate! && other.exDate <= asOf);
+/** One factor per ex-date, even when several cash batches share it; undefined when a share change is unverified. */
+function shareFactors(actions: DividendLedgerEvent[]): Map<string, number> | undefined {
   if (actions.some(action => action.shareFactor === undefined || action.verification === 'conflict')) return undefined;
-  // Same-day share capital changes are applied once, even if cash is represented by multiple batches.
   const factors = new Map<string, number>();
   for (const action of actions) {
     const factorBps = 10000 + (action.bonusPer10Bps ?? 0) + (action.transferPer10Bps ?? 0);
     if (factors.has(action.exDate!) && factors.get(action.exDate!) !== factorBps) return undefined;
     factors.set(action.exDate!, factorBps);
   }
+  return factors;
+}
+
+function normalizedCash(ledger: DividendLedger, event: DividendLedgerEvent, asOf: string): number | undefined {
+  // Structured feed rows with complete fields are accepted as the verification
+  // basis (2026-11-07): official PDF cross-checks are no longer required, so an
+  // "unverified" event is only excluded when its own fields are incomplete or
+  // a genuine source conflict exists.
+  if (!event.implemented || !event.exDate || event.exDate > asOf || event.verification === 'conflict' || event.cashPer10Micros === undefined) return undefined;
+  const factors = shareFactors(ledger.events.filter(other => other.implemented && !!other.exDate && other.exDate >= event.exDate! && other.exDate <= asOf));
+  if (!factors) return undefined;
   let numerator = BigInt(event.cashPer10Micros), denominator = 10n;
   for (const factor of factors.values()) { numerator *= 10000n; denominator *= BigInt(factor); }
   const result = Number((numerator + denominator / 2n) / denominator);
   return Number.isSafeInteger(result) ? result : undefined;
 }
-
 export function detectDividendLedgerFrequency(ledger: DividendLedger, asOf = ledger.asOf): DividendLedgerBase['frequency'] {
   const regular = ledger.events.filter(event => event.implemented && !!event.exDate && event.exDate <= asOf && event.cashPer10Micros !== 0 && event.period !== 'special');
   if (!regular.length) return 'unknown';
@@ -238,26 +257,63 @@ export function dividendLedgerBase(ledger: DividendLedger, asOf: string, crossch
   // observations but never erase an otherwise complete cash base.
   const keyDataComplete = frequency !== 'unknown' && requiredBatches > 0 && selected.length === requiredBatches
     && normalized.every(value => value !== undefined);
-  const dpsMicros = keyDataComplete ? normalized.reduce<number>((sum, value) => sum + value!, 0) : undefined;
+  const implementedDpsMicros = keyDataComplete ? normalized.reduce<number>((sum, value) => sum + value!, 0) : undefined;
+  // A distribution above a full year's earnings cannot be repeated from
+  // profit, so the pricing numerator stops at the latest annual EPS while the
+  // implemented cash stays visible beside it.
+  const earningsCap = latestAnnualEarnings(ledger, asOf);
+  let dpsMicros = implementedDpsMicros;
+  if (implementedDpsMicros !== undefined && implementedDpsMicros > 0) {
+    if (!earningsCap) flags.push('EARNINGS_CAP_UNCHECKED');
+    else if (earningsCap.epsMicros <= 0) { dpsMicros = 0; flags.push('EARNINGS_NON_POSITIVE'); }
+    else if (implementedDpsMicros > earningsCap.epsMicros) { dpsMicros = earningsCap.epsMicros; flags.push('CAPPED_AT_EARNINGS'); }
+  }
   const eps = crosscheck.epsMicros, payout = crosscheck.payoutBps;
   const crosscheckDpsMicros = eps !== undefined && Number.isSafeInteger(eps) && eps > 0 && payout !== undefined && Number.isSafeInteger(payout) && payout >= 0
     ? Number((BigInt(eps) * BigInt(payout) + 5000n) / 10000n) : undefined;
-  const crosscheckDeviationBps = dpsMicros !== undefined && dpsMicros > 0 && crosscheckDpsMicros !== undefined ? Math.round(Math.abs(dpsMicros - crosscheckDpsMicros) / dpsMicros * 10000) : undefined;
+  const crosscheckDeviationBps = implementedDpsMicros !== undefined && implementedDpsMicros > 0 && crosscheckDpsMicros !== undefined
+    ? Math.round(Math.abs(implementedDpsMicros - crosscheckDpsMicros) / implementedDpsMicros * 10000) : undefined;
   if (crosscheckDpsMicros === undefined) flags.push('CROSSCHECK_MISSING');
-  return { dpsMicros, asOf, frequency, requiredBatches, selectedBatchIds: selected.map(event => event.batchId), latestExDate,
-    verified: dpsMicros !== undefined && dpsMicros > 0, flags: distinct(flags),
+  return { dpsMicros, implementedDpsMicros, ...(earningsCap ? { earningsCap } : {}), asOf, frequency, requiredBatches, selectedBatchIds: selected.map(event => event.batchId), latestExDate,
+    verified: implementedDpsMicros !== undefined && implementedDpsMicros > 0, flags: distinct(flags),
     sourceUrls: distinct(selected.flatMap(event => event.sources.map(source => source.url))), reportPeriods: selected.flatMap(event => event.reportDate ? [event.reportDate] : []),
     crosscheckDpsMicros, crosscheckDeviationBps };
 }
 
+/** Latest annual basic EPS known on `asOf`, restated to that day's share count. */
+function latestAnnualEarnings(ledger: DividendLedger, asOf: string): DividendLedgerBase['earningsCap'] {
+  const annual = ledger.events.filter(event => event.reportDate?.endsWith('-12-31') && Number.isSafeInteger(event.basicEpsMicros)
+    && !!event.announcementDate && event.announcementDate <= asOf && event.verification !== 'conflict')
+    .sort((a, b) => b.reportDate!.localeCompare(a.reportDate!)
+      || (b.announcementDate ?? '').localeCompare(a.announcementDate ?? '')
+      || (b.cashPer10Micros ?? 0) - (a.cashPer10Micros ?? 0))[0];
+  // An older report says nothing about whether the latest year covered its dividend.
+  if (!annual || Number(annual.reportDate!.slice(0, 4)) < latestCompletedDividendYear(asOf)) return undefined;
+  // Reported EPS uses the share count before the report's own distribution, as
+  // its cash per ten shares does; later bonus and transfer shares dilute both.
+  const paid = annual.implemented && !!annual.exDate && annual.exDate <= asOf;
+  const from = paid ? annual.exDate! : annual.announcementDate!;
+  const actions = ledger.events.filter(other => other.implemented && !!other.exDate && other.exDate <= asOf
+    && (paid ? other.exDate >= from : other.exDate > from));
+  const factors = shareFactors(actions);
+  if (!factors) return undefined;
+  let numerator = BigInt(annual.basicEpsMicros!), denominator = 1n;
+  for (const factor of factors.values()) { numerator *= 10000n; denominator *= BigInt(factor); }
+  const half = denominator / 2n;
+  const epsMicros = Number((numerator >= 0n ? numerator + half : numerator - half) / denominator);
+  return Number.isSafeInteger(epsMicros) ? { epsMicros, reportDate: annual.reportDate! } : undefined;
+}
 /** Diagnose every monthly observation separately; long price history does not prove complete cash evidence. */
 export function dividendLedgerHistoryDiagnostics(ledger: DividendLedger, prices: { date: string; priceMinor: number }[], asOf = ledger.asOf) {
   const unique = [...new Map(prices.filter(price => day(price.date) && price.date <= asOf && price.date.slice(0, 7) < asOf.slice(0, 7)).map(price => [price.date.slice(0, 7), price])).values()].sort((a, b) => a.date.localeCompare(b.date));
   const observations = unique.map(price => {
     const then: DividendLedger = { ...ledger, asOf: price.date, events: ledger.events.filter(event => !event.announcementDate || event.announcementDate <= price.date).map(event => ({ ...event, implemented: !!event.exDate && event.exDate <= price.date && event.implemented })) };
     const base = dividendLedgerBase(then, price.date);
-    const usable = base.dpsMicros !== undefined && base.dpsMicros > 0 && price.priceMinor > 0 && Number.isSafeInteger(price.priceMinor);
-    return { date: price.date, dpsMicros: base.dpsMicros, yieldBps: usable ? Math.round(base.dpsMicros! / price.priceMinor) : undefined, usable, flags: base.flags.filter(flag => flag !== 'CROSSCHECK_MISSING') };
+    // History records the cash actually paid; the earnings limit applies to new prices only.
+    const cash = base.implementedDpsMicros;
+    const usable = cash !== undefined && cash > 0 && price.priceMinor > 0 && Number.isSafeInteger(price.priceMinor);
+    return { date: price.date, dpsMicros: cash, yieldBps: usable ? Math.round(cash! / price.priceMinor) : undefined, usable,
+      flags: base.flags.filter(flag => !['CROSSCHECK_MISSING', 'EARNINGS_CAP_UNCHECKED', 'EARNINGS_NON_POSITIVE', 'CAPPED_AT_EARNINGS'].includes(flag)) };
   });
   const samples = observations.filter(observation => observation.usable), from = samples[0]?.date, through = samples.at(-1)?.date;
   const spanYears = from && through ? (Date.parse(through) - Date.parse(from)) / (365.25 * 86400000) : 0;

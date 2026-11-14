@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import test, { after, beforeEach } from 'node:test';
+import Dexie from 'dexie';
 import { dateInChina, type DividendStock } from '../src/lib/dividendWorkbench.ts';
 import { buildClassicStockPlan } from '../src/lib/dividendClassicStrategy.ts';
+import { pingAnOfficialLedger } from './helpers/dividendPricingFixture.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -23,6 +25,9 @@ registerHooks({
 const { db, initializeSettings, updateSettings, exportData } = await import('../src/db.ts');
 const { applyClassicDividendGrid, classicDividendGridFingerprint, dividendStockEditFingerprint, saveDividendStock, saveDividendStockWeight } = await import('../src/services/dividendService.ts');
 const { loadDividendWorkbench, loadDividendWorkbenchReadOnly, repairOverallocatedDividendWeights, saveDividendBudget, saveDividendHomeCollapse } = await import('../src/services/dividendService.ts');
+const { loadDividendGridBases } = await import('../src/services/dividendGridBasisService.ts');
+const { closeDividendLedgerEvidence } = await import('../src/services/dividendLedgerEvidenceService.ts');
+const ledgerStore = new Dexie('FortunaDividendLedger'); ledgerStore.version(1).stores({ documents: 'url', ledgers: 'code' });
 
 const stock = (): DividendStock => ({ code: '000001', name: 'Synthetic stock', group: 'core', weightBps: 5000,
   shareMode: 'manual', manualShares: 100, manualDpsMicros: 609000, lotSize: 100, note: 'Original note', buyPaused: false,
@@ -33,6 +38,7 @@ async function state() { const value = JSON.parse(await exportData()); delete va
 
 beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
+  await ledgerStore.table('ledgers').put(pingAnOfficialLedger(dateInChina()));
   await initializeSettings();
   await updateSettings({ dividendBudgetMinor: 1234567, dividendWorkbenchInitialized: true });
   await db.dividendStocks.put(stock());
@@ -40,7 +46,7 @@ beforeEach(async () => {
   await db.holdings.put({ id: 'synthetic-holding', accountId: 'synthetic-account', name: 'Synthetic stock', symbol: '000001', createdAt: 1, sortOrder: 0 });
   await db.holdingTxns.put({ id: 'synthetic-buy', holdingId: 'synthetic-holding', accountId: 'synthetic-account', date: '2020-01-01', kind: 'buy', shares: 100, price: 10, createdAt: 1 });
 });
-after(() => db.close());
+after(() => { db.close(); ledgerStore.close(); closeDividendLedgerEvidence(); });
 
 test('inline allocation changes only the selected weight and preserves the entire saved ledger', async () => {
   const original = { ...stock(), weightBps: 0, quote: { priceMinor: 950, date: '2026-11-03 10:00:00', fetchedAt: 1 } };
@@ -267,19 +273,21 @@ test('guarded manual price changes clear the old origin while preserving the opp
 test('classic grid confirmation rejects a stale preview and stores the refreshed candidate exactly', async () => {
   const original = stock();
   const asOf = dateInChina();
+  const basis = (await loadDividendGridBases(['000001'], asOf))['000001'];
+  assert.equal(basis.verified, true);
   const expected = (current: DividendStock) => ({
     asOf,
     stockFingerprint: dividendStockEditFingerprint(current),
-    gridFingerprint: classicDividendGridFingerprint(buildClassicStockPlan(current, { asOf, taxBps: 1000 })),
+    gridFingerprint: classicDividendGridFingerprint(buildClassicStockPlan(current, { asOf, taxBps: 1000, basis })),
   });
-  const changed = { ...original, manualDpsMicros: 888000 };
+  const changed = { ...original, weightBps: 6000 };
   await db.dividendStocks.put(changed);
   const before = await state();
   await assert.rejects(applyClassicDividendGrid(original.code, 1000, expected(original)), /DIVIDEND_REVIEW_CHANGED/);
   assert.deepEqual(await state(), before);
   await applyClassicDividendGrid(changed.code, 1000, expected(changed));
   const saved = await db.dividendStocks.get(changed.code);
-  const candidate = buildClassicStockPlan(changed, { asOf, taxBps: 1000 });
+  const candidate = buildClassicStockPlan(changed, { asOf, taxBps: 1000, basis });
   assert.deepEqual(saved?.buyLevels, candidate.classicBuyLevels);
   assert.deepEqual(saved?.sellLevels, candidate.classicSellLevels);
 });

@@ -104,7 +104,17 @@ export function buildDividendManualBase(value: DividendManualInputs, asOf: strin
   const crosscheckDeviationBps = crosscheckDpsMicros === undefined ? undefined : Math.round(Math.abs(dpsMicros - crosscheckDpsMicros) / dpsMicros * 10000);
   if (crosscheckDpsMicros !== undefined && BigInt(Math.abs(dpsMicros - crosscheckDpsMicros)) * 4n > BigInt(dpsMicros)) throw new Error('DIVIDEND_MANUAL_CROSSCHECK');
   if (!Number.isSafeInteger(dpsMicros) || dpsMicros <= 0) throw new Error('DIVIDEND_MANUAL_INVALID');
-  return { dpsMicros, asOf, frequency: value.frequency, requiredBatches: required, verified: true,
+  // The earnings limit is the same rule as the automatic ledger: even a
+  // user-confirmed distribution cannot price above the latest annual EPS.
+  // The manually entered comparable EPS supplies the limit; otherwise the
+  // previous automatic limit is kept, and without either it stays unchecked.
+  const implementedDpsMicros = dpsMicros;
+  const earningsCap = value.crosscheck ? { epsMicros: value.crosscheck.epsMicros, reportDate: value.crosscheck.reportDate }
+    : existing?.dividendBase?.earningsCap;
+  if (!earningsCap) flags.push('EARNINGS_CAP_UNCHECKED');
+  else if (earningsCap.epsMicros <= 0) { dpsMicros = 0; flags.push('EARNINGS_NON_POSITIVE'); }
+  else if (implementedDpsMicros > earningsCap.epsMicros) { dpsMicros = earningsCap.epsMicros; flags.push('CAPPED_AT_EARNINGS'); }
+  return { dpsMicros, implementedDpsMicros, ...(earningsCap ? { earningsCap } : {}), asOf, frequency: value.frequency, requiredBatches: required, verified: true,
     selectedBatchIds: batches.map(batch => `user:${value.code}:${batch.reportDate}:${batch.exDate}`),
     latestExDate: [...batches.map(batch => batch.exDate), ...[...extraActions].filter(([, action]) => action.bonusPer10Bps + action.transferPer10Bps > 0).map(([date]) => date)].sort().at(-1),
     flags, sourceUrls: [...new Set([...batches.map(batch => batch.sourceUrl), ...[...extraActions.values()].flatMap(action => action.sourceUrls), ...(value.crosscheck ? [value.crosscheck.sourceUrl] : [])])],

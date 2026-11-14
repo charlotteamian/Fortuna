@@ -256,8 +256,10 @@ export function dividendResearchCashYield(stock: DividendStockResearch, now = Da
     try { base = dividendLedgerBase(pricing.ledger, priceDate, { epsMicros: annual?.epsMicros, payoutBps: annual?.payoutBps }); } catch { return {}; }
   } else if (!validDate(base?.asOf) || base!.asOf > asOf || base!.asOf < priceDate! || base?.latestExDate && priceDate! < base.latestExDate) return {};
   if (pricing.userConfirmedEvidence && !hasCurrentUserDividendEvidence(pricing, asOf)) return {};
-  if (!Number.isSafeInteger(base?.dpsMicros) || base!.dpsMicros! <= 0) return {};
-  return { yieldBps: Math.round(base!.dpsMicros! / price!), periods: base!.reportPeriods };
+  // The displayed cash yield is what was actually paid, not the capped pricing base.
+  const cash = base?.implementedDpsMicros ?? base?.dpsMicros;
+  if (!Number.isSafeInteger(cash) || cash! <= 0) return {};
+  return { yieldBps: Math.round(cash! / price!), periods: base!.reportPeriods };
 }
 
 /** Technical pacing is deliberately separate from financial eligibility. Unknown inputs never pass. */

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import Dexie from 'dexie';
 import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
-import { defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
+import { DIVIDEND_PRICING_CALCULATION_VERSION, defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import { pingAnOfficialLedger } from './helpers/dividendPricingFixture.ts';
 
@@ -34,7 +34,7 @@ const savedStock = (code = '000001'): DividendStock => ({ code, name: `Synthetic
   quote: { priceMinor: 800, date: `${asOf} 14:00:00`, fetchedAt: now },
   buyLevels: [996, 953, 913, 843].map((priceMinor, index) => ({ priceMinor, yieldBps: [550, 575, 600, 650][index], portionBps: 2500 })),
   sellLevels: [1142, 1218, 1305, 1371].map((priceMinor, index) => ({ priceMinor, yieldBps: [480, 450, 420, 400][index], portionBps: 2500 })),
-  gridProvenance: { generatedAt: now - 3600000, grossDpsMicros: 609000, taxBps: 1000, parameterVersion: 5, basisKind: 'recent_batches' },
+  gridProvenance: { generatedAt: now - 3600000, grossDpsMicros: 609000, taxBps: 1000, parameterVersion: DIVIDEND_PRICING_CALCULATION_VERSION, basisKind: 'recent_batches' },
 });
 const workbench = async () => ({ stocks: await db.dividendStocks.toArray(), budgetMinor: 4000000, budgetConfigured: true,
   positions: new Map(), fundPlan: defaultDividendFundPlan() });

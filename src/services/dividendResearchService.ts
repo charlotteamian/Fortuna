@@ -160,8 +160,9 @@ async function fetchStock(stock: Pick<DividendStock, 'code' | 'name'>, principle
   const unadjusted = monthly.data?.at(-1);
   const quoteAgeDays = unadjusted ? (Date.parse(asOf) - Date.parse(unadjusted.date)) / 86400000 : Infinity;
   const quoteBase = unadjusted && quoteAgeDays >= 0 && quoteAgeDays <= 10 && ledger ? dividendLedgerBase(ledger, unadjusted.date) : undefined;
-  const currentCashYieldBps = quoteBase?.verified && quoteBase.dpsMicros !== undefined && unadjusted
-    ? Math.round(quoteBase.dpsMicros / unadjusted.priceMinor) : undefined;
+  const quoteCashMicros = quoteBase?.verified ? quoteBase.implementedDpsMicros ?? quoteBase.dpsMicros : undefined;
+  const currentCashYieldBps = quoteCashMicros !== undefined && quoteCashMicros > 0 && unadjusted
+    ? Math.round(quoteCashMicros / unadjusted.priceMinor) : undefined;
   // Cash-grid readiness is independent of the financial and comparison feeds.
   // Even a failed distribution download gets an explicit missing-ledger result.
   let pricing = (() => {
