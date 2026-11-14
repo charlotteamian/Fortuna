@@ -304,7 +304,7 @@ export default function PlanPage() {
     const v = Number(targetInput);
     if (targetInput.trim() && (!Number.isFinite(v) || v <= 0)) return;
     await saveAction(async () => {
-      await setPlanTargetTotal(targetInput.trim() ? majorToMinor(v) / 100 : undefined);
+      await setPlanTargetTotal(targetInput.trim() ? v : undefined);
       setShowTarget(false);
     });
   };

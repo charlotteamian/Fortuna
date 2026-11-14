@@ -11,7 +11,10 @@ export function planPercentFromInput(raw: string, mode: 'percent' | 'amount', ba
   if (!Number.isFinite(value) || value < 0) return NaN;
   if (mode === 'percent') return value;
   if (!Number.isFinite(base) || base <= 0) return NaN;
-  return targetPercentFromAmount(base, majorToMinor(value) / 100);
+  // Amount mode still describes a primary-currency amount. Round it to cents
+  // (via minor units) so amount -> percentage -> amount round-trips losslessly.
+  const roundedAmount = majorToMinor(value) / 100;
+  return targetPercentFromAmount(base, roundedAmount);
 }
 
 export function planProgress(current: number, target: number): number | undefined {

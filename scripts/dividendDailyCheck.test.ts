@@ -48,7 +48,14 @@ beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
   await stored.table('advice').clear(); await ledgers.table('documents').clear(); await ledgers.table('ledgers').clear(); await research.table('results').clear();
 });
-after(() => { db.close(); stored.close(); ledgers.close(); research.close(); closeDividendDailyAdvice(); closeDividendLedgerEvidence(); closeDividendResearchCache(); });
+after(() => { db.close(); stored.close(); ledgers.close(); research.close(); closeDividendDailyAdvice(); closeDividendLedgerEvidence(); closeDividendResearchCache(); clearInterval(keepAlive); });
+// Some stalled-save cases rely on an AbortSignal.timeout, whose underlying timer
+// is unref'd in Node and cannot keep the event loop alive on its own. When the
+// only pending work is such a timeout, the loop drains and the process exits
+// before the runner can settle, cancelling every later test in this file. A
+// ref'd keep-alive holds the loop open so those terminal timeouts actually fire
+// (in a browser the render loop keeps the thread alive, so this is test-only).
+const keepAlive = setInterval(() => undefined, 1000);
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 const sourcesFor = (key: string): DividendDailySource[] => (key.startsWith('fund:')

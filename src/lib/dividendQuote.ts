@@ -15,10 +15,19 @@ export function isExchangeTradedFundCode(code: string | undefined): boolean {
   return typeof code === 'string' && /^(?:1[568]|5\d)\d{4}$/.test(code);
 }
 
+/**
+ * A quote stamp is the mainland session's Asia/Shanghai wall-clock time
+ * (YYYY-MM-DD HH:MM). Validate it with a round-trip through the +08:00 offset,
+ * not UTC: parsing it as UTC would reject real morning-session stamps in the
+ * 00:00–07:59 Shanghai window and mislabel a valid quote as invalid.
+ */
 function validQuoteDate(date: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(date)) return false;
-  const parsed = new Date(`${date.replace(' ', 'T')}:00Z`);
-  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 16).replace('T', ' ') === date;
+  const parsed = Date.parse(`${date.replace(' ', 'T')}:00+08:00`);
+  if (!Number.isFinite(parsed)) return false;
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(parsed).replace(',', '') === date;
 }
 
 export function isDividendMarketQuote(value: unknown): value is DividendMarketQuote {

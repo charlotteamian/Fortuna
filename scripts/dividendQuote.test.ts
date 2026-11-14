@@ -25,6 +25,19 @@ test('ETF quote parsing retains fractional precision and the provider time', () 
   assert.equal(isDividendMarketQuote(quote), true);
 });
 
+test('quote stamps are validated as Asia/Shanghai wall-clock time, not UTC', () => {
+  // A Shanghai morning stamp (00:00–07:59) parses to an earlier UTC day. Parsing
+  // it as UTC would round-trip to a different date and mislabel the quote invalid.
+  for (const stamp of ['20261013093000', '20261013000100', '20261013075900']) {
+    const quote = parseDividendMarketQuote(row('sh601398', '601398', '6.15', stamp), '601398', 100);
+    assert.equal(isDividendMarketQuote(quote), true);
+  }
+  const morning = parseDividendMarketQuote(row('sh601398', '601398', '6.15', '20261013093000'), '601398', 100);
+  assert.equal(morning.date, '2026-10-13 09:30');
+  const midnight = parseDividendMarketQuote(row('sh601398', '601398', '6.15', '20261013000100'), '601398', 100);
+  assert.equal(midnight.date, '2026-10-13 00:01');
+});
+
 test('quote parser rejects missing/mismatched prices and invalid calendar/clock times', () => {
   for (const [price, stamp] of [['0', '20261013161454'], ['-1', '20261013161454'], ['bad', '20261013161454'], ['1000001', '20261013161454'], ['1', '20260230161454'], ['1', '20261013241454'], ['1', '20261013166054'], ['1', '20261013161460']]) {
     assert.throws(() => parseDividendMarketQuote(row('sh512890', '512890', price, stamp), '512890'));

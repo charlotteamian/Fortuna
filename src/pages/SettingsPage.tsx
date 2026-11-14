@@ -612,7 +612,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         <div className="settings-item">
           <div>
             <div className="settings-item-label">{t('last_updated')}</div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{lastUpdate ? new Date(lastUpdate).toLocaleString(t('zh') === '简体中文' ? 'zh-CN' : 'en-US') : t('never_updated')}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)' }}>{lastUpdate ? new Date(lastUpdate).toLocaleString(i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US') : t('never_updated')}</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={handleRefreshRates} disabled={syncing}>{syncing ? '...' : '🔄 ' + t('refresh_rates')}</button>
         </div>
