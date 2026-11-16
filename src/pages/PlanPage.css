@@ -423,3 +423,396 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-base);
 }
+
+/* ============================================================
+   Plan A — Aligned 2-Col × 3-Row Metrics, Position Ladders & Subcards
+   ============================================================ */
+
+.plan-card {
+  border-left: 3px solid var(--plan-color, var(--asset-color));
+  padding: var(--sp-3);
+}
+
+.plan-card-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.plan-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.plan-card-sub {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.plan-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-pill-target {
+  background: var(--asset-dim);
+  color: var(--asset-color);
+  border: 1px solid var(--asset-dim);
+}
+
+.plan-pill-buy {
+  background: var(--warning-dim);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.plan-pill-trim {
+  background: var(--danger-dim);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+.plan-pill-neutral {
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+/* Strict 2-Col × 3-Row Metric Comparison Grid:
+   Row 1 (Labels), Row 2 (Big Amounts), Row 3 (Sub-notes) are locked on the exact same horizontal row! */
+.plan-metric-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin: var(--sp-2) 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  column-gap: 10px;
+  row-gap: 2px;
+}
+
+.plan-metric-col-right {
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+}
+
+.plan-metric-label {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-metric-val {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plan-metric-note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Liquid Reserve Pool Reconciliation Bar */
+.plan-reserve-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  margin-top: var(--sp-2);
+}
+
+.plan-reserve-info {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-reserve-main {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-reserve-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* Next-step 2-col bar */
+.plan-next-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.plan-next-bar > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-next-bar > span:last-child {
+  text-align: right;
+}
+
+/* Free-form dashed note box */
+.plan-note-box {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  border: 1px dashed var(--border);
+  font-size: var(--fs-xs);
+  margin-bottom: 6px;
+}
+
+.plan-note-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: 2px;
+  color: var(--text-muted);
+}
+
+/* Full-visibility compact position ladder table */
+.plan-ladder-details {
+  margin-top: 4px;
+}
+
+.plan-ladder-details > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0 2px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.plan-ladder-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.plan-summary-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-summary-left::before {
+  content: "▾";
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform var(--dur) ease;
+  color: var(--asset-color);
+  flex-shrink: 0;
+}
+
+.plan-ladder-details[open] > summary .plan-summary-left::before {
+  transform: rotate(0deg);
+}
+
+.plan-ladder-wrapper {
+  overflow-x: auto;
+  max-inline-size: 100%;
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  margin-top: 4px;
+}
+
+.plan-ladder-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-ladder-table thead {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-ladder-table th,
+.plan-ladder-table td {
+  padding: 4px 5px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-ladder-table tbody tr:last-child th,
+.plan-ladder-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.plan-ladder-table th:first-child,
+.plan-ladder-table td:first-child {
+  text-align: left;
+  padding-left: 7px;
+}
+
+.plan-ladder-table th:last-child,
+.plan-ladder-table td:last-child {
+  padding-right: 7px;
+}
+
+.plan-ladder-table tr.row-active {
+  background: var(--asset-dim);
+  font-weight: var(--fw-bold);
+  color: var(--asset-color);
+}
+
+.plan-ladder-table tr.row-active th:first-child {
+  box-shadow: inset 3px 0 0 var(--asset-color);
+}
+
+/* Dividend Workbench Entry Button */
+.plan-div-enter-btn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  background: var(--asset-dim);
+  color: var(--asset-color);
+  border: 1px solid var(--asset-color);
+  cursor: pointer;
+}
+
+/* Stock / Fund Sub-Card inside a Sector */
+.plan-stock-subcard {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  margin-top: 6px;
+}
+
+.plan-stock-subcard-note {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Management Mode Selector Grid in Modal */
+.plan-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.plan-mode-option {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) ease, background-color var(--dur) ease;
+}
+
+.plan-mode-option[aria-pressed="true"] {
+  background: var(--asset-dim);
+  border-color: var(--asset-color);
+  color: var(--asset-color);
+}
+
+.plan-mode-option-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+}
+
+.plan-mode-option-desc {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* Sub-page Top Navigation Bar for Dividend Workbench */
+.plan-subpage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+

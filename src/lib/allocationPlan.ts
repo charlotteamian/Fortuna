@@ -288,3 +288,299 @@ export function computeFundingWaterfall(
     steps,
   };
 }
+
+// ---- Plan Management Modes & Position Ladders (Plan A) ----
+export type PlanManagementMode = 'simple' | 'ladder' | 'dividend' | 'stocks';
+export type PlanLadderKind = 'price' | 'index' | 'yield';
+
+export interface PlanLadderRow {
+  id: string;
+  label?: string;
+  triggerValue: number;
+  positionPercent: number;
+}
+
+export interface PlanLadderConfig {
+  kind: PlanLadderKind;
+  symbol?: string;
+  symbolName?: string;
+  currentQuote?: number;
+  quoteDate?: string;
+  rows: PlanLadderRow[];
+}
+
+export interface PlanStockCard {
+  id: string;
+  name: string;
+  symbol?: string;
+  weightPercent: number;
+  targetPositionPercent: number;
+  currentPrice?: number;
+  actualAmount?: number;
+  note?: string;
+}
+
+export type PlanLadderPresetKey = 'gold_518850' | 'chinext_159915' | 'oil_513350' | 'dividend_yield';
+
+export function buildPresetLadderConfig(preset: PlanLadderPresetKey): PlanLadderConfig {
+  if (preset === 'gold_518850') {
+    const pairs: [string, number, number][] = [
+      ['<1300', 2.75, 100],
+      ['<1400', 3.00, 79],
+      ['<1650', 3.50, 62],
+      ['<1900', 4.00, 48],
+      ['<2100', 4.50, 36],
+      ['<2350', 5.00, 25],
+      ['<2600', 5.50, 15],
+      ['<2850', 6.00, 8],
+      ['<3100', 6.50, 4],
+      ['<3300', 7.00, 2],
+      ['<3550', 7.50, 1],
+      ['<3800', 8.00, 0],
+    ];
+    return {
+      kind: 'price',
+      symbol: '518850',
+      symbolName: '黄金ETF',
+      rows: pairs.map(([label, triggerValue, positionPercent], idx) => ({
+        id: `gold-${idx + 1}`,
+        label,
+        triggerValue,
+        positionPercent,
+      })),
+    };
+  }
+  if (preset === 'chinext_159915') {
+    const pairs: [number, number][] = [
+      [1200, 100], [1300, 90], [1400, 81], [1600, 73], [1800, 65],
+      [2000, 58], [2200, 52], [2400, 46], [2600, 41], [2800, 36],
+      [3000, 31], [3200, 27], [3400, 23], [3600, 19], [3800, 15],
+      [4000, 12], [4200, 9], [4400, 6], [4600, 4], [4800, 2], [5000, 0],
+    ];
+    return {
+      kind: 'index',
+      symbol: '399006',
+      symbolName: '创业板ETF',
+      rows: pairs.map(([triggerValue, positionPercent], idx) => ({
+        id: `chinext-${idx + 1}`,
+        label: String(triggerValue),
+        triggerValue,
+        positionPercent,
+      })),
+    };
+  }
+  if (preset === 'oil_513350') {
+    const pairs: [string, number, number][] = [
+      ['<0.30', 0.30, 100],
+      ['<0.45', 0.45, 79],
+      ['<0.50', 0.50, 62],
+      ['<0.60', 0.60, 48],
+      ['<0.70', 0.70, 36],
+      ['<0.80', 0.80, 25],
+      ['<0.90', 0.90, 15],
+      ['<1.00', 1.00, 8],
+      ['<1.10', 1.10, 4],
+      ['<1.20', 1.20, 2],
+      ['<1.30', 1.30, 1],
+      ['>1.40', 1.40, 0],
+    ];
+    return {
+      kind: 'price',
+      symbol: '513350',
+      symbolName: '标普油气ETF',
+      rows: pairs.map(([label, triggerValue, positionPercent], idx) => ({
+        id: `oil-${idx + 1}`,
+        label,
+        triggerValue,
+        positionPercent,
+      })),
+    };
+  }
+  const yieldPairs: [number, number][] = [
+    [8.0, 100], [7.5, 90], [7.0, 80], [6.5, 70], [6.0, 60],
+    [5.5, 50], [5.0, 40], [4.5, 30], [4.0, 20], [3.5, 10], [3.0, 0],
+  ];
+  return {
+    kind: 'yield',
+    rows: yieldPairs.map(([triggerValue, positionPercent], idx) => ({
+      id: `div-yield-${idx + 1}`,
+      label: `${triggerValue.toFixed(1)}%`,
+      triggerValue,
+      positionPercent,
+    })),
+  };
+}
+
+export function isPlanManagementMode(value: unknown): value is PlanManagementMode {
+  return value === 'simple' || value === 'ladder' || value === 'dividend' || value === 'stocks';
+}
+
+export function isPlanLadderConfig(value: unknown): value is PlanLadderConfig {
+  if (!value || typeof value !== 'object') return false;
+  const cfg = value as PlanLadderConfig;
+  if (!['price', 'index', 'yield'].includes(cfg.kind)) return false;
+  if (cfg.symbol !== undefined && typeof cfg.symbol !== 'string') return false;
+  if (cfg.symbolName !== undefined && typeof cfg.symbolName !== 'string') return false;
+  if (cfg.currentQuote !== undefined && (typeof cfg.currentQuote !== 'number' || !Number.isFinite(cfg.currentQuote) || cfg.currentQuote < 0)) return false;
+  if (cfg.quoteDate !== undefined && typeof cfg.quoteDate !== 'string') return false;
+  if (!Array.isArray(cfg.rows) || cfg.rows.length > 200) return false;
+  return cfg.rows.every(row => (
+    Boolean(row)
+    && typeof row === 'object'
+    && typeof row.id === 'string'
+    && row.id.trim().length > 0
+    && (row.label === undefined || typeof row.label === 'string')
+    && typeof row.triggerValue === 'number'
+    && Number.isFinite(row.triggerValue)
+    && row.triggerValue >= 0
+    && typeof row.positionPercent === 'number'
+    && Number.isFinite(row.positionPercent)
+    && row.positionPercent >= 0
+    && row.positionPercent <= 100
+  ));
+}
+
+export function isPlanStockCardArray(value: unknown): value is PlanStockCard[] {
+  if (!Array.isArray(value) || value.length > 200) return false;
+  return value.every(card => (
+    Boolean(card)
+    && typeof card === 'object'
+    && typeof card.id === 'string'
+    && card.id.trim().length > 0
+    && typeof card.name === 'string'
+    && card.name.trim().length > 0
+    && (card.symbol === undefined || typeof card.symbol === 'string')
+    && typeof card.weightPercent === 'number'
+    && Number.isFinite(card.weightPercent)
+    && card.weightPercent >= 0
+    && typeof card.targetPositionPercent === 'number'
+    && Number.isFinite(card.targetPositionPercent)
+    && card.targetPositionPercent >= 0
+    && card.targetPositionPercent <= 100
+    && (card.currentPrice === undefined || (typeof card.currentPrice === 'number' && Number.isFinite(card.currentPrice) && card.currentPrice >= 0))
+    && (card.actualAmount === undefined || (typeof card.actualAmount === 'number' && Number.isFinite(card.actualAmount) && card.actualAmount >= 0))
+    && (card.note === undefined || typeof card.note === 'string')
+  ));
+}
+
+export interface ResolvedLadderTier {
+  quote: number;
+  activeIndex: number;
+  activeRow: PlanLadderRow;
+  nextBuyRow?: PlanLadderRow;
+  nextSellRow?: PlanLadderRow;
+  sortedRows: PlanLadderRow[];
+}
+
+/**
+ * Matches a live quote (price, index point, or dividend yield %) against a position ladder table
+ * to highlight the active row and determine the adjacent buy/sell trigger tiers.
+ */
+export function resolveActiveLadderTier(
+  config: PlanLadderConfig | undefined,
+  overrideQuote?: number,
+): ResolvedLadderTier | null {
+  if (!config || !Array.isArray(config.rows) || config.rows.length === 0) return null;
+  const quote = overrideQuote ?? config.currentQuote;
+  if (quote === undefined || !Number.isFinite(quote) || quote <= 0) return null;
+
+  if (config.kind === 'yield') {
+    // Higher dividend yield = cheaper valuation = higher position ratio (sorted descending: 8.0% -> 3.0%)
+    const sortedRows = [...config.rows].sort((a, b) => b.triggerValue - a.triggerValue);
+    let activeIndex = sortedRows.findIndex((row, idx) => {
+      const nextYield = sortedRows[idx + 1]?.triggerValue ?? -Infinity;
+      const mid = (row.triggerValue + nextYield) / 2;
+      return quote >= mid;
+    });
+    if (activeIndex < 0) activeIndex = sortedRows.length - 1;
+    const activeRow = sortedRows[activeIndex];
+    const nextBuyRow = activeIndex > 0 ? sortedRows[activeIndex - 1] : undefined;
+    const nextSellRow = activeIndex < sortedRows.length - 1 ? sortedRows[activeIndex + 1] : undefined;
+    return { quote, activeIndex, activeRow, nextBuyRow, nextSellRow, sortedRows };
+  }
+
+  // Price or index ladder: lower price/point = cheaper valuation = higher position ratio (sorted ascending: 2.75 -> 8.00)
+  const sortedRows = [...config.rows].sort((a, b) => a.triggerValue - b.triggerValue);
+  let activeIndex = sortedRows.findIndex((row, idx) => {
+    const nextPrice = sortedRows[idx + 1]?.triggerValue ?? Infinity;
+    const mid = (row.triggerValue + nextPrice) / 2;
+    return quote < mid;
+  });
+  if (activeIndex < 0) activeIndex = sortedRows.length - 1;
+  const activeRow = sortedRows[activeIndex];
+  const nextBuyRow = activeIndex > 0 ? sortedRows[activeIndex - 1] : undefined;
+  const nextSellRow = activeIndex < sortedRows.length - 1 ? sortedRows[activeIndex + 1] : undefined;
+  return { quote, activeIndex, activeRow, nextBuyRow, nextSellRow, sortedRows };
+}
+
+export interface PlanDynamicMetrics {
+  mode: PlanManagementMode;
+  activePositionPercent: number;
+  dynamicTargetValue: number;
+  reserveNeededValue: number;
+  dynamicGapValue: number;
+  resolvedLadder: ResolvedLadderTier | null;
+}
+
+export function computePlanDynamicMetrics(
+  item: {
+    targetValue: number;
+    currentValue: number;
+    planMode?: PlanManagementMode;
+    ladderConfig?: PlanLadderConfig;
+    stockCards?: PlanStockCard[];
+  },
+  options: { overrideQuote?: number } = {},
+): PlanDynamicMetrics {
+  const mode: PlanManagementMode = item.planMode ?? (item.ladderConfig ? 'ladder' : item.stockCards?.length ? 'stocks' : 'simple');
+  const fullTarget = Math.max(0, finiteOrZero(item.targetValue));
+  const current = Math.max(0, finiteOrZero(item.currentValue));
+
+  if (mode === 'ladder' || mode === 'dividend') {
+    const fallbackLadder = mode === 'dividend' && (!item.ladderConfig || item.ladderConfig.rows.length === 0)
+      ? buildPresetLadderConfig('dividend_yield')
+      : item.ladderConfig;
+    const resolvedLadder = resolveActiveLadderTier(fallbackLadder, options.overrideQuote);
+    const activePositionPercent = resolvedLadder ? resolvedLadder.activeRow.positionPercent : 100;
+    const dynamicTargetValue = Math.round(fullTarget * activePositionPercent) / 100;
+    const reserveNeededValue = Math.max(0, Math.round((fullTarget - dynamicTargetValue) * 100) / 100);
+    const dynamicGapValue = Math.round((dynamicTargetValue - current) * 100) / 100;
+    return {
+      mode,
+      activePositionPercent,
+      dynamicTargetValue,
+      reserveNeededValue,
+      dynamicGapValue,
+      resolvedLadder,
+    };
+  }
+
+  if (mode === 'stocks' && item.stockCards && item.stockCards.length > 0) {
+    const weightedPct = item.stockCards.reduce((sum, card) => (
+      sum + (finiteOrZero(card.weightPercent) * finiteOrZero(card.targetPositionPercent)) / 100
+    ), 0);
+    const activePositionPercent = Math.min(100, Math.max(0, Math.round(weightedPct * 100) / 100));
+    const dynamicTargetValue = Math.round(fullTarget * activePositionPercent) / 100;
+    const reserveNeededValue = Math.max(0, Math.round((fullTarget - dynamicTargetValue) * 100) / 100);
+    const dynamicGapValue = Math.round((dynamicTargetValue - current) * 100) / 100;
+    return {
+      mode,
+      activePositionPercent,
+      dynamicTargetValue,
+      reserveNeededValue,
+      dynamicGapValue,
+      resolvedLadder: null,
+    };
+  }
+
+  // 'simple' mode (or empty 'stocks'): 100% of quota is active
+  return {
+    mode,
+    activePositionPercent: 100,
+    dynamicTargetValue: fullTarget,
+    reserveNeededValue: 0,
+    dynamicGapValue: Math.round((fullTarget - current) * 100) / 100,
+    resolvedLadder: null,
+  };
+}
+

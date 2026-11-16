@@ -8,7 +8,15 @@ import Dexie, { type Table } from 'dexie';
 import i18n from './i18n';
 import { getHoldingMode, type HoldingMode } from './lib/productPortfolio';
 import { getBalanceFlowActionKey, getBalanceFlowConfig } from './lib/balanceFlow';
-import { getTargetRefKeys } from './lib/allocationPlan';
+import {
+  getTargetRefKeys,
+  isPlanLadderConfig,
+  isPlanManagementMode,
+  isPlanStockCardArray,
+  type PlanLadderConfig,
+  type PlanManagementMode,
+  type PlanStockCard,
+} from './lib/allocationPlan';
 import { getHoldingContractMultiplier, type UsOptionRight } from './lib/usOption';
 import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 import { describeExcelBackupError, normalizeExcelBackupNumber, type ExcelBackupFailure, type ExcelBackupFailureCode, type ExcelBackupValidationReason } from './lib/excelBackup';
@@ -93,6 +101,9 @@ export interface PlanItem {
   plannedPurchases?: string; // user's purchase intentions, independent of existing holdings
   categories: string[];    // scopes covered by this bucket
   allocations?: PlanResourceAllocation[]; // explicit shares for exact holding/cash/account scopes
+  planMode?: PlanManagementMode; // 'simple' | 'ladder' | 'dividend' | 'stocks'
+  ladderConfig?: PlanLadderConfig;
+  stockCards?: PlanStockCard[];
   sortOrder: number;
   createdAt: number;
 }
@@ -596,6 +607,8 @@ export async function exportToExcel(): Promise<string> {
     ...p,
     categories: JSON.stringify(p.categories),
     allocations: JSON.stringify(p.allocations ?? []),
+    ...(p.ladderConfig ? { ladderConfig: JSON.stringify(p.ladderConfig) } : {}),
+    ...(p.stockCards ? { stockCards: JSON.stringify(p.stockCards) } : {}),
   }));
   const planTargetsExport = planTargets.map(target => ({
     ...target,
@@ -788,16 +801,27 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         return [];
       }
     };
-    const planItems: PlanItem[] = planRaw.map(p => ({
-      id: String(p.id),
-      name: String(p.name ?? ''),
-      targetPercent: Number(p.targetPercent) || 0,
-      plannedPurchases: typeof p.plannedPurchases === 'string' ? p.plannedPurchases : undefined,
-      categories: parsePlanCategories(p.categories),
-      allocations: parseAllocations(p.allocations),
-      sortOrder: Number(p.sortOrder) || 0,
-      createdAt: Number(p.createdAt) || Date.now(),
-    }));
+    const planItems: PlanItem[] = planRaw.map(p => {
+      const parsedLadder = typeof p.ladderConfig === 'string' && p.ladderConfig
+        ? (() => { try { const v: unknown = JSON.parse(p.ladderConfig); return isPlanLadderConfig(v) ? v : undefined; } catch { return undefined; } })()
+        : undefined;
+      const parsedStocks = typeof p.stockCards === 'string' && p.stockCards
+        ? (() => { try { const v: unknown = JSON.parse(p.stockCards); return isPlanStockCardArray(v) ? v : undefined; } catch { return undefined; } })()
+        : undefined;
+      return {
+        id: String(p.id),
+        name: String(p.name ?? ''),
+        targetPercent: Number(p.targetPercent) || 0,
+        plannedPurchases: typeof p.plannedPurchases === 'string' ? p.plannedPurchases : undefined,
+        categories: parsePlanCategories(p.categories),
+        allocations: parseAllocations(p.allocations),
+        ...(isPlanManagementMode(p.planMode) ? { planMode: p.planMode } : {}),
+        ...(parsedLadder ? { ladderConfig: parsedLadder } : {}),
+        ...(parsedStocks ? { stockCards: parsedStocks } : {}),
+        sortOrder: Number(p.sortOrder) || 0,
+        createdAt: Number(p.createdAt) || Date.now(),
+      };
+    });
     sheet = 'PlanTargets';
     const planTargetRaw = wsPlanTargets ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsPlanTargets) : [];
     const planTargets: PlanTarget[] = planTargetRaw.map(target => {

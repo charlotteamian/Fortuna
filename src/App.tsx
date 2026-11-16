@@ -16,17 +16,16 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 
 const AccountDetail = lazy(() => import('./pages/AccountDetail'));
 const ChartPage = lazy(() => import('./pages/ChartPage'));
-const DividendPage = lazy(() => import('./pages/DividendPage'));
 const PlanPage = lazy(() => import('./pages/PlanPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
-type Tab = 'record' | 'plan' | 'chart' | 'products' | 'dividend' | 'settings';
+type Tab = 'record' | 'plan' | 'chart' | 'products' | 'settings';
 
 function App() {
   const { t, i18n } = useTranslation();
   const [returnTab, setReturnTab] = useState<Tab>('record');
-  const [tab, setTab] = useState<Tab>(() => window.location.hash === DIVIDEND_ADVISOR_READER_HASH ? 'dividend' : 'record');
+  const [tab, setTab] = useState<Tab>(() => window.location.hash === DIVIDEND_ADVISOR_READER_HASH ? 'plan' : 'record');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [holdingApiSettingsOpen, setHoldingApiSettingsOpen] = useState(false);
   const [dividendApiSettingsOpen, setDividendApiSettingsOpen] = useState(false);
@@ -200,7 +199,6 @@ function App() {
             {tab === 'record' && <RecordPage key={refreshKey} onOpenAccount={openAccount} onRefresh={refresh} />}
             <Suspense fallback={pageFallback}>
               {tab === 'plan' && <PlanPage key={refreshKey} />}
-              {tab === 'dividend' && <DividendPage key={refreshKey} />}
               {tab === 'chart' && <ChartPage key={refreshKey} />}
               {tab === 'products' && <ProductsPage />}
               {tab === 'settings' && <SettingsPage onRefresh={() => { void loadSettings(); refresh(); }} onAccountsChanged={refresh} onOpenAccount={openAccount} onOpenOnboarding={() => setOnboardingOpen(true)} />}
@@ -228,15 +226,6 @@ function App() {
                   <circle cx="12" cy="12" r="9"/>
                   <circle cx="12" cy="12" r="4.5"/>
                   <circle cx="12" cy="12" r="1.5" fill={active ? 'var(--asset-color)' : 'var(--text-muted)'} stroke="none"/>
-                </svg>
-              ),
-            },
-            {
-              key: 'dividend' as Tab,
-              label: t('div_tab'),
-              icon: (active: boolean) => (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? 'var(--asset-color)' : 'var(--text-muted)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 21V11M12 15C5 15 3 10 3 5c6 0 9 3 9 10ZM12 11c0-5 3-8 9-8 0 5-3 8-9 8Z" />
                 </svg>
               ),
             },

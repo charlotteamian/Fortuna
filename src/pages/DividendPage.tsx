@@ -224,7 +224,7 @@ export default function DividendPage() {
       });
   }, [data, quotes.refreshing, load, t]);
 
-  const money = (minor: number) => (amountVisible ? `¥${numeric(minor / 100)}` : '••••');
+  const money = (minor: number) => (amountVisible ? `${numeric(minor / 100)}` : '••••');
 
   const refresh = async (codes: string[]) => {
     if (busy.current || quotes.refreshing || dividendBackgroundRefreshPaused()) return;
@@ -582,11 +582,11 @@ export default function DividendPage() {
               <li key={plan.code}>
                 <button type="button" className="div-wb-stock-row" onClick={() => openStock(plan.code)}>
                   <span className="div-wb-stock-name">
-                    <strong>{plan.name}</strong>
-                    <small>{plan.code} · {t(`div_group_${plan.group}`)}</small>
+                    <strong>{plan.name} ({plan.code})</strong>
+                    <small>{t(`div_group_${plan.group}`)} · {numeric(plan.weightBps / 100)}%{plan.budgetMinor !== undefined ? ` · ${money(plan.budgetMinor)}` : ''}</small>
                   </span>
                   <span className="div-wb-stock-data">
-                    <strong>{plan.quotePriceMinor === undefined ? '—' : `¥${(plan.quotePriceMinor / 100).toFixed(2)}`}</strong>
+                    <strong>{plan.quotePriceMinor === undefined ? '—' : (plan.quotePriceMinor / 100).toFixed(2)}</strong>
                     <small className={`is-${facts.status}`}>{t(`div_new_status_${facts.status}`)}</small>
                   </span>
                   <span className="div-wb-chevron" aria-hidden="true">›</span>
@@ -1189,9 +1189,9 @@ function StockEditor({
             <div className="div-tech-ref">
               <h3>{t('div_tech_ref')}</h3>
               <dl className="div-wb-stock-metrics">
-                <div><dt>{t('div_tech_ma250')}</dt><dd>¥{(stock.trend.ma250Minor / 100).toFixed(2)}</dd></div>
-                <div><dt>{t('div_tech_year_high')}</dt><dd>¥{(stock.trend.yearHighMinor / 100).toFixed(2)}</dd></div>
-                <div><dt>{t('div_tech_year_low')}</dt><dd>¥{(stock.trend.yearLowMinor / 100).toFixed(2)}</dd></div>
+                <div><dt>{t('div_tech_ma250')}</dt><dd>{(stock.trend.ma250Minor / 100).toFixed(2)}</dd></div>
+                <div><dt>{t('div_tech_year_high')}</dt><dd>{(stock.trend.yearHighMinor / 100).toFixed(2)}</dd></div>
+                <div><dt>{t('div_tech_year_low')}</dt><dd>{(stock.trend.yearLowMinor / 100).toFixed(2)}</dd></div>
                 {stock.trend.yearPercentile !== undefined && <div><dt>{t('div_tech_percentile')}</dt><dd>{stock.trend.yearPercentile}%</dd></div>}
               </dl>
             </div>
@@ -1357,7 +1357,7 @@ function AllocationPreview({
         {t('div_allocation_remaining', {
           percent: numeric(Math.max(0, 10000 - newTotal) / 100),
           amount: amountVisible
-            ? `¥${numeric(Math.max(0, budgetMinor - stockBudgetMinor(budgetMinor, newTotal)) / 100)}`
+            ? `${numeric(Math.max(0, budgetMinor - stockBudgetMinor(budgetMinor, newTotal)) / 100)}`
             : '••••',
         })}
       </p>
@@ -1385,7 +1385,7 @@ function AllocationPreview({
                 <td>{numeric((before.find(s => s.code === stock.code)?.weightBps ?? 0) / 100)}%</td>
                 <td>{numeric(stock.weightBps / 100)}%</td>
                 <td>
-                  {amountVisible ? `¥${numeric(stockBudgetMinor(budgetMinor, stock.weightBps) / 100)}` : '••••'}
+                  {amountVisible ? `${numeric(stockBudgetMinor(budgetMinor, stock.weightBps) / 100)}` : '••••'}
                 </td>
               </tr>
             ))}

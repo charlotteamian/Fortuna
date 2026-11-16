@@ -3,39 +3,83 @@ import { useTranslation } from 'react-i18next';
 import { initializeSettings, type Settings, type PlanItem, type PlanResourceAllocation } from '../db';
 import {
   getPlanStatus, createPlanItem, createInitialPlanItems, updatePlanItem, movePlanItem, deletePlanItem, setPlanTargetTotal,
-  createPlanTarget, updatePlanTarget, deletePlanTarget,
+  createPlanTarget, updatePlanTarget, deletePlanTarget, refreshPlanQuotes,
   splitScope, makeScope, makeAccountScope, makeHoldingScope, makeCashScope, MARKET_KEYS, MARKET_LABEL_KEYS, EQUITY_PLAN_CATEGORIES,
   type PlanStatus, type PlanItemStatus, type PlanTargetStatus, type UnplannedEntry, type MarketKey,
 } from '../services/planService';
+import { loadDividendWorkbench, saveDividendBudget } from '../services/dividendService';
+import { DIVIDEND_ADVISOR_READER_HASH } from '../lib/dividendAdvisorNavigation';
 import { useAppContext } from '../app-context';
 import {
+  buildPresetLadderConfig,
+  computePlanDynamicMetrics,
   planPercentFromInput,
-  planProgress,
   getResourceAllocation,
   majorToMinor,
   minorToMajor,
   targetAmountFromPercent,
+  type PlanLadderConfig,
+  type PlanLadderKind,
+  type PlanLadderPresetKey,
+  type PlanLadderRow,
+  type PlanManagementMode,
+  type PlanStockCard,
 } from '../lib/allocationPlan';
+import DividendPage from './DividendPage';
 import './PlanPage.css';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 
-const COLORS = ['#818cf8', '#34d399', '#60a5fa', '#c084fc', '#fbbf24', '#f472b6', '#22d3ee', '#a3e635', '#fb923c', '#2dd4bf'];
+const COLORS = ['#fbbf24', '#34d399', '#60a5fa', '#c084fc', '#fb923c', '#818cf8', '#f472b6', '#22d3ee', '#a3e635', '#2dd4bf'];
+
+interface EditableLadderRow {
+  id: string;
+  label: string;
+  triggerValue: string;
+  positionPercent: string;
+}
+
+interface EditableStockCard {
+  id: string;
+  name: string;
+  symbol: string;
+  weightPercent: string;
+  targetPositionPercent: string;
+  currentPrice: string;
+  actualAmount: string;
+  note: string;
+}
 
 export default function PlanPage() {
   const { t, i18n } = useTranslation();
   const { amountVisible, setAmountVisible } = useAppContext();
+  const [subView, setSubView] = useState<'plan' | 'dividend'>(() => (
+    window.location.hash === DIVIDEND_ADVISOR_READER_HASH ? 'dividend' : 'plan'
+  ));
   const [status, setStatus] = useState<PlanStatus | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [dividendSummary, setDividendSummary] = useState<{
+    stockCount: number;
+    avgYieldPct?: number;
+  }>({ stockCount: 0 });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [refreshingQuotes, setRefreshingQuotes] = useState(false);
 
   // Item create/edit modal
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<PlanItem | null>(null);
+  const [formMode, setFormMode] = useState<PlanManagementMode>('ladder');
   const [formName, setFormName] = useState('');
   const [formPercent, setFormPercent] = useState('');
   const [formInputMode, setFormInputMode] = useState<'percent' | 'amount'>('percent');
   const [formPurchases, setFormPurchases] = useState('');
+  const [formLadderKind, setFormLadderKind] = useState<PlanLadderKind>('price');
+  const [formSymbol, setFormSymbol] = useState('');
+  const [formSymbolName, setFormSymbolName] = useState('');
+  const [formCurrentQuote, setFormCurrentQuote] = useState('');
+  const [formLadderRows, setFormLadderRows] = useState<EditableLadderRow[]>([]);
+  const [formStockCards, setFormStockCards] = useState<EditableStockCard[]>([]);
+
   const [purchaseItem, setPurchaseItem] = useState<PlanItemStatus | null>(null);
   const [purchaseInput, setPurchaseInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -61,9 +105,19 @@ export default function PlanPage() {
     if (initial) setLoading(true);
     setLoadError(false);
     try {
-      const [st, s] = await Promise.all([getPlanStatus(), initializeSettings()]);
+      const [st, s, wb] = await Promise.all([
+        getPlanStatus(),
+        initializeSettings(),
+        loadDividendWorkbench().catch(() => null),
+      ]);
       setStatus(st);
       setSettings(s);
+      if (wb) {
+        const activeStocks = wb.stocks.filter(stock => stock.group !== 'hidden');
+        setDividendSummary({
+          stockCount: activeStocks.length,
+        });
+      }
     } catch (error) {
       console.error('Allocation plan load failed', error);
       setLoadError(true);
@@ -72,7 +126,14 @@ export default function PlanPage() {
     }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    void load(true).then(() => {
+      void refreshPlanQuotes().then(res => {
+        if (res.updated > 0) void load(false);
+      }).catch(() => {});
+    });
+  }, [load]);
+
   useEffect(() => {
     const refresh = () => { void load(false); };
     window.addEventListener(RATES_REFRESHED_EVENT, refresh);
@@ -122,6 +183,7 @@ export default function PlanPage() {
   }, [showForm, showTarget, confirmDelete, targetItem, purchaseItem, saving]);
 
   const masked = (text: string) => amountVisible ? text : '****';
+  // Format amounts without RMB symbol (¥)
   const fmt = (n: number) => {
     const isEn = i18n.language.startsWith('en');
     if (isEn) {
@@ -134,6 +196,11 @@ export default function PlanPage() {
     return n.toFixed(2);
   };
   const fmtPct = (n: number) => String(Number(n.toFixed(2)));
+  const fmtQuote = (n: number, kind?: PlanLadderKind) => {
+    if (kind === 'index') return String(Math.round(n * 10) / 10);
+    if (kind === 'yield') return Number(n.toFixed(2)).toString();
+    return Number(n.toFixed(4)).toString();
+  };
 
   const itemColor = (idx: number) => COLORS[idx % COLORS.length];
 
@@ -162,7 +229,6 @@ export default function PlanPage() {
     })
   );
 
-  // scope = category, market, account, holding or a portfolio cash pool
   const scopeLabel = (scope: string) => {
     const p = splitScope(scope);
     const named = status?.scopeNames?.[scope];
@@ -185,13 +251,64 @@ export default function PlanPage() {
     return p.market ? `${t(p.category!)}·${t(MARKET_LABEL_KEYS[p.market])}` : t(p.category!);
   };
 
+  const toEditableRows = (rows: PlanLadderRow[]): EditableLadderRow[] => rows.map(row => ({
+    id: row.id,
+    label: row.label ?? '',
+    triggerValue: String(row.triggerValue),
+    positionPercent: String(row.positionPercent),
+  }));
+
+  const applyPresetToForm = (preset: PlanLadderPresetKey) => {
+    const cfg = buildPresetLadderConfig(preset);
+    setFormLadderKind(cfg.kind);
+    setFormSymbol(cfg.symbol ?? '');
+    setFormSymbolName(cfg.symbolName ?? '');
+    setFormLadderRows(toEditableRows(cfg.rows));
+    if (!formName.trim()) {
+      if (preset === 'gold_518850') setFormName('黄金投资计划');
+      else if (preset === 'chinext_159915') setFormName('创业板ETF');
+      else if (preset === 'oil_513350') setFormName('原油投资计划');
+      else if (preset === 'dividend_yield') setFormName('红利价值板块');
+    }
+  };
+
+  const handleRefreshQuotes = async () => {
+    if (refreshingQuotes) return;
+    setRefreshingQuotes(true);
+    try {
+      await refreshPlanQuotes();
+      await load(false);
+    } finally {
+      setRefreshingQuotes(false);
+    }
+  };
+
   // ---- Item form ----
   const openCreate = (preset?: UnplannedEntry) => {
     setEditingItem(null);
+    setFormMode('ladder');
     setFormName(preset ? scopeLabel(makeScope(preset.category, preset.market)) : '');
     setFormPercent('');
     setFormInputMode('percent');
     setFormPurchases('');
+    const defaultCfg = buildPresetLadderConfig('gold_518850');
+    setFormLadderKind(defaultCfg.kind);
+    setFormSymbol('');
+    setFormSymbolName('');
+    setFormCurrentQuote('');
+    setFormLadderRows(toEditableRows(defaultCfg.rows.slice(0, 6)));
+    setFormStockCards([
+      {
+        id: `sc-${Date.now()}`,
+        name: '',
+        symbol: '',
+        weightPercent: '50',
+        targetPositionPercent: '60',
+        currentPrice: '',
+        actualAmount: '',
+        note: '',
+      },
+    ]);
     setSaveError(false);
     setFormCats(preset ? [makeScope(preset.category, preset.market)] : []);
     setFormExpandedCats(preset ? [preset.category] : []);
@@ -201,12 +318,50 @@ export default function PlanPage() {
 
   const openEdit = (item: PlanItem) => {
     setEditingItem(item);
+    const resolvedMode: PlanManagementMode = item.planMode
+      ?? (item.ladderConfig ? 'ladder' : item.stockCards?.length ? 'stocks' : 'simple');
+    setFormMode(resolvedMode);
     setFormName(item.name);
     setFormInputMode('percent');
     setFormPurchases(item.plannedPurchases ?? '');
     setSaveError(false);
     setFormPercent(String(item.targetPercent));
     setFormCats([...item.categories]);
+
+    const cfg = item.ladderConfig
+      ?? (resolvedMode === 'dividend' ? buildPresetLadderConfig('dividend_yield') : buildPresetLadderConfig('gold_518850'));
+    setFormLadderKind(cfg.kind);
+    setFormSymbol(cfg.symbol ?? '');
+    setFormSymbolName(cfg.symbolName ?? '');
+    setFormCurrentQuote(cfg.currentQuote !== undefined ? String(cfg.currentQuote) : '');
+    setFormLadderRows(toEditableRows(cfg.rows));
+
+    setFormStockCards(
+      item.stockCards && item.stockCards.length > 0
+        ? item.stockCards.map(card => ({
+            id: card.id,
+            name: card.name,
+            symbol: card.symbol ?? '',
+            weightPercent: String(card.weightPercent),
+            targetPositionPercent: String(card.targetPositionPercent),
+            currentPrice: card.currentPrice !== undefined ? String(card.currentPrice) : '',
+            actualAmount: card.actualAmount !== undefined ? String(card.actualAmount) : '',
+            note: card.note ?? '',
+          }))
+        : [
+            {
+              id: `sc-${Date.now()}`,
+              name: '',
+              symbol: '',
+              weightPercent: '50',
+              targetPositionPercent: '60',
+              currentPrice: '',
+              actualAmount: '',
+              note: '',
+            },
+          ],
+    );
+
     setFormExpandedCats([...new Set(item.categories.map(scope => {
       const parts = splitScope(scope);
       if (parts.holdingId) {
@@ -221,30 +376,97 @@ export default function PlanPage() {
     setShowForm(true);
   };
 
+  const buildLadderConfigFromForm = (): PlanLadderConfig | undefined => {
+    if (formMode !== 'ladder' && formMode !== 'dividend') return undefined;
+    const validRows: PlanLadderRow[] = formLadderRows.flatMap((row, idx) => {
+      const tv = Number(row.triggerValue);
+      const pct = Number(row.positionPercent);
+      if (!Number.isFinite(tv) || tv < 0 || !Number.isFinite(pct) || pct < 0 || pct > 100) return [];
+      return [{
+        id: row.id || `row-${idx + 1}`,
+        ...(row.label.trim() ? { label: row.label.trim() } : {}),
+        triggerValue: tv,
+        positionPercent: pct,
+      }];
+    });
+    const parsedQuote = formCurrentQuote.trim() ? Number(formCurrentQuote) : undefined;
+    return {
+      kind: formMode === 'dividend' ? 'yield' : formLadderKind,
+      ...(formSymbol.trim() ? { symbol: formSymbol.trim().toUpperCase() } : {}),
+      ...(formSymbolName.trim() ? { symbolName: formSymbolName.trim() } : {}),
+      ...(parsedQuote !== undefined && Number.isFinite(parsedQuote) && parsedQuote > 0 ? { currentQuote: parsedQuote } : {}),
+      rows: validRows.length > 0
+        ? validRows
+        : buildPresetLadderConfig(formMode === 'dividend' ? 'dividend_yield' : 'gold_518850').rows,
+    };
+  };
+
+  const buildStockCardsFromForm = (): PlanStockCard[] | undefined => {
+    if (formMode !== 'stocks') return undefined;
+    const validCards: PlanStockCard[] = formStockCards.flatMap((card, idx) => {
+      if (!card.name.trim()) return [];
+      const weight = Number(card.weightPercent);
+      const pos = Number(card.targetPositionPercent);
+      const price = card.currentPrice.trim() ? Number(card.currentPrice) : undefined;
+      const actual = card.actualAmount.trim() ? Number(card.actualAmount) : undefined;
+      return [{
+        id: card.id || `card-${idx + 1}`,
+        name: card.name.trim(),
+        ...(card.symbol.trim() ? { symbol: card.symbol.trim().toUpperCase() } : {}),
+        weightPercent: Number.isFinite(weight) && weight >= 0 ? weight : 0,
+        targetPositionPercent: Number.isFinite(pos) && pos >= 0 && pos <= 100 ? pos : 100,
+        ...(price !== undefined && Number.isFinite(price) && price > 0 ? { currentPrice: price } : {}),
+        ...(actual !== undefined && Number.isFinite(actual) && actual >= 0 ? { actualAmount: actual } : {}),
+        ...(card.note.trim() ? { note: card.note.trim() } : {}),
+      }];
+    });
+    return validCards;
+  };
+
   const handleSaveItem = async () => {
     if (!itemFormValid || saving) return;
     const pct = planPercentFromInput(formPercent, formInputMode, status?.base ?? 0);
-    if (
-      !formName.trim()
-      || !Number.isFinite(pct)
-      || pct < 0
-      || formCats.length === 0
-    ) return;
+    if (!formName.trim() || !Number.isFinite(pct) || pct < 0) return;
+
     const exactRefs = formCats.flatMap(scope => {
       const refKey = exactResourceRefForScope(scope);
       return refKey ? [refKey] : [];
     });
-    const data = {
+    const ladderConfig = buildLadderConfigFromForm();
+    const stockCards = buildStockCardsFromForm();
+
+    const data: Parameters<typeof createPlanItem>[0] = {
       name: formName.trim(),
       plannedPurchases: formPurchases,
       targetPercent: pct,
       categories: formCats,
       allocations: allocationsFromInputs(exactRefs, formAllocationAmounts),
+      ...(formMode !== 'simple' || editingItem?.planMode ? { planMode: formMode } : {}),
+      ...(ladderConfig ? { ladderConfig } : {}),
+      ...(stockCards ? { stockCards } : {}),
     };
+
     await saveAction(async () => {
-      if (editingItem) await updatePlanItem(editingItem.id, data);
-      else await createPlanItem(data);
-      setShowForm(false); setEditingItem(null);
+      if (editingItem) {
+        await updatePlanItem(editingItem.id, {
+          ...data,
+          planMode: formMode,
+          ladderConfig,
+          stockCards,
+        });
+      } else {
+        await createPlanItem(data);
+      }
+      // Sync Dividend Workbench budget when saving a dividend-mode sector
+      if (formMode === 'dividend' && status && status.base > 0) {
+        const dividendBudgetMinor = Math.round(targetAmountFromPercent(status.base, pct) * 100);
+        if (Number.isSafeInteger(dividendBudgetMinor) && dividendBudgetMinor >= 0) {
+          await saveDividendBudget(dividendBudgetMinor).catch(() => {});
+        }
+      }
+      await refreshPlanQuotes().catch(() => {});
+      setShowForm(false);
+      setEditingItem(null);
     });
   };
 
@@ -253,6 +475,7 @@ export default function PlanPage() {
       await deletePlanItem(id);
       setConfirmDelete(null);
       setShowForm(false);
+      setEditingItem(null);
     });
   };
 
@@ -330,7 +553,6 @@ export default function PlanPage() {
     setSaveError(false);
   };
 
-  // Quick batch create plans from current unplanned assets
   const handleAutoCreateFromAssets = async () => {
     if (!status || status.items.length > 0 || status.unplanned.length === 0 || saving) return;
     const total = status.unplanned.reduce((sum, entry) => sum + entry.value, 0);
@@ -355,6 +577,40 @@ export default function PlanPage() {
     </div>
   );
   if (!status || !settings) return null;
+
+  // Sub-page: Dividend Individual Stock Workbench
+  if (subView === 'dividend') {
+    const dividendPlanItem = status.items.find(it => it.planMode === 'dividend');
+    const sharedQuota = dividendPlanItem
+      ? dividendPlanItem.targetValue
+      : settings.dividendBudgetMinor !== undefined
+        ? settings.dividendBudgetMinor / 100
+        : undefined;
+    return (
+      <>
+        <div className="plan-subpage-bar">
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => {
+              if (window.location.hash === DIVIDEND_ADVISOR_READER_HASH) {
+                window.history.replaceState(null, '', window.location.pathname + window.location.search);
+              }
+              setSubView('plan');
+              void load(false);
+            }}
+          >
+            {t('plan_back_to_plan')}
+          </button>
+          <strong style={{ fontSize: 'var(--fs-md)', whiteSpace: 'nowrap' }}>{t('plan_dividend_workbench_title')}</strong>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+            {sharedQuota !== undefined ? t('plan_dividend_shared_quota', { amount: masked(fmt(sharedQuota)) }) : ''}
+          </span>
+        </div>
+        <DividendPage />
+      </>
+    );
+  }
 
   const primary = settings.primaryCurrency;
   const resourceLabel = (candidate: PlanItemStatus['candidates'][number]) => (
@@ -395,9 +651,10 @@ export default function PlanPage() {
     const currentValue = resourceCurrentValues.get(refKey) ?? 0;
     return !Number.isFinite(value) || value <= 0 || value + otherExplicit > currentValue + 0.000001;
   });
+
+  // Allow creating plans even for assets not yet held (formCats may be empty)
   const itemFormValid = Boolean(
     formName.trim()
-    && formCats.length > 0
     && Number.isFinite(parsedFormPercent)
     && parsedFormPercent >= 0
     && !itemAllocationInvalid
@@ -437,11 +694,11 @@ export default function PlanPage() {
   );
 
   // Exact scopes already claimed by other plan items.
-  const othersWhole = new Set<string>();   // whole categories
-  const othersMarket = new Set<string>();  // market scopes 'cat@m'
-  const othersAcct = new Set<string>();    // account ids
-  const othersHold = new Set<string>();    // holding ids
-  const othersCash = new Set<string>();    // portfolio account ids
+  const othersWhole = new Set<string>();
+  const othersMarket = new Set<string>();
+  const othersAcct = new Set<string>();
+  const othersHold = new Set<string>();
+  const othersCash = new Set<string>();
   for (const item of status.items) {
     if (editingItem && item.id === editingItem.id) continue;
     for (const scope of item.categories) {
@@ -529,20 +786,76 @@ export default function PlanPage() {
     }
   };
 
-  // Render a single plan item card
+  const liquidPool = status.liquidReservePoolValue ?? 0;
+  const totalReserveNeeded = status.totalReserveNeededValue ?? 0;
+  const reserveDelta = Math.round((liquidPool - totalReserveNeeded) * 100) / 100;
+
+  // Render a single plan item card (Plan A Layout)
   const renderItem = (item: PlanItemStatus, idx: number) => {
     const color = itemColor(idx);
-    const progress = planProgress(item.currentValue, item.targetValue);
-    const gap = Math.round(item.gapValue * 100) / 100;
-    const isAtTarget = progress !== undefined && Math.abs(gap) < 0.01;
+    const sym = item.ladderConfig?.symbol?.trim().toUpperCase();
+    const fallbackQuote = item.ladderConfig?.currentQuote
+      ?? (sym ? status.holdingValuesBySymbol?.[sym]?.lastPrice : undefined);
+    const dyn = computePlanDynamicMetrics(
+      {
+        targetValue: item.targetValue,
+        currentValue: item.currentValue,
+        planMode: item.planMode,
+        ladderConfig: item.ladderConfig,
+        stockCards: item.stockCards,
+      },
+      { overrideQuote: fallbackQuote && fallbackQuote > 0 ? fallbackQuote : undefined },
+    );
+
+    const activePct = dyn.activePositionPercent;
+    const dynamicTargetVal = dyn.dynamicTargetValue;
+    const reserveNeededVal = dyn.reserveNeededValue;
+    const dynamicGap = dyn.dynamicGapValue; // + = need to buy, - = need to trim
+    const actualRatioOfFull = item.targetValue > 0 ? (item.currentValue / item.targetValue) * 100 : 0;
+    const tolerance = Math.max(100, item.targetValue * 0.015);
+    const isAtTarget = Math.abs(dynamicGap) <= tolerance;
     const notes = item.plannedPurchases ?? '';
+
+    const modeBadgeKey = dyn.mode === 'ladder'
+      ? 'plan_mode_badge_ladder'
+      : dyn.mode === 'dividend'
+        ? 'plan_mode_badge_dividend'
+        : dyn.mode === 'stocks'
+          ? 'plan_mode_badge_stocks'
+          : 'plan_mode_badge_simple';
+
+    const statusPillClass = dyn.mode === 'stocks'
+      ? 'plan-pill plan-pill-neutral'
+      : isAtTarget
+        ? 'plan-pill plan-pill-target'
+        : dynamicGap > 0
+          ? 'plan-pill plan-pill-buy'
+          : 'plan-pill plan-pill-trim';
+
+    const statusPillText = dyn.mode === 'stocks'
+      ? t('plan_pill_stock_count', { count: item.stockCards?.length ?? 0 })
+      : isAtTarget
+        ? t('plan_pill_on_target', { pct: fmtPct(activePct) })
+        : dynamicGap > 0
+          ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
+          : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
+
+    const effectiveLadder = dyn.mode === 'dividend' && (!item.ladderConfig || item.ladderConfig.rows.length === 0)
+      ? buildPresetLadderConfig('dividend_yield')
+      : item.ladderConfig;
+
+    const dividendFunds = dyn.mode === 'dividend' ? (settings.dividendFundPlan?.funds ?? []) : [];
 
     return (
       <article key={item.id} className="plan-card" style={{ '--plan-color': color } as CSSProperties}>
-        {/* Keep the asset name and edit action easy to scan on a phone. */}
-        <div className="plan-card-heading">
-          <h2><span className="plan-dot" />{item.name}</h2>
-          <div className="plan-card-heading-actions" style={{ display: 'flex', gap: 4 }}>
+        {/* Row 1: Title on left + Status Pill & Edit/Move controls on right */}
+        <div className="plan-card-header-top">
+          <h2 className="plan-card-title">
+            <span className="plan-dot" />
+            <span>{item.name}</span>
+          </h2>
+          <div className="plan-card-heading-actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span className={statusPillClass}>{statusPillText}</span>
             {status.items.length > 1 && (
               <>
                 <button
@@ -576,83 +889,305 @@ export default function PlanPage() {
           </div>
         </div>
 
-        {/* The plan and actual position share the same two-column layout. */}
-        <div className="plan-metrics">
-          <div className="plan-metric-col">
-            <span className="plan-label">{t('plan_planned_amount')}</span>
-            <strong>{masked(fmt(item.targetValue))}</strong>
-            <span className="plan-share">{t('plan_share', { percent: fmtPct(item.targetPercent) })}</span>
-          </div>
-          <div className="plan-metric-col">
-            <span className="plan-label">{t('plan_actual_amount')}</span>
-            <strong>{masked(fmt(item.currentValue))}</strong>
-            <span className="plan-share">{t('plan_share', { percent: fmtPct(item.currentPercent) })}</span>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div
-          className="plan-progress"
-          role="progressbar"
-          aria-label={t('plan_progress_named', { name: item.name })}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={progress === undefined ? undefined : Math.min(progress, 100)}
-        >
-          <div style={{ width: `${Math.min(progress ?? 0, 100)}%` }} />
-        </div>
-        <div className="plan-progress-caption">
-          <span>{progress === undefined ? t('plan_no_base') : t('plan_progress_value', { percent: fmtPct(progress) })}</span>
-          {progress !== undefined && (
-            <span className={gap < 0 ? 'plan-gap-over' : ''}>
-              {isAtTarget ? t('plan_at_target') : t(gap > 0 ? 'plan_gap_short' : 'plan_gap_over', { amount: masked(fmt(Math.abs(gap))) })}
+        {/* Row 2: Left-aligned Mode · Quota · Symbol · Live Quote */}
+        <div className="plan-card-sub">
+          <span>{t(modeBadgeKey)}</span>
+          <span> · {t('plan_sub_quota', { pct: fmtPct(item.targetPercent), amount: masked(fmt(item.targetValue)) })}</span>
+          {effectiveLadder?.symbol && (
+            <span> · {effectiveLadder.symbolName ? `${effectiveLadder.symbolName} (${effectiveLadder.symbol})` : effectiveLadder.symbol}</span>
+          )}
+          {dyn.resolvedLadder && (
+            <span>
+              {' · '}
+              {effectiveLadder?.kind === 'yield'
+                ? t('plan_sub_yield', { yield: fmtQuote(dyn.resolvedLadder.quote, 'yield') })
+                : t('plan_sub_quote', { quote: fmtQuote(dyn.resolvedLadder.quote, effectiveLadder?.kind) })}
             </span>
           )}
         </div>
 
-        {/* Free-form notes keep the existing multiline text. */}
-        <div className="plan-targets-box">
-          <div className="plan-targets-heading">
-            <span className="plan-targets-title">{t('plan_intended_targets')}</span>
-            {notes.trim() && <button
+        {/* Strict 2-Column × 3-Row Aligned Metric Comparison Box */}
+        <div className="plan-metric-compare">
+          {/* Grid Row 1: Labels */}
+          <div className="plan-metric-label">
+            {t('plan_dynamic_target_col', { pct: fmtPct(activePct) })}
+          </div>
+          <div className="plan-metric-label plan-metric-col-right">
+            {t('plan_actual_full_ratio_col', { pct: fmtPct(actualRatioOfFull) })}
+          </div>
+
+          {/* Grid Row 2: Big Amounts (Locked on the exact same horizontal baseline!) */}
+          <div className="plan-metric-val">
+            {masked(fmt(dynamicTargetVal))}
+          </div>
+          <div className="plan-metric-val plan-metric-col-right">
+            {masked(fmt(item.currentValue))}
+          </div>
+
+          {/* Grid Row 3: Reserve & Action Diff Notes */}
+          <div className="plan-metric-note">
+            {t('plan_reserve_needed_note', { amount: masked(fmt(reserveNeededVal)) })}
+          </div>
+          <div
+            className="plan-metric-note plan-metric-col-right"
+            style={{
+              color: isAtTarget
+                ? 'var(--asset-color)'
+                : dynamicGap > 0
+                  ? 'var(--warning)'
+                  : 'var(--danger)',
+            }}
+          >
+            {isAtTarget
+              ? t('plan_diff_on_target', { amount: masked(fmt(Math.abs(dynamicGap))) })
+              : dynamicGap > 0
+                ? t('plan_diff_need_buy', { amount: masked(fmt(Math.abs(dynamicGap))) })
+                : t('plan_diff_need_trim', { amount: masked(fmt(Math.abs(dynamicGap))) })}
+          </div>
+        </div>
+
+        {/* Next Step Action Bar for Ladder / Dividend Modes */}
+        {dyn.resolvedLadder && (dyn.resolvedLadder.nextBuyRow || dyn.resolvedLadder.nextSellRow) && (
+          <div className="plan-next-bar">
+            <span>
+              {dyn.resolvedLadder.nextBuyRow
+                ? effectiveLadder?.kind === 'yield'
+                  ? t('plan_next_yield_buy_hint', {
+                      val: fmtQuote(dyn.resolvedLadder.nextBuyRow.triggerValue, 'yield'),
+                      pct: fmtPct(dyn.resolvedLadder.nextBuyRow.positionPercent),
+                    })
+                  : t('plan_next_buy_hint', {
+                      val: fmtQuote(dyn.resolvedLadder.nextBuyRow.triggerValue, effectiveLadder?.kind),
+                      pct: fmtPct(dyn.resolvedLadder.nextBuyRow.positionPercent),
+                    })
+                : '—'}
+            </span>
+            <span>
+              {dyn.resolvedLadder.nextSellRow
+                ? effectiveLadder?.kind === 'yield'
+                  ? t('plan_next_yield_sell_hint', {
+                      val: fmtQuote(dyn.resolvedLadder.nextSellRow.triggerValue, 'yield'),
+                      pct: fmtPct(dyn.resolvedLadder.nextSellRow.positionPercent),
+                    })
+                  : t('plan_next_sell_hint', {
+                      val: fmtQuote(dyn.resolvedLadder.nextSellRow.triggerValue, effectiveLadder?.kind),
+                      pct: fmtPct(dyn.resolvedLadder.nextSellRow.positionPercent),
+                    })
+                : '—'}
+            </span>
+          </div>
+        )}
+
+        {/* Dividend Mode: Direct Entry Button to Dividend Stock Workbench */}
+        {dyn.mode === 'dividend' && (
+          <button
+            type="button"
+            className="plan-div-enter-btn"
+            onClick={() => setSubView('dividend')}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t('plan_enter_dividend_wb', { count: dividendSummary.stockCount })}
+            </span>
+            <span style={{ flexShrink: 0 }}>{t('plan_enter_btn')}</span>
+          </button>
+        )}
+
+        {/* Free-form Strategy Notes Box (retained across all modes) */}
+        <div className="plan-note-box">
+          <div className="plan-note-box-head">
+            <span>{t('plan_note_box_title')}</span>
+            <button
               type="button"
               className="plan-text-button"
+              style={{ minHeight: 'auto', padding: '0 4px', fontSize: 'var(--fs-xs)' }}
               aria-label={t('plan_edit_purchases_named', { name: item.name })}
               onClick={() => openPurchases(item)}
             >
-              {t('edit')}
-            </button>}
+              {notes.trim() ? t('edit') : t('plan_add_target_tag')}
+            </button>
           </div>
-
-          <div className="plan-tags-wrap">
-            {notes.trim() ? (
-              <button type="button" className="plan-note-content" aria-label={t('plan_edit_purchases_named', { name: item.name })} onClick={() => openPurchases(item)}>{notes}</button>
-            ) : (
-              <button type="button" className="plan-tag-add" onClick={() => openPurchases(item)}>
-                {t('plan_add_target_tag')}
-              </button>
-            )}
-          </div>
-
-          {/* Legacy subcategories (if user previously configured plan targets) */}
-          {item.targets.length > 0 && (
-            <div style={{ marginTop: 'var(--sp-2)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {item.targets.map(tg => (
-                <button
-                  type="button"
-                  key={tg.id}
-                  className="plan-tag"
-                  style={{ opacity: 0.85, fontSize: 'var(--fs-sm)', cursor: 'pointer' }}
-                  onClick={() => openEditTarget(item, tg)}
-                >
-                  📌 {tg.name} ({fmtPct(tg.targetPercent)}%)
-                </button>
-              ))}
-            </div>
+          {notes.trim() && (
+            <button
+              type="button"
+              className="plan-note-content"
+              style={{ fontSize: 'var(--fs-xs)', padding: 0 }}
+              aria-label={t('plan_edit_purchases_named', { name: item.name })}
+              onClick={() => openPurchases(item)}
+            >
+              {notes}
+            </button>
           )}
         </div>
 
-        {/* Details: Actual value sources & candidates */}
+        {/* Stocks Mode: Individual Stock / Fund Cards */}
+        {dyn.mode === 'stocks' && item.stockCards && item.stockCards.length > 0 && (
+          <div>
+            {item.stockCards.map(card => {
+              const symKey = card.symbol?.trim().toUpperCase();
+              const matchedHolding = symKey ? status.holdingValuesBySymbol?.[symKey] : undefined;
+              const livePrice = card.currentPrice ?? matchedHolding?.lastPrice;
+              const actualAmt = card.actualAmount ?? matchedHolding?.primaryValue ?? 0;
+              const cardQuota = item.targetValue * (card.weightPercent / 100);
+              const cardTarget = cardQuota * (card.targetPositionPercent / 100);
+
+              return (
+                <div key={card.id} className="plan-stock-subcard">
+                  <div className="plan-card-header-top">
+                    <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {card.name}{card.symbol ? ` (${card.symbol})` : ''}
+                    </span>
+                    <span className="plan-pill plan-pill-target">
+                      {livePrice !== undefined && livePrice > 0
+                        ? t('plan_stock_card_pill', { price: fmtQuote(livePrice, 'price'), pct: fmtPct(card.targetPositionPercent) })
+                        : t('plan_stock_card_pill_no_price', { pct: fmtPct(card.targetPositionPercent) })}
+                    </span>
+                  </div>
+                  <div className="plan-card-sub">
+                    {t('plan_stock_card_sub', {
+                      weight: fmtPct(card.weightPercent),
+                      quota: masked(fmt(cardQuota)),
+                      target: masked(fmt(cardTarget)),
+                      actual: masked(fmt(actualAmt)),
+                    })}
+                  </div>
+                  {card.note && (
+                    <div className="plan-stock-subcard-note">
+                      <strong>{t('plan_stock_card_note_prefix')}</strong>{card.note}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Ladder / Dividend Mode: Expandable Full-Visibility Position Ladder Table */}
+        {(dyn.mode === 'ladder' || dyn.mode === 'dividend') && effectiveLadder && effectiveLadder.rows.length > 0 && (
+          <details className="plan-ladder-details">
+            <summary>
+              <span className="plan-summary-left">
+                {t('plan_ladder_summary', { count: effectiveLadder.rows.length })}
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={e => { e.preventDefault(); openEdit(item); }}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEdit(item); } }}
+                className="plan-pill plan-pill-neutral"
+                style={{ color: 'var(--asset-color)' }}
+              >
+                {t('plan_edit_ladder_btn')}
+              </span>
+            </summary>
+
+            {/* Dividend Funds inside Dividend Sector */}
+            {dividendFunds.length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                {dividendFunds.map(fund => {
+                  const fundCode = fund.code?.trim().toUpperCase();
+                  const fundHolding = fundCode ? status.holdingValuesBySymbol?.[fundCode] : undefined;
+                  const fundQuote = fund.quote?.priceMicros !== undefined
+                    ? fund.quote.priceMicros / 1_000_000
+                    : fund.reference?.priceMicros !== undefined
+                      ? fund.reference.priceMicros / 1_000_000
+                      : fundHolding?.lastPrice;
+                  const fundActual = fundHolding?.primaryValue ?? 0;
+                  return (
+                    <div key={fund.id} className="plan-stock-subcard">
+                      <div className="plan-card-header-top">
+                        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          📊 {fund.name}{fund.code ? ` (${fund.code})` : ''}
+                        </span>
+                        <span className="plan-pill plan-pill-target">{t('plan_div_fund_badge')}</span>
+                      </div>
+                      <div className="plan-card-sub">
+                        {t('plan_div_fund_sub', {
+                          weight: fmtPct(fund.weightBps / 100),
+                          price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
+                          actual: masked(fmt(fundActual)),
+                        })}
+                      </div>
+                      {fund.note && (
+                        <div className="plan-stock-subcard-note">{fund.note}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div tabIndex={0} role="region" aria-label={item.name} className="plan-ladder-wrapper">
+              <table className="plan-ladder-table">
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ width: '26%' }}>
+                      {effectiveLadder.kind === 'yield'
+                        ? t('plan_col_yield')
+                        : effectiveLadder.kind === 'index'
+                          ? t('plan_col_index')
+                          : t('plan_col_ref')}
+                    </th>
+                    <th scope="col" style={{ width: '24%' }}>
+                      {effectiveLadder.kind === 'yield'
+                        ? t('plan_col_pos_pct')
+                        : effectiveLadder.kind === 'index'
+                          ? t('plan_col_pos_pct')
+                          : t('plan_col_price')}
+                    </th>
+                    <th scope="col" style={{ width: '24%' }}>
+                      {effectiveLadder.kind === 'price' ? t('plan_col_pos_pct') : t('plan_col_target_amt')}
+                    </th>
+                    <th scope="col" style={{ width: '26%' }}>
+                      {effectiveLadder.kind === 'price' ? t('plan_col_target_amt') : t('plan_col_status')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(dyn.resolvedLadder?.sortedRows ?? effectiveLadder.rows).map((row, rIdx) => {
+                    const isCurrent = dyn.resolvedLadder?.activeIndex === rIdx;
+                    const isNextBuy = dyn.resolvedLadder?.nextBuyRow?.id === row.id;
+                    const isNextSell = dyn.resolvedLadder?.nextSellRow?.id === row.id;
+                    const rowAmt = item.targetValue * (row.positionPercent / 100);
+                    const firstLabel = row.label || (
+                      effectiveLadder.kind === 'yield'
+                        ? `${row.triggerValue.toFixed(1)}%`
+                        : fmtQuote(row.triggerValue, effectiveLadder.kind)
+                    );
+                    const statusLabel = isCurrent
+                      ? t('plan_row_current')
+                      : isNextBuy
+                        ? t('plan_row_next_buy')
+                        : isNextSell
+                          ? t('plan_row_next_sell')
+                          : t('plan_row_waiting');
+
+                    if (effectiveLadder.kind === 'price') {
+                      return (
+                        <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
+                          <th scope="row">{isCurrent ? '● ' : ''}{firstLabel}</th>
+                          <td>{fmtQuote(row.triggerValue, 'price')}</td>
+                          <td>{fmtPct(row.positionPercent)}%</td>
+                          <td>{masked(fmt(rowAmt))}</td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
+                        <th scope="row">{isCurrent ? '● ' : ''}{firstLabel}</th>
+                        <td>{fmtPct(row.positionPercent)}%</td>
+                        <td>{masked(fmt(rowAmt))}</td>
+                        <td>{statusLabel}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+
+        {/* Legacy subcategories & linked scope details */}
         <details className="plan-details">
           <summary>{t('plan_details')}</summary>
           <p className="plan-help">{t('plan_actual_from', { scopes: item.categories.length ? item.categories.map(scopeLabel).join(' · ') : t('plan_sources_empty') })}</p>
@@ -667,7 +1202,6 @@ export default function PlanPage() {
             </ul>
           )}
 
-          {/* Legacy subcategories management inside details */}
           {item.targets.length > 0 && (
             <div style={{ marginTop: 'var(--sp-2)', borderTop: '1px solid var(--border)', paddingTop: 6 }}>
               <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-1)' }}>
@@ -705,38 +1239,76 @@ export default function PlanPage() {
           <h1 className="page-title">{t('plan_title')}</h1>
           <p className="page-subtitle">{t('plan_subtitle')}</p>
         </div>
-        <button
-          className="btn btn-sm btn-secondary"
-          onClick={() => setAmountVisible(!amountVisible)}
-          title={amountVisible ? t('hide_amount') : t('show_amount')}
-        >
-          {amountVisible ? '👁️' : '🔒'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => void handleRefreshQuotes()}
+            disabled={refreshingQuotes}
+          >
+            {t('plan_refresh_quotes')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => setSubView('dividend')}
+          >
+            {t('plan_open_dividend_workbench')}
+          </button>
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={() => setAmountVisible(!amountVisible)}
+            title={amountVisible ? t('hide_amount') : t('show_amount')}
+          >
+            {amountVisible ? '👁️' : '🔒'}
+          </button>
+        </div>
       </div>
 
-      {/* Top Overview & Allocation Distribution Board */}
+      {/* Top Overview & Global Liquid Reserve Pool Reconciliation */}
       <section className="plan-overview">
         <div className="plan-section-heading">
-          <span className="plan-label">{t('plan_budget')} · {primary}</span>
+          <span className="plan-label" style={{ fontWeight: 600 }}>{t('plan_overview_heading')} · {primary}</span>
           <button type="button" className="plan-text-button" onClick={openTarget}>{t('plan_change_budget')}</button>
         </div>
 
-        <div className={`plan-budget-grid${Math.max(masked(fmt(status.base)).length, masked(fmt(status.totalAssets)).length) > 9 ? ' plan-budget-grid-long' : ''}`}>
-          <div className="plan-budget-col">
-            <div className="plan-budget-amount">{masked(fmt(status.base))}</div>
+        {/* Strict 2-Col × 3-Row Aligned Overview Grid */}
+        <div className="plan-metric-compare">
+          <div className="plan-metric-label">{t('plan_full_quota_total')}</div>
+          <div className="plan-metric-label plan-metric-col-right">{t('plan_actual_total_assets')}</div>
+
+          <div className="plan-metric-val">{masked(fmt(status.base))}</div>
+          <div className="plan-metric-val plan-metric-col-right" style={{ color: 'var(--text-secondary)' }}>
+            {masked(fmt(status.totalAssets))}
           </div>
-          <div className="plan-budget-col">
-            <span className="plan-label">{t('total_assets')}</span>
-            <div className="plan-budget-sub">{masked(fmt(status.totalAssets))}</div>
+
+          <div className="plan-metric-note">{t('plan_assigned', { percent: fmtPct(status.targetPercentSum) })}</div>
+          <div className="plan-metric-note plan-metric-col-right" style={{ color: 'var(--asset-color)' }}>
+            {t('plan_liquid_pool_included', { amount: masked(fmt(liquidPool)) })}
           </div>
         </div>
-        <p className="plan-help">{t(status.targetTotal ? 'plan_base_fixed' : 'plan_base_live')}</p>
+
+        {/* Global Liquid Reserve Pool Check Bar */}
+        <div className="plan-reserve-bar">
+          <div className="plan-reserve-info">
+            <div className="plan-reserve-main">
+              {t('plan_reserve_need_label')}: <strong>{masked(fmt(totalReserveNeeded))}</strong>
+            </div>
+            <div className="plan-reserve-sub">
+              {t('plan_liquid_pool_label', { amount: masked(fmt(liquidPool)) })}
+            </div>
+          </div>
+          <span className={`plan-pill ${reserveDelta >= 0 ? 'plan-pill-target' : 'plan-pill-buy'}`}>
+            {reserveDelta >= 0
+              ? t('plan_reserve_surplus', { amount: masked(fmt(Math.abs(reserveDelta))) })
+              : t('plan_reserve_shortfall', { amount: masked(fmt(Math.abs(reserveDelta))) })}
+          </span>
+        </div>
 
         {/* Allocation distribution visual bars */}
         {status.items.length > 0 && (
           <details className="plan-distribution">
             <summary>{t('plan_compare_allocation')}</summary>
-            {/* Target Allocation Bar */}
             <div className="plan-dist-row">
               <div className="plan-dist-header">
                 <span>{t('plan_target_allocation')}</span>
@@ -761,7 +1333,6 @@ export default function PlanPage() {
               </div>
             </div>
 
-            {/* Actual Allocation Bar */}
             <div className="plan-dist-row">
               <div className="plan-dist-header">
                 <span>{t('plan_actual_allocation')}</span>
@@ -786,7 +1357,6 @@ export default function PlanPage() {
               </div>
             </div>
 
-            {/* Distribution Legend */}
             <div className="plan-dist-legend">
               {status.items.map((it, idx) => (
                 <span key={`legend-${it.id}`} className="plan-legend-item">
@@ -879,7 +1449,7 @@ export default function PlanPage() {
         </details>
       )}
 
-      {/* Create / Edit Plan Item Modal */}
+      {/* Create / Edit Plan Item Modal with Management Mode Selector */}
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); setEditingItem(null); }}>
           <div className="modal-content" role="dialog" aria-modal="true" aria-label={editingItem ? t('edit_plan_item') : t('add_plan_item')} onClick={e => e.stopPropagation()}>
@@ -888,7 +1458,39 @@ export default function PlanPage() {
               <button className="modal-close" onClick={() => { setShowForm(false); setEditingItem(null); }}>✕</button>
             </div>
 
-            {/* Step 1: Select Category Chips */}
+            {/* Step 1: Select Management Mode */}
+            <div className="form-group">
+              <label className="form-label">{t('plan_mode_label')}</label>
+              <div className="plan-mode-grid" role="group" aria-label={t('plan_mode_label')}>
+                {([
+                  { key: 'ladder' as const, title: t('plan_mode_ladder'), desc: t('plan_mode_ladder_desc') },
+                  { key: 'stocks' as const, title: t('plan_mode_stocks'), desc: t('plan_mode_stocks_desc') },
+                  { key: 'dividend' as const, title: t('plan_mode_dividend'), desc: t('plan_mode_dividend_desc') },
+                  { key: 'simple' as const, title: t('plan_mode_simple'), desc: t('plan_mode_simple_desc') },
+                ]).map(opt => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    className="plan-mode-option"
+                    aria-pressed={formMode === opt.key}
+                    onClick={() => {
+                      setFormMode(opt.key);
+                      if (opt.key === 'dividend') {
+                        const divCfg = buildPresetLadderConfig('dividend_yield');
+                        setFormLadderKind('yield');
+                        setFormLadderRows(toEditableRows(divCfg.rows));
+                        if (!formName.trim()) setFormName('红利价值板块');
+                      }
+                    }}
+                  >
+                    <div className="plan-mode-option-title">{opt.title}</div>
+                    <div className="plan-mode-option-desc">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Step 2: Select Category Chips (Optional for unheld future assets) */}
             <div className="form-group">
               <label className="form-label">{t('linked_categories')}</label>
               <div className="chip-group">
@@ -928,7 +1530,7 @@ export default function PlanPage() {
               />
             </div>
 
-            {/* Step 2: Target Percent or Amount */}
+            {/* Step 3: Target Percent or Amount */}
             <div className="form-group">
               <label className="form-label" htmlFor="plan-value">
                 {t(formInputMode === 'percent' ? 'target_percent' : 'plan_amount_input', { currency: primary })}
@@ -977,7 +1579,224 @@ export default function PlanPage() {
               )}
             </div>
 
-            {/* Optional notes */}
+            {/* Step 4A: Ladder Configuration (when mode is 'ladder' or 'dividend') */}
+            {(formMode === 'ladder' || formMode === 'dividend') && (
+              <div className="form-group" style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-2)' }}>
+                <label className="form-label">{t('plan_preset_label')}</label>
+                <div className="chip-group" style={{ marginBottom: 'var(--sp-2)' }}>
+                  <button type="button" className="chip compact" onClick={() => applyPresetToForm('gold_518850')}>
+                    {t('plan_preset_gold')}
+                  </button>
+                  <button type="button" className="chip compact" onClick={() => applyPresetToForm('chinext_159915')}>
+                    {t('plan_preset_chinext')}
+                  </button>
+                  <button type="button" className="chip compact" onClick={() => applyPresetToForm('oil_513350')}>
+                    {t('plan_preset_oil')}
+                  </button>
+                  <button type="button" className="chip compact" onClick={() => applyPresetToForm('dividend_yield')}>
+                    {t('plan_preset_dividend')}
+                  </button>
+                </div>
+
+                {formMode === 'ladder' && (
+                  <div style={{ marginBottom: 'var(--sp-2)' }}>
+                    <label className="form-label">{t('plan_ladder_kind_label')}</label>
+                    <div className="chip-group">
+                      {(['price', 'index', 'yield'] as const).map(k => (
+                        <button
+                          key={k}
+                          type="button"
+                          className={`chip compact${formLadderKind === k ? ' active' : ''}`}
+                          onClick={() => setFormLadderKind(k)}
+                        >
+                          {t(`plan_ladder_kind_${k}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 'var(--sp-2)' }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>{t('plan_anchor_symbol_label')}</label>
+                    <input
+                      className="form-input mono"
+                      placeholder="518850 / 159915"
+                      value={formSymbol}
+                      onChange={e => setFormSymbol(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>{t('plan_anchor_quote_label')}</label>
+                    <input
+                      className="form-input mono"
+                      type="number"
+                      step="any"
+                      placeholder="5.30"
+                      value={formCurrentQuote}
+                      onChange={e => setFormCurrentQuote(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('plan_ladder_rows_label')}</label>
+                  <button
+                    type="button"
+                    className="plan-text-button"
+                    onClick={() => setFormLadderRows(prev => [
+                      ...prev,
+                      { id: `row-${Date.now()}-${prev.length}`, label: '', triggerValue: '', positionPercent: '' },
+                    ])}
+                  >
+                    {t('plan_add_ladder_row')}
+                  </button>
+                </div>
+
+                <div style={{ maxHeight: 210, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 28px', gap: 6, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <span>{t('plan_col_ref')}</span>
+                    <span>{formLadderKind === 'yield' ? t('plan_col_yield') : formLadderKind === 'index' ? t('plan_col_index') : t('plan_col_price')}</span>
+                    <span>{t('plan_col_pos_pct')} (%)</span>
+                    <span />
+                  </div>
+                  {formLadderRows.map((row, rIdx) => (
+                    <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 28px', gap: 6, marginBottom: 4 }}>
+                      <input
+                        className="form-input"
+                        style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                        placeholder="<2350"
+                        value={row.label}
+                        onChange={e => setFormLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, label: e.target.value } : r))}
+                      />
+                      <input
+                        className="form-input mono"
+                        style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                        type="number"
+                        step="any"
+                        placeholder="5.00"
+                        value={row.triggerValue}
+                        onChange={e => setFormLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, triggerValue: e.target.value } : r))}
+                      />
+                      <input
+                        className="form-input mono"
+                        style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                        type="number"
+                        step="any"
+                        placeholder="25"
+                        value={row.positionPercent}
+                        onChange={e => setFormLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, positionPercent: e.target.value } : r))}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        style={{ padding: 0, minHeight: 28 }}
+                        onClick={() => setFormLadderRows(prev => prev.filter((_, i) => i !== rIdx))}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 4B: Individual Stock / Fund Cards Editor (when mode is 'stocks') */}
+            {formMode === 'stocks' && (
+              <div className="form-group" style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--sp-2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('plan_stock_cards_label')}</label>
+                  <button
+                    type="button"
+                    className="plan-text-button"
+                    onClick={() => setFormStockCards(prev => [
+                      ...prev,
+                      {
+                        id: `sc-${Date.now()}-${prev.length}`,
+                        name: '',
+                        symbol: '',
+                        weightPercent: '20',
+                        targetPositionPercent: '50',
+                        currentPrice: '',
+                        actualAmount: '',
+                        note: '',
+                      },
+                    ])}
+                  >
+                    {t('plan_add_stock_card')}
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+                  {formStockCards.map((card, cIdx) => (
+                    <div key={card.id} style={{ padding: 8, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-subtle)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 28px', gap: 6, marginBottom: 6 }}>
+                        <input
+                          className="form-input"
+                          style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                          placeholder={t('plan_stock_name_ph')}
+                          value={card.name}
+                          onChange={e => setFormStockCards(prev => prev.map((c, i) => i === cIdx ? { ...c, name: e.target.value } : c))}
+                        />
+                        <input
+                          className="form-input mono"
+                          style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                          placeholder={t('plan_stock_code_ph')}
+                          value={card.symbol}
+                          onChange={e => setFormStockCards(prev => prev.map((c, i) => i === cIdx ? { ...c, symbol: e.target.value } : c))}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          style={{ padding: 0, minHeight: 28 }}
+                          onClick={() => setFormStockCards(prev => prev.filter((_, i) => i !== cIdx))}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6 }}>
+                        <input
+                          className="form-input mono"
+                          style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                          type="number"
+                          step="any"
+                          placeholder={t('plan_stock_weight_ph')}
+                          value={card.weightPercent}
+                          onChange={e => setFormStockCards(prev => prev.map((c, i) => i === cIdx ? { ...c, weightPercent: e.target.value } : c))}
+                        />
+                        <input
+                          className="form-input mono"
+                          style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                          type="number"
+                          step="any"
+                          placeholder={t('plan_stock_pos_ph')}
+                          value={card.targetPositionPercent}
+                          onChange={e => setFormStockCards(prev => prev.map((c, i) => i === cIdx ? { ...c, targetPositionPercent: e.target.value } : c))}
+                        />
+                        <input
+                          className="form-input mono"
+                          style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)' }}
+                          type="number"
+                          step="any"
+                          placeholder={t('plan_stock_price_ph')}
+                          value={card.currentPrice}
+                          onChange={e => setFormStockCards(prev => prev.map((c, i) => i === cIdx ? { ...c, currentPrice: e.target.value } : c))}
+                        />
+                      </div>
+                      <input
+                        className="form-input"
+                        style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)', width: '100%' }}
+                        placeholder={t('plan_stock_note_ph')}
+                        value={card.note}
+                        onChange={e => setFormStockCards(prev => prev.map((c, i) => i === cIdx ? { ...c, note: e.target.value } : c))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Optional free-form notes */}
             <div className="form-group">
               <label className="form-label" htmlFor="plan-purchases">{t('plan_intended_targets')}</label>
               <textarea
@@ -1347,4 +2166,3 @@ export default function PlanPage() {
     </>
   );
 }
-

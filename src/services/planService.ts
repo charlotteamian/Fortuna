@@ -9,6 +9,7 @@ import { getHoldingMode } from '../lib/productPortfolio';
 import { getHoldingContractMultiplier } from '../lib/usOption';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 import {
+  computePlanDynamicMetrics,
   getTargetRefKeys,
   getResourceAllocation,
   minorToMajor,
@@ -18,6 +19,7 @@ import {
   targetAmountFromPercent,
   targetPercentFromAmount,
 } from '../lib/allocationPlan';
+import { fetchDividendMarketQuotes } from './dividendQuoteService';
 
 // ---- Scopes ----
 // A plan item links scopes at several granularities. Exact holding/cash scopes may
@@ -87,10 +89,25 @@ export async function getPlanItems(): Promise<PlanItem[]> {
   return items.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
 }
 
-export async function createPlanItem(data: Pick<PlanItem, 'name' | 'targetPercent' | 'categories' | 'allocations' | 'plannedPurchases'>): Promise<string> {
+export type CreatePlanItemData = Pick<PlanItem, 'name' | 'targetPercent' | 'categories' | 'allocations' | 'plannedPurchases' | 'planMode' | 'ladderConfig' | 'stockCards'>;
+
+export async function createPlanItem(data: CreatePlanItemData): Promise<string> {
   const count = await db.planItems.count();
   const id = uuidv4();
-  await db.planItems.add({ ...data, id, sortOrder: count, createdAt: Date.now() });
+  const record: PlanItem = {
+    name: data.name,
+    targetPercent: data.targetPercent,
+    categories: data.categories,
+    ...(data.allocations !== undefined ? { allocations: data.allocations } : {}),
+    ...(data.plannedPurchases !== undefined ? { plannedPurchases: data.plannedPurchases } : {}),
+    ...(data.planMode !== undefined ? { planMode: data.planMode } : {}),
+    ...(data.ladderConfig !== undefined ? { ladderConfig: data.ladderConfig } : {}),
+    ...(data.stockCards !== undefined ? { stockCards: data.stockCards } : {}),
+    id,
+    sortOrder: count,
+    createdAt: Date.now(),
+  };
+  await db.planItems.add(record);
   requestPortableSnapshot('allocation-plan-item-created');
   return id;
 }
@@ -187,9 +204,13 @@ export interface PlanTargetStatus extends PlanTarget {
 export interface PlanItemStatus extends PlanItem {
   currentValue: number;     // primary currency
   currentPercent: number;   // share of current total assets
-  targetValue: number;      // targetPercent × base
+  targetValue: number;      // targetPercent × base (full-position strategic quota)
   gapValue: number;         // targetValue − currentValue (+ = buy more, − = trim)
   gapPercent: number;       // targetPercent − currentPercent
+  dynamicTargetPercent?: number; // 0–100 position ratio at current quote/ladder tier
+  dynamicTargetValue?: number;   // targetValue × dynamicTargetPercent / 100
+  reserveNeededValue?: number;   // targetValue − dynamicTargetValue
+  dynamicGapValue?: number;      // dynamicTargetValue − currentValue
   targets: PlanTargetStatus[];
   targetPercentSum: number; // portfolio percentage assigned to second-level subcategories
   candidates: TargetCandidate[];  // third-level products linkable to those subcategories
@@ -210,19 +231,22 @@ export interface PlanStatus {
   base: number;                 // amount the targets are measured against
   targetTotal?: number;         // user-set target total assets, if any
   targetPercentSum: number;
+  liquidReservePoolValue?: number; // sum of liquid cash/wealth/deposit & broker idle cash in primary currency
+  totalReserveNeededValue?: number; // sum of reserveNeededValue across all plan items
   allocationWarnings: AllocationWarning[];
   unavailableValuationCount: number;
   unplanned: UnplannedEntry[];  // asset value not covered by any item
   // For the scope form. The legacy field name is retained, but all asset accounts
   // are included so any portfolio holding/cash pool can be allocated explicitly.
   scopeNames?: Record<string, { name: string; inactive: boolean }>;
+  holdingValuesBySymbol?: Record<string, { primaryValue: number; lastPrice: number }>;
   equityAccounts: {
     id: string;
     name: string;
     category: string;
     currency: string;
     cash?: { refKey: string; currentValue: number };
-    holdings: { id: string; refKey: string; name: string; currentValue: number }[];
+    holdings: { id: string; refKey: string; name: string; symbol?: string; currentValue: number }[];
   }[];
 }
 
@@ -288,7 +312,8 @@ export async function getPlanStatus(): Promise<PlanStatus> {
   const resources = new Map<string, ResourceInfo>();
   const accountCategory = new Map<string, string>();
   const portfolioIds = new Set(assetAccounts.filter(account => account.portfolio).map(account => account.id));
-  const accountHoldingOptions: Record<string, { id: string; refKey: string; name: string; currentValue: number }[]> = {};
+  const accountHoldingOptions: Record<string, { id: string; refKey: string; name: string; symbol?: string; currentValue: number }[]> = {};
+  const holdingValuesBySymbol: Record<string, { primaryValue: number; lastPrice: number }> = {};
   const allocationWarnings: AllocationWarning[] = [];
   let unavailableValuationCount = assetAccounts.filter(account => account.conversionUnavailable).length;
   const selectedRefs = new Set([
@@ -340,8 +365,17 @@ export async function getPlanStatus(): Promise<PlanStatus> {
             id: holding.id,
             refKey,
             name: holding.name,
+            ...(holding.symbol ? { symbol: holding.symbol } : {}),
             currentValue,
           });
+        }
+        if (holding.symbol) {
+          const sym = holding.symbol.trim().toUpperCase();
+          const prev = holdingValuesBySymbol[sym];
+          holdingValuesBySymbol[sym] = {
+            primaryValue: (prev?.primaryValue ?? 0) + primaryValue,
+            lastPrice: holding.lastPrice || prev?.lastPrice || 0,
+          };
         }
         if (primaryValue > 0) {
           atoms.push({
@@ -639,6 +673,19 @@ export async function getPlanStatus(): Promise<PlanStatus> {
     const currentValue = itemValues[index];
     const currentPercent = totalAssets > 0 ? currentValue / totalAssets * 100 : 0;
     const targetValue = item.targetPercent / 100 * base;
+    const fallbackSym = item.ladderConfig?.symbol?.trim().toUpperCase();
+    const fallbackQuote = item.ladderConfig?.currentQuote
+      ?? (fallbackSym ? holdingValuesBySymbol[fallbackSym]?.lastPrice : undefined);
+    const dynamicMetrics = computePlanDynamicMetrics(
+      {
+        targetValue,
+        currentValue,
+        planMode: item.planMode,
+        ladderConfig: item.ladderConfig,
+        stockCards: item.stockCards,
+      },
+      { overrideQuote: fallbackQuote && fallbackQuote > 0 ? fallbackQuote : undefined },
+    );
     return {
       ...item,
       currentValue,
@@ -646,6 +693,10 @@ export async function getPlanStatus(): Promise<PlanStatus> {
       targetValue,
       gapValue: targetValue - currentValue,
       gapPercent: item.targetPercent - currentPercent,
+      dynamicTargetPercent: dynamicMetrics.activePositionPercent,
+      dynamicTargetValue: dynamicMetrics.dynamicTargetValue,
+      reserveNeededValue: dynamicMetrics.reserveNeededValue,
+      dynamicGapValue: dynamicMetrics.dynamicGapValue,
       targets,
       targetPercentSum: sumTargetPercents(targets),
       candidates,
@@ -684,13 +735,29 @@ export async function getPlanStatus(): Promise<PlanStatus> {
     .filter(entry => entry.value > 0.005)
     .sort((left, right) => right.value - left.value);
 
+  const LIQUID_RESERVE_CATEGORIES = new Set(['现金', '银行存款', '理财产品']);
+  let liquidReservePoolValue = 0;
+  for (const resource of resources.values()) {
+    const cat = accountCategory.get(resource.accountId) ?? '';
+    if (resource.kind === 'cash' || LIQUID_RESERVE_CATEGORIES.has(cat)) {
+      liquidReservePoolValue += resource.primaryValue;
+    }
+  }
+  liquidReservePoolValue = Math.round(liquidReservePoolValue * 100) / 100;
+  const totalReserveNeededValue = Math.round(
+    statuses.reduce((sum, item) => sum + (item.reserveNeededValue ?? 0), 0) * 100,
+  ) / 100;
+
   return {
     items: statuses,
     scopeNames,
+    holdingValuesBySymbol,
     totalAssets,
     base,
     targetTotal,
     targetPercentSum: items.reduce((sum, item) => sum + item.targetPercent, 0),
+    liquidReservePoolValue,
+    totalReserveNeededValue,
     allocationWarnings,
     unavailableValuationCount,
     unplanned,
@@ -710,4 +777,66 @@ export async function getPlanStatus(): Promise<PlanStatus> {
         };
       }),
   };
+}
+
+/**
+ * Automatically fetches live quotes for 6-digit mainland ETFs/stocks/indices configured
+ * on plan ladders and stock cards, persisting updated quotes onto the plan items.
+ */
+export async function refreshPlanQuotes(): Promise<{ updated: number; failed: number }> {
+  const items = await db.planItems.toArray();
+  const codeSet = new Set<string>();
+  for (const item of items) {
+    const ladderSym = item.ladderConfig?.symbol?.trim();
+    if (ladderSym && /^\d{6}$/.test(ladderSym)) codeSet.add(ladderSym);
+    for (const card of item.stockCards ?? []) {
+      const sym = card.symbol?.trim();
+      if (sym && /^\d{6}$/.test(sym)) codeSet.add(sym);
+    }
+  }
+  const codes = [...codeSet];
+  if (codes.length === 0) return { updated: 0, failed: 0 };
+  const { quotes, failed } = await fetchDividendMarketQuotes(codes);
+  if (quotes.size === 0) return { updated: 0, failed: failed.length };
+
+  let updated = 0;
+  await db.transaction('rw', db.planItems, async () => {
+    const currentItems = await db.planItems.toArray();
+    for (const item of currentItems) {
+      let itemChanged = false;
+      let nextLadder = item.ladderConfig;
+      const ladderSym = nextLadder?.symbol?.trim();
+      if (nextLadder && ladderSym && quotes.has(ladderSym)) {
+        const q = quotes.get(ladderSym)!;
+        const price = Math.round((q.priceMicros / 1_000_000) * 10000) / 10000;
+        if (price > 0 && nextLadder.currentQuote !== price) {
+          nextLadder = { ...nextLadder, currentQuote: price, quoteDate: q.date };
+          itemChanged = true;
+        }
+      }
+      let nextCards = item.stockCards;
+      if (nextCards && nextCards.length > 0) {
+        nextCards = nextCards.map(card => {
+          const sym = card.symbol?.trim();
+          if (!sym || !quotes.has(sym)) return card;
+          const q = quotes.get(sym)!;
+          const price = Math.round((q.priceMicros / 1_000_000) * 10000) / 10000;
+          if (price > 0 && card.currentPrice !== price) {
+            itemChanged = true;
+            return { ...card, currentPrice: price };
+          }
+          return card;
+        });
+      }
+      if (itemChanged) {
+        updated += 1;
+        await db.planItems.update(item.id, {
+          ...(nextLadder ? { ladderConfig: nextLadder } : {}),
+          ...(nextCards ? { stockCards: nextCards } : {}),
+        });
+      }
+    }
+  });
+  if (updated > 0) requestPortableSnapshot('plan-quotes-refreshed');
+  return { updated, failed: failed.length };
 }

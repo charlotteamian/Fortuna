@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildPresetLadderConfig,
   computeFundingWaterfall,
+  computePlanDynamicMetrics,
   getTargetRefKeys,
   majorToMinor,
   parsePlannedPurchases,
   planPercentFromInput,
   planProgress,
   remainingTargetPercent,
+  resolveActiveLadderTier,
   resolveResourceClaims,
   sumLinkedProductValues,
   sumTargetPercents,
@@ -163,4 +166,63 @@ test('computeFundingWaterfall prioritizes idle cash, then overweight trims, then
     { sourceType: 'overweight_trim', bucketId: 'gold', bucketName: '黄金', amount: 5_000 },
     { sourceType: 'lower_priority_redeem', bucketId: 'bond', bucketName: '债券理财', amount: 12_000 },
   ]);
+});
+
+test('preset ladders match gold, chinext, oil and dividend yield position schedules and resolve active tiers', () => {
+  const gold = buildPresetLadderConfig('gold_518850');
+  assert.equal(gold.rows.length, 12);
+  const goldAt502 = resolveActiveLadderTier(gold, 5.02)!;
+  assert.equal(goldAt502.activeRow.label, '<2350');
+  assert.equal(goldAt502.activeRow.positionPercent, 25);
+  assert.equal(goldAt502.nextBuyRow?.triggerValue, 4.5);
+  assert.equal(goldAt502.nextSellRow?.triggerValue, 5.5);
+
+  const goldAt530 = resolveActiveLadderTier(gold, 5.30)!;
+  assert.equal(goldAt530.activeRow.label, '<2600');
+  assert.equal(goldAt530.activeRow.positionPercent, 15);
+
+  const chinext = buildPresetLadderConfig('chinext_159915');
+  assert.equal(chinext.rows.length, 21);
+  const chinextAt2185 = resolveActiveLadderTier(chinext, 2185)!;
+  assert.equal(chinextAt2185.activeRow.triggerValue, 2200);
+  assert.equal(chinextAt2185.activeRow.positionPercent, 52);
+
+  const oil = buildPresetLadderConfig('oil_513350');
+  assert.equal(oil.rows.length, 12);
+  const oilAt086 = resolveActiveLadderTier(oil, 0.865)!;
+  assert.equal(oilAt086.activeRow.triggerValue, 0.9);
+  assert.equal(oilAt086.activeRow.positionPercent, 15);
+
+  const dividend = buildPresetLadderConfig('dividend_yield');
+  assert.equal(dividend.rows.length, 11);
+  const divAt582 = resolveActiveLadderTier(dividend, 5.82)!;
+  assert.equal(divAt582.activeRow.triggerValue, 6.0);
+  assert.equal(divAt582.activeRow.positionPercent, 60);
+  assert.equal(divAt582.nextBuyRow?.triggerValue, 6.5);
+  assert.equal(divAt582.nextSellRow?.triggerValue, 5.5);
+});
+
+test('computePlanDynamicMetrics calculates dynamic targets and reserve requirements across ladder, stocks, dividend and simple modes', () => {
+  const gold = buildPresetLadderConfig('gold_518850');
+  const goldMetrics = computePlanDynamicMetrics(
+    { targetValue: 100_000, currentValue: 24_800, planMode: 'ladder', ladderConfig: { ...gold, currentQuote: 5.30 } },
+  );
+  assert.equal(goldMetrics.activePositionPercent, 15);
+  assert.equal(goldMetrics.dynamicTargetValue, 15_000);
+  assert.equal(goldMetrics.reserveNeededValue, 85_000);
+  assert.equal(goldMetrics.dynamicGapValue, -9_800);
+
+  const stockMetrics = computePlanDynamicMetrics({
+    targetValue: 150_000,
+    currentValue: 78_000,
+    planMode: 'stocks',
+    stockCards: [
+      { id: '1', name: '美的集团', symbol: '000333', weightPercent: 50, targetPositionPercent: 60 },
+      { id: '2', name: '福耀玻璃', symbol: '600660', weightPercent: 50, targetPositionPercent: 40 },
+    ],
+  });
+  assert.equal(stockMetrics.activePositionPercent, 50);
+  assert.equal(stockMetrics.dynamicTargetValue, 75_000);
+  assert.equal(stockMetrics.reserveNeededValue, 75_000);
+  assert.equal(stockMetrics.dynamicGapValue, -3_000);
 });

@@ -641,3 +641,64 @@ test('market refresh preserves manual edits, keeps dated cache on failure and cl
     assert.ok(recovered?.dividend?.scheduleFetchedAt);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('plan management modes (ladder, stocks, dividend) and unheld asset plans survive JSON and Excel round-trips and compute global reserve pool', async () => {
+  const { exportData, importData } = await import('../src/db.ts');
+  const { buildPresetLadderConfig } = await import('../src/lib/allocationPlan.ts');
+  const { deletePlanItem } = await import('../src/services/planService.ts');
+  await seedAccount(); // 240,000 in '现金' account, targetTotal = 1,000,000
+
+  const goldLadder = { ...buildPresetLadderConfig('gold_518850'), currentQuote: 5.30 };
+  const goldId = await createPlanItem({
+    name: '黄金投资计划',
+    targetPercent: 10,
+    categories: [], // unheld future asset
+    planMode: 'ladder',
+    ladderConfig: goldLadder,
+    plannedPurchases: '突破 2600 后按表减仓',
+  });
+
+  const stocksId = await createPlanItem({
+    name: '核心股票',
+    targetPercent: 15,
+    categories: ['股票/ETF'],
+    planMode: 'stocks',
+    stockCards: [
+      { id: 'sc-1', name: '美的集团', symbol: '000333', weightPercent: 50, targetPositionPercent: 60, currentPrice: 68.4, note: 'OBM growth' },
+      { id: 'sc-2', name: '福耀玻璃', symbol: '600660', weightPercent: 50, targetPositionPercent: 40, currentPrice: 52.1, note: 'ASP growth' },
+    ],
+  });
+
+  const statusBefore = await getPlanStatus();
+  assert.equal(statusBefore.liquidReservePoolValue, 240000);
+  const goldStatus = statusBefore.items.find(i => i.id === goldId)!;
+  assert.equal(goldStatus.dynamicTargetPercent, 15);
+  assert.equal(goldStatus.dynamicTargetValue, 15000);
+  assert.equal(goldStatus.reserveNeededValue, 85000);
+
+  const stocksStatus = statusBefore.items.find(i => i.id === stocksId)!;
+  assert.equal(stocksStatus.dynamicTargetPercent, 50);
+  assert.equal(stocksStatus.dynamicTargetValue, 75000);
+  assert.equal(stocksStatus.reserveNeededValue, 75000);
+  assert.equal(statusBefore.totalReserveNeededValue, 160000);
+
+  const json = await exportData();
+  const excel = await exportToExcel();
+
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await deletePlanItem(goldId);
+    await deletePlanItem(stocksId);
+    assert.equal(await db.planItems.count(), 0);
+    assert.equal(await restore(), true);
+    const restored = await getPlanStatus();
+    assert.equal(restored.items.length, 2);
+    const rGold = restored.items.find(i => i.id === goldId)!;
+    assert.equal(rGold.planMode, 'ladder');
+    assert.equal(rGold.ladderConfig?.currentQuote, 5.30);
+    assert.equal(rGold.dynamicTargetValue, 15000);
+    const rStocks = restored.items.find(i => i.id === stocksId)!;
+    assert.equal(rStocks.planMode, 'stocks');
+    assert.equal(rStocks.stockCards?.length, 2);
+    assert.equal(rStocks.stockCards?.[0].name, '美的集团');
+  }
+});
