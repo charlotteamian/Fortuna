@@ -834,11 +834,17 @@ export default function PlanPage() {
 
     const statusPillText = dyn.mode === 'stocks'
       ? t('plan_pill_stock_count', { count: item.stockCards?.length ?? 0 })
-      : isAtTarget
-        ? t('plan_pill_on_target', { pct: fmtPct(activePct) })
-        : dynamicGap > 0
-          ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
-          : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
+      : dyn.mode === 'simple'
+        ? isAtTarget
+          ? t('plan_pill_simple_on_target')
+          : dynamicGap > 0
+            ? t('plan_pill_simple_need_buy')
+            : t('plan_pill_simple_need_trim')
+        : isAtTarget
+          ? t('plan_pill_on_target', { pct: fmtPct(activePct) })
+          : dynamicGap > 0
+            ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
+            : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
 
     const effectiveLadder = dyn.mode === 'dividend' && (!item.ladderConfig || item.ladderConfig.rows.length === 0)
       ? buildPresetLadderConfig('dividend_yield')
@@ -848,19 +854,18 @@ export default function PlanPage() {
 
     return (
       <article key={item.id} className="plan-card" style={{ '--plan-color': color } as CSSProperties}>
-        {/* Row 1: Title on left + Status Pill & Edit/Move controls on right */}
+        {/* Row 1: Plan Name on left (guaranteed visible) + Compact Move/Edit buttons on right */}
         <div className="plan-card-header-top">
           <h2 className="plan-card-title">
             <span className="plan-dot" />
-            <span>{item.name}</span>
+            <span className="plan-card-title-text">{item.name}</span>
           </h2>
           <div className="plan-card-heading-actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span className={statusPillClass}>{statusPillText}</span>
             {status.items.length > 1 && (
               <>
                 <button
                   type="button"
-                  className="btn btn-sm btn-secondary"
+                  className="btn btn-sm btn-secondary plan-icon-btn"
                   disabled={idx === 0 || saving}
                   aria-label={t('plan_priority_up', { name: item.name })}
                   onClick={() => void saveAction(() => movePlanItem(item.id, 'up'))}
@@ -869,7 +874,7 @@ export default function PlanPage() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm btn-secondary"
+                  className="btn btn-sm btn-secondary plan-icon-btn"
                   disabled={idx === status.items.length - 1 || saving}
                   aria-label={t('plan_priority_down', { name: item.name })}
                   onClick={() => void saveAction(() => movePlanItem(item.id, 'down'))}
@@ -880,7 +885,7 @@ export default function PlanPage() {
             )}
             <button
               type="button"
-              className="btn btn-sm btn-secondary"
+              className="btn btn-sm btn-secondary plan-edit-btn"
               aria-label={t('plan_edit_named', { name: item.name })}
               onClick={() => openEdit(item)}
             >
@@ -889,31 +894,38 @@ export default function PlanPage() {
           </div>
         </div>
 
-        {/* Row 2: Left-aligned Mode · Quota · Symbol · Live Quote */}
-        <div className="plan-card-sub">
-          <span>{t(modeBadgeKey)}</span>
-          <span> · {t('plan_sub_quota', { pct: fmtPct(item.targetPercent), amount: masked(fmt(item.targetValue)) })}</span>
-          {effectiveLadder?.symbol && (
-            <span> · {effectiveLadder.symbolName ? `${effectiveLadder.symbolName} (${effectiveLadder.symbol})` : effectiveLadder.symbol}</span>
-          )}
-          {dyn.resolvedLadder && (
-            <span>
-              {' · '}
-              {effectiveLadder?.kind === 'yield'
-                ? t('plan_sub_yield', { yield: fmtQuote(dyn.resolvedLadder.quote, 'yield') })
-                : t('plan_sub_quote', { quote: fmtQuote(dyn.resolvedLadder.quote, effectiveLadder?.kind) })}
-            </span>
-          )}
+        {/* Row 2: Left-aligned Mode · Quota · Symbol · Live Quote + Right Status Pill */}
+        <div className="plan-card-sub-row">
+          <div className="plan-card-sub">
+            <span>{t(modeBadgeKey)}</span>
+            <span> · {t('plan_sub_quota', { pct: fmtPct(item.targetPercent), amount: masked(fmt(item.targetValue)) })}</span>
+            {effectiveLadder?.symbol && (
+              <span> · {effectiveLadder.symbolName ? `${effectiveLadder.symbolName} (${effectiveLadder.symbol})` : effectiveLadder.symbol}</span>
+            )}
+            {dyn.resolvedLadder && (
+              <span>
+                {' · '}
+                {effectiveLadder?.kind === 'yield'
+                  ? t('plan_sub_yield', { yield: fmtQuote(dyn.resolvedLadder.quote, 'yield') })
+                  : t('plan_sub_quote', { quote: fmtQuote(dyn.resolvedLadder.quote, effectiveLadder?.kind) })}
+              </span>
+            )}
+          </div>
+          <span className={statusPillClass}>{statusPillText}</span>
         </div>
 
         {/* Strict 2-Column × 3-Row Aligned Metric Comparison Box */}
         <div className="plan-metric-compare">
           {/* Grid Row 1: Labels */}
           <div className="plan-metric-label">
-            {t('plan_dynamic_target_col', { pct: fmtPct(activePct) })}
+            {dyn.mode === 'simple'
+              ? t('plan_simple_target_col', { pct: fmtPct(item.targetPercent) })
+              : t('plan_dynamic_target_col', { pct: fmtPct(activePct) })}
           </div>
           <div className="plan-metric-label plan-metric-col-right">
-            {t('plan_actual_full_ratio_col', { pct: fmtPct(actualRatioOfFull) })}
+            {t('plan_actual_full_ratio_col', {
+              pct: fmtPct(dyn.mode === 'simple' ? item.currentPercent : actualRatioOfFull),
+            })}
           </div>
 
           {/* Grid Row 2: Big Amounts (Locked on the exact same horizontal baseline!) */}
@@ -926,7 +938,9 @@ export default function PlanPage() {
 
           {/* Grid Row 3: Reserve & Action Diff Notes */}
           <div className="plan-metric-note">
-            {t('plan_reserve_needed_note', { amount: masked(fmt(reserveNeededVal)) })}
+            {dyn.mode === 'simple'
+              ? t('plan_simple_scope_note', { pct: fmtPct(item.targetPercent) })
+              : t('plan_reserve_needed_note', { amount: masked(fmt(reserveNeededVal)) })}
           </div>
           <div
             className="plan-metric-note plan-metric-col-right"

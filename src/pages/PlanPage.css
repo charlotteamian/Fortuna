@@ -441,25 +441,58 @@
 }
 
 .plan-card-title {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
   line-height: var(--lh-tight);
-  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.plan-card-title-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: nowrap;
+}
+
+.plan-icon-btn {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+}
+
+.plan-edit-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+}
+
+.plan-card-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: 6px;
 }
 
 .plan-card-sub {
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: var(--fs-xs);
   line-height: 1.35;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   text-align: left;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.plan-card-sub-row .plan-card-sub {
+  margin-top: 0;
 }
 
 .plan-pill {
