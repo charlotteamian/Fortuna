@@ -702,3 +702,62 @@ test('plan management modes (ladder, stocks, dividend) and unheld asset plans su
     assert.equal(rStocks.stockCards?.[0].name, '美的集团');
   }
 });
+
+test('dividend subcategory roles and read-only board survive JSON and Excel round-trips and infer legacy role labels', async () => {
+  const { exportData, importData } = await import('../src/db.ts');
+  const { buildPresetLadderConfig } = await import('../src/lib/allocationPlan.ts');
+  const { deletePlanItem } = await import('../src/services/planService.ts');
+  const { saveDividendBudget } = await import('../src/services/dividendService.ts');
+  const { loadDividendPlanBoard } = await import('../src/services/dividendPlanBoardService.ts');
+  await seedAccount();
+  await seedDividendStocks();
+  await saveDividendBudget(18000000);
+
+  const divId = await createPlanItem({
+    name: '红利价值板块',
+    targetPercent: 30,
+    categories: ['股票/ETF'],
+    planMode: 'dividend',
+    ladderConfig: buildPresetLadderConfig('dividend_yield'),
+  });
+
+  // One target with explicit role, one legacy target without role that should infer 'dividend_stock'
+  const fundTargetId = await createPlanTarget({
+    planItemId: divId,
+    label: '红利基金',
+    role: 'dividend_fund',
+    targetPercent: 12,
+    refKeys: [],
+  });
+  const stockTargetId = await createPlanTarget({
+    planItemId: divId,
+    label: '红利股',
+    targetPercent: 18,
+    refKeys: [],
+  });
+
+  const statusBefore = await getPlanStatus();
+  const divItem = statusBefore.items.find(i => i.id === divId)!;
+  assert.equal(divItem.targets.find(t => t.id === fundTargetId)?.role, 'dividend_fund');
+  assert.equal(divItem.targets.find(t => t.id === stockTargetId)?.role, 'dividend_stock');
+  assert.equal(divItem.targets.find(t => t.id === fundTargetId)?.targetAmount, 120000);
+  assert.equal(divItem.targets.find(t => t.id === stockTargetId)?.targetAmount, 180000);
+
+  const board = await loadDividendPlanBoard();
+  assert.equal(board.budgetConfigured, true);
+  assert.equal(board.budgetMinor, 18000000);
+  assert.equal(board.stocks.length, 5);
+
+  const json = await exportData();
+  const excel = await exportToExcel();
+
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await deletePlanItem(divId);
+    assert.equal(await db.planTargets.count(), 0);
+    assert.equal(await restore(), true);
+    const restored = await getPlanStatus();
+    const rDiv = restored.items.find(i => i.id === divId)!;
+    assert.equal(rDiv.targets.find(t => t.id === fundTargetId)?.role, 'dividend_fund');
+    assert.equal(rDiv.targets.find(t => t.id === stockTargetId)?.role, 'dividend_stock');
+  }
+});

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import './index.css';
 import RecordPage from './pages/RecordPage';
 import Onboarding from './components/Onboarding';
@@ -37,6 +37,42 @@ function App() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [startupError, setStartupError] = useState(false);
   usePriceMonitors(Boolean(settings));
+
+  // Global scroll continuity: remember where the user was in each tab (and in the
+  // record list before opening an account) and restore it when they come back,
+  // instead of always landing at the top of the page.
+  const scrollPositionsRef = useRef<Partial<Record<string, number>>>({});
+  const prevLocationRef = useRef<string>(tab);
+  const restoreScrollTimersRef = useRef<number[]>([]);
+  const mainScrollEl = () => document.querySelector<HTMLElement>('main.app-content');
+  const clearRestoreTimers = () => {
+    restoreScrollTimersRef.current.forEach(timer => window.clearTimeout(timer));
+    restoreScrollTimersRef.current = [];
+  };
+  const restoreMainScroll = (key: string, attempts = 4) => {
+    clearRestoreTimers();
+    const target = scrollPositionsRef.current[key] ?? 0;
+    const mainNow = mainScrollEl();
+    if (mainNow) mainNow.scrollTop = target;
+    if (target <= 0) return;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      restoreScrollTimersRef.current.push(window.setTimeout(() => {
+        const main = mainScrollEl();
+        if (!main) return;
+        main.scrollTop = target;
+        if (Math.abs(main.scrollTop - target) <= 2) {
+          clearRestoreTimers();
+        }
+      }, attempt * 120));
+    }
+  };
+  const switchTab = (nextTab: Tab) => {
+    if (nextTab === tab) return;
+    const main = mainScrollEl();
+    if (main) scrollPositionsRef.current[tab] = main.scrollTop;
+    prevLocationRef.current = nextTab;
+    setTab(nextTab);
+  };
 
   const refresh = () => setRefreshKey(k => k + 1);
 
@@ -83,6 +119,19 @@ function App() {
     window.addEventListener(DIVIDEND_AI_SETTINGS_REQUEST_EVENT, openDividendSettings);
     return () => window.removeEventListener(DIVIDEND_AI_SETTINGS_REQUEST_EVENT, openDividendSettings);
   }, []);
+
+  // Save/restore the scroll position of the scrollable page container across tab switches.
+  useEffect(() => {
+    const locationKey = tab;
+    const previousKey = prevLocationRef.current;
+    if (previousKey !== locationKey) {
+      const main = mainScrollEl();
+      if (main && main.scrollTop > 0) scrollPositionsRef.current[previousKey] = main.scrollTop;
+      prevLocationRef.current = locationKey;
+    }
+    restoreMainScroll(locationKey);
+    return () => { clearRestoreTimers(); };
+  }, [tab]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -142,8 +191,17 @@ function App() {
 
   const theme = getTheme(settings?.colorTheme || 'emerald-rose', resolvedAppearance);
 
-  const openAccount = (id: string) => setEditingAccountId(id);
-  const closeAccount = () => { setEditingAccountId(null); refresh(); };
+  const openAccount = (id: string) => {
+    const main = mainScrollEl();
+    if (main) scrollPositionsRef.current.record = main.scrollTop;
+    setEditingAccountId(id);
+  };
+  const closeAccount = () => {
+    setEditingAccountId(null);
+    refresh();
+    // RecordPage remounts asynchronously (loading → data); retry the restore a few times.
+    restoreMainScroll('record', 4);
+  };
 
   const pageFallback = <div className="loading" role="status" aria-label={t('loading')}><div className="spinner" /></div>;
 
@@ -190,8 +248,8 @@ function App() {
     <AppContext.Provider value={{ theme, amountVisible, setAmountVisible, settings, reloadSettings: loadSettings }}>
       <div className="app" style={dividendApiSettingsOpen ? { display: 'none' } : undefined}>
         <header className="app-topbar"><span>Fortuna</span><button className="btn btn-secondary" onClick={() => {
-          if (tab === 'settings') setTab(returnTab);
-          else { setReturnTab(tab); setTab('settings'); }
+          if (tab === 'settings') switchTab(returnTab);
+          else { setReturnTab(tab); switchTab('settings'); }
         }}>{tab === 'settings' ? `← ${t('back')}` : `⚙ ${t('settings')}`}</button></header>
         <PriceMonitorBanner />
         <main className="app-content">
@@ -257,7 +315,7 @@ function App() {
           ] as { key: Tab; label: string; icon: (active: boolean) => React.ReactNode }[]).map(({ key, label, icon }) => {
             const active = tab === key;
             return (
-              <button key={key} type="button" className={`tab-item${active ? ' active' : ''}`} onClick={() => setTab(key)} aria-current={active ? 'page' : undefined} aria-label={label}>
+              <button key={key} type="button" className={`tab-item${active ? ' active' : ''}`} onClick={() => switchTab(key)} aria-current={active ? 'page' : undefined} aria-label={label}>
                 <div className="tab-icon-wrap">{icon(active)}</div>
                 <span className="tab-label">{label}</span>
               </button>

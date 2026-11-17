@@ -30,8 +30,6 @@ import {
   loadDividendWorkbench,
   refreshDividendStocks,
   repairOverallocatedDividendWeights,
-  saveDividendBudget,
-  saveDividendHomeCollapse,
   saveDividendStock,
 } from '../services/dividendService';
 import {
@@ -43,12 +41,7 @@ import { generateClassicDividendAdvice, type ClassicAiAdviceOutput } from '../se
 import { loadDividendPricingMethod, saveDividendPricingMethod, previewDividendRiskRemoval, removeDividendRiskStocks } from '../services/dividendAdvisorActionsService';
 import { DIVIDEND_AI_SETTINGS_REQUEST_EVENT } from '../lib/dividendAdvisorNavigation';
 import DividendImportDialog from '../components/DividendImportDialog';
-import DividendFundWorkbench from '../components/DividendFundWorkbench';
-import DividendFundHomePlan from '../components/DividendFundHomePlan';
 import DividendAdvisor from '../components/DividendAdvisor';
-import { saveDividendStrategy } from '../services/dividendFundService';
-import type { DividendStrategy } from '../lib/dividendFundPlan';
-import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { loadDividendDailyAdvicePlanKey } from '../services/dividendDailyAdviceScopeService';
 import { loadDividendGridBases, type DividendGridBasisResult } from '../services/dividendGridBasisService';
@@ -60,20 +53,18 @@ type StockSelectorFilter = 'all' | 'triggered' | 'held' | 'core' | 'watch' | 'hi
 
 const numeric = (value: number, max = 2) => value.toLocaleString(undefined, { maximumFractionDigits: max });
 
-import { dividendHomeCollapsed } from '../lib/dividendReading';
 import { getClassicAdviceFacts } from '../lib/dividendClassicAdvice';
 import DividendClassicAdviceResult from '../components/DividendClassicAdviceResult';
 import DividendClassicGrid from '../components/DividendClassicGrid';
 import './DividendPage.css';
 
-type Dialog = 'budget' | 'stock' | 'advice' | 'fund' | null;
+type Dialog = 'budget' | 'stock' | 'advice' | null;
 
-export default function DividendPage() {
+export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () => void }) {
   const { t, i18n } = useTranslation();
   const [amountVisible, setAmountVisible] = useState(true);
   const [data, setData] = useState<Workbench | null>(null);
   const [dailyPlanKey, setDailyPlanKey] = useState('');
-  const [checks, setChecks] = useState<Awaited<ReturnType<typeof loadDividendCheckSummaries>>>({ stocks: {}, funds: {} });
   const [taxBps, setTaxBps] = useState<ClassicTaxRateBps>(1000);
   const [gridBases, setGridBases] = useState<Record<string, DividendGridBasisResult>>({});
   const [yieldLadder, setYieldLadder] = useState<{ buy?: number[]; sell?: number[] }>({});
@@ -83,19 +74,13 @@ export default function DividendPage() {
   const [panel, setPanel] = useState<Dialog>(null);
   const [adviceCode, setAdviceCode] = useState<string>();
   const [batchConfirm, setBatchConfirm] = useState(false);
-  const [budgetInput, setBudgetInput] = useState('');
-  const [budgetSaving, setBudgetSaving] = useState(false);
-  const [strategySaving, setStrategySaving] = useState(false);
   const [linkedPickerOpen, setLinkedPickerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [allocationMode, setAllocationMode] = useState<'proportional' | 'equal'>('proportional');
   const [allocationResult, setAllocationResult] = useState<{ before: DividendStock[]; after: DividendStock[] } | null>(null);
   const allocationResultRef = useRef<HTMLElement>(null);
-  const [collapsedCodes, setCollapsedCodes] = useState<string[]>([]);
   const [cleanupOpen, setCleanupOpen] = useState(false);
-  const collapseLoaded = useRef(false);
-  const collapseState = useRef<string[]>([]);
   const [gridApplying, setGridApplying] = useState(false);
   const [editor, setEditor] = useState<DividendStock | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -112,7 +97,6 @@ export default function DividendPage() {
 
   const busy = useRef(false);
   const alive = useRef(true);
-  const savedBudget = useRef<number | null | undefined>(undefined);
   const loadId = useRef(0);
 
   const load = useCallback(async () => {
@@ -136,22 +120,11 @@ export default function DividendPage() {
       setData(next);
       setGridBases(bases);
       if (repair?.rebalanced) setWeightsRepaired(true);
-      setChecks(inspection);
       setDailyPlanKey(planKey);
       if (pricingMethod) {
         const loadedTax: ClassicTaxRateBps = pricingMethod.holdingPeriod === 'over_year' ? 0 : pricingMethod.holdingPeriod === 'up_to_month' ? 2000 : 1000;
         setTaxBps(loadedTax);
         setYieldLadder({ buy: pricingMethod.buyYieldBps, sell: pricingMethod.sellYieldBps });
-      }
-      if (!collapseLoaded.current) {
-        collapseLoaded.current = true;
-        collapseState.current = next.collapsedCodes;
-        setCollapsedCodes(next.collapsedCodes);
-      }
-      const budget = next.budgetConfigured ? next.budgetMinor : null;
-      if (savedBudget.current !== budget) {
-        savedBudget.current = budget;
-        setBudgetInput(budget === null ? '' : String(budget / 100));
       }
     }
     return next;
@@ -178,14 +151,7 @@ export default function DividendPage() {
   }, [allocationResult]);
 
   const quoteTargets = data
-    ? [
-        ...data.stocks.map(stock => stock.code),
-        ...data.fundPlan.funds
-          .filter(fund => isExchangeTradedFundCode(fund.code))
-          .map(fund => `${fund.id}:${fund.code}`),
-      ]
-        .sort()
-        .join(',')
+    ? [...data.stocks.map(stock => stock.code)].sort().join(',')
     : '';
   const quotes = useDividendQuotes(quoteTargets, load, busy);
   const automaticDisclosureDay = useRef('');
@@ -243,31 +209,6 @@ export default function DividendPage() {
     } finally {
       busy.current = false;
       if (alive.current) setProgress(null);
-    }
-  };
-
-  const persistBudget = async () => {
-    if (budgetSaving) return;
-    const amount = Number(budgetInput.replace(/,/g, ''));
-    if (!budgetInput.trim() || !Number.isFinite(amount) || amount < 0 || amount > 1e12) {
-      setError(t('div_invalid_budget'));
-      return;
-    }
-    setBudgetSaving(true);
-    try {
-      const budget = Math.round(amount * 100);
-      const result = await saveDividendBudget(budget);
-      await load();
-      setAllocationResult(null);
-      if (alive.current) {
-        setBudgetInput(String(budget / 100));
-        setError('');
-        setMessage(t(result.rebalanced ? 'div_new_weights_rebalanced' : 'div_saved'));
-      }
-    } catch {
-      if (alive.current) setError(t('div_save_error'));
-    } finally {
-      if (alive.current) setBudgetSaving(false);
     }
   };
 
@@ -346,22 +287,6 @@ export default function DividendPage() {
     aiAbortRef.current?.abort();
     setPanel(null);
     setBatchConfirm(false);
-  };
-
-  const changeStrategy = async (strategy: DividendStrategy) => {
-    if (strategySaving || strategy === data.strategy) return;
-    setStrategySaving(true);
-    setError('');
-    try {
-      await saveDividendStrategy(strategy);
-      setSearch('');
-      setMessage('');
-      await load();
-    } catch {
-      setError(t('div_save_error'));
-    } finally {
-      setStrategySaving(false);
-    }
   };
 
   const applyGrid = async (code?: string) => {
@@ -460,22 +385,11 @@ export default function DividendPage() {
     void askAiToday(code);
   };
 
-  const toggleFundCollapse = (code: string) => {
-    const collapsed = !dividendHomeCollapsed(code, collapseState.current);
-    const key = `open:${code}`;
-    const next = collapsed ? collapseState.current.filter(value => value !== key) : [...collapseState.current, key];
-    collapseState.current = next;
-    setCollapsedCodes(next);
-    void saveDividendHomeCollapse(code, collapsed).catch(() => {
-      if (alive.current) setError(t('div_save_error'));
-    });
-  };
-
   const onOpenCheckItem = (item: DividendDailyItem) => {
     if (item.kind === 'stock' && item.code) {
       openStock(item.code);
     } else if (item.kind === 'fund') {
-      void changeStrategy('funds');
+      onOpenFundPlan?.();
     }
   };
 
@@ -492,13 +406,6 @@ export default function DividendPage() {
           {t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}
         </button>
       </header>
-
-      <div className="div-wb-segment" role="group" aria-label={t('div_strategy')}>
-        {(['stocks', 'funds'] as const).map(strategy => (
-          <button type="button" key={strategy} aria-pressed={data.strategy === strategy} disabled={strategySaving}
-            onClick={() => void changeStrategy(strategy)}>{t(`div_cs_mode_${strategy}`)}</button>
-        ))}
-      </div>
 
       <section className="div-focus-top-tools" aria-label={t('div_focus_data_tools')}>
         <button type="button" className="btn btn-secondary" disabled={!canRefresh || !quoteTargets}
@@ -523,7 +430,7 @@ export default function DividendPage() {
         <summary>{t('div_allocation_result')}</summary>
         <AllocationPreview {...allocationResult} budgetMinor={data.budgetMinor} amountVisible={amountVisible} />
       </details>}
-      {data.strategy === 'stocks' ? <>
+      {<>
         <section className="div-wb-overview" aria-label={t('div_new_overview')}>
           <div className="div-wb-heading">
             <div>
@@ -597,23 +504,11 @@ export default function DividendPage() {
           {!visiblePlans.length && <p className="div-muted">{t('div_read_no_match')}</p>}
 
         </section>
-      </> : (
-        <DividendFundHomePlan plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible}
-          asOf={today} collapsedCodes={collapsedCodes} onToggle={toggleFundCollapse}
-          readFilter="all" search="" onEdit={() => setPanel('fund')} />
-      )}
+      </>}
 
       {panel === 'budget' && <WorkbenchDialog title={t('div_budget_manage')} onClose={closePanel}>
         {feedback}
-        <form className="div-wb-budget" onSubmit={event => { event.preventDefault(); void persistBudget(); }}>
-          <label htmlFor="div-budget">{t('div_budget')}</label>
-          <div className="div-wb-list-tools">
-            <input id="div-budget" inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0"
-              max="1000000000000" step="0.01" value={budgetInput} disabled={budgetSaving}
-              onChange={event => setBudgetInput(event.target.value)} />
-            <button type="submit" className="btn btn-primary" disabled={budgetSaving}>{t(budgetSaving ? 'loading' : 'save')}</button>
-          </div>
-        </form>
+        <p className="div-muted">{t('div_budget_from_plan')}{data.budgetConfigured ? <strong> {money(data.budgetMinor)}</strong> : ' —'}</p>
         <label className="div-wb-budget" htmlFor="div-cs-tax-select">
           {t('div_cs_tax_label')}
           <select id="div-cs-tax-select" value={taxBps} onChange={event => void changeTaxRate(Number(event.target.value) as ClassicTaxRateBps)}>
@@ -622,9 +517,9 @@ export default function DividendPage() {
         </label>
         <p className="div-muted">{t('div_new_weights_rule')}</p>
         <div className="div-actions">
-          <button type="button" className="btn btn-secondary" disabled={budgetSaving || totalWeightBps === 0 || totalWeightBps === 10000}
+          <button type="button" className="btn btn-secondary" disabled={totalWeightBps === 0 || totalWeightBps === 10000}
             onClick={() => { setAllocationMode('proportional'); setAllocationOpen(true); }}>{t(totalWeightBps > 10000 ? 'div_new_weights_repair' : 'div_allocate_unused')}</button>
-          <button type="button" className="btn btn-primary" disabled={budgetSaving || !data.stocks.length || data.budgetMinor <= 0}
+          <button type="button" className="btn btn-primary" disabled={!data.stocks.length || data.budgetMinor <= 0}
             onClick={() => { setAllocationMode('equal'); setAllocationOpen(true); }}>{t('div_experience_reallocate')}</button>
         </div>
         <ul className="div-wb-weights">
@@ -672,10 +567,6 @@ export default function DividendPage() {
         {(progress || quotes.refreshing) && <p className="div-muted" role="status">
           {progress ? t('div_refresh_progress', progress) : t('div_quotes_updating')}
         </p>}
-      </WorkbenchDialog>}
-
-      {panel === 'fund' && <WorkbenchDialog title={t('div_home_fund_plans')} onClose={closePanel}>
-        <DividendFundWorkbench plan={data.fundPlan} checks={checks.funds} amountVisible={amountVisible} onSaved={load} />
       </WorkbenchDialog>}
 
       {panel === 'advice' && <WorkbenchDialog title={t('div_new_daily')} subtitle={adviceTarget?.name}

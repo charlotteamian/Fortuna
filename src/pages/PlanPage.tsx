@@ -1,13 +1,18 @@
-import { useState, useEffect, useCallback, type CSSProperties } from 'react';
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { initializeSettings, type Settings, type PlanItem, type PlanResourceAllocation } from '../db';
+import { initializeSettings, type Settings, type PlanItem, type PlanResourceAllocation, type PlanTargetRole } from '../db';
 import {
   getPlanStatus, createPlanItem, createInitialPlanItems, updatePlanItem, movePlanItem, deletePlanItem, setPlanTargetTotal,
-  createPlanTarget, updatePlanTarget, deletePlanTarget, refreshPlanQuotes,
+  createPlanTarget, updatePlanTarget, deletePlanTarget, inferDividendTargetRole, refreshPlanQuotes,
   splitScope, makeScope, makeAccountScope, makeHoldingScope, makeCashScope, MARKET_KEYS, MARKET_LABEL_KEYS, EQUITY_PLAN_CATEGORIES,
   type PlanStatus, type PlanItemStatus, type PlanTargetStatus, type UnplannedEntry, type MarketKey,
 } from '../services/planService';
-import { loadDividendWorkbench, saveDividendBudget } from '../services/dividendService';
+import { saveDividendBudget } from '../services/dividendService';
+import { saveDividendFundConfig } from '../services/dividendFundService';
+import { loadDividendPlanBoard, type DividendPlanBoard, type DividendStockBoardRow } from '../services/dividendPlanBoardService';
+import { dividendFundAllocation, defaultDividendFundPlan, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
+import { isExchangeTradedFundCode } from '../lib/dividendQuote';
+import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { DIVIDEND_ADVISOR_READER_HASH } from '../lib/dividendAdvisorNavigation';
 import { useAppContext } from '../app-context';
 import {
@@ -17,6 +22,7 @@ import {
   getResourceAllocation,
   majorToMinor,
   minorToMajor,
+  resolveActiveLadderTier,
   targetAmountFromPercent,
   type PlanLadderConfig,
   type PlanLadderKind,
@@ -26,6 +32,7 @@ import {
   type PlanStockCard,
 } from '../lib/allocationPlan';
 import DividendPage from './DividendPage';
+import DividendFundWorkbench from '../components/DividendFundWorkbench';
 import './PlanPage.css';
 import { RATES_REFRESHED_EVENT } from '../services/rateService';
 
@@ -61,6 +68,12 @@ export default function PlanPage() {
     stockCount: number;
     avgYieldPct?: number;
   }>({ stockCount: 0 });
+  const [board, setBoard] = useState<DividendPlanBoard | null>(null);
+  const [showFundEdit, setShowFundEdit] = useState(false);
+  const [targetRole, setTargetRole] = useState<PlanTargetRole | null>(null);
+  const [returnFocus, setReturnFocus] = useState<string | null>(null);
+  const planScrollTopRef = useRef<number | null>(null);
+  const quoteBusyRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [refreshingQuotes, setRefreshingQuotes] = useState(false);
@@ -101,19 +114,61 @@ export default function PlanPage() {
   const [tgPercent, setTgPercent] = useState('');
   const [tgAllocationAmounts, setTgAllocationAmounts] = useState<Record<string, string>>({});
 
+  // Keep the dividend fund plan and stock workbench budgets in sync with the
+  // plan page's dividend sub-categories. Roles link a target to a sleeve; without
+  // roles the legacy whole-item quota is used.
+  const syncDividendSleeves = useCallback(async (loadedStatus?: PlanStatus | null, loadedSettings?: Settings | null): Promise<boolean> => {
+    const [st, settingsRow] = await Promise.all([
+      loadedStatus ? Promise.resolve(loadedStatus) : getPlanStatus().catch(() => null),
+      loadedSettings ? Promise.resolve(loadedSettings) : initializeSettings().catch(() => null),
+    ]);
+    const divItem = st?.items.find(it => it.planMode === 'dividend');
+    if (!st || !divItem || st.base <= 0) return false;
+    const fundTarget = divItem.targets.find(tg => tg.role === 'dividend_fund');
+    const stockTarget = divItem.targets.find(tg => tg.role === 'dividend_stock');
+    const stockBudget = stockTarget
+      ? stockTarget.targetAmount
+      : fundTarget
+        ? Math.max(0, divItem.targetValue - fundTarget.targetAmount)
+        : divItem.targetValue;
+    const stockBudgetMinor = Math.round(stockBudget * 100);
+    let changed = false;
+    if (Number.isSafeInteger(stockBudgetMinor) && stockBudgetMinor >= 0
+      && (settingsRow?.dividendBudgetMinor ?? -1) !== stockBudgetMinor) {
+      await saveDividendBudget(stockBudgetMinor).catch(() => {});
+      changed = true;
+    }
+    if (fundTarget || stockTarget) {
+      const currentPlan = settingsRow?.dividendFundPlan;
+      const fundBudgetMinor = Math.round((fundTarget
+        ? fundTarget.targetAmount
+        : Math.max(0, divItem.targetValue - stockTarget!.targetAmount)) * 100);
+      if (currentPlan && (currentPlan.budgetMinor ?? -1) !== fundBudgetMinor) {
+        await saveDividendFundConfig({ ...currentPlan, budgetMinor: fundBudgetMinor }).catch(() => {});
+        changed = true;
+      }
+    }
+    return changed;
+  }, []);
+
   const load = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
     setLoadError(false);
     try {
-      const [st, s, wb] = await Promise.all([
+      const [st, s] = await Promise.all([
         getPlanStatus(),
         initializeSettings(),
-        loadDividendWorkbench().catch(() => null),
+      ]);
+      const synced = await syncDividendSleeves(st, s);
+      const [finalSettings, bd] = await Promise.all([
+        synced ? initializeSettings() : Promise.resolve(s),
+        loadDividendPlanBoard().catch(() => null),
       ]);
       setStatus(st);
-      setSettings(s);
-      if (wb) {
-        const activeStocks = wb.stocks.filter(stock => stock.group !== 'hidden');
+      setSettings(finalSettings);
+      setBoard(bd);
+      if (bd) {
+        const activeStocks = bd.stocks.filter(row => row.plan.group !== 'hidden');
         setDividendSummary({
           stockCount: activeStocks.length,
         });
@@ -124,7 +179,7 @@ export default function PlanPage() {
     } finally {
       if (initial) setLoading(false);
     }
-  }, []);
+  }, [syncDividendSleeves]);
 
   useEffect(() => {
     void load(true).then(() => {
@@ -140,14 +195,54 @@ export default function PlanPage() {
     return () => window.removeEventListener(RATES_REFRESHED_EVENT, refresh);
   }, [load]);
 
+  // Refresh dividend quotes (stocks + funds) while the plan page is visible.
+  const dividendQuoteTargetKey = [
+    ...(settings?.dividendFundPlan?.funds ?? [])
+      .filter(fund => isExchangeTradedFundCode(fund.code))
+      .map(fund => `${fund.id}:${fund.code}`),
+    ...(board?.stocks.map(row => row.plan.code) ?? []),
+  ].sort().join(',');
+  useDividendQuotes(dividendQuoteTargetKey, load, quoteBusyRef);
+
+  useEffect(() => { quoteBusyRef.current = saving; }, [saving]);
+
+  // Return from the dividend workbench: keep the scroll position on the card the user came from.
   useEffect(() => {
-    const hasOpenModal = showForm || showTarget || Boolean(confirmDelete) || Boolean(targetItem) || Boolean(purchaseItem);
-    document.documentElement.classList.toggle('modal-open', hasOpenModal);
-    return () => document.documentElement.classList.remove('modal-open');
-  }, [showForm, showTarget, confirmDelete, targetItem, purchaseItem]);
+    if (subView !== 'plan' || (!returnFocus && planScrollTopRef.current === null)) return;
+    const savedScrollTop = planScrollTopRef.current;
+    const focusTarget = returnFocus;
+    const timer = window.setTimeout(() => {
+      const main = document.querySelector<HTMLElement>('main.app-content');
+      if (focusTarget === 'funds') {
+        document.getElementById('plan-dividend-funds')?.scrollIntoView({ block: 'start' });
+      } else if (savedScrollTop !== null && main) {
+        main.scrollTop = savedScrollTop;
+      } else if (focusTarget) {
+        document.getElementById(`plan-card-${focusTarget.slice(5)}`)?.scrollIntoView({ block: 'start' });
+      }
+      planScrollTopRef.current = null;
+      setReturnFocus(null);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [subView, returnFocus, status]);
+
+  const openDividendWorkbench = () => {
+    const main = document.querySelector<HTMLElement>('main.app-content');
+    if (main) {
+      planScrollTopRef.current = main.scrollTop;
+      main.scrollTop = 0;
+    }
+    setSubView('dividend');
+  };
 
   useEffect(() => {
-    if (!showForm && !showTarget && !confirmDelete && !targetItem && !purchaseItem) return;
+    const hasOpenModal = showForm || showTarget || showFundEdit || Boolean(confirmDelete) || Boolean(targetItem) || Boolean(purchaseItem);
+    document.documentElement.classList.toggle('modal-open', hasOpenModal);
+    return () => document.documentElement.classList.remove('modal-open');
+  }, [showForm, showTarget, showFundEdit, confirmDelete, targetItem, purchaseItem]);
+
+  useEffect(() => {
+    if (!showForm && !showTarget && !showFundEdit && !confirmDelete && !targetItem && !purchaseItem) return;
     const previousFocus = document.activeElement as HTMLElement | null;
     const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
     const dialog = dialogs[dialogs.length - 1];
@@ -157,11 +252,13 @@ export default function PlanPage() {
     )].filter(element => element.getClientRects().length > 0);
     if (!dialog.contains(document.activeElement)) controls()[0]?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
       if (event.key === 'Escape' && !saving) {
         event.preventDefault();
         if (confirmDelete) setConfirmDelete(null);
         else if (purchaseItem) setPurchaseItem(null);
-        else if (targetItem) setTargetItem(null);
+        else if (targetItem) { setTargetItem(null); setEditingTarget(null); setTargetRole(null); }
+        else if (showFundEdit) setShowFundEdit(false);
         else if (showTarget) setShowTarget(false);
         else setShowForm(false);
       }
@@ -180,7 +277,7 @@ export default function PlanPage() {
       document.removeEventListener('keydown', onKeyDown);
       if (previousFocus?.isConnected) previousFocus.focus();
     };
-  }, [showForm, showTarget, confirmDelete, targetItem, purchaseItem, saving]);
+  }, [showForm, showTarget, showFundEdit, confirmDelete, targetItem, purchaseItem, saving]);
 
   const masked = (text: string) => amountVisible ? text : '****';
   // Format amounts without RMB symbol (¥)
@@ -457,12 +554,9 @@ export default function PlanPage() {
       } else {
         await createPlanItem(data);
       }
-      // Sync Dividend Workbench budget when saving a dividend-mode sector
-      if (formMode === 'dividend' && status && status.base > 0) {
-        const dividendBudgetMinor = Math.round(targetAmountFromPercent(status.base, pct) * 100);
-        if (Number.isSafeInteger(dividendBudgetMinor) && dividendBudgetMinor >= 0) {
-          await saveDividendBudget(dividendBudgetMinor).catch(() => {});
-        }
+      // Sync Dividend Workbench budget with the plan page dividend sub-categories
+      if (formMode === 'dividend') {
+        await syncDividendSleeves();
       }
       await refreshPlanQuotes().catch(() => {});
       setShowForm(false);
@@ -480,14 +574,17 @@ export default function PlanPage() {
   };
 
   // ---- Second-level subcategories + third-level product links ----
-  const openAddTarget = (item: PlanItemStatus) => {
+  const openAddTarget = (item: PlanItemStatus, role?: PlanTargetRole) => {
     setSaveError(false);
+    setTargetRole(role ?? null);
     setTargetItem(item); setEditingTarget(null);
-    setTgRefKeys([]); setTgLabel(''); setTgPercent('');
+    setTgRefKeys([]); setTgPercent('');
+    setTgLabel(role === 'dividend_fund' ? t('plan_div_subcat_fund') : role === 'dividend_stock' ? t('plan_div_subcat_stock') : '');
     setTgAllocationAmounts({});
   };
   const openEditTarget = (item: PlanItemStatus, tg: PlanTargetStatus) => {
     setSaveError(false);
+    setTargetRole(null);
     setTargetItem(item); setEditingTarget(tg);
     setTgRefKeys(tg.refKeys);
     setTgLabel(tg.name); setTgPercent(String(tg.targetPercent));
@@ -498,22 +595,28 @@ export default function PlanPage() {
     const pct = planPercentFromInput(tgPercent, 'percent', status?.base ?? 0);
     const label = tgLabel.trim();
     if (!Number.isFinite(pct) || pct < 0 || !label) return;
+    const role = targetRole
+      ?? editingTarget?.role
+      ?? (targetItem.planMode === 'dividend' ? inferDividendTargetRole(label) : undefined);
     const data = {
       label,
+      ...(role ? { role } : {}),
       refKeys: tgRefKeys,
       allocations: allocationsFromInputs(tgRefKeys, tgAllocationAmounts),
       targetPercent: pct,
     };
     await saveAction(async () => {
-      if (editingTarget) await updatePlanTarget(editingTarget.id, { ...data, refKey: undefined, currency: undefined });
+      if (editingTarget) await updatePlanTarget(editingTarget.id, { ...data, refKey: undefined, currency: undefined, ...(role ? {} : { role: undefined }) });
       else await createPlanTarget({ planItemId: targetItem.id, ...data });
-      setTargetItem(null); setEditingTarget(null);
+      if (targetItem.planMode === 'dividend') await syncDividendSleeves();
+      setTargetItem(null); setEditingTarget(null); setTargetRole(null);
     });
   };
   const handleDeleteTarget = async (id: string) => {
     await saveAction(async () => {
       await deletePlanTarget(id);
-      setTargetItem(null); setEditingTarget(null);
+      if (targetItem?.planMode === 'dividend') await syncDividendSleeves();
+      setTargetItem(null); setEditingTarget(null); setTargetRole(null);
     });
   };
 
@@ -528,6 +631,7 @@ export default function PlanPage() {
     if (targetInput.trim() && (!Number.isFinite(v) || v <= 0)) return;
     await saveAction(async () => {
       await setPlanTargetTotal(targetInput.trim() ? v : undefined);
+      await syncDividendSleeves();
       setShowTarget(false);
     });
   };
@@ -581,11 +685,15 @@ export default function PlanPage() {
   // Sub-page: Dividend Individual Stock Workbench
   if (subView === 'dividend') {
     const dividendPlanItem = status.items.find(it => it.planMode === 'dividend');
-    const sharedQuota = dividendPlanItem
-      ? dividendPlanItem.targetValue
-      : settings.dividendBudgetMinor !== undefined
-        ? settings.dividendBudgetMinor / 100
-        : undefined;
+    const stockSleeveTarget = dividendPlanItem?.targets.find(tg => tg.role === 'dividend_stock');
+    const fundSleeveTarget = dividendPlanItem?.targets.find(tg => tg.role === 'dividend_fund');
+    const sharedQuota = stockSleeveTarget
+      ? stockSleeveTarget.targetAmount
+      : dividendPlanItem
+        ? (fundSleeveTarget ? Math.max(0, dividendPlanItem.targetValue - fundSleeveTarget.targetAmount) : dividendPlanItem.targetValue)
+        : settings.dividendBudgetMinor !== undefined
+          ? settings.dividendBudgetMinor / 100
+          : undefined;
     return (
       <>
         <div className="plan-subpage-bar">
@@ -596,6 +704,7 @@ export default function PlanPage() {
               if (window.location.hash === DIVIDEND_ADVISOR_READER_HASH) {
                 window.history.replaceState(null, '', window.location.pathname + window.location.search);
               }
+              setReturnFocus(`card:${dividendPlanItem?.id ?? ''}`);
               setSubView('plan');
               void load(false);
             }}
@@ -607,7 +716,11 @@ export default function PlanPage() {
             {sharedQuota !== undefined ? t('plan_dividend_shared_quota', { amount: masked(fmt(sharedQuota)) }) : ''}
           </span>
         </div>
-        <DividendPage />
+        <DividendPage onOpenFundPlan={() => {
+          setReturnFocus('funds');
+          setSubView('plan');
+          void load(false);
+        }} />
       </>
     );
   }
@@ -790,6 +903,343 @@ export default function PlanPage() {
   const totalReserveNeeded = status.totalReserveNeededValue ?? 0;
   const reserveDelta = Math.round((liquidPool - totalReserveNeeded) * 100) / 100;
 
+  // ---- Sub-category section helpers ----
+  const subcatQuota = (tg: PlanTargetStatus) => t('plan_subcat_quota', {
+    pct: fmtPct(tg.targetPercent),
+    amount: masked(fmt(tg.targetAmount)),
+  });
+
+  const renderSubcatMetrics = (planValue: number, actualValue: number, gapValue: number) => {
+    const progressPct = planValue > 0 ? (actualValue / planValue) * 100 : 0;
+    return (
+      <div className="plan-subcat-metrics">
+        <div className="plan-scm"><b>{masked(fmt(planValue))}</b><span>{t('plan_subcat_plan_amount')}</span></div>
+        <div className="plan-scm"><b>{masked(fmt(actualValue))}</b><span>{t('plan_subcat_actual')} {fmtPct(progressPct)}%</span></div>
+        <div className="plan-scm">
+          <b style={{ color: gapValue > 0 ? 'var(--warning)' : 'var(--asset-color)' }}>{masked(fmt(Math.abs(gapValue)))}</b>
+          <span>{gapValue > 0 ? t('plan_subcat_to_buy') : t('plan_subcat_to_trim')}</span>
+        </div>
+      </div>
+    );
+  };
+
+const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | undefined) => (
+  tg ? (
+    <button
+      type="button"
+      className="plan-text-button plan-subcat-quota-btn"
+      onClick={() => openEditTarget(item, tg!)}
+      aria-label={t('edit_plan_target')}
+    >
+      {subcatQuota(tg)}
+    </button>
+  ) : (
+    <span className="plan-subcat-unset">{t('plan_subcat_unset')}</span>
+  )
+);
+
+/** Fund grid card: same ladder-table format as other assets, tiers follow the
+ * parent sector yield ladder; tier prices convert the fund's index yield into
+ * the actual fund price you would buy. */
+  const renderFundGridCard = (item: PlanItemStatus, fundPlan: DividendFundPlan, fund: DividendFund, sleeveAmount: number) => {
+    const sectorLadder: PlanLadderConfig = item.ladderConfig?.kind === 'yield' && item.ladderConfig.rows.length > 0
+      ? item.ladderConfig
+      : buildPresetLadderConfig('dividend_yield');
+    const fundCode = fund.code?.trim().toUpperCase();
+    const fundHolding = fundCode ? status?.holdingValuesBySymbol?.[fundCode] : undefined;
+    const fundQuote = fund.quote?.priceMicros !== undefined
+      ? fund.quote.priceMicros / 1_000_000
+      : fund.reference?.priceMicros !== undefined
+        ? fund.reference.priceMicros / 1_000_000
+        : fundHolding?.lastPrice;
+    const fundYieldPct = (fund.reference?.indexYieldBps ?? fundPlan.indexYieldBps) / 100;
+    const allocation = dividendFundAllocation({ ...fundPlan, budgetMinor: Math.round(sleeveAmount * 100) });
+    const fundQuota = minorToMajor(allocation.amounts.get(fund.id)) ?? 0;
+    const fundActual = fundHolding?.primaryValue ?? 0;
+    const resolved = resolveActiveLadderTier(sectorLadder, fundYieldPct > 0 ? fundYieldPct : undefined);
+    const activePct = resolved?.activeRow.positionPercent ?? 100;
+    const dynamicTargetVal = Math.round(fundQuota * activePct) / 100;
+    const dynamicGap = Math.round((dynamicTargetVal - fundActual) * 100) / 100;
+    const tolerance = Math.max(100, fundQuota * 0.015);
+    const isAtTarget = Math.abs(dynamicGap) <= tolerance;
+    const tierPrice = (tierYield: number) => fundQuote !== undefined && fundQuote > 0 && fundYieldPct > 0 && tierYield > 0
+      ? fundQuote * fundYieldPct / tierYield
+      : undefined;
+    const rows = resolved?.sortedRows ?? [...sectorLadder.rows].sort((a, b) => b.triggerValue - a.triggerValue);
+    const pillClass = isAtTarget ? 'plan-pill plan-pill-target' : dynamicGap > 0 ? 'plan-pill plan-pill-buy' : 'plan-pill plan-pill-trim';
+    const pillText = isAtTarget
+      ? t('plan_pill_on_target', { pct: fmtPct(activePct) })
+      : dynamicGap > 0
+        ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
+        : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
+
+    return (
+      <div className="plan-stock-subcard" key={fund.id}>
+        <div className="plan-card-header-top">
+          <span className="plan-subcard-name">{fund.name}{fund.code ? ` (${fund.code})` : ''}</span>
+          <span className={pillClass}>{pillText}</span>
+        </div>
+        <div className="plan-card-sub">
+          {t('plan_div_fund_quota_sub', {
+            weight: fmtPct(fund.weightBps / 100),
+            quota: masked(fmt(fundQuota)),
+            actual: masked(fmt(fundActual)),
+            price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
+          })}
+        </div>
+        {fundYieldPct > 0 ? (
+          <>
+            <div className="plan-next-bar">
+              <span>
+                {resolved?.nextBuyRow
+                  ? t('plan_next_yield_buy_hint', {
+                      val: fmtQuote(resolved.nextBuyRow.triggerValue, 'yield'),
+                      pct: fmtPct(resolved.nextBuyRow.positionPercent),
+                    })
+                  : '—'}
+              </span>
+              <span>
+                {resolved?.nextSellRow
+                  ? t('plan_next_yield_sell_hint', {
+                      val: fmtQuote(resolved.nextSellRow.triggerValue, 'yield'),
+                      pct: fmtPct(resolved.nextSellRow.positionPercent),
+                    })
+                  : '—'}
+              </span>
+            </div>
+            <div className="plan-ladder-wrapper">
+              <table className="plan-ladder-table">
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ width: '28%' }}>{t('plan_col_yield')}</th>
+                    <th scope="col" style={{ width: '24%' }}>{t('plan_div_fund_ref_price')}</th>
+                    <th scope="col" style={{ width: '22%' }}>{t('plan_col_pos_pct')}</th>
+                    <th scope="col" style={{ width: '26%' }}>{t('plan_col_target_amt')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, rIdx) => {
+                    const isCurrent = resolved?.activeIndex === rIdx;
+                    const price = tierPrice(row.triggerValue);
+                    const rowAmt = fundQuota * (row.positionPercent / 100);
+                    return (
+                      <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
+                        <th scope="row">{isCurrent ? '● ' : ''}{row.label ?? `${row.triggerValue.toFixed(1)}%`}</th>
+                        <td>{price !== undefined ? fmtQuote(price, 'price') : '—'}</td>
+                        <td>{fmtPct(row.positionPercent)}%</td>
+                        <td>{masked(fmt(rowAmt))}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="plan-grid-ref">
+              {t('plan_div_fund_grid_ref', {
+                yield: fmtPct(fundYieldPct),
+                price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="plan-grid-ref">{t('plan_div_fund_no_yield')}</div>
+        )}
+      </div>
+    );
+  };
+
+  /** Dividend fund sleeve: sub-category quota from the plan target, fund grids inside. */
+  const renderFundSleeve = (item: PlanItemStatus, fundTarget: PlanTargetStatus | undefined) => {
+    const fundPlan = settings?.dividendFundPlan ?? defaultDividendFundPlan();
+    return (
+      <section className="plan-subcat" id="plan-dividend-funds">
+        <div className="plan-subcat-head">
+          <span className="plan-subcat-title">
+            {t('plan_div_subcat_fund')}
+            <small>{renderSubcatQuotaLabel(item, fundTarget)}</small>
+          </span>
+          <button type="button" className="plan-text-button" onClick={() => setShowFundEdit(true)}>
+            {t('plan_div_fund_edit')}
+          </button>
+        </div>
+        {fundTarget ? (
+          <>
+            {renderSubcatMetrics(fundTarget.targetAmount, fundTarget.currentValue, fundTarget.gapValue)}
+            {fundPlan.funds.length > 0
+              ? fundPlan.funds.map(fund => renderFundGridCard(item, fundPlan, fund, fundTarget.targetAmount))
+              : <div className="plan-subcat-hint">{t('plan_div_fund_empty_hint')}</div>}
+          </>
+        ) : (
+          <button
+            type="button"
+            className="plan-subcat-add"
+            onClick={() => openAddTarget(item, 'dividend_fund')}
+          >
+            ＋ {t('plan_div_subcat_set', { name: t('plan_div_subcat_fund') })}
+          </button>
+        )}
+      </section>
+    );
+  };
+
+  /** Dividend stock sleeve: workbench trigger status; tap any stock to expand its grid. */
+  const renderStockSleeve = (item: PlanItemStatus, stockTarget: PlanTargetStatus | undefined) => {
+    const stocks = (board?.stocks ?? []).filter(row => row.plan.group !== 'hidden');
+    const buyCount = stocks.filter(row => row.facts.status === 'buy').length;
+    const sellCount = stocks.filter(row => row.facts.status === 'sell').length;
+    const staleCount = stocks.filter(row => !row.facts.quoteCurrent).length;
+    const sharesLabel = (value: number) => amountVisible ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '••••';
+    const rowStatusText = (key: string) => ({
+      triggered: t('plan_div_row_triggered'),
+      covered: t('plan_div_row_covered'),
+      below_lot: t('plan_div_row_below_lot'),
+      no_holding: t('plan_div_row_no_holding'),
+      quote_pending: t('plan_div_row_quote_pending'),
+    } as Record<string, string>)[key] ?? t('plan_row_waiting');
+
+    const stockStatusInfo = (row: DividendStockBoardRow) => {
+      const { facts } = row;
+      if (facts.status === 'buy') {
+        return {
+          pill: 'plan-pill plan-pill-buy',
+          text: `${t('div_new_status_buy')} · ${t('plan_div_stock_buy_shares', { shares: sharesLabel(facts.shares) })}`,
+        };
+      }
+      if (facts.status === 'sell') {
+        return {
+          pill: 'plan-pill plan-pill-trim',
+          text: `${t('div_new_status_sell')} · ${t('plan_div_stock_sell_shares', { shares: sharesLabel(facts.shares) })}`,
+        };
+      }
+      if (facts.status === 'waiting' && facts.buy1GapBps !== undefined) {
+        return {
+          pill: 'plan-pill plan-pill-neutral',
+          text: t('div_new_buy_distance', { gap: facts.buy1GapBps === 0 ? '<0.01%' : `${fmtPct(facts.buy1GapBps / 100)}%` }),
+        };
+      }
+      return { pill: 'plan-pill plan-pill-neutral', text: t(`div_new_status_${facts.status}`) };
+    };
+
+    const renderStockGridRow = (row: DividendStockBoardRow) => {
+      const { plan, facts } = row;
+      const info = stockStatusInfo(row);
+      const quoteLabel = plan.quotePriceMinor !== undefined ? `¥${(plan.quotePriceMinor / 100).toFixed(2)}` : '—';
+      const budgetMajor = plan.budgetMinor !== undefined ? plan.budgetMinor / 100 : undefined;
+      const tierRow = (side: 'buy' | 'sell') => (r: typeof plan.buyRows[number]) => {
+        const active = r.touched && facts.status === side;
+        const tierLabel = side === 'buy'
+          ? t('div_cs_buy_tier_name', { level: r.level })
+          : t('div_cs_sell_tier_name', { level: r.level });
+        const amount = budgetMajor !== undefined ? budgetMajor * r.portionBps / 10000 : undefined;
+        return (
+          <tr key={`${side}-${r.level}`} className={active ? 'row-active' : undefined}>
+            <th scope="row">{active ? '● ' : ''}{tierLabel} {side === 'buy' ? '≤' : '≥'}¥{(r.priceMinor / 100).toFixed(2)}</th>
+            <td>{fmtPct(r.portionBps / 100)}%</td>
+            <td>{amount !== undefined ? masked(fmt(amount)) : '—'}</td>
+            <td>{rowStatusText(r.status)}</td>
+          </tr>
+        );
+      };
+      return (
+        <details className="plan-stock-detail" key={plan.code}>
+          <summary>
+            <span className="plan-stock-summary-left">
+              <span className="plan-stock-summary-name">{plan.name}<small> ({plan.code})</small></span>
+              <span className="plan-stock-summary-meta">
+                {t('plan_div_stock_quote', { price: quoteLabel })}
+                {budgetMajor !== undefined ? ` · ${t('plan_div_stock_budget', { weight: fmtPct(plan.weightBps / 100), amount: masked(fmt(budgetMajor)) })}` : ''}
+              </span>
+            </span>
+            <span className="plan-stock-summary-right">
+              <span className={info.pill}>{info.text}</span>
+            </span>
+          </summary>
+          {plan.buyRows.length === 0 && plan.sellRows.length === 0 ? (
+            <div className="plan-subcat-hint">
+              {i18n.language.startsWith('zh') ? plan.base.strategyNoteZh : plan.base.strategyNoteEn}
+            </div>
+          ) : (
+            <div className="plan-ladder-wrapper">
+              <table className="plan-ladder-table">
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ width: '34%' }}>{t('plan_col_ref')}</th>
+                    <th scope="col" style={{ width: '20%' }}>{t('plan_col_pos_pct')}</th>
+                    <th scope="col" style={{ width: '22%' }}>{t('plan_col_target_amt')}</th>
+                    <th scope="col" style={{ width: '24%' }}>{t('plan_col_status')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="plan-ladder-section"><th scope="col" colSpan={4}>{t('plan_div_grid_buy')}</th></tr>
+                  {plan.buyRows.map(tierRow('buy'))}
+                  <tr className="plan-ladder-section"><th scope="col" colSpan={4}>{t('plan_div_grid_sell')}</th></tr>
+                  {plan.sellRows.map(tierRow('sell'))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </details>
+      );
+    };
+
+    return (
+      <section className="plan-subcat">
+        <div className="plan-subcat-head">
+          <span className="plan-subcat-title">
+            {t('plan_div_subcat_stock')}
+            <small>{renderSubcatQuotaLabel(item, stockTarget)}</small>
+          </span>
+          <button type="button" className="plan-text-button" onClick={openDividendWorkbench}>
+            {t('plan_div_stock_pick')}
+          </button>
+        </div>
+        {stockTarget ? (
+          <>
+            {renderSubcatMetrics(stockTarget.targetAmount, stockTarget.currentValue, stockTarget.gapValue)}
+            {board ? (
+              <>
+                <div className="plan-trigger-summary">
+                  <span>{t('plan_div_stock_trigger_summary', { buy: buyCount, sell: sellCount, stale: staleCount })}</span>
+                  <span>{t('plan_div_stock_count', { count: stocks.length })}</span>
+                </div>
+                {stocks.length > 0
+                  ? stocks.map(renderStockGridRow)
+                  : <div className="plan-subcat-hint">{t('plan_div_stock_empty')}</div>}
+              </>
+            ) : (
+              <div className="plan-subcat-hint">{t('plan_div_board_unavailable')}</div>
+            )}
+          </>
+        ) : (
+          <button
+            type="button"
+            className="plan-subcat-add"
+            onClick={() => openAddTarget(item, 'dividend_stock')}
+          >
+            ＋ {t('plan_div_subcat_set', { name: t('plan_div_subcat_stock') })}
+          </button>
+        )}
+      </section>
+    );
+  };
+
+  /** Generic sub-category block for plans without a special sleeve role. */
+  const renderGenericTarget = (item: PlanItemStatus, tg: PlanTargetStatus) => (
+    <section className="plan-subcat" key={tg.id}>
+      <div className="plan-subcat-head">
+        <span className="plan-subcat-title">{tg.name}<small>{subcatQuota(tg)}</small></span>
+        <button type="button" className="plan-text-button" onClick={() => openEditTarget(item, tg)}>{t('edit')}</button>
+      </div>
+      {renderSubcatMetrics(tg.targetAmount, tg.currentValue, tg.gapValue)}
+      {tg.linkedProducts.filter(product => product.primaryValue !== 0).map(product => (
+        <div className="plan-subcat-product" key={product.refKey}>
+          <span>{product.name}</span>
+          <span>{masked(fmt(product.primaryValue))} {primary}</span>
+        </div>
+      ))}
+    </section>
+  );
+
   // Render a single plan item card (Plan A Layout)
   const renderItem = (item: PlanItemStatus, idx: number) => {
     const color = itemColor(idx);
@@ -849,11 +1299,10 @@ export default function PlanPage() {
     const effectiveLadder = dyn.mode === 'dividend' && (!item.ladderConfig || item.ladderConfig.rows.length === 0)
       ? buildPresetLadderConfig('dividend_yield')
       : item.ladderConfig;
-
-    const dividendFunds = dyn.mode === 'dividend' ? (settings.dividendFundPlan?.funds ?? []) : [];
+    const isDividendMode = dyn.mode === 'dividend';
 
     return (
-      <article key={item.id} className="plan-card" style={{ '--plan-color': color } as CSSProperties}>
+      <article key={item.id} id={`plan-card-${item.id}`} className="plan-card" style={{ '--plan-color': color } as CSSProperties}>
         {/* Row 1: Plan Name on left (guaranteed visible) + Compact Move/Edit buttons on right */}
         <div className="plan-card-header-top">
           <h2 className="plan-card-title">
@@ -899,10 +1348,10 @@ export default function PlanPage() {
           <div className="plan-card-sub">
             <span>{t(modeBadgeKey)}</span>
             <span> · {t('plan_sub_quota', { pct: fmtPct(item.targetPercent), amount: masked(fmt(item.targetValue)) })}</span>
-            {effectiveLadder?.symbol && (
+            {!isDividendMode && effectiveLadder?.symbol && (
               <span> · {effectiveLadder.symbolName ? `${effectiveLadder.symbolName} (${effectiveLadder.symbol})` : effectiveLadder.symbol}</span>
             )}
-            {dyn.resolvedLadder && (
+            {!isDividendMode && dyn.resolvedLadder && (
               <span>
                 {' · '}
                 {effectiveLadder?.kind === 'yield'
@@ -960,8 +1409,8 @@ export default function PlanPage() {
           </div>
         </div>
 
-        {/* Next Step Action Bar for Ladder / Dividend Modes */}
-        {dyn.resolvedLadder && (dyn.resolvedLadder.nextBuyRow || dyn.resolvedLadder.nextSellRow) && (
+        {/* Next Step Action Bar for Ladder Modes (dividend uses sub-category grids instead) */}
+        {!isDividendMode && dyn.resolvedLadder && (dyn.resolvedLadder.nextBuyRow || dyn.resolvedLadder.nextSellRow) && (
           <div className="plan-next-bar">
             <span>
               {dyn.resolvedLadder.nextBuyRow
@@ -992,20 +1441,6 @@ export default function PlanPage() {
           </div>
         )}
 
-        {/* Dividend Mode: Direct Entry Button to Dividend Stock Workbench */}
-        {dyn.mode === 'dividend' && (
-          <button
-            type="button"
-            className="plan-div-enter-btn"
-            onClick={() => setSubView('dividend')}
-          >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {t('plan_enter_dividend_wb', { count: dividendSummary.stockCount })}
-            </span>
-            <span style={{ flexShrink: 0 }}>{t('plan_enter_btn')}</span>
-          </button>
-        )}
-
         {/* Free-form Strategy Notes Box (retained across all modes) */}
         <div className="plan-note-box">
           <div className="plan-note-box-head">
@@ -1032,6 +1467,30 @@ export default function PlanPage() {
             </button>
           )}
         </div>
+
+        {/* Sub-category section: parent quota → notes → per-sub-category plans & ladders */}
+        <div className="plan-subcats">
+          {isDividendMode && renderFundSleeve(item, item.targets.find(tg => tg.role === 'dividend_fund'))}
+          {isDividendMode && renderStockSleeve(item, item.targets.find(tg => tg.role === 'dividend_stock'))}
+          {item.targets.filter(tg => !tg.role).map(tg => renderGenericTarget(item, tg))}
+          <button type="button" className="plan-subcat-add" onClick={() => openAddTarget(item)}>
+            ＋ {t('add_plan_target')}
+          </button>
+        </div>
+
+        {/* Dividend Mode: Direct Entry Button to the slimmed Dividend Workbench */}
+        {isDividendMode && (
+          <button
+            type="button"
+            className="plan-div-enter-btn"
+            onClick={openDividendWorkbench}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t('plan_enter_dividend_wb', { count: dividendSummary.stockCount })}
+            </span>
+            <span style={{ flexShrink: 0 }}>{t('plan_enter_btn')}</span>
+          </button>
+        )}
 
         {/* Stocks Mode: Individual Stock / Fund Cards */}
         {dyn.mode === 'stocks' && item.stockCards && item.stockCards.length > 0 && (
@@ -1075,8 +1534,8 @@ export default function PlanPage() {
           </div>
         )}
 
-        {/* Ladder / Dividend Mode: Expandable Full-Visibility Position Ladder Table */}
-        {(dyn.mode === 'ladder' || dyn.mode === 'dividend') && effectiveLadder && effectiveLadder.rows.length > 0 && (
+        {/* Ladder Mode: Expandable Full-Visibility Position Ladder Table */}
+        {dyn.mode === 'ladder' && effectiveLadder && effectiveLadder.rows.length > 0 && (
           <details className="plan-ladder-details">
             <summary>
               <span className="plan-summary-left">
@@ -1093,42 +1552,6 @@ export default function PlanPage() {
                 {t('plan_edit_ladder_btn')}
               </span>
             </summary>
-
-            {/* Dividend Funds inside Dividend Sector */}
-            {dividendFunds.length > 0 && (
-              <div style={{ marginBottom: 6 }}>
-                {dividendFunds.map(fund => {
-                  const fundCode = fund.code?.trim().toUpperCase();
-                  const fundHolding = fundCode ? status.holdingValuesBySymbol?.[fundCode] : undefined;
-                  const fundQuote = fund.quote?.priceMicros !== undefined
-                    ? fund.quote.priceMicros / 1_000_000
-                    : fund.reference?.priceMicros !== undefined
-                      ? fund.reference.priceMicros / 1_000_000
-                      : fundHolding?.lastPrice;
-                  const fundActual = fundHolding?.primaryValue ?? 0;
-                  return (
-                    <div key={fund.id} className="plan-stock-subcard">
-                      <div className="plan-card-header-top">
-                        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          📊 {fund.name}{fund.code ? ` (${fund.code})` : ''}
-                        </span>
-                        <span className="plan-pill plan-pill-target">{t('plan_div_fund_badge')}</span>
-                      </div>
-                      <div className="plan-card-sub">
-                        {t('plan_div_fund_sub', {
-                          weight: fmtPct(fund.weightBps / 100),
-                          price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
-                          actual: masked(fmt(fundActual)),
-                        })}
-                      </div>
-                      {fund.note && (
-                        <div className="plan-stock-subcard-note">{fund.note}</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
 
             <div tabIndex={0} role="region" aria-label={item.name} className="plan-ladder-wrapper">
               <table className="plan-ladder-table">
@@ -1200,48 +1623,6 @@ export default function PlanPage() {
             </div>
           </details>
         )}
-
-        {/* Legacy subcategories & linked scope details */}
-        <details className="plan-details">
-          <summary>{t('plan_details')}</summary>
-          <p className="plan-help">{t('plan_actual_from', { scopes: item.categories.length ? item.categories.map(scopeLabel).join(' · ') : t('plan_sources_empty') })}</p>
-          {item.candidates.length > 0 && (
-            <ul className="plan-source-list">
-              {item.candidates.filter(candidate => candidate.primaryValue !== 0).map(candidate => (
-                <li key={candidate.refKey}>
-                  <span>{resourceLabel(candidate)}</span>
-                  <span>{masked(fmt(candidate.primaryValue))} {primary}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {item.targets.length > 0 && (
-            <div style={{ marginTop: 'var(--sp-2)', borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-              <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-1)' }}>
-                {t('plan_target_allocated', { sum: fmtPct(item.targetPercentSum), limit: fmtPct(item.targetPercent) })}
-              </div>
-              {item.targets.map(tg => (
-                <button
-                  type="button"
-                  key={tg.id}
-                  className="plan-target-row"
-                  onClick={() => openEditTarget(item, tg)}
-                >
-                  <span>{tg.name} · {fmtPct(tg.targetPercent)}%</span>
-                  <span>{masked(fmt(tg.currentValue))} / {masked(fmt(tg.targetAmount))} {primary}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <button
-            className="btn-text"
-            onClick={() => openAddTarget(item)}
-            style={{ marginTop: 'var(--sp-1)' }}
-          >
-            ＋ {t('add_plan_target')}
-          </button>
-        </details>
       </article>
     );
   };
@@ -1265,7 +1646,7 @@ export default function PlanPage() {
           <button
             type="button"
             className="btn btn-sm btn-secondary"
-            onClick={() => setSubView('dividend')}
+            onClick={openDividendWorkbench}
           >
             {t('plan_open_dividend_workbench')}
           </button>
@@ -2121,6 +2502,51 @@ export default function PlanPage() {
                 {editingTarget ? t('save') : t('create')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dividend fund plan editor (moved here from the workbench) */}
+      {showFundEdit && (
+        <div className="modal-overlay" onClick={() => setShowFundEdit(false)}>
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('div_home_fund_plans')}
+            style={{ maxHeight: '85vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2 className="modal-title">{t('div_home_fund_plans')}</h2>
+              <button className="modal-close" aria-label={t('close')} onClick={() => setShowFundEdit(false)}>✕</button>
+            </div>
+            {settings && (() => {
+              const divItem = status.items.find(it => it.planMode === 'dividend');
+              const fundTg = divItem?.targets.find(tg => tg.role === 'dividend_fund');
+              const stockTg = divItem?.targets.find(tg => tg.role === 'dividend_stock');
+              const syncedFundBudgetMinor = fundTg
+                ? Math.round(fundTg.targetAmount * 100)
+                : (divItem && stockTg)
+                  ? Math.round(Math.max(0, divItem.targetValue - stockTg.targetAmount) * 100)
+                  : undefined;
+              const baseFundPlan = settings.dividendFundPlan ?? defaultDividendFundPlan();
+              return (
+                <DividendFundWorkbench
+                  plan={{
+                    ...baseFundPlan,
+                    ...(syncedFundBudgetMinor !== undefined ? { budgetMinor: syncedFundBudgetMinor } : {}),
+                  }}
+                  checks={{}}
+                  amountVisible={amountVisible}
+                  budgetLocked
+                  onSaved={async () => {
+                    await syncDividendSleeves();
+                    await load(false);
+                  }}
+                />
+              );
+            })()}
           </div>
         </div>
       )}

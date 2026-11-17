@@ -12,8 +12,9 @@ const optionalNumber = (value: number | undefined, scale: number) => value === u
 const errorKey = (error: unknown) => error instanceof Error && error.message === 'DIVIDEND_FUND_OVERWEIGHT' ? 'df_overweight'
   : error instanceof Error && error.message === 'DIVIDEND_FUND_DUPLICATE' ? 'df_duplicate' : 'df_invalid';
 
-export default function DividendFundWorkbench({ plan, checks, amountVisible, onSaved }: {
+export default function DividendFundWorkbench({ plan, checks, amountVisible, onSaved, budgetLocked }: {
   plan: DividendFundPlan; checks: Record<string, DividendFundCheckSummary>; amountVisible: boolean; onSaved: () => Promise<unknown>;
+  budgetLocked?: boolean;
 }) {
   const { t } = useTranslation();
   const [budget, setBudget] = useState(optionalNumber(plan.budgetMinor, 100));
@@ -38,7 +39,7 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
     if ((budget !== '' && (!Number.isFinite(Number(budget)) || Number(budget) < 0)) || !drawdown.trim() || !indexYield.trim()) { setError(t('df_invalid')); return; }
     setSaving(true); setError('');
     try {
-      await saveDividendFundConfig({ budgetMinor: budget === '' ? undefined : Math.round(Number(budget) * 100), mode, entryRule, drawdownBps: Math.round(Number(drawdown) * 100), indexYieldBps: Math.round(Number(indexYield) * 100) });
+      await saveDividendFundConfig({ budgetMinor: budgetLocked ? plan.budgetMinor : budget === '' ? undefined : Math.round(Number(budget) * 100), mode, entryRule, drawdownBps: Math.round(Number(drawdown) * 100), indexYieldBps: Math.round(Number(indexYield) * 100) });
       await onSaved(); setMessage(t('div_saved'));
     } catch (error) { setError(t(errorKey(error))); }
     finally { setSaving(false); }
@@ -58,7 +59,9 @@ export default function DividendFundWorkbench({ plan, checks, amountVisible, onS
       <details className="div-details div-plan-details df-plan-settings"><summary>{t(plan.budgetMinor === undefined ? 'df_setup_plan' : 'df_edit_plan')}</summary><form onSubmit={event => void persist(event)} className="div-budget df-config">
         <fieldset disabled={saving}>
           <div className="div-form-fields">
-            <label>{t('df_planned_budget')}<input inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0" max="1000000000000" step="0.01" placeholder={t('div_budget_placeholder')} value={budget} onChange={event => setBudget(event.target.value)} /></label>
+            {budgetLocked
+              ? <p className="div-muted">{t('df_budget_from_plan')}</p>
+              : <label>{t('df_planned_budget')}<input inputMode="decimal" type={amountVisible ? 'number' : 'password'} min="0" max="1000000000000" step="0.01" placeholder={t('div_budget_placeholder')} value={budget} onChange={event => setBudget(event.target.value)} /></label>}
             <label>{t('df_mode')}<select value={mode} onChange={event => setMode(event.target.value as DividendFundPlan['mode'])}>{(['hold', 'rebalance', 'swing'] as const).map(value => <option key={value} value={value}>{t(`df_mode_${value}`)}</option>)}</select></label>
           </div>
           <p className="div-muted">{t('df_allocation', { percent: number(allocation.totalWeightBps / 100), remaining: money(allocation.unallocatedMinor) })}</p>

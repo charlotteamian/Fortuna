@@ -110,10 +110,12 @@ export interface PlanItem {
 
 // A second-level allocation subcategory inside a PlanItem. Products are third-level
 // links whose current values roll up into this target; they never replace its label.
+export type PlanTargetRole = 'dividend_fund' | 'dividend_stock';
 export interface PlanTarget {
   id: string;
   planItemId: string;
   label: string;           // subcategory name, independent from linked product names
+  role?: PlanTargetRole;   // optional link to a dividend sleeve (fund plan / stock workbench)
   refKeys?: string[];      // linked resources: holding 'h:', cash 'c:' or account 'a:'
   allocations?: PlanResourceAllocation[]; // amount assigned from each linked resource
   refKey?: string;         // legacy single-product link; normalized into refKeys on read
@@ -835,6 +837,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         id: String(target.id),
         planItemId: String(target.planItemId),
         label: String(target.label ?? ''),
+        role: target.role === 'dividend_fund' || target.role === 'dividend_stock' ? target.role : undefined,
         refKeys,
         allocations: parseAllocations(target.allocations),
         refKey: legacyRefKey,

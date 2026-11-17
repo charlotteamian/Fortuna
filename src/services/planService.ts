@@ -1,6 +1,6 @@
 import { repairPlanReferences } from '../lib/planReferences';
 import { v4 as uuidv4 } from 'uuid';
-import { db, initializeSettings, updateSettings, type PlanItem, type PlanTarget } from '../db';
+import { db, initializeSettings, updateSettings, type PlanItem, type PlanTarget, type PlanTargetRole } from '../db';
 import { getAccountsWithLatest } from './assetService';
 import { isAccountIncludedInTotals } from '../lib/accountPreferences';
 import { computeBalanceHoldingPosition, computeHoldingPosition } from './holdingService';
@@ -154,7 +154,14 @@ export async function setPlanTargetTotal(value: number | undefined): Promise<voi
 }
 
 // ---- PlanTarget CRUD ----
-type CreatePlanTargetData = Pick<PlanTarget, 'planItemId' | 'label' | 'refKeys' | 'allocations'> & { targetPercent: number };
+export function inferDividendTargetRole(label: string): PlanTargetRole | undefined {
+  const normalized = label.trim();
+  if (/^(红利基金|场内红利基金|场外红利基金|dividend\s*funds?)$/i.test(normalized)) return 'dividend_fund';
+  if (/^(红利股|红利个股|红利股票|dividend\s*stocks?)$/i.test(normalized)) return 'dividend_stock';
+  return undefined;
+}
+
+type CreatePlanTargetData = Pick<PlanTarget, 'planItemId' | 'label' | 'refKeys' | 'allocations' | 'role'> & { targetPercent: number };
 
 export async function createPlanTarget(data: CreatePlanTargetData): Promise<string> {
   const count = await db.planTargets.where('planItemId').equals(data.planItemId).count();
@@ -617,6 +624,9 @@ export async function getPlanStatus(): Promise<PlanStatus> {
       }
     }
 
+    const claimedDividendRoles = new Set<PlanTargetRole>(
+      itemTargets.flatMap(target => target.role ? [target.role] : []),
+    );
     const targets: PlanTargetStatus[] = itemTargets.map(target => {
       const refKeys = getTargetRefKeys(target);
       const linkedProducts = refKeys.flatMap(refKey => {
@@ -631,8 +641,14 @@ export async function getPlanStatus(): Promise<PlanStatus> {
       const targetPercent = hasStoredPercent
         ? storedPercent
         : targetPercentFromAmount(base, Number(target.targetAmount) || 0, currencyRate);
+      const inferredRole = !target.role && item.planMode === 'dividend'
+        ? inferDividendTargetRole(target.label)
+        : undefined;
+      const resolvedRole = target.role ?? (inferredRole && !claimedDividendRoles.has(inferredRole) ? inferredRole : undefined);
+      if (resolvedRole) claimedDividendRoles.add(resolvedRole);
       const migrationChanges: Partial<PlanTarget> = {};
       if (target.refKey && target.refKeys === undefined) migrationChanges.refKeys = refKeys;
+      if (!target.role && resolvedRole) migrationChanges.role = resolvedRole;
       if (
         !hasStoredPercent
         && base > 0
@@ -648,6 +664,7 @@ export async function getPlanStatus(): Promise<PlanStatus> {
       const targetAmount = targetAmountFromPercent(base, targetPercent);
       return {
         ...target,
+        ...(resolvedRole ? { role: resolvedRole } : {}),
         name: target.label,
         refKeys,
         currency: primary,
