@@ -4,15 +4,20 @@ import type { DividendFund } from '../lib/dividendFundPlan';
 import { dateInChina } from '../lib/dividendWorkbench';
 import { httpResponseDataToText } from '../lib/httpResponse';
 import {
+  computeFundGridAnchor,
   csindexIndicatorUrl,
   defaultIndexCodeForFund,
+  detectFundAnchorUpdate,
   isCsindexIndicatorSupported,
+  mergeFundNavHistory,
   parseCsindexDividendYield,
   parseFundBasicIndexInfo,
   parseFundCashPayouts,
+  parseFundNavHistory,
   type DividendFundBasicIndexInfo,
   type DividendFundIndexYield,
   type DividendFundMarketCacheEntry,
+  type DividendFundNavPoint,
   type DividendFundPayoutSummary,
 } from '../lib/dividendFundYield';
 import { dividendBackgroundRefreshPaused } from './dividendRequestControl';
@@ -43,6 +48,18 @@ export async function loadDividendFundYieldCache(): Promise<DividendFundYieldCac
     }
   }
   return { byFundCode, byIndexCode };
+}
+
+export async function dismissDividendFundUpdateNotice(fundCode: string): Promise<void> {
+  const normalized = fundCode.trim().toUpperCase();
+  if (!normalized) return;
+  const key = `fund:${normalized}`;
+  const current = await entries.get(key).catch(() => undefined);
+  if (!current?.updateNotice || current.updateNotice.dismissed) return;
+  await entries.put({
+    ...current,
+    updateNotice: { ...current.updateNotice, dismissed: true },
+  });
 }
 
 async function fetchJson(url: string): Promise<unknown> {
@@ -94,16 +111,17 @@ async function fetchCsindexTable(indexCode: string): Promise<unknown[][] | undef
   return XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
 }
 
-function isFreshEntry(entry: DividendFundMarketCacheEntry | undefined, today: string, now: number, needsPayout: boolean): boolean {
+function isFreshEntry(entry: DividendFundMarketCacheEntry | undefined, today: string, now: number, needsFundDetail: boolean): boolean {
   if (!entry || now - entry.fetchedAt > CACHE_FRESH_MS) return false;
-  if (needsPayout && !entry.payout) return false;
+  if (needsFundDetail && (!entry.payout || !entry.navHistory?.length)) return false;
   if (entry.indexCode && isCsindexIndicatorSupported(entry.indexCode) && !entry.indexYield) return false;
   return dateInChina(new Date(entry.fetchedAt)) === today;
 }
 
 /**
- * Automatically fetches live fund metadata, tracked index dividend yields (from CSIndex),
- * and fund cash payout histories (from Eastmoney) for configured dividend funds.
+ * Automatically fetches live fund metadata, historical unit NAVs (to pair on the exact
+ * index indicator date), tracked index dividend yields (from CSIndex), and cash payout
+ * histories (from Eastmoney) for configured dividend funds.
  */
 export async function refreshDividendFundMarketData(
   funds: readonly DividendFund[],
@@ -142,22 +160,35 @@ export async function refreshDividendFundMarketData(
   }
 
   let failed = 0;
-  const fundInfos = new Map<string, { basic?: DividendFundBasicIndexInfo; payout?: DividendFundPayoutSummary }>();
+  const fundInfos = new Map<string, {
+    basic?: DividendFundBasicIndexInfo;
+    payout?: DividendFundPayoutSummary;
+    navHistory?: DividendFundNavPoint[];
+  }>();
 
   await Promise.all(staleCodedFunds.map(async ([code]) => {
     const basicUrl = `${FUND_MOB_BASE}/FundMNewApi/FundMNBasicInformation?plat=Android&appType=ttjj&product=EFund&Version=6.5.5&deviceid=1&FCODE=${code}`;
     const bonusUrl = `${FUND_MOB_BASE}/FundMNewApi/FundMNBonusDetail?plat=Android&appType=ttjj&product=EFund&Version=6.5.5&deviceid=1&FCODE=${code}`;
-    const [basicRes, bonusRes] = await Promise.allSettled([fetchJson(basicUrl), fetchJson(bonusUrl)]);
+    const navHistoryUrl = `${FUND_MOB_BASE}/FundMNewApi/FundMNHisNetList?plat=Android&appType=ttjj&product=EFund&Version=6.5.5&deviceid=1&FCODE=${code}&pageIndex=1&pageSize=15`;
+    const [basicRes, bonusRes, navHistoryRes] = await Promise.allSettled([
+      fetchJson(basicUrl),
+      fetchJson(bonusUrl),
+      fetchJson(navHistoryUrl),
+    ]);
     let basic: DividendFundBasicIndexInfo | undefined;
     let payout: DividendFundPayoutSummary | undefined;
+    let navHistory: DividendFundNavPoint[] | undefined;
     if (basicRes.status === 'fulfilled') {
       try { basic = parseFundBasicIndexInfo(basicRes.value, code, asOf); } catch { /* ignore invalid payload */ }
     }
     if (bonusRes.status === 'fulfilled') {
       try { payout = parseFundCashPayouts(bonusRes.value, asOf); } catch { /* ignore invalid payload */ }
     }
-    if (!basic && !payout) failed += 1;
-    fundInfos.set(code, { basic, payout });
+    if (navHistoryRes.status === 'fulfilled') {
+      try { navHistory = parseFundNavHistory(navHistoryRes.value, asOf); } catch { /* ignore invalid payload */ }
+    }
+    if (!basic && !payout && !navHistory) failed += 1;
+    fundInfos.set(code, { basic, payout, navHistory });
   }));
 
   // Collect all CSIndex codes needed across stale funds + uncoded fallback indices
@@ -197,16 +228,42 @@ export async function refreshDividendFundMarketData(
     const payout = info?.payout ?? previous?.payout;
     const navMicros = info?.basic?.navMicros ?? previous?.navMicros;
     const navDate = info?.basic?.navDate ?? previous?.navDate;
+    const basicPoint = info?.basic?.navMicros && info.basic.navDate
+      ? [{ date: info.basic.navDate, navMicros: info.basic.navMicros }]
+      : [];
+    const mergedHistory = mergeFundNavHistory(
+      [...(info?.navHistory ?? []), ...basicPoint],
+      previous?.navHistory ?? [],
+    );
 
-    if (!info?.basic && !info?.payout && !indexYield) continue;
+    if (!info?.basic && !info?.payout && !info?.navHistory && !indexYield) continue;
+
+    const matchedNav = indexYield
+      ? mergedHistory.find(point => point.date === indexYield.asOf)?.navMicros
+        ?? (fund.quote?.date?.slice(0, 10) === indexYield.asOf ? fund.quote.priceMicros : undefined)
+      : undefined;
+    const nextAnchor = indexYield && matchedNav && matchedNav > 0
+      ? computeFundGridAnchor(indexYield.asOf, indexYield.yieldBps, matchedNav)
+      : previous?.anchorSnapshot;
+    const updateNotice = detectFundAnchorUpdate(
+      previous?.anchorSnapshot,
+      nextAnchor,
+      previous?.updateNotice,
+      code,
+      now,
+    );
+
     writes.push({
       key: `fund:${code}`,
       fundCode: code,
       ...(indexCode ? { indexCode } : {}),
       ...(indexName ? { indexName } : {}),
       ...(navMicros !== undefined ? { navMicros, navDate } : {}),
+      ...(mergedHistory.length > 0 ? { navHistory: mergedHistory } : {}),
       ...(indexYield ? { indexYield } : {}),
       ...(payout ? { payout } : {}),
+      ...(nextAnchor ? { anchorSnapshot: nextAnchor } : {}),
+      ...(updateNotice ? { updateNotice } : {}),
       fetchedAt: now,
     });
   }

@@ -7,14 +7,21 @@ import {
   splitScope, makeScope, makeAccountScope, makeHoldingScope, makeCashScope, MARKET_KEYS, MARKET_LABEL_KEYS, EQUITY_PLAN_CATEGORIES,
   type PlanStatus, type PlanItemStatus, type PlanTargetStatus, type UnplannedEntry, type MarketKey,
 } from '../services/planService';
-import { saveDividendBudget } from '../services/dividendService';
+import { saveDividendBudget, saveDividendStock, dividendStockEditFingerprint } from '../services/dividendService';
 import { saveDividendFundConfig } from '../services/dividendFundService';
 import { refreshDividendMarketQuotes } from '../services/dividendQuoteService';
-import { loadDividendFundYieldCache, refreshDividendFundMarketData, type DividendFundYieldCacheSnapshot } from '../services/dividendFundYieldService';
+import { dismissDividendFundUpdateNotice, loadDividendFundYieldCache, refreshDividendFundMarketData, type DividendFundYieldCacheSnapshot } from '../services/dividendFundYieldService';
 import { loadDividendPlanBoard, type DividendPlanBoard, type DividendStockBoardRow } from '../services/dividendPlanBoardService';
 import { dividendFundAllocation, defaultDividendFundPlan, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
-import { resolveFundYieldSnapshot } from '../lib/dividendFundYield';
-import { buildDividendStockTableModel } from '../lib/dividendPlanTable';
+import { computeFundTierPrice, resolveFundYieldSnapshot } from '../lib/dividendFundYield';
+import { classicTierPriceForYield } from '../lib/dividendClassicStrategy';
+import {
+  buildDividendStockTableModel,
+  createEditableStockGridDraft,
+  parseEditableStockGridDraft,
+  updateEditableStockGridYield,
+  type EditableStockGridDraft,
+} from '../lib/dividendPlanTable';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { DIVIDEND_ADVISOR_READER_HASH } from '../lib/dividendAdvisorNavigation';
@@ -22,11 +29,13 @@ import { useAppContext } from '../app-context';
 import {
   buildPresetLadderConfig,
   computePlanDynamicMetrics,
+  parseEditableLadderRows,
   planPercentFromInput,
   getResourceAllocation,
   majorToMinor,
   minorToMajor,
   resolveActiveLadderTier,
+  syncEditableLadderLabel,
   targetAmountFromPercent,
   type PlanLadderConfig,
   type PlanLadderKind,
@@ -105,6 +114,19 @@ export default function PlanPage() {
   const [formExpandedCats, setFormExpandedCats] = useState<string[]>([]);
   const [formAllocationAmounts, setFormAllocationAmounts] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Inline grid editing states (keeps the exact grid format on PlanPage)
+  const [expandedLadders, setExpandedLadders] = useState<Record<string, boolean>>({});
+  const [editingLadderId, setEditingLadderId] = useState<string | null>(null);
+  const [inlineLadderRows, setInlineLadderRows] = useState<EditableLadderRow[]>([]);
+  const [inlineLadderError, setInlineLadderError] = useState('');
+  const [inlineLadderSaving, setInlineLadderSaving] = useState(false);
+
+  const [expandedStocks, setExpandedStocks] = useState<Record<string, boolean>>({});
+  const [editingStockCode, setEditingStockCode] = useState<string | null>(null);
+  const [inlineStockDraft, setInlineStockDraft] = useState<EditableStockGridDraft | null>(null);
+  const [inlineStockError, setInlineStockError] = useState('');
+  const [inlineStockSaving, setInlineStockSaving] = useState(false);
 
   // Target total modal
   const [showTarget, setShowTarget] = useState(false);
@@ -231,7 +253,9 @@ export default function PlanPage() {
     return () => window.removeEventListener('focus', syncYields);
   }, [fundYieldTargetKey, load]);
 
-  useEffect(() => { quoteBusyRef.current = saving; }, [saving]);
+  useEffect(() => {
+    quoteBusyRef.current = saving || inlineLadderSaving || inlineStockSaving;
+  }, [saving, inlineLadderSaving, inlineStockSaving]);
 
   // Return from the dividend workbench: keep the scroll position on the card the user came from.
   useEffect(() => {
@@ -971,8 +995,8 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
 );
 
 /** Fund grid card: same ladder-table format as other assets, tiers follow the
- * parent sector yield ladder; tier prices convert the fund's fetched index yield
- * into the actual fund price you would buy. */
+ * parent sector yield ladder; tier prices stay anchored to same-day
+ * index yield × fund NAV (fixed intraday, auto-updated when new official data arrives). */
   const renderFundGridCard = (item: PlanItemStatus, fundPlan: DividendFundPlan, fund: DividendFund, sleeveAmount: number) => {
     const sectorLadder: PlanLadderConfig = item.ladderConfig?.kind === 'yield' && item.ladderConfig.rows.length > 0
       ? item.ladderConfig
@@ -989,19 +1013,26 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
     const fundQuote = resolvedYield.priceMicros !== undefined
       ? resolvedYield.priceMicros / 1_000_000
       : undefined;
+    const anchorPrice = resolvedYield.anchorPriceMicros !== undefined
+      ? resolvedYield.anchorPriceMicros / 1_000_000
+      : undefined;
+    const impliedDps = resolvedYield.impliedAnnualDpsMicros !== undefined
+      ? resolvedYield.impliedAnnualDpsMicros / 1_000_000
+      : undefined;
     const fundYieldPct = resolvedYield.indexYield ? resolvedYield.indexYield.yieldBps / 100 : 0;
+    const liveYieldPct = resolvedYield.liveEstimatedYieldBps !== undefined
+      ? resolvedYield.liveEstimatedYieldBps / 100
+      : fundYieldPct;
     const allocation = dividendFundAllocation({ ...fundPlan, budgetMinor: Math.round(sleeveAmount * 100) });
     const fundQuota = minorToMajor(allocation.amounts.get(fund.id)) ?? 0;
     const fundActual = fundHolding?.primaryValue ?? 0;
-    const resolved = resolveActiveLadderTier(sectorLadder, fundYieldPct > 0 ? fundYieldPct : undefined);
+    const resolved = resolveActiveLadderTier(sectorLadder, liveYieldPct > 0 ? liveYieldPct : undefined);
     const activePct = resolved?.activeRow.positionPercent ?? 100;
     const dynamicTargetVal = Math.round(fundQuota * activePct) / 100;
     const dynamicGap = Math.round((dynamicTargetVal - fundActual) * 100) / 100;
     const tolerance = Math.max(100, fundQuota * 0.015);
     const isAtTarget = Math.abs(dynamicGap) <= tolerance;
-    const tierPrice = (tierYield: number) => fundQuote !== undefined && fundQuote > 0 && fundYieldPct > 0 && tierYield > 0
-      ? fundQuote * fundYieldPct / tierYield
-      : undefined;
+    const tierPrice = (tierYield: number) => computeFundTierPrice(resolvedYield, tierYield);
     const rows = resolved?.sortedRows ?? [...sectorLadder.rows].sort((a, b) => b.triggerValue - a.triggerValue);
     const pillClass = isAtTarget ? 'plan-pill plan-pill-target' : dynamicGap > 0 ? 'plan-pill plan-pill-buy' : 'plan-pill plan-pill-trim';
     const pillText = isAtTarget
@@ -1030,6 +1061,10 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
       payoutText = t('plan_div_fund_payout_pending');
     }
 
+    const updateNotice = resolvedYield.updateNotice && !resolvedYield.updateNotice.dismissed
+      ? resolvedYield.updateNotice
+      : undefined;
+
     return (
       <div className="plan-stock-subcard" key={fund.id}>
         <div className="plan-card-header-top">
@@ -1045,13 +1080,48 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
           })}
         </div>
         <div className="plan-fund-yield-meta">
-          <span>
-            {resolvedYield.indexYield
-              ? t('plan_div_fund_index_meta', { index: indexDisplay, yield: fmtPct(fundYieldPct) })
-              : t('plan_div_fund_index_meta_no_yield', { index: indexDisplay })}
-          </span>
-          {payoutText && <span> · {payoutText}</span>}
+          <div>
+            <span>
+              {resolvedYield.indexYield
+                ? t('plan_div_fund_index_meta', { index: indexDisplay, yield: fmtPct(fundYieldPct) })
+                : t('plan_div_fund_index_meta_no_yield', { index: indexDisplay })}
+            </span>
+            {payoutText && <span> · {payoutText}</span>}
+          </div>
+          {liveYieldPct > 0 && impliedDps !== undefined && (
+            <div className="plan-fund-live-meta">
+              {t('plan_div_fund_live_yield_meta', {
+                yield: fmtPct(liveYieldPct),
+                dps: fmtQuote(impliedDps, 'price'),
+              })}
+            </div>
+          )}
         </div>
+        {updateNotice && (
+          <div className="plan-fund-update-banner" role="status">
+            <span>
+              {t('plan_div_fund_update_notice', {
+                date: updateNotice.currentAsOf,
+                anchor: fmtQuote(updateNotice.currentAnchorPriceMicros / 1_000_000, 'price'),
+                prevAnchor: fmtQuote(updateNotice.previousAnchorPriceMicros / 1_000_000, 'price'),
+                yield: fmtPct(updateNotice.currentYieldBps / 100),
+                prevYield: fmtPct(updateNotice.previousYieldBps / 100),
+              })}
+            </span>
+            {fundCode && (
+              <button
+                type="button"
+                className="plan-fund-notice-btn"
+                onClick={async () => {
+                  await dismissDividendFundUpdateNotice(fundCode);
+                  setFundMarketCache(await loadDividendFundYieldCache());
+                }}
+              >
+                {t('plan_div_fund_notice_dismiss')}
+              </button>
+            )}
+          </div>
+        )}
         {fundYieldPct > 0 ? (
           <>
             <div className="plan-next-bar">
@@ -1107,9 +1177,13 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
                 {
                   date: resolvedYield.indexYield?.asOf ?? '',
                   yield: fmtPct(fundYieldPct),
-                  price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
+                  anchor: anchorPrice !== undefined && anchorPrice > 0 ? fmtQuote(anchorPrice, 'price') : '—',
+                  dps: impliedDps !== undefined && impliedDps > 0 ? fmtQuote(impliedDps, 'price') : '—',
                 },
               )}
+              {!resolvedYield.anchorDateMatched && anchorPrice !== undefined
+                ? t('plan_div_fund_grid_ref_unaligned')
+                : null}
             </div>
           </>
         ) : (
@@ -1153,33 +1227,150 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
     );
   };
 
-  /** Dividend stock sleeve: workbench trigger status; tap any stock to expand its grid. */
+  const startInlineLadderEdit = (item: PlanItemStatus, rows: PlanLadderRow[]) => {
+    setExpandedLadders(prev => ({ ...prev, [item.id]: true }));
+    setEditingLadderId(item.id);
+    setInlineLadderRows(toEditableRows(rows));
+    setInlineLadderError('');
+  };
+
+  const cancelInlineLadderEdit = () => {
+    setEditingLadderId(null);
+    setInlineLadderRows([]);
+    setInlineLadderError('');
+  };
+
+  const saveInlineLadderEdit = async (item: PlanItemStatus, baseConfig: PlanLadderConfig) => {
+    if (inlineLadderSaving) return;
+    const parsed = parseEditableLadderRows(inlineLadderRows, baseConfig.kind);
+    if (!parsed.ok) {
+      setInlineLadderError(t('plan_grid_invalid_rows'));
+      return;
+    }
+    setInlineLadderSaving(true);
+    setInlineLadderError('');
+    try {
+      await updatePlanItem(item.id, {
+        ladderConfig: { ...baseConfig, rows: parsed.rows },
+      });
+      await load(false);
+      setEditingLadderId(null);
+      setInlineLadderRows([]);
+    } catch {
+      setInlineLadderError(t('plan_save_failed'));
+    } finally {
+      setInlineLadderSaving(false);
+    }
+  };
+
+  /** Dividend stock sleeve: workbench trigger status; tap any stock to expand or edit its grid inline. */
   const renderStockSleeve = (item: PlanItemStatus, stockTarget: PlanTargetStatus | undefined) => {
-    const stocks = (board?.stocks ?? []).filter(row => row.plan.group !== 'hidden');
+    const stocks = (board?.stocks ?? []).filter(row => row.plan.group !== 'hidden' || row.plan.shares > 0);
     const buyCount = stocks.filter(row => row.facts.status === 'buy').length;
     const sellCount = stocks.filter(row => row.facts.status === 'sell').length;
     const staleCount = stocks.filter(row => !row.facts.quoteCurrent).length;
     const sharesLabel = (value: number) => amountVisible ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '••••';
+
+    const startInlineStockEdit = (row: DividendStockBoardRow) => {
+      setExpandedStocks(prev => ({ ...prev, [row.plan.code]: true }));
+      setEditingStockCode(row.plan.code);
+      setInlineStockDraft(createEditableStockGridDraft(row.plan, row.stock));
+      setInlineStockError('');
+    };
+
+    const cancelInlineStockEdit = () => {
+      setEditingStockCode(null);
+      setInlineStockDraft(null);
+      setInlineStockError('');
+    };
+
+    const saveInlineStockEdit = async (row: DividendStockBoardRow) => {
+      if (inlineStockSaving || !inlineStockDraft) return;
+      const parsed = parseEditableStockGridDraft(inlineStockDraft, row.plan.base.netDpsMicros);
+      if (!parsed.ok) {
+        setInlineStockError(t(parsed.errorKey));
+        return;
+      }
+      setInlineStockSaving(true);
+      setInlineStockError('');
+      try {
+        await saveDividendStock(
+          {
+            ...row.stock,
+            buyLevels: parsed.buyLevels,
+            sellLevels: parsed.sellLevels,
+          },
+          { expectedFingerprint: dividendStockEditFingerprint(row.stock) },
+        );
+        await load(false);
+        setEditingStockCode(null);
+        setInlineStockDraft(null);
+      } catch {
+        setInlineStockError(t('plan_grid_save_failed'));
+      } finally {
+        setInlineStockSaving(false);
+      }
+    };
+
+    const resetInlineStockEdit = async (row: DividendStockBoardRow) => {
+      if (inlineStockSaving) return;
+      setInlineStockSaving(true);
+      setInlineStockError('');
+      try {
+        await saveDividendStock(
+          {
+            ...row.stock,
+            buyLevels: undefined,
+            sellLevels: undefined,
+          },
+          { expectedFingerprint: dividendStockEditFingerprint(row.stock) },
+        );
+        await load(false);
+        setEditingStockCode(null);
+        setInlineStockDraft(null);
+      } catch {
+        setInlineStockError(t('plan_grid_save_failed'));
+      } finally {
+        setInlineStockSaving(false);
+      }
+    };
+
+    const recalcInlineStockPrices = (netDpsMicros: number) => {
+      if (!inlineStockDraft) return;
+      const recalcSide = (side: 'buy' | 'sell') => inlineStockDraft[side].map(r => {
+        const y = Number(r.yieldText.trim());
+        const bps = Number.isFinite(y) && y > 0 && y <= 100 ? Math.round(y * 100) : 0;
+        if (!bps) return r;
+        return { ...r, priceText: (classicTierPriceForYield(side, netDpsMicros, bps) / 100).toFixed(2) };
+      });
+      setInlineStockDraft({ buy: recalcSide('buy'), sell: recalcSide('sell') });
+    };
 
     const stockStatusInfo = (row: DividendStockBoardRow) => {
       const { facts } = row;
       if (facts.status === 'buy') {
         return {
           pill: 'plan-pill plan-pill-buy',
-          text: `${t('div_new_status_buy')} · ${t('plan_div_stock_buy_shares', { shares: sharesLabel(facts.shares) })}`,
+          text: t('plan_div_stock_buy_pill', { level: facts.touchedBuyLevel, shares: sharesLabel(facts.shares) }),
         };
       }
       if (facts.status === 'sell') {
         return {
           pill: 'plan-pill plan-pill-trim',
-          text: `${t('div_new_status_sell')} · ${t('plan_div_stock_sell_shares', { shares: sharesLabel(facts.shares) })}`,
+          text: t('plan_div_stock_sell_pill', { level: facts.touchedSellLevel, shares: sharesLabel(facts.shares) }),
         };
       }
       if (facts.status === 'waiting' && facts.buy1GapBps !== undefined) {
         return {
           pill: 'plan-pill plan-pill-neutral',
-          text: t('div_new_buy_distance', { gap: facts.buy1GapBps === 0 ? '<0.01%' : `${fmtPct(facts.buy1GapBps / 100)}%` }),
+          text: t('plan_div_stock_gap_pill', { gap: facts.buy1GapBps === 0 ? '<0.01%' : `${fmtPct(facts.buy1GapBps / 100)}%` }),
         };
+      }
+      if (facts.status === 'reference_only') {
+        return { pill: 'plan-pill plan-pill-neutral', text: t('plan_div_stock_ref_pill') };
+      }
+      if (facts.status === 'no_base') {
+        return { pill: 'plan-pill plan-pill-neutral', text: t('plan_div_stock_nobase_pill') };
       }
       return { pill: 'plan-pill plan-pill-neutral', text: t(`div_new_status_${facts.status}`) };
     };
@@ -1190,54 +1381,298 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
       const quoteLabel = plan.quotePriceMinor !== undefined ? `¥${(plan.quotePriceMinor / 100).toFixed(2)}` : '—';
       const budgetMajor = plan.budgetMinor !== undefined ? plan.budgetMinor / 100 : undefined;
       const tableModel = buildDividendStockTableModel(plan, facts.status);
-      const renderTierRow = (r: ReturnType<typeof buildDividendStockTableModel>['buyRows'][number]) => (
-        <tr key={r.key} className={r.active ? 'row-active' : undefined}>
-          <th scope="row">{r.active ? '● ' : ''}{r.priceText}</th>
-          <td>{fmtPct(r.cumulativePercent)}%</td>
-          <td>{r.amountMajor !== undefined ? masked(fmt(r.amountMajor)) : '—'}</td>
-        </tr>
-      );
+      const isExpanded = Boolean(expandedStocks[plan.code]);
+      const isEditing = editingStockCode === plan.code && inlineStockDraft !== null;
+      const netDps = plan.base.netDpsMicros;
+
+      const renderTierRow = (r: ReturnType<typeof buildDividendStockTableModel>['buyRows'][number]) => {
+        const posCell = r.side === 'buy'
+          ? `${fmtPct(r.cumulativePercent)}%`
+          : r.cumulativePercent >= 100
+            ? t('plan_div_trim_all')
+            : t('plan_div_trim_pct', { pct: fmtPct(r.cumulativePercent) });
+        const amountCell = r.side === 'buy'
+          ? (r.amountMajor !== undefined ? masked(fmt(r.amountMajor)) : '—')
+          : !tableModel.hasHolding
+            ? '—'
+            : r.belowLot
+              ? t('plan_div_row_below_lot_short')
+              : r.amountMajor !== undefined
+                ? masked(fmt(r.amountMajor))
+                : '—';
+        return (
+          <tr key={r.key} className={r.active ? 'row-active' : undefined}>
+            <th scope="row">{r.active ? '● ' : ''}{fmtPct(r.yieldPercent)}%</th>
+            <td>{r.priceText}</td>
+            <td>{posCell}</td>
+            <td>{amountCell}</td>
+          </tr>
+        );
+      };
+
+      const renderEditableSide = (side: 'buy' | 'sell') => {
+        if (!inlineStockDraft) return null;
+        const rows = inlineStockDraft[side];
+        let runningPct = 0;
+        const sumPct = rows.reduce((sum, r) => sum + (Number.isFinite(Number(r.portionText)) ? Math.max(0, Number(r.portionText)) : 0), 0);
+        const overSum = sumPct > 100.001;
+        return (
+          <>
+            <tr className="plan-ladder-section">
+              <th scope="col" colSpan={5}>
+                <div className="plan-inline-section-head">
+                  <span>
+                    {t(`plan_div_grid_${side}`)}
+                    <small className={overSum ? 'plan-inline-warn' : undefined}>
+                      {' · '}{t(side === 'buy' ? 'plan_grid_side_buy_sum' : 'plan_grid_side_sell_sum', { pct: fmtPct(sumPct) })}
+                    </small>
+                  </span>
+                  {rows.length < 20 && (
+                    <button
+                      type="button"
+                      className="plan-inline-mini-btn"
+                      onClick={() => setInlineStockDraft(prev => prev ? ({
+                        ...prev,
+                        [side]: [
+                          ...prev[side],
+                          { key: `${side}-${Date.now()}-${prev[side].length}`, yieldText: side === 'buy' ? '6.0' : '4.2', priceText: '', portionText: '25' },
+                        ],
+                      }) : prev)}
+                    >
+                      {t(side === 'buy' ? 'plan_grid_add_buy' : 'plan_grid_add_sell')}
+                    </button>
+                  )}
+                </div>
+              </th>
+            </tr>
+            {rows.map((draftRow, rIdx) => {
+              const pNum = Number(draftRow.portionText);
+              const validP = Number.isFinite(pNum) && pNum >= 0 ? pNum : 0;
+              runningPct += validP;
+              const priceNum = Number(draftRow.priceText);
+              const validPrice = Number.isFinite(priceNum) && priceNum > 0 ? priceNum : undefined;
+              const sellPreviewLots = side === 'sell' && plan.shares > 0
+                ? Math.floor(((plan.shares * Math.min(100, runningPct)) / 100) / plan.lotSize) * plan.lotSize
+                : 0;
+              const previewText = side === 'buy'
+                ? (budgetMajor !== undefined ? masked(fmt(budgetMajor * runningPct / 100)) : `${fmtPct(runningPct)}%`)
+                : (plan.shares > 0 && validPrice
+                  ? (sellPreviewLots > 0 ? masked(fmt(sellPreviewLots * validPrice)) : t('plan_div_row_below_lot_short'))
+                  : `${fmtPct(runningPct)}%`);
+              return (
+                <tr key={draftRow.key}>
+                  <th scope="row">
+                    <input
+                      aria-label={`${plan.name} ${t(`plan_div_grid_${side}`)} ${rIdx + 1} ${t('plan_col_yield')}`}
+                      className="plan-inline-input mono"
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0.01"
+                      max="100"
+                      value={draftRow.yieldText}
+                      onChange={e => setInlineStockDraft(prev => prev ? ({
+                        ...prev,
+                        [side]: prev[side].map((r, i) => i === rIdx ? updateEditableStockGridYield(r, side, e.target.value, netDps) : r),
+                      }) : prev)}
+                    />
+                  </th>
+                  <td>
+                    <input
+                      aria-label={`${plan.name} ${t(`plan_div_grid_${side}`)} ${rIdx + 1} ${t('plan_col_point_price')}`}
+                      className="plan-inline-input mono"
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0.01"
+                      placeholder={netDps ? t('div_auto') : ''}
+                      value={draftRow.priceText}
+                      onChange={e => setInlineStockDraft(prev => prev ? ({
+                        ...prev,
+                        [side]: prev[side].map((r, i) => i === rIdx ? { ...r, priceText: e.target.value } : r),
+                      }) : prev)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`${plan.name} ${t(`plan_div_grid_${side}`)} ${rIdx + 1} ${t('plan_grid_portion_col')}`}
+                      className="plan-inline-input mono"
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={draftRow.portionText}
+                      onChange={e => setInlineStockDraft(prev => prev ? ({
+                        ...prev,
+                        [side]: prev[side].map((r, i) => i === rIdx ? { ...r, portionText: e.target.value } : r),
+                      }) : prev)}
+                    />
+                  </td>
+                  <td className="plan-inline-preview">{previewText}</td>
+                  <td className="plan-inline-del-cell">
+                    <button
+                      type="button"
+                      className="plan-inline-del-btn"
+                      aria-label={t('plan_grid_delete_row')}
+                      disabled={rows.length <= 1 || inlineStockSaving}
+                      onClick={() => setInlineStockDraft(prev => prev ? ({
+                        ...prev,
+                        [side]: prev[side].filter((_, i) => i !== rIdx),
+                      }) : prev)}
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </>
+        );
+      };
+
+      const basisNote = plan.base.tier === 'recent_batches' && netDps !== undefined
+        ? [
+            t('plan_div_stock_basis_note', {
+              net: (netDps / 1e6).toFixed(4),
+              period: plan.base.periodLabel || '—',
+              tax: fmtPct(plan.base.taxBps / 100),
+            }),
+            ...(plan.base.cappedAtEarnings ? [t('plan_div_stock_basis_capped')] : []),
+            t(plan.gridOrigin === 'custom_saved' ? 'plan_div_stock_basis_custom' : 'plan_div_stock_basis_default'),
+          ].join(' · ')
+        : (i18n.language.startsWith('zh') ? plan.base.strategyNoteZh : plan.base.strategyNoteEn);
+
       return (
-        <details className="plan-stock-detail" key={plan.code}>
-          <summary>
-            <span className="plan-stock-summary-left">
+        <details className="plan-stock-detail" key={plan.code} open={isExpanded}>
+          <summary onClick={e => {
+            e.preventDefault();
+            setExpandedStocks(prev => ({ ...prev, [plan.code]: !isExpanded }));
+          }}>
+            <div className="plan-stock-summary-top">
               <span className="plan-stock-summary-name">{plan.name}<small> ({plan.code})</small></span>
-              <span className="plan-stock-summary-meta">
-                {t('plan_div_stock_quote', { price: quoteLabel })}
-                {budgetMajor !== undefined ? ` · ${t('plan_div_stock_budget', { weight: fmtPct(plan.weightBps / 100), amount: masked(fmt(budgetMajor)) })}` : ''}
+              <span className="plan-stock-summary-right">
+                <span className={info.pill}>{info.text}</span>
+                <span className="plan-stock-chevron" aria-hidden="true">▾</span>
               </span>
-            </span>
-            <span className="plan-stock-summary-right">
-              <span className={info.pill}>{info.text}</span>
-            </span>
+            </div>
+            <div className="plan-stock-summary-meta">
+              <span className="plan-meta-token">{t('plan_div_stock_quote', { price: quoteLabel })}</span>
+              {plan.currentNetYieldBps !== undefined && (
+                <span className="plan-meta-token">· {t('plan_div_stock_net_yield', { yield: fmtPct(plan.currentNetYieldBps / 100) })}</span>
+              )}
+              <span className="plan-meta-token">· {t('plan_div_stock_budget', {
+                weight: fmtPct(plan.weightBps / 100),
+                amount: budgetMajor !== undefined ? masked(fmt(budgetMajor)) : '—',
+              })}</span>
+              {plan.shares > 0 && (
+                <span className="plan-meta-token">· {t('plan_div_stock_shares', { shares: sharesLabel(plan.shares) })}</span>
+              )}
+            </div>
           </summary>
-          {plan.buyRows.length === 0 && plan.sellRows.length === 0 ? (
-            <div className="plan-subcat-hint">
-              {i18n.language.startsWith('zh') ? plan.base.strategyNoteZh : plan.base.strategyNoteEn}
+          <div className="plan-stock-detail-body">
+            <div className="plan-stock-grid-bar">
+              <span className="plan-grid-ref" style={{ margin: 0 }}>{basisNote}</span>
+              {!isEditing && (
+                <button
+                  type="button"
+                  className="plan-text-button plan-inline-edit-trigger"
+                  onClick={() => startInlineStockEdit(row)}
+                >
+                  {t('plan_grid_edit_inline')}
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="plan-ladder-wrapper">
-              <table className="plan-ladder-table">
-                <thead>
-                  <tr>
-                    <th scope="col" style={{ width: '36%' }}>{t('plan_col_point_price')}</th>
-                    <th scope="col" style={{ width: '28%' }}>{t('plan_col_cum_pos')}</th>
-                    <th scope="col" style={{ width: '36%' }}>{t('plan_col_amount')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="plan-ladder-section"><th scope="col" colSpan={3}>{t('plan_div_grid_buy')}</th></tr>
-                  {tableModel.buyRows.map(renderTierRow)}
-                  <tr className="plan-ladder-section">
-                    <th scope="col" colSpan={3}>
-                      {t(tableModel.hasHolding ? 'plan_div_grid_sell_cum' : 'plan_div_grid_sell_no_holding')}
-                    </th>
-                  </tr>
-                  {tableModel.sellRows.map(renderTierRow)}
-                </tbody>
-              </table>
-            </div>
-          )}
+            {isEditing ? (
+              <>
+                <div className="plan-ladder-wrapper">
+                  <table className="plan-ladder-table plan-ladder-table-edit">
+                    <thead>
+                      <tr>
+                        <th scope="col" style={{ width: '21%' }}>{t('plan_col_yield')}(%)</th>
+                        <th scope="col" style={{ width: '26%' }}>{t('plan_col_point_price')}(¥)</th>
+                        <th scope="col" style={{ width: '20%' }}>{t('plan_grid_portion_col')}</th>
+                        <th scope="col" style={{ width: '23%' }}>{t('plan_col_amount')}</th>
+                        <th scope="col" style={{ width: '10%' }} aria-label={t('plan_grid_delete_row')} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {renderEditableSide('buy')}
+                      {renderEditableSide('sell')}
+                    </tbody>
+                  </table>
+                </div>
+                {inlineStockError && <p className="plan-error-text" role="alert" style={{ marginTop: 4 }}>{inlineStockError}</p>}
+                <div className="plan-inline-grid-actions">
+                  <div className="plan-inline-grid-left">
+                    {row.stock.buyLevels || row.stock.sellLevels ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        disabled={inlineStockSaving}
+                        onClick={() => void resetInlineStockEdit(row)}
+                      >
+                        {t('plan_grid_reset_default')}
+                      </button>
+                    ) : null}
+                    {netDps !== undefined && netDps > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        disabled={inlineStockSaving}
+                        onClick={() => recalcInlineStockPrices(netDps)}
+                      >
+                        {t('plan_grid_recalc_prices')}
+                      </button>
+                    )}
+                  </div>
+                  <div className="plan-inline-grid-right">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      disabled={inlineStockSaving}
+                      onClick={cancelInlineStockEdit}
+                    >
+                      {t('cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      disabled={inlineStockSaving}
+                      onClick={() => void saveInlineStockEdit(row)}
+                    >
+                      {inlineStockSaving ? t('plan_saving') : t('plan_grid_save')}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : plan.buyRows.length === 0 && plan.sellRows.length === 0 ? null : (
+              <div className="plan-ladder-wrapper">
+                <table className="plan-ladder-table">
+                  <thead>
+                    <tr>
+                      <th scope="col" style={{ width: '23%' }}>{t('plan_col_yield')}</th>
+                      <th scope="col" style={{ width: '27%' }}>{t('plan_col_point_price')}</th>
+                      <th scope="col" style={{ width: '22%' }}>{t('plan_col_pos_or_trim')}</th>
+                      <th scope="col" style={{ width: '28%' }}>{t('plan_col_amount')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="plan-ladder-section"><th scope="col" colSpan={4}>{t('plan_div_grid_buy')}</th></tr>
+                    {tableModel.buyRows.map(renderTierRow)}
+                    <tr className="plan-ladder-section">
+                      <th scope="col" colSpan={4}>
+                        {tableModel.hasHolding
+                          ? t('plan_div_grid_sell_held', { shares: sharesLabel(plan.shares) })
+                          : t('plan_div_grid_sell_no_holding')}
+                      </th>
+                    </tr>
+                    {tableModel.sellRows.map(renderTierRow)}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </details>
       );
     };
@@ -1594,95 +2029,271 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
           </div>
         )}
 
-        {/* Ladder Mode: Expandable Full-Visibility Position Ladder Table */}
-        {dyn.mode === 'ladder' && effectiveLadder && effectiveLadder.rows.length > 0 && (
-          <details className="plan-ladder-details">
-            <summary>
-              <span className="plan-summary-left">
-                {t('plan_ladder_summary', { count: effectiveLadder.rows.length })}
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={e => { e.preventDefault(); openEdit(item); }}
-                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEdit(item); } }}
-                className="plan-pill plan-pill-neutral"
-                style={{ color: 'var(--asset-color)' }}
-              >
-                {t('plan_edit_ladder_btn')}
-              </span>
-            </summary>
+        {/* Ladder Mode: Expandable Full-Visibility Position Ladder Table with Inline Grid Edit */}
+        {dyn.mode === 'ladder' && effectiveLadder && effectiveLadder.rows.length > 0 && (() => {
+          const isExpanded = Boolean(expandedLadders[item.id]);
+          const isEditingLadder = editingLadderId === item.id;
+          const displayRows = dyn.resolvedLadder?.sortedRows ?? effectiveLadder.rows;
+          return (
+            <details className="plan-ladder-details" open={isExpanded}>
+              <summary onClick={e => {
+                e.preventDefault();
+                setExpandedLadders(prev => ({ ...prev, [item.id]: !isExpanded }));
+              }}>
+                <span className="plan-summary-left">
+                  {t('plan_ladder_summary', { count: effectiveLadder.rows.length })}
+                </span>
+                {!isEditingLadder && (
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startInlineLadderEdit(item, displayRows);
+                    }}
+                    className="plan-pill plan-pill-neutral plan-pill-btn"
+                    style={{ color: 'var(--asset-color)' }}
+                  >
+                    {t('plan_edit_ladder_btn')}
+                  </button>
+                )}
+              </summary>
 
-            <div tabIndex={0} role="region" aria-label={item.name} className="plan-ladder-wrapper">
-              <table className="plan-ladder-table">
-                <thead>
-                  <tr>
-                    <th scope="col" style={{ width: '26%' }}>
-                      {effectiveLadder.kind === 'yield'
-                        ? t('plan_col_yield')
-                        : effectiveLadder.kind === 'index'
-                          ? t('plan_col_index')
-                          : t('plan_col_ref')}
-                    </th>
-                    <th scope="col" style={{ width: '24%' }}>
-                      {effectiveLadder.kind === 'yield'
-                        ? t('plan_col_pos_pct')
-                        : effectiveLadder.kind === 'index'
-                          ? t('plan_col_pos_pct')
-                          : t('plan_col_price')}
-                    </th>
-                    <th scope="col" style={{ width: '24%' }}>
-                      {effectiveLadder.kind === 'price' ? t('plan_col_pos_pct') : t('plan_col_target_amt')}
-                    </th>
-                    <th scope="col" style={{ width: '26%' }}>
-                      {effectiveLadder.kind === 'price' ? t('plan_col_target_amt') : t('plan_col_status')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(dyn.resolvedLadder?.sortedRows ?? effectiveLadder.rows).map((row, rIdx) => {
-                    const isCurrent = dyn.resolvedLadder?.activeIndex === rIdx;
-                    const isNextBuy = dyn.resolvedLadder?.nextBuyRow?.id === row.id;
-                    const isNextSell = dyn.resolvedLadder?.nextSellRow?.id === row.id;
-                    const rowAmt = item.targetValue * (row.positionPercent / 100);
-                    const firstLabel = row.label || (
-                      effectiveLadder.kind === 'yield'
-                        ? `${row.triggerValue.toFixed(1)}%`
-                        : fmtQuote(row.triggerValue, effectiveLadder.kind)
-                    );
-                    const statusLabel = isCurrent
-                      ? t('plan_row_current')
-                      : isNextBuy
-                        ? t('plan_row_next_buy')
-                        : isNextSell
-                          ? t('plan_row_next_sell')
-                          : t('plan_row_waiting');
-
-                    if (effectiveLadder.kind === 'price') {
-                      return (
-                        <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
-                          <th scope="row">{isCurrent ? '● ' : ''}{firstLabel}</th>
-                          <td>{fmtQuote(row.triggerValue, 'price')}</td>
-                          <td>{fmtPct(row.positionPercent)}%</td>
-                          <td>{masked(fmt(rowAmt))}</td>
-                        </tr>
-                      );
-                    }
-
-                    return (
-                      <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
-                        <th scope="row">{isCurrent ? '● ' : ''}{firstLabel}</th>
-                        <td>{fmtPct(row.positionPercent)}%</td>
-                        <td>{masked(fmt(rowAmt))}</td>
-                        <td>{statusLabel}</td>
+              <div tabIndex={0} role="region" aria-label={item.name} className="plan-ladder-wrapper">
+                <table className={`plan-ladder-table${isEditingLadder ? ' plan-ladder-table-edit' : ''}`}>
+                  <thead>
+                    {isEditingLadder ? (
+                      <tr>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '24%' : '28%' }}>
+                          {effectiveLadder.kind === 'yield'
+                            ? `${t('plan_col_yield')}(%)`
+                            : effectiveLadder.kind === 'index'
+                              ? t('plan_col_index')
+                              : t('plan_col_ref')}
+                        </th>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '22%' : '24%' }}>
+                          {effectiveLadder.kind === 'price' ? t('plan_col_price') : `${t('plan_col_pos_pct')}(%)`}
+                        </th>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '22%' : '36%' }}>
+                          {effectiveLadder.kind === 'price' ? `${t('plan_col_pos_pct')}(%)` : t('plan_col_target_amt')}
+                        </th>
+                        {effectiveLadder.kind === 'price' && (
+                          <th scope="col" style={{ width: '22%' }}>{t('plan_col_target_amt')}</th>
+                        )}
+                        <th scope="col" style={{ width: '10%' }} aria-label={t('plan_grid_delete_row')} />
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        )}
+                    ) : (
+                      <tr>
+                        <th scope="col" style={{ width: '26%' }}>
+                          {effectiveLadder.kind === 'yield'
+                            ? t('plan_col_yield')
+                            : effectiveLadder.kind === 'index'
+                              ? t('plan_col_index')
+                              : t('plan_col_ref')}
+                        </th>
+                        <th scope="col" style={{ width: '24%' }}>
+                          {effectiveLadder.kind === 'yield' || effectiveLadder.kind === 'index'
+                            ? t('plan_col_pos_pct')
+                            : t('plan_col_price')}
+                        </th>
+                        <th scope="col" style={{ width: '24%' }}>
+                          {effectiveLadder.kind === 'price' ? t('plan_col_pos_pct') : t('plan_col_target_amt')}
+                        </th>
+                        <th scope="col" style={{ width: '26%' }}>
+                          {effectiveLadder.kind === 'price' ? t('plan_col_target_amt') : t('plan_col_status')}
+                        </th>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody>
+                    {isEditingLadder ? (
+                      inlineLadderRows.map((draftRow, rIdx) => {
+                        const pctNum = Number(draftRow.positionPercent);
+                        const previewAmt = Number.isFinite(pctNum) && pctNum >= 0
+                          ? item.targetValue * (pctNum / 100)
+                          : undefined;
+                        if (effectiveLadder.kind === 'price') {
+                          return (
+                            <tr key={draftRow.id}>
+                              <th scope="row">
+                                <input
+                                  aria-label={`${item.name} ${rIdx + 1} ${t('plan_col_ref')}`}
+                                  className="plan-inline-input"
+                                  placeholder="<2350"
+                                  value={draftRow.label}
+                                  onChange={e => setInlineLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, label: e.target.value } : r))}
+                                />
+                              </th>
+                              <td>
+                                <input
+                                  aria-label={`${item.name} ${rIdx + 1} ${t('plan_col_price')}`}
+                                  className="plan-inline-input mono"
+                                  type="number"
+                                  inputMode="decimal"
+                                  step="any"
+                                  min="0"
+                                  value={draftRow.triggerValue}
+                                  onChange={e => setInlineLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, triggerValue: e.target.value } : r))}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  aria-label={`${item.name} ${rIdx + 1} ${t('plan_col_pos_pct')}`}
+                                  className="plan-inline-input mono"
+                                  type="number"
+                                  inputMode="decimal"
+                                  step="any"
+                                  min="0"
+                                  max="100"
+                                  value={draftRow.positionPercent}
+                                  onChange={e => setInlineLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, positionPercent: e.target.value } : r))}
+                                />
+                              </td>
+                              <td className="plan-inline-preview">{previewAmt !== undefined ? masked(fmt(previewAmt)) : '—'}</td>
+                              <td className="plan-inline-del-cell">
+                                <button
+                                  type="button"
+                                  className="plan-inline-del-btn"
+                                  aria-label={t('plan_grid_delete_row')}
+                                  disabled={inlineLadderRows.length <= 1 || inlineLadderSaving}
+                                  onClick={() => setInlineLadderRows(prev => prev.filter((_, i) => i !== rIdx))}
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return (
+                          <tr key={draftRow.id}>
+                            <th scope="row">
+                              <input
+                                aria-label={`${item.name} ${rIdx + 1} ${t(effectiveLadder.kind === 'yield' ? 'plan_col_yield' : 'plan_col_index')}`}
+                                className="plan-inline-input mono"
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                value={draftRow.triggerValue}
+                                onChange={e => setInlineLadderRows(prev => prev.map((r, i) => i === rIdx ? {
+                                  ...r,
+                                  triggerValue: e.target.value,
+                                  label: syncEditableLadderLabel(effectiveLadder.kind, r.triggerValue, e.target.value, r.label),
+                                } : r))}
+                              />
+                            </th>
+                            <td>
+                              <input
+                                aria-label={`${item.name} ${rIdx + 1} ${t('plan_col_pos_pct')}`}
+                                className="plan-inline-input mono"
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                max="100"
+                                value={draftRow.positionPercent}
+                                onChange={e => setInlineLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, positionPercent: e.target.value } : r))}
+                              />
+                            </td>
+                            <td className="plan-inline-preview">{previewAmt !== undefined ? masked(fmt(previewAmt)) : '—'}</td>
+                            <td className="plan-inline-del-cell">
+                              <button
+                                type="button"
+                                className="plan-inline-del-btn"
+                                aria-label={t('plan_grid_delete_row')}
+                                disabled={inlineLadderRows.length <= 1 || inlineLadderSaving}
+                                onClick={() => setInlineLadderRows(prev => prev.filter((_, i) => i !== rIdx))}
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      displayRows.map((row, rIdx) => {
+                        const isCurrent = dyn.resolvedLadder?.activeIndex === rIdx;
+                        const isNextBuy = dyn.resolvedLadder?.nextBuyRow?.id === row.id;
+                        const isNextSell = dyn.resolvedLadder?.nextSellRow?.id === row.id;
+                        const rowAmt = item.targetValue * (row.positionPercent / 100);
+                        const firstLabel = row.label || (
+                          effectiveLadder.kind === 'yield'
+                            ? `${row.triggerValue.toFixed(1)}%`
+                            : fmtQuote(row.triggerValue, effectiveLadder.kind)
+                        );
+                        const statusLabel = isCurrent
+                          ? t('plan_row_current')
+                          : isNextBuy
+                            ? t('plan_row_next_buy')
+                            : isNextSell
+                              ? t('plan_row_next_sell')
+                              : t('plan_row_waiting');
+
+                        if (effectiveLadder.kind === 'price') {
+                          return (
+                            <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
+                              <th scope="row">{isCurrent ? '● ' : ''}{firstLabel}</th>
+                              <td>{fmtQuote(row.triggerValue, 'price')}</td>
+                              <td>{fmtPct(row.positionPercent)}%</td>
+                              <td>{masked(fmt(rowAmt))}</td>
+                            </tr>
+                          );
+                        }
+
+                        return (
+                          <tr key={row.id} className={isCurrent ? 'row-active' : undefined}>
+                            <th scope="row">{isCurrent ? '● ' : ''}{firstLabel}</th>
+                            <td>{fmtPct(row.positionPercent)}%</td>
+                            <td>{masked(fmt(rowAmt))}</td>
+                            <td>{statusLabel}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {isEditingLadder && (
+                <>
+                  {inlineLadderError && <p className="plan-error-text" role="alert" style={{ marginTop: 4 }}>{inlineLadderError}</p>}
+                  <div className="plan-inline-grid-actions">
+                    <div className="plan-inline-grid-left">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        disabled={inlineLadderSaving || inlineLadderRows.length >= 200}
+                        onClick={() => setInlineLadderRows(prev => [
+                          ...prev,
+                          { id: `row-${Date.now()}-${prev.length}`, label: '', triggerValue: '', positionPercent: '' },
+                        ])}
+                      >
+                        {t('plan_add_ladder_row')}
+                      </button>
+                    </div>
+                    <div className="plan-inline-grid-right">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        disabled={inlineLadderSaving}
+                        onClick={cancelInlineLadderEdit}
+                      >
+                        {t('cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={inlineLadderSaving}
+                        onClick={() => void saveInlineLadderEdit(item, effectiveLadder)}
+                      >
+                        {inlineLadderSaving ? t('plan_saving') : t('plan_grid_save')}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </details>
+          );
+        })()}
       </article>
     );
   };
@@ -2131,7 +2742,11 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
                         step="any"
                         placeholder="5.00"
                         value={row.triggerValue}
-                        onChange={e => setFormLadderRows(prev => prev.map((r, i) => i === rIdx ? { ...r, triggerValue: e.target.value } : r))}
+                        onChange={e => setFormLadderRows(prev => prev.map((r, i) => i === rIdx ? {
+                          ...r,
+                          triggerValue: e.target.value,
+                          label: syncEditableLadderLabel(formMode === 'dividend' ? 'yield' : formLadderKind, r.triggerValue, e.target.value, r.label),
+                        } : r))}
                       />
                       <input
                         className="form-input mono"

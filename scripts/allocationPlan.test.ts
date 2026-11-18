@@ -6,6 +6,7 @@ import {
   computePlanDynamicMetrics,
   getTargetRefKeys,
   majorToMinor,
+  parseEditableLadderRows,
   parsePlannedPurchases,
   planPercentFromInput,
   planProgress,
@@ -14,6 +15,7 @@ import {
   resolveResourceClaims,
   sumLinkedProductValues,
   sumTargetPercents,
+  syncEditableLadderLabel,
   targetAmountFromPercent,
   targetPercentFromAmount,
 } from '../src/lib/allocationPlan.ts';
@@ -225,4 +227,31 @@ test('computePlanDynamicMetrics calculates dynamic targets and reserve requireme
   assert.equal(stockMetrics.dynamicTargetValue, 75_000);
   assert.equal(stockMetrics.reserveNeededValue, 75_000);
   assert.equal(stockMetrics.dynamicGapValue, -3_000);
+});
+
+test('parseEditableLadderRows and syncEditableLadderLabel keep inline grid edits valid and labels in sync', () => {
+  assert.equal(syncEditableLadderLabel('yield', '8', '7.2', '8.0%'), '7.2%');
+  assert.equal(syncEditableLadderLabel('yield', '8', '7.2', '低估档'), '低估档');
+  assert.equal(syncEditableLadderLabel('index', '2200', '2350', '2200'), '2350');
+  assert.equal(syncEditableLadderLabel('price', '5.00', '4.80', '<2350'), '<2350');
+
+  const okPrice = parseEditableLadderRows([
+    { id: 'r1', label: '<2350', triggerValue: '5.00', positionPercent: '25' },
+    { id: 'r2', label: '<2600', triggerValue: '5.50', positionPercent: '15' },
+  ], 'price');
+  assert.equal(okPrice.ok, true);
+  if (okPrice.ok) {
+    assert.deepEqual(okPrice.rows.map(r => r.triggerValue), [5, 5.5]);
+    assert.deepEqual(okPrice.rows.map(r => r.label), ['<2350', '<2600']);
+  }
+
+  const badRow = parseEditableLadderRows([
+    { id: 'r1', label: '', triggerValue: '-1', positionPercent: '25' },
+  ], 'price');
+  assert.deepEqual(badRow, { ok: false, error: 'invalid_row' });
+
+  const overPct = parseEditableLadderRows([
+    { id: 'r1', label: '', triggerValue: '5.0', positionPercent: '101' },
+  ], 'yield');
+  assert.deepEqual(overPct, { ok: false, error: 'invalid_row' });
 });

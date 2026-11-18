@@ -7,6 +7,7 @@ import { loadDividendPricingMethod } from './dividendAdvisorActionsService';
 
 /** One dividend stock with its classic four-buy/four-sell grid and today's trigger facts. */
 export interface DividendStockBoardRow {
+  stock: DividendStock;
   plan: ClassicStockPlan;
   facts: ReturnType<typeof getClassicAdviceFacts>;
 }
@@ -48,7 +49,7 @@ export async function loadDividendPlanBoard(): Promise<DividendPlanBoard> {
       buyYieldBps: pricingMethod?.buyYieldBps,
       sellYieldBps: pricingMethod?.sellYieldBps,
     });
-    return { plan, facts: getClassicAdviceFacts(plan, asOf) };
+    return { stock, plan, facts: getClassicAdviceFacts(plan, asOf) };
   });
   return { stocks, taxBps, asOf, budgetMinor: workbench.budgetMinor, budgetConfigured: workbench.budgetConfigured };
 }

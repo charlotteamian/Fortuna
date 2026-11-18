@@ -163,14 +163,16 @@
 .div-quote-status p { margin: var(--sp-1) 0; }
 .div-quote-status small { display: block; font-size: var(--fs-xs); color: var(--text-secondary); overflow-wrap: anywhere; line-height: var(--lh-base); margin-top: 3px; }
 .div-active-strategy { color: var(--text-secondary); font-size: var(--fs-xs); }
-.dividend-page .div-home-advisor { gap: var(--sp-1) var(--sp-3); margin: var(--sp-3) 0; padding: var(--sp-2) var(--sp-3); }
-.div-home-advisor .div-advisor-heading { gap: var(--sp-2); }
-.div-home-advisor .div-advisor-heading h2 { font-size: var(--fs-lg); }
-.div-home-advisor .div-advisor-heading { flex-shrink: 0; }
-.div-home-advisor .div-advisor-heading h2 { white-space: nowrap; }
+.dividend-page .div-home-advisor { gap: var(--sp-2) var(--sp-3); margin: var(--sp-3) 0; padding: var(--sp-2) var(--sp-3); }
+.div-home-advisor .div-advisor-heading { gap: var(--sp-2); min-width: 0; }
+.div-home-advisor .div-advisor-heading h2 { font-size: var(--fs-lg); white-space: nowrap; }
 .div-home-advisor .div-advisor-badge { flex-basis: 26px; width: 26px; height: 26px; border-radius: var(--radius-sm); font-size: var(--fs-2xs); }
 .div-home-advisor .div-advisor-entry-actions { flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 3px var(--sp-2); }
 .div-home-advisor .div-advisor-entry-actions > button { display: inline-flex; align-items: center; justify-content: space-between; gap: var(--sp-1); min-height: var(--btn-h-sm); padding: var(--sp-1) 3px; font-size: var(--fs-sm); }
+@media (max-width: 420px) {
+  .dividend-page .div-home-advisor { grid-template-columns: minmax(0, 1fr); }
+  .div-home-advisor .div-advisor-entry-actions { justify-content: flex-start; }
+}
 .div-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-2); }
 .div-section-heading h2 { margin: 0; font-size: var(--fs-2xl); }
 .div-fund-home-summary { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin-bottom: var(--sp-3); color: var(--text-secondary); font-size: var(--fs-sm); line-height: var(--lh-relaxed); }
@@ -364,6 +366,12 @@ table.div-grid-table th:last-child, table.div-grid-table td:last-child { padding
 .div-wb-tier-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-lg); }
 .div-wb-tier-price { font-variant-numeric: tabular-nums; }
 .div-wb-tier-meta { display: flex; flex-wrap: wrap; gap: 3px var(--sp-3); margin-top: var(--sp-1); font-size: var(--fs-sm); color: var(--text-secondary); }
+.div-wb-grid-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.div-wb-grid-rows .btn-sm, .div-wb-grid-toolbar .btn-sm { min-height: var(--btn-h-xs); padding: 0 var(--sp-2); font-size: var(--fs-xs); }
+.div-wb-tier-edit-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.div-wb-tier-edit-fields label { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: var(--fs-xs); color: var(--text-secondary); }
+.div-wb-tier-edit-fields input { padding: 6px 8px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.div-wb-grid-edit-actions { margin-bottom: var(--sp-3); }
 .div-wb-grid-preview { margin-top: var(--sp-3); }
 .div-wb-detail-actions, .div-wb-advice-tools { margin-top: var(--sp-3); }
 .div-wb-advice-tools { display: grid; justify-items: start; gap: var(--sp-2); }

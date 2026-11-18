@@ -126,6 +126,13 @@ function sellPriceForYield(dpsMicros: number, yieldBps: number): number {
   return Math.max(1, Number((BigInt(Math.max(1, Math.round(dpsMicros))) + BigInt(yieldBps) - 1n) / BigInt(yieldBps)));
 }
 
+/** Calculates a buy (floor) or sell (ceil) tier price in minor units from net DPS and target yield bps. */
+export function classicTierPriceForYield(side: 'buy' | 'sell', netDpsMicros: number, yieldBps: number): number {
+  return side === 'buy'
+    ? buyPriceForYield(netDpsMicros, yieldBps)
+    : sellPriceForYield(netDpsMicros, yieldBps);
+}
+
 function periodShortLabel(reportDate: string): string {
   const year = reportDate.slice(0, 4);
   if (reportDate.endsWith('-12-31')) return `${year}年报`;

@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  computeFundGridAnchor,
+  computeFundTierPrice,
   csindexIndicatorUrl,
   defaultIndexCodeForFund,
+  detectFundAnchorUpdate,
   isCsindexIndicatorSupported,
+  mergeFundNavHistory,
   parseCsindexDividendYield,
   parseFundBasicIndexInfo,
   parseFundCashPayouts,
+  parseFundNavHistory,
   resolveFundYieldSnapshot,
 } from '../src/lib/dividendFundYield.ts';
 
@@ -191,4 +196,143 @@ test('resolveFundYieldSnapshot prioritizes scraped CSIndex yield over stale manu
   // Without cache and without manual reference on an unsupported index, yield stays undefined (never shared)
   const uncachedOther = resolveFundYieldSnapshot({ code: '159905', indexKind: 'other' });
   assert.equal(uncachedOther.indexYield, undefined);
+});
+
+test('parseFundNavHistory and mergeFundNavHistory parse, filter future dates, dedupe and sort newest first', () => {
+  const parsed = parseFundNavHistory(
+    {
+      Success: true,
+      Datas: [
+        { FSRQ: '2026-11-19', DWJZ: '1.2900' },
+        { FSRQ: '2026-11-18', DWJZ: '1.2750' },
+        { FSRQ: '2026-11-17', DWJZ: '1.2664' },
+        { FSRQ: '2026-11-17', DWJZ: '1.9999' },
+        { FSRQ: 'bad-date', DWJZ: '1.2500' },
+        { FSRQ: '2026-11-14', DWJZ: '-1' },
+      ],
+    },
+    '2026-11-18',
+  );
+  assert.deepEqual(parsed, [
+    { date: '2026-11-18', navMicros: 1_275_000 },
+    { date: '2026-11-17', navMicros: 1_266_400 },
+  ]);
+
+  const merged = mergeFundNavHistory(
+    parsed,
+    [
+      { date: '2026-11-17', navMicros: 1_200_000 },
+      { date: '2026-11-14', navMicros: 1_255_000 },
+      { date: '2026-11-13', navMicros: 1_240_000 },
+    ],
+    3,
+  );
+  assert.deepEqual(merged, [
+    { date: '2026-11-18', navMicros: 1_275_000 },
+    { date: '2026-11-17', navMicros: 1_266_400 },
+    { date: '2026-11-14', navMicros: 1_255_000 },
+  ]);
+});
+
+test('Option A1 keeps tier reference prices fixed across intraday live price moves when anchored to same-day NAV', () => {
+  const fundCache = {
+    key: 'fund:512890',
+    fundCode: '512890',
+    indexCode: 'H30269',
+    indexName: '中证红利低波动指数',
+    navMicros: 1_266_400,
+    navDate: '2026-11-17',
+    navHistory: [
+      { date: '2026-11-18', navMicros: 1_280_000 },
+      { date: '2026-11-17', navMicros: 1_266_400 },
+    ],
+    indexYield: {
+      indexCode: 'H30269',
+      indexNameZh: '红利低波',
+      yieldBps: 449,
+      asOf: '2026-11-17',
+      sourceUrl: csindexIndicatorUrl('H30269'),
+    },
+    fetchedAt: 1000,
+  };
+
+  const snapNormal = resolveFundYieldSnapshot(
+    { code: '512890', indexKind: 'low_volatility', quote: { priceMicros: 1_266_000, date: '2026-11-18 10:30', fetchedAt: 2000 } },
+    fundCache,
+  );
+  const snapDip = resolveFundYieldSnapshot(
+    { code: '512890', indexKind: 'low_volatility', quote: { priceMicros: 1_150_000, date: '2026-11-18 13:15', fetchedAt: 3000 } },
+    fundCache,
+  );
+  const snapRally = resolveFundYieldSnapshot(
+    { code: '512890', indexKind: 'low_volatility', quote: { priceMicros: 1_380_000, date: '2026-11-18 14:45', fetchedAt: 4000 } },
+    fundCache,
+  );
+
+  assert.equal(snapNormal.anchorDateMatched, true);
+  assert.equal(snapNormal.anchorDate, '2026-11-17');
+  assert.equal(snapNormal.anchorPriceMicros, 1_266_400);
+  assert.equal(snapNormal.impliedAnnualDpsMicros, 56_861);
+
+  for (const snap of [snapNormal, snapDip, snapRally]) {
+    assert.equal(snap.impliedAnnualDpsMicros, 56_861);
+    assert.equal(Number(computeFundTierPrice(snap, 5.0)?.toFixed(4)), 1.1372);
+    assert.equal(Number(computeFundTierPrice(snap, 4.5)?.toFixed(4)), 1.2636);
+    assert.equal(Number(computeFundTierPrice(snap, 4.0)?.toFixed(4)), 1.4215);
+  }
+
+  assert.equal(snapNormal.liveEstimatedYieldBps, 449);
+  assert.equal(snapDip.liveEstimatedYieldBps, 494);
+  assert.equal(snapRally.liveEstimatedYieldBps, 412);
+
+  // Unaligned NAV date falls back gracefully and reports anchorDateMatched = false
+  const unaligned = resolveFundYieldSnapshot(
+    { code: '512890', indexKind: 'low_volatility', quote: { priceMicros: 1_260_000, date: '2026-11-18 10:30', fetchedAt: 2000 } },
+    { ...fundCache, navDate: '2026-11-18', navMicros: 1_280_000, navHistory: [{ date: '2026-11-18', navMicros: 1_280_000 }] },
+  );
+  assert.equal(unaligned.anchorDateMatched, false);
+  assert.equal(unaligned.anchorPriceMicros, 1_280_000);
+});
+
+test('computeFundGridAnchor and detectFundAnchorUpdate emit notice only on official anchor changes', () => {
+  const anchor1 = computeFundGridAnchor('2026-11-17', 449, 1_266_400);
+  assert.equal(anchor1.impliedAnnualDpsMicros, 56_861);
+
+  // Initial creation should not produce an update banner
+  const initialNotice = detectFundAnchorUpdate(undefined, anchor1, undefined, '512890', 1000);
+  assert.equal(initialNotice, undefined);
+
+  // Unchanged anchor keeps existing dismissed notice intact
+  const dismissedNotice = {
+    fundCode: '512890',
+    previousAsOf: '2026-11-14',
+    previousYieldBps: 452,
+    previousAnchorPriceMicros: 1_255_000,
+    previousDpsMicros: 56_726,
+    currentAsOf: '2026-11-17',
+    currentYieldBps: 449,
+    currentAnchorPriceMicros: 1_266_400,
+    currentDpsMicros: 56_861,
+    updatedAt: 1500,
+    dismissed: true,
+  };
+  const sameRefresh = detectFundAnchorUpdate(anchor1, computeFundGridAnchor('2026-11-17', 449, 1_266_400), dismissedNotice, '512890', 2000);
+  assert.deepEqual(sameRefresh, dismissedNotice);
+
+  // Next day CSIndex + same-day NAV update produces a fresh undismissed notice
+  const anchor2 = computeFundGridAnchor('2026-11-18', 442, 1_280_000);
+  const nextNotice = detectFundAnchorUpdate(anchor1, anchor2, dismissedNotice, '512890', 3000);
+  assert.deepEqual(nextNotice, {
+    fundCode: '512890',
+    previousAsOf: '2026-11-17',
+    previousYieldBps: 449,
+    previousAnchorPriceMicros: 1_266_400,
+    previousDpsMicros: 56_861,
+    currentAsOf: '2026-11-18',
+    currentYieldBps: 442,
+    currentAnchorPriceMicros: 1_280_000,
+    currentDpsMicros: 56_576,
+    updatedAt: 3000,
+    dismissed: false,
+  });
 });

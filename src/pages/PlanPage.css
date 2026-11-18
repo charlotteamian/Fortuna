@@ -1006,9 +1006,8 @@
 .plan-stock-detail > summary {
   list-style: none;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 10px;
   cursor: pointer;
   user-select: none;
@@ -1016,8 +1015,15 @@
 
 .plan-stock-detail > summary::-webkit-details-marker { display: none; }
 
-.plan-stock-detail > summary::after {
-  content: "▾";
+.plan-stock-summary-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.plan-stock-chevron {
   flex-shrink: 0;
   font-size: 10px;
   line-height: 1;
@@ -1025,37 +1031,39 @@
   transition: transform var(--dur) ease;
 }
 
-.plan-stock-detail[open] > summary::after { transform: rotate(180deg); }
+.plan-stock-detail[open] .plan-stock-chevron { transform: rotate(180deg); }
 
 .plan-stock-detail + .plan-stock-detail > summary {
   border-top: 1px dashed var(--border-subtle);
 }
 
-.plan-stock-summary-left {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .plan-stock-summary-name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .plan-stock-summary-name small {
   font-weight: var(--fw-medium);
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .plan-stock-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 6px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  line-height: 1.35;
+  line-height: 1.4;
+}
+
+.plan-meta-token {
+  white-space: nowrap;
 }
 
 .plan-stock-summary-right {
@@ -1065,8 +1073,141 @@
   flex-shrink: 0;
 }
 
+.plan-stock-detail-body {
+  padding: 0 10px 8px;
+}
+
+.plan-stock-grid-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.plan-inline-edit-trigger {
+  min-height: auto;
+  padding: 1px 4px;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
 .plan-stock-detail .plan-ladder-wrapper {
-  margin: 0 10px 8px;
+  margin: 0;
+}
+
+.plan-pill-btn {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.plan-ladder-table-edit th,
+.plan-ladder-table-edit td {
+  padding: 3px 2px;
+  overflow: visible;
+}
+
+.plan-ladder-table-edit th:first-child,
+.plan-ladder-table-edit td:first-child {
+  padding-left: 4px;
+}
+
+.plan-ladder-table-edit th:last-child,
+.plan-ladder-table-edit td:last-child {
+  padding-right: 4px;
+}
+
+.plan-inline-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 3px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-ladder-table-edit tbody th .plan-inline-input {
+  text-align: left;
+}
+
+.plan-inline-input:focus {
+  outline: none;
+  border-color: var(--asset-color);
+}
+
+.plan-inline-preview {
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+}
+
+.plan-inline-del-cell {
+  text-align: center !important;
+}
+
+.plan-inline-del-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-glass);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+
+.plan-inline-del-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.plan-inline-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.plan-inline-warn {
+  color: var(--danger);
+  font-weight: var(--fw-semibold);
+}
+
+.plan-inline-mini-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--asset-color);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.plan-inline-grid-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.plan-inline-grid-left,
+.plan-inline-grid-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .plan-ladder-table tr.plan-ladder-section th {
@@ -1091,8 +1232,42 @@
   margin-bottom: 6px;
   font-size: var(--fs-2xs);
   color: var(--text-secondary);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-fund-live-meta {
+  margin-top: 2px;
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+
+.plan-fund-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-dim);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+  font-size: var(--fs-2xs);
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
+}
+
+.plan-fund-notice-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--warning-border);
+  background: var(--bg-card);
+  color: var(--warning);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
 }
 
 .plan-subcard-name {

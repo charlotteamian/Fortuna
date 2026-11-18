@@ -26,6 +26,32 @@ export interface DividendFundPayoutSummary {
   asOf: string;
 }
 
+export interface DividendFundNavPoint {
+  date: string;
+  navMicros: number;
+}
+
+export interface DividendFundGridAnchor {
+  asOf: string;
+  yieldBps: number;
+  anchorPriceMicros: number;
+  impliedAnnualDpsMicros: number;
+}
+
+export interface DividendFundGridUpdateNotice {
+  fundCode?: string;
+  previousAsOf: string;
+  previousYieldBps: number;
+  previousAnchorPriceMicros: number;
+  previousDpsMicros: number;
+  currentAsOf: string;
+  currentYieldBps: number;
+  currentAnchorPriceMicros: number;
+  currentDpsMicros: number;
+  updatedAt: number;
+  dismissed?: boolean;
+}
+
 export interface DividendFundMarketCacheEntry {
   key: string;
   fundCode?: string;
@@ -33,8 +59,11 @@ export interface DividendFundMarketCacheEntry {
   indexName?: string;
   navMicros?: number;
   navDate?: string;
+  navHistory?: DividendFundNavPoint[];
   indexYield?: DividendFundIndexYield;
   payout?: DividendFundPayoutSummary;
+  anchorSnapshot?: DividendFundGridAnchor;
+  updateNotice?: DividendFundGridUpdateNotice;
   fetchedAt: number;
 }
 
@@ -52,8 +81,14 @@ export interface ResolvedFundYieldSnapshot {
   indexName?: string;
   priceMicros?: number;
   indexYield?: DividendFundIndexYield & { sourceKind: 'csindex' | 'manual' };
+  anchorPriceMicros?: number;
+  anchorDate?: string;
+  anchorDateMatched: boolean;
+  impliedAnnualDpsMicros?: number;
+  liveEstimatedYieldBps?: number;
   payout?: DividendFundPayoutSummary;
   payoutYieldBps?: number;
+  updateNotice?: DividendFundGridUpdateNotice;
 }
 
 const KNOWN_FUND_INDEX_MAP: Record<string, { indexCode: string; indexNameZh: string }> = {
@@ -187,6 +222,101 @@ export function parseFundBasicIndexInfo(raw: unknown, code: string, asOf: string
   };
 }
 
+/** Parses Eastmoney `FundMNHisNetList` response into date-sorted unit NAV points. */
+export function parseFundNavHistory(raw: unknown, asOf: string): DividendFundNavPoint[] {
+  const payload = raw as {
+    Success?: boolean;
+    Datas?: { FSRQ?: string; DWJZ?: string | number }[] | null;
+  };
+  if (!payload?.Success || !Array.isArray(payload.Datas)) {
+    throw new Error('FUND_NAV_HISTORY_INVALID');
+  }
+  const byDate = new Map<string, number>();
+  for (const row of payload.Datas) {
+    const date = validCalendarDate(row?.FSRQ);
+    const rawNav = Number(row?.DWJZ);
+    if (!date || date > asOf || !Number.isFinite(rawNav) || rawNav <= 0 || rawNav > 1e6) continue;
+    if (!byDate.has(date)) byDate.set(date, Math.round(rawNav * 1_000_000));
+  }
+  return [...byDate.entries()]
+    .map(([date, navMicros]) => ({ date, navMicros }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Merges multiple NAV history lists while keeping newest points up to maxCount. */
+export function mergeFundNavHistory(
+  primary: readonly DividendFundNavPoint[],
+  secondary: readonly DividendFundNavPoint[] = [],
+  maxCount = 20,
+): DividendFundNavPoint[] {
+  const byDate = new Map<string, number>();
+  for (const point of [...primary, ...secondary]) {
+    if (point.date && Number.isSafeInteger(point.navMicros) && point.navMicros > 0 && !byDate.has(point.date)) {
+      byDate.set(point.date, point.navMicros);
+    }
+  }
+  return [...byDate.entries()]
+    .map(([date, navMicros]) => ({ date, navMicros }))
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, maxCount);
+}
+
+/** Computes a fixed equivalent annual DPS anchor from same-day price/NAV and index yield. */
+export function computeFundGridAnchor(
+  asOf: string,
+  yieldBps: number,
+  anchorPriceMicros: number,
+): DividendFundGridAnchor {
+  return {
+    asOf,
+    yieldBps,
+    anchorPriceMicros,
+    impliedAnnualDpsMicros: Math.max(1, Math.round((anchorPriceMicros * yieldBps) / 10000)),
+  };
+}
+
+/** Converts a yield tier (%) into a fixed fund reference price using the anchored DPS. */
+export function computeFundTierPrice(
+  snapshot: Pick<ResolvedFundYieldSnapshot, 'impliedAnnualDpsMicros'>,
+  tierYieldPct: number,
+): number | undefined {
+  if (!snapshot.impliedAnnualDpsMicros || snapshot.impliedAnnualDpsMicros <= 0 || !Number.isFinite(tierYieldPct) || tierYieldPct <= 0) {
+    return undefined;
+  }
+  return (snapshot.impliedAnnualDpsMicros / 1_000_000) / (tierYieldPct / 100);
+}
+
+/**
+ * Compares a newly resolved anchor against the previously stored anchor and produces
+ * an undismissed update notice whenever the underlying index yield or reference NAV changes.
+ */
+export function detectFundAnchorUpdate(
+  previousAnchor: DividendFundGridAnchor | undefined,
+  nextAnchor: DividendFundGridAnchor | undefined,
+  previousNotice: DividendFundGridUpdateNotice | undefined,
+  fundCode: string | undefined,
+  now: number,
+): DividendFundGridUpdateNotice | undefined {
+  if (!nextAnchor || !previousAnchor) return previousNotice;
+  const changed = previousAnchor.asOf !== nextAnchor.asOf
+    || previousAnchor.yieldBps !== nextAnchor.yieldBps
+    || previousAnchor.anchorPriceMicros !== nextAnchor.anchorPriceMicros;
+  if (!changed) return previousNotice;
+  return {
+    ...(fundCode ? { fundCode } : {}),
+    previousAsOf: previousAnchor.asOf,
+    previousYieldBps: previousAnchor.yieldBps,
+    previousAnchorPriceMicros: previousAnchor.anchorPriceMicros,
+    previousDpsMicros: previousAnchor.impliedAnnualDpsMicros,
+    currentAsOf: nextAnchor.asOf,
+    currentYieldBps: nextAnchor.yieldBps,
+    currentAnchorPriceMicros: nextAnchor.anchorPriceMicros,
+    currentDpsMicros: nextAnchor.impliedAnnualDpsMicros,
+    updatedAt: now,
+    dismissed: false,
+  };
+}
+
 /** Parses Eastmoney `FundMNBonusDetail` response into split-adjusted cash dividend summary. */
 export function parseFundCashPayouts(raw: unknown, asOf: string): DividendFundPayoutSummary {
   const payload = raw as {
@@ -250,7 +380,8 @@ export function parseFundCashPayouts(raw: unknown, asOf: string): DividendFundPa
 }
 
 /**
- * Resolves live/cached tracked index yield and fund cash payout status for a single fund.
+ * Resolves live/cached tracked index yield, date-aligned equivalent annual DPS anchor,
+ * real-time estimated yield, and fund cash payout status for a single fund.
  * Never falls back to a plan-wide shared yield (`fundPlan.indexYieldBps`).
  */
 export function resolveFundYieldSnapshot(
@@ -284,6 +415,40 @@ export function resolveFundYieldSnapshot(
         }
       : undefined;
 
+  let anchorPriceMicros: number | undefined;
+  let anchorDateMatched = false;
+  const anchorDate = indexYield?.asOf;
+  if (indexYield && anchorDate) {
+    if (indexYield.sourceKind === 'csindex') {
+      const historyMatch = fundCache?.navHistory?.find(point => point.date === anchorDate)?.navMicros;
+      const latestNavMatch = fundCache?.navDate === anchorDate ? fundCache.navMicros : undefined;
+      const quoteDateMatch = fund.quote?.date?.slice(0, 10) === anchorDate && fund.quote.priceMicros > 0
+        ? fund.quote.priceMicros
+        : undefined;
+      const refDateMatch = fund.reference?.asOf === anchorDate && fund.reference.priceMicros
+        ? fund.reference.priceMicros
+        : undefined;
+      const exactMatch = historyMatch ?? latestNavMatch ?? quoteDateMatch ?? refDateMatch;
+      if (exactMatch !== undefined && exactMatch > 0) {
+        anchorPriceMicros = exactMatch;
+        anchorDateMatched = true;
+      } else {
+        anchorPriceMicros = fundCache?.navMicros ?? priceMicros;
+      }
+    } else {
+      anchorPriceMicros = fund.reference?.priceMicros ?? priceMicros;
+      anchorDateMatched = Boolean(fund.reference?.priceMicros);
+    }
+  }
+
+  const impliedAnnualDpsMicros = indexYield && anchorPriceMicros && anchorPriceMicros > 0
+    ? Math.max(1, Math.round((anchorPriceMicros * indexYield.yieldBps) / 10000))
+    : undefined;
+
+  const liveEstimatedYieldBps = impliedAnnualDpsMicros && priceMicros && priceMicros > 0
+    ? Math.max(1, Math.round((impliedAnnualDpsMicros * 10000) / priceMicros))
+    : indexYield?.yieldBps;
+
   const payout = fundCache?.payout;
   const payoutYieldBps = payout?.status === 'paid' && payout.trailing12mMicros > 0 && priceMicros && priceMicros > 0
     ? Math.round((payout.trailing12mMicros * 10000) / priceMicros)
@@ -294,7 +459,13 @@ export function resolveFundYieldSnapshot(
     ...(indexName ? { indexName } : {}),
     ...(priceMicros !== undefined ? { priceMicros } : {}),
     ...(indexYield ? { indexYield } : {}),
+    ...(anchorPriceMicros !== undefined ? { anchorPriceMicros } : {}),
+    ...(anchorDate ? { anchorDate } : {}),
+    anchorDateMatched,
+    ...(impliedAnnualDpsMicros !== undefined ? { impliedAnnualDpsMicros } : {}),
+    ...(liveEstimatedYieldBps !== undefined ? { liveEstimatedYieldBps } : {}),
     ...(payout ? { payout } : {}),
     ...(payoutYieldBps !== undefined ? { payoutYieldBps } : {}),
+    ...(fundCache?.updateNotice ? { updateNotice: fundCache.updateNotice } : {}),
   };
 }

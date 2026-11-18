@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildClassicStockPlan, type ClassicVerifiedBasis } from '../src/lib/dividendClassicStrategy.ts';
-import { buildDividendStockTableModel } from '../src/lib/dividendPlanTable.ts';
+import {
+  buildDividendStockTableModel,
+  createEditableStockGridDraft,
+  parseEditableStockGridDraft,
+  updateEditableStockGridYield,
+} from '../src/lib/dividendPlanTable.ts';
 
 function basis(dpsMicros = 2_000_000): ClassicVerifiedBasis {
   return {
@@ -81,4 +86,85 @@ test('buildDividendStockTableModel computes sell amounts from held shares and hi
   );
   assert.ok(model.sellRows.every(r => r.active === true));
   assert.ok(model.buyRows.every(r => r.active === false));
+});
+
+test('buildDividendStockTableModel marks sub-lot sell tiers as belowLot instead of 0.00', () => {
+  const held200Plan = buildClassicStockPlan({
+    code: '000001',
+    name: '平安银行',
+    group: 'core',
+    weightBps: 3000,
+    lotSize: 100,
+    shareMode: 'manual',
+    manualShares: 200,
+    quote: { priceMinor: 1215, date: '2026-11-18 15:00' },
+  }, {
+    totalBudgetMinor: 10_000_000,
+    shares: 200,
+    taxBps: 1000,
+    asOf: '2026-11-18',
+    basis: basis(),
+  });
+
+  const model = buildDividendStockTableModel(held200Plan, 'waiting');
+  assert.equal(model.hasHolding, true);
+  assert.equal(model.sellRows[0].belowLot, true);
+  assert.equal(model.sellRows[0].amountMajor, undefined);
+  assert.equal(model.sellRows[1].belowLot, false);
+  assert.equal(model.sellRows[1].sellShares, 100);
+  assert.equal(model.sellRows[1].amountMajor, 4000);
+});
+
+test('inline stock grid draft updates price from yield when not manually overridden and validates sums', () => {
+  const plan = buildClassicStockPlan({
+    code: '600036',
+    name: '招商银行',
+    group: 'core',
+    weightBps: 2500,
+    lotSize: 100,
+    shareMode: 'manual',
+    manualShares: 0,
+  }, {
+    totalBudgetMinor: 10_000_000,
+    shares: 0,
+    taxBps: 1000,
+    asOf: '2026-11-18',
+    basis: basis(), // net DPS = 1.80
+  });
+
+  const draft = createEditableStockGridDraft(plan);
+  assert.equal(draft.buy[0].yieldText, '5.5');
+  assert.equal(draft.buy[0].priceText, '32.72');
+
+  // Auto-recomputes price when yield changes and price was still at the formula value
+  const updatedBuy0 = updateEditableStockGridYield(draft.buy[0], 'buy', '6', plan.base.netDpsMicros);
+  assert.equal(updatedBuy0.priceText, '30.00');
+
+  // Preserves manual custom price when yield changes
+  const manualRow = { ...draft.buy[1], priceText: '30.50' };
+  const updatedManual = updateEditableStockGridYield(manualRow, 'buy', '6', plan.base.netDpsMicros);
+  assert.equal(updatedManual.priceText, '30.50');
+
+  const parsed = parseEditableStockGridDraft({
+    buy: [updatedBuy0, updatedManual, draft.buy[2], draft.buy[3]],
+    sell: draft.sell,
+  }, plan.base.netDpsMicros);
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.equal(parsed.buyLevels[0].yieldBps, 600);
+    assert.equal(parsed.buyLevels[0].priceMinor, 3000);
+    assert.equal(parsed.buyLevels[1].priceMinor, 3050);
+  }
+
+  const overSum = parseEditableStockGridDraft({
+    buy: draft.buy.map(r => ({ ...r, portionText: '30' })),
+    sell: draft.sell,
+  }, plan.base.netDpsMicros);
+  assert.deepEqual(overSum, { ok: false, errorKey: 'plan_grid_portion_over' });
+
+  const missingBasisNoPrice = parseEditableStockGridDraft({
+    buy: [{ key: 'b1', yieldText: '5.5', priceText: '', portionText: '100' }],
+    sell: [{ key: 's1', yieldText: '4.5', priceText: '40', portionText: '100' }],
+  });
+  assert.deepEqual(missingBasisNoPrice, { ok: false, errorKey: 'plan_grid_price_required' });
 });

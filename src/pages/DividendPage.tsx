@@ -554,8 +554,23 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
       {panel === 'stock' && selected && selectedStock && <WorkbenchDialog key={selectedCode}
         title={selected.plan.name} subtitle={`${selected.plan.code} · ${t(`div_group_${selected.plan.group}`)}`} onClose={closePanel}>
         {feedback}
-        <DividendClassicGrid plan={selected.plan} facts={selected.facts} amountVisible={amountVisible} busy={gridApplying}
-          onSaveGrid={() => void applyGrid(selected.plan.code)} />
+        <DividendClassicGrid
+          plan={selected.plan}
+          stock={selectedStock}
+          facts={selected.facts}
+          amountVisible={amountVisible}
+          busy={gridApplying}
+          onSaveGrid={() => void applyGrid(selected.plan.code)}
+          onEditGrid={async (buyLevels, sellLevels) => {
+            await saveDividendStock(
+              { ...selectedStock, buyLevels, sellLevels },
+              { expectedFingerprint: dividendStockEditFingerprint(selectedStock) },
+            );
+            await load();
+            setError('');
+            setMessage(t('div_saved'));
+          }}
+        />
         <div className="div-actions div-wb-detail-actions">
           <button type="button" className="btn btn-primary" onClick={() => { setIsNew(false); setEditor(selectedStock); }}>
             {t('div_new_edit_stock')}

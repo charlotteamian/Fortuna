@@ -584,3 +584,65 @@ export function computePlanDynamicMetrics(
   };
 }
 
+export interface EditableLadderRowInput {
+  id: string;
+  label: string;
+  triggerValue: string;
+  positionPercent: string;
+}
+
+function autoLadderLabel(kind: PlanLadderKind, triggerRaw: string): string | undefined {
+  const num = Number(triggerRaw.trim());
+  if (!triggerRaw.trim() || !Number.isFinite(num)) return undefined;
+  if (kind === 'yield') return `${num.toFixed(1)}%`;
+  if (kind === 'index') return String(Math.round(num * 10) / 10);
+  return undefined;
+}
+
+/** Keeps auto-generated yield/index labels aligned when the trigger value is edited directly. */
+export function syncEditableLadderLabel(
+  kind: PlanLadderKind,
+  prevTrigger: string,
+  nextTrigger: string,
+  currentLabel: string,
+): string {
+  if (kind === 'price') return currentLabel;
+  const trimmed = currentLabel.trim();
+  const prevAuto = autoLadderLabel(kind, prevTrigger);
+  const prevRawNum = prevTrigger.trim();
+  if (!trimmed || trimmed === prevAuto || trimmed === prevRawNum || trimmed === `${prevRawNum}%`) {
+    return autoLadderLabel(kind, nextTrigger) ?? '';
+  }
+  return currentLabel;
+}
+
+/** Parses and validates inline ladder rows without silently dropping invalid entries. */
+export function parseEditableLadderRows(
+  rows: readonly EditableLadderRowInput[],
+  kind: PlanLadderKind,
+): { ok: true; rows: PlanLadderRow[] } | { ok: false; error: 'empty' | 'invalid_row' } {
+  if (rows.length === 0) return { ok: false, error: 'empty' };
+  const parsed: PlanLadderRow[] = [];
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const tvRaw = row.triggerValue.trim();
+    const pctRaw = row.positionPercent.trim();
+    const tv = tvRaw ? Number(tvRaw) : NaN;
+    const pct = pctRaw ? Number(pctRaw) : NaN;
+    if (!Number.isFinite(tv) || tv < 0 || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return { ok: false, error: 'invalid_row' };
+    }
+    const labelTrimmed = row.label.trim();
+    const effectiveLabel = kind === 'price'
+      ? labelTrimmed
+      : labelTrimmed || autoLadderLabel(kind, tvRaw) || '';
+    parsed.push({
+      id: row.id || `row-${idx + 1}`,
+      ...(effectiveLabel ? { label: effectiveLabel } : {}),
+      triggerValue: tv,
+      positionPercent: pct,
+    });
+  }
+  return { ok: true, rows: parsed };
+}
+
