@@ -730,7 +730,7 @@
 
 .plan-ladder-table th,
 .plan-ladder-table td {
-  padding: 4px 5px;
+  padding: 4px 4px;
   text-align: right;
   border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
@@ -986,12 +986,18 @@
 
 .plan-trigger-summary {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
   padding: 6px 10px;
   font-size: var(--fs-2xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.plan-trigger-summary > span:last-child {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Dividend stock rows: tap to expand the saved grid inline */
@@ -1049,9 +1055,7 @@
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
 }
 
 .plan-stock-summary-right {
@@ -1080,6 +1084,15 @@
   font-size: var(--fs-2xs);
   color: var(--text-muted);
   line-height: 1.45;
+}
+
+.plan-fund-yield-meta {
+  margin-top: 3px;
+  margin-bottom: 6px;
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 
 .plan-subcard-name {

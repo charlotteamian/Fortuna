@@ -22,6 +22,7 @@ export default defineConfig({
       '/dividend-announcement-api': { target: 'https://np-anotice-stock.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-announcement-api/, '') },
       '/dividend-schedule-api': { target: 'https://emweb.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-schedule-api/, '') },
       '/dividend-index-api': { target: 'https://oss-ch.csindex.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-index-api/, '') },
+      '/fund-mob-api': { target: 'https://fundmobapi.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/fund-mob-api/, '') },
       '/dividend-search-api': { target: 'https://searchapi.eastmoney.com', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-search-api/, '') },
       '/dividend-cninfo-api': { target: 'https://www.cninfo.com.cn', changeOrigin: true, headers: { Referer: 'https://www.cninfo.com.cn/', Origin: 'https://www.cninfo.com.cn', 'X-Requested-With': 'XMLHttpRequest' }, rewrite: p => p.replace(/^\/dividend-cninfo-api/, '') },
       '/dividend-document-api': { target: 'https://static.cninfo.com.cn', changeOrigin: true, rewrite: p => p.replace(/^\/dividend-document-api/, '') },

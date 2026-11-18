@@ -9,8 +9,12 @@ import {
 } from '../services/planService';
 import { saveDividendBudget } from '../services/dividendService';
 import { saveDividendFundConfig } from '../services/dividendFundService';
+import { refreshDividendMarketQuotes } from '../services/dividendQuoteService';
+import { loadDividendFundYieldCache, refreshDividendFundMarketData, type DividendFundYieldCacheSnapshot } from '../services/dividendFundYieldService';
 import { loadDividendPlanBoard, type DividendPlanBoard, type DividendStockBoardRow } from '../services/dividendPlanBoardService';
 import { dividendFundAllocation, defaultDividendFundPlan, type DividendFund, type DividendFundPlan } from '../lib/dividendFundPlan';
+import { resolveFundYieldSnapshot } from '../lib/dividendFundYield';
+import { buildDividendStockTableModel } from '../lib/dividendPlanTable';
 import { isExchangeTradedFundCode } from '../lib/dividendQuote';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { DIVIDEND_ADVISOR_READER_HASH } from '../lib/dividendAdvisorNavigation';
@@ -66,9 +70,9 @@ export default function PlanPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [dividendSummary, setDividendSummary] = useState<{
     stockCount: number;
-    avgYieldPct?: number;
   }>({ stockCount: 0 });
   const [board, setBoard] = useState<DividendPlanBoard | null>(null);
+  const [fundMarketCache, setFundMarketCache] = useState<DividendFundYieldCacheSnapshot>({ byFundCode: {}, byIndexCode: {} });
   const [showFundEdit, setShowFundEdit] = useState(false);
   const [targetRole, setTargetRole] = useState<PlanTargetRole | null>(null);
   const [returnFocus, setReturnFocus] = useState<string | null>(null);
@@ -160,13 +164,15 @@ export default function PlanPage() {
         initializeSettings(),
       ]);
       const synced = await syncDividendSleeves(st, s);
-      const [finalSettings, bd] = await Promise.all([
+      const [finalSettings, bd, yieldCache] = await Promise.all([
         synced ? initializeSettings() : Promise.resolve(s),
         loadDividendPlanBoard().catch(() => null),
+        loadDividendFundYieldCache().catch(() => ({ byFundCode: {}, byIndexCode: {} })),
       ]);
       setStatus(st);
       setSettings(finalSettings);
       setBoard(bd);
+      setFundMarketCache(yieldCache);
       if (bd) {
         const activeStocks = bd.stocks.filter(row => row.plan.group !== 'hidden');
         setDividendSummary({
@@ -203,6 +209,27 @@ export default function PlanPage() {
     ...(board?.stocks.map(row => row.plan.code) ?? []),
   ].sort().join(',');
   useDividendQuotes(dividendQuoteTargetKey, load, quoteBusyRef);
+
+  const fundYieldTargetKey = (settings?.dividendFundPlan?.funds ?? [])
+    .map(fund => `${fund.id}:${fund.code ?? ''}:${fund.indexKind}`)
+    .sort()
+    .join(',');
+  const dividendFundsRef = useRef(settings?.dividendFundPlan?.funds ?? []);
+  useEffect(() => {
+    dividendFundsRef.current = settings?.dividendFundPlan?.funds ?? [];
+  }, [settings?.dividendFundPlan?.funds]);
+  useEffect(() => {
+    const funds = dividendFundsRef.current;
+    if (!fundYieldTargetKey || funds.length === 0) return;
+    const syncYields = () => {
+      void refreshDividendFundMarketData(dividendFundsRef.current).then(res => {
+        if (res.updated > 0) void load(false);
+      }).catch(() => {});
+    };
+    syncYields();
+    window.addEventListener('focus', syncYields);
+    return () => window.removeEventListener('focus', syncYields);
+  }, [fundYieldTargetKey, load]);
 
   useEffect(() => { quoteBusyRef.current = saving; }, [saving]);
 
@@ -373,7 +400,12 @@ export default function PlanPage() {
     if (refreshingQuotes) return;
     setRefreshingQuotes(true);
     try {
-      await refreshPlanQuotes();
+      const funds = settings?.dividendFundPlan?.funds ?? [];
+      await Promise.all([
+        refreshPlanQuotes().catch(() => {}),
+        refreshDividendMarketQuotes().catch(() => {}),
+        refreshDividendFundMarketData(funds, { force: true }).catch(() => {}),
+      ]);
       await load(false);
     } finally {
       setRefreshingQuotes(false);
@@ -939,20 +971,25 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
 );
 
 /** Fund grid card: same ladder-table format as other assets, tiers follow the
- * parent sector yield ladder; tier prices convert the fund's index yield into
- * the actual fund price you would buy. */
+ * parent sector yield ladder; tier prices convert the fund's fetched index yield
+ * into the actual fund price you would buy. */
   const renderFundGridCard = (item: PlanItemStatus, fundPlan: DividendFundPlan, fund: DividendFund, sleeveAmount: number) => {
     const sectorLadder: PlanLadderConfig = item.ladderConfig?.kind === 'yield' && item.ladderConfig.rows.length > 0
       ? item.ladderConfig
       : buildPresetLadderConfig('dividend_yield');
     const fundCode = fund.code?.trim().toUpperCase();
     const fundHolding = fundCode ? status?.holdingValuesBySymbol?.[fundCode] : undefined;
-    const fundQuote = fund.quote?.priceMicros !== undefined
-      ? fund.quote.priceMicros / 1_000_000
-      : fund.reference?.priceMicros !== undefined
-        ? fund.reference.priceMicros / 1_000_000
-        : fundHolding?.lastPrice;
-    const fundYieldPct = (fund.reference?.indexYieldBps ?? fundPlan.indexYieldBps) / 100;
+    const fundCache = fundCode ? fundMarketCache.byFundCode[fundCode] : undefined;
+    const resolvedYield = resolveFundYieldSnapshot(
+      fund,
+      fundCache,
+      fundMarketCache.byIndexCode,
+      fundHolding?.lastPrice ? Math.round(fundHolding.lastPrice * 1_000_000) : undefined,
+    );
+    const fundQuote = resolvedYield.priceMicros !== undefined
+      ? resolvedYield.priceMicros / 1_000_000
+      : undefined;
+    const fundYieldPct = resolvedYield.indexYield ? resolvedYield.indexYield.yieldBps / 100 : 0;
     const allocation = dividendFundAllocation({ ...fundPlan, budgetMinor: Math.round(sleeveAmount * 100) });
     const fundQuota = minorToMajor(allocation.amounts.get(fund.id)) ?? 0;
     const fundActual = fundHolding?.primaryValue ?? 0;
@@ -973,6 +1010,26 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
         ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
         : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
 
+    const indexDisplay = resolvedYield.indexName && resolvedYield.indexCode
+      ? `${resolvedYield.indexName}(${resolvedYield.indexCode})`
+      : resolvedYield.indexCode ?? resolvedYield.indexName ?? t(`df_index_${fund.indexKind}`);
+
+    let payoutText: string | undefined;
+    if (resolvedYield.payout?.status === 'paid') {
+      if (resolvedYield.payout.trailing12mMicros > 0) {
+        const cashStr = Number((resolvedYield.payout.trailing12mMicros / 1_000_000).toFixed(4)).toString();
+        payoutText = resolvedYield.payoutYieldBps !== undefined
+          ? t('plan_div_fund_payout_paid', { yield: fmtPct(resolvedYield.payoutYieldBps / 100), cash: cashStr })
+          : t('plan_div_fund_payout_paid_no_price', { cash: cashStr });
+      } else {
+        payoutText = t('plan_div_fund_payout_paid_none_12m', { count: resolvedYield.payout.totalCount });
+      }
+    } else if (resolvedYield.payout?.status === 'none') {
+      payoutText = t('plan_div_fund_payout_none');
+    } else if (fundCode) {
+      payoutText = t('plan_div_fund_payout_pending');
+    }
+
     return (
       <div className="plan-stock-subcard" key={fund.id}>
         <div className="plan-card-header-top">
@@ -986,6 +1043,14 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             actual: masked(fmt(fundActual)),
             price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
           })}
+        </div>
+        <div className="plan-fund-yield-meta">
+          <span>
+            {resolvedYield.indexYield
+              ? t('plan_div_fund_index_meta', { index: indexDisplay, yield: fmtPct(fundYieldPct) })
+              : t('plan_div_fund_index_meta_no_yield', { index: indexDisplay })}
+          </span>
+          {payoutText && <span> · {payoutText}</span>}
         </div>
         {fundYieldPct > 0 ? (
           <>
@@ -1011,10 +1076,10 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
               <table className="plan-ladder-table">
                 <thead>
                   <tr>
-                    <th scope="col" style={{ width: '28%' }}>{t('plan_col_yield')}</th>
-                    <th scope="col" style={{ width: '24%' }}>{t('plan_div_fund_ref_price')}</th>
-                    <th scope="col" style={{ width: '22%' }}>{t('plan_col_pos_pct')}</th>
-                    <th scope="col" style={{ width: '26%' }}>{t('plan_col_target_amt')}</th>
+                    <th scope="col" style={{ width: '27%' }}>{t('plan_col_index_yield')}</th>
+                    <th scope="col" style={{ width: '26%' }}>{t('plan_div_fund_ref_price')}</th>
+                    <th scope="col" style={{ width: '19%' }}>{t('plan_col_pos_short')}</th>
+                    <th scope="col" style={{ width: '28%' }}>{t('plan_col_amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1035,10 +1100,16 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
               </table>
             </div>
             <div className="plan-grid-ref">
-              {t('plan_div_fund_grid_ref', {
-                yield: fmtPct(fundYieldPct),
-                price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
-              })}
+              {t(
+                resolvedYield.indexYield?.sourceKind === 'csindex'
+                  ? 'plan_div_fund_grid_ref_live'
+                  : 'plan_div_fund_grid_ref_manual',
+                {
+                  date: resolvedYield.indexYield?.asOf ?? '',
+                  yield: fmtPct(fundYieldPct),
+                  price: fundQuote !== undefined && fundQuote > 0 ? fmtQuote(fundQuote, 'price') : '—',
+                },
+              )}
             </div>
           </>
         ) : (
@@ -1089,13 +1160,6 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
     const sellCount = stocks.filter(row => row.facts.status === 'sell').length;
     const staleCount = stocks.filter(row => !row.facts.quoteCurrent).length;
     const sharesLabel = (value: number) => amountVisible ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '••••';
-    const rowStatusText = (key: string) => ({
-      triggered: t('plan_div_row_triggered'),
-      covered: t('plan_div_row_covered'),
-      below_lot: t('plan_div_row_below_lot'),
-      no_holding: t('plan_div_row_no_holding'),
-      quote_pending: t('plan_div_row_quote_pending'),
-    } as Record<string, string>)[key] ?? t('plan_row_waiting');
 
     const stockStatusInfo = (row: DividendStockBoardRow) => {
       const { facts } = row;
@@ -1125,21 +1189,14 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
       const info = stockStatusInfo(row);
       const quoteLabel = plan.quotePriceMinor !== undefined ? `¥${(plan.quotePriceMinor / 100).toFixed(2)}` : '—';
       const budgetMajor = plan.budgetMinor !== undefined ? plan.budgetMinor / 100 : undefined;
-      const tierRow = (side: 'buy' | 'sell') => (r: typeof plan.buyRows[number]) => {
-        const active = r.touched && facts.status === side;
-        const tierLabel = side === 'buy'
-          ? t('div_cs_buy_tier_name', { level: r.level })
-          : t('div_cs_sell_tier_name', { level: r.level });
-        const amount = budgetMajor !== undefined ? budgetMajor * r.portionBps / 10000 : undefined;
-        return (
-          <tr key={`${side}-${r.level}`} className={active ? 'row-active' : undefined}>
-            <th scope="row">{active ? '● ' : ''}{tierLabel} {side === 'buy' ? '≤' : '≥'}¥{(r.priceMinor / 100).toFixed(2)}</th>
-            <td>{fmtPct(r.portionBps / 100)}%</td>
-            <td>{amount !== undefined ? masked(fmt(amount)) : '—'}</td>
-            <td>{rowStatusText(r.status)}</td>
-          </tr>
-        );
-      };
+      const tableModel = buildDividendStockTableModel(plan, facts.status);
+      const renderTierRow = (r: ReturnType<typeof buildDividendStockTableModel>['buyRows'][number]) => (
+        <tr key={r.key} className={r.active ? 'row-active' : undefined}>
+          <th scope="row">{r.active ? '● ' : ''}{r.priceText}</th>
+          <td>{fmtPct(r.cumulativePercent)}%</td>
+          <td>{r.amountMajor !== undefined ? masked(fmt(r.amountMajor)) : '—'}</td>
+        </tr>
+      );
       return (
         <details className="plan-stock-detail" key={plan.code}>
           <summary>
@@ -1163,17 +1220,20 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
               <table className="plan-ladder-table">
                 <thead>
                   <tr>
-                    <th scope="col" style={{ width: '34%' }}>{t('plan_col_ref')}</th>
-                    <th scope="col" style={{ width: '20%' }}>{t('plan_col_pos_pct')}</th>
-                    <th scope="col" style={{ width: '22%' }}>{t('plan_col_target_amt')}</th>
-                    <th scope="col" style={{ width: '24%' }}>{t('plan_col_status')}</th>
+                    <th scope="col" style={{ width: '36%' }}>{t('plan_col_point_price')}</th>
+                    <th scope="col" style={{ width: '28%' }}>{t('plan_col_cum_pos')}</th>
+                    <th scope="col" style={{ width: '36%' }}>{t('plan_col_amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="plan-ladder-section"><th scope="col" colSpan={4}>{t('plan_div_grid_buy')}</th></tr>
-                  {plan.buyRows.map(tierRow('buy'))}
-                  <tr className="plan-ladder-section"><th scope="col" colSpan={4}>{t('plan_div_grid_sell')}</th></tr>
-                  {plan.sellRows.map(tierRow('sell'))}
+                  <tr className="plan-ladder-section"><th scope="col" colSpan={3}>{t('plan_div_grid_buy')}</th></tr>
+                  {tableModel.buyRows.map(renderTierRow)}
+                  <tr className="plan-ladder-section">
+                    <th scope="col" colSpan={3}>
+                      {t(tableModel.hasHolding ? 'plan_div_grid_sell_cum' : 'plan_div_grid_sell_no_holding')}
+                    </th>
+                  </tr>
+                  {tableModel.sellRows.map(renderTierRow)}
                 </tbody>
               </table>
             </div>
@@ -2542,6 +2602,10 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
                   budgetLocked
                   onSaved={async () => {
                     await syncDividendSleeves();
+                    const latestSettings = await initializeSettings().catch(() => null);
+                    if (latestSettings?.dividendFundPlan?.funds.length) {
+                      await refreshDividendFundMarketData(latestSettings.dividendFundPlan.funds, { force: true }).catch(() => {});
+                    }
                     await load(false);
                   }}
                 />
