@@ -56,6 +56,7 @@ test('OpenAI compatible requests carry base64 vision input and preserve zero-pre
     assert.match(prompt, /Do not fabricate trades from a holding/);
     assert.match(prompt, /trades array MUST be chronological, earliest execution first/);
     assert.match(prompt, /visible full dates AND execution times when shown/);
+    assert.match(prompt, /Extract any visible execution time \(成交时间\) into "time"/);
     assert.match(prompt, /NEVER infer an ambiguous within-day sequence/);
     assert.match(prompt, /HOLDING_RECOGNITION_WARNING_TRADE_ORDER/);
     assert.match(prompt, /Exclude new-bond\/convertible-bond subscriptions/);
@@ -278,6 +279,48 @@ test('missing execution dates default to the local day while visible dates remai
     ]);
     assert.equal(result.warnings.filter(warning => warning === 'HOLDING_RECOGNITION_WARNING_TRADE_DATE_DEFAULTED').length, 1);
     assert.ok(result.warnings.includes('HOLDING_RECOGNITION_WARNING_TRADE_FIELDS'));
+  } finally {
+    context.mock.timers.reset();
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
+});
+
+test('same-day T+0 screenshots extract execution times, reorder newest-first fills chronologically, and clear false order warnings', async context => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = 'Asia/Shanghai';
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T06:40:00Z') });
+  try {
+    const result = await recognizeHoldingScreenshot(config(), image, {
+      transport: mock('openai', {
+        holdings: [],
+        trades: [
+          { name: '创业板ETF易方达', symbol: '159915.SZ', market: 'A股', date: '', time: '14:30:02', kind: 'buy', shares: 100, price: 2.299, executionStatus: 'filled' },
+          { name: '创业板ETF易方达', symbol: '159915.SZ', market: 'A股', date: '13:00:02', time: '', kind: 'sell', shares: 200, price: 2.317, executionStatus: 'filled' },
+        ],
+        warnings: ['HOLDING_RECOGNITION_WARNING_TRADE_ORDER'],
+      }),
+    });
+    assert.deepEqual(result.trades, [
+      { name: '创业板ETF易方达', symbol: '159915.SZ', market: 'A股', date: '2026-11-19', executionTime: '13:00:02', kind: 'sell', shares: '200', price: '2.317' },
+      { name: '创业板ETF易方达', symbol: '159915.SZ', market: 'A股', date: '2026-11-19', executionTime: '14:30:02', kind: 'buy', shares: '100', price: '2.299' },
+    ]);
+    assert.deepEqual(result.warnings, ['HOLDING_RECOGNITION_WARNING_TRADE_DATE_DEFAULTED']);
+
+    const combined = await recognizeHoldingScreenshot(config(), image, {
+      transport: mock('openai', {
+        holdings: [],
+        trades: [
+          { name: '创业板ETF易方达', symbol: '159915.SZ', market: 'A股', date: '2026-11-19 14:30:02', kind: 'buy', shares: 100, price: 2.299, executionStatus: 'filled' },
+          { name: '创业板ETF易方达', symbol: '159915.SZ', market: 'A股', date: '2026/11/19 13:00', kind: 'sell', shares: 200, price: 2.317, executionStatus: 'filled' },
+        ],
+        warnings: [],
+      }),
+    });
+    assert.deepEqual(combined.trades.map(row => [row.date, row.executionTime, row.kind]), [
+      ['2026-11-19', '13:00:00', 'sell'],
+      ['2026-11-19', '14:30:02', 'buy'],
+    ]);
   } finally {
     context.mock.timers.reset();
     if (previousTimezone === undefined) delete process.env.TZ;

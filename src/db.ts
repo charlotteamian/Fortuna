@@ -20,6 +20,7 @@ import {
 import { getHoldingContractMultiplier, type UsOptionRight } from './lib/usOption';
 import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 import { describeExcelBackupError, normalizeExcelBackupNumber, type ExcelBackupFailure, type ExcelBackupFailureCode, type ExcelBackupValidationReason } from './lib/excelBackup';
+import { normalizeLocalTime } from './lib/localDate';
 
 export { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 export { COLOR_THEMES, getTheme, type ColorTheme } from './lib/colorThemes';
@@ -158,6 +159,7 @@ export interface HoldingTxn {
   balanceSnapshot?: number; // balance-mode holdings: direct balance anchor, excluded from principal-flow totals
   quantitySnapshot?: number; // unit holdings: direct quantity anchor, never a synthetic buy/sell
   costPriceSnapshot?: number; // optional average buy cost per share at the quantity anchor
+  executionTime?: string; // optional local wall-clock execution time 'HH:MM:SS' for same-day ordering
   brokerRef?: string; // optional broker fill/reference ID, scoped to this holding for import deduplication
   note?: string;
   createdAt: number;
@@ -882,6 +884,17 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         const date = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(row.date.trim());
         if (date) normalized.date = `${date[1]}-${date[2].padStart(2, '0')}-${date[3].padStart(2, '0')}`;
       }
+      if (row.executionTime == null || (typeof row.executionTime === 'string' && row.executionTime.trim() === '')) {
+        delete normalized.executionTime;
+      } else if (typeof row.executionTime === 'number' && Number.isFinite(row.executionTime) && row.executionTime >= 0 && row.executionTime < 1) {
+        const totalSeconds = Math.min(86399, Math.round(row.executionTime * 86400));
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        normalized.executionTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      } else if (typeof row.executionTime === 'string') {
+        normalized.executionTime = normalizeLocalTime(row.executionTime) || row.executionTime;
+      }
       return normalized as unknown as HoldingTxn;
     });
 
@@ -998,6 +1011,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         if (value === undefined && ['quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot'].includes(field)) continue;
         if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return failTransaction(field, 'invalid_number');
       }
+      if (transaction.executionTime !== undefined && !normalizeLocalTime(transaction.executionTime)) return failTransaction('executionTime', 'invalid_date');
       if (transaction.costPriceSnapshot !== undefined && transaction.quantitySnapshot === undefined) return failTransaction('costPriceSnapshot', 'requires_quantity_snapshot');
     }
     if (!uniqueIds(products)) return fail('invalid_data', 'Products');

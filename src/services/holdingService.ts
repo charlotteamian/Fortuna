@@ -11,7 +11,7 @@ import {
 } from '../lib/holdingPosition';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { getHoldingContractMultiplier } from '../lib/usOption';
-import { formatLocalDate } from '../lib/localDate';
+import { formatLocalDate, formatLocalTime, normalizeLocalTime, parseLocalDateTimeMs } from '../lib/localDate';
 import { normalizeHoldingIdentity } from '../lib/holdingImportIdentity';
 import { calculatePortfolioCash } from '../lib/portfolioCash';
 
@@ -62,6 +62,7 @@ export async function getAccountTxns(accountId: string): Promise<HoldingTxn[]> {
 
 export interface HoldingTxnInput {
   date: string;
+  executionTime?: string;
   kind: 'buy' | 'sell';
   shares: number;
   price: number;
@@ -171,6 +172,7 @@ export interface HoldingTradeImportRow {
   symbol: string;
   market?: string;
   date: string;
+  executionTime?: string;
   kind: 'buy' | 'sell';
   shares: number;
   price: number;
@@ -298,6 +300,84 @@ function validateTradeTimeline(txns: HoldingTxn[]): void {
   }
 }
 
+function sharesBeforeDate(txns: HoldingTxn[], date: string): number {
+  let shares = 0;
+  for (const txn of [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)) {
+    if (txn.date >= date) break;
+    if (txn.quantitySnapshot !== undefined) shares = txn.quantitySnapshot;
+    else if (txn.kind === 'buy') shares += txn.shares;
+    else shares = Math.max(0, shares - txn.shares);
+  }
+  return shares;
+}
+
+function orderIncomingHoldingTrades(trades: HoldingTradeImportRow[]): HoldingTradeImportRow[] {
+  const indexed = trades.map((trade, index) => ({ trade, index }))
+    .sort((a, b) => a.trade.date.localeCompare(b.trade.date) || a.index - b.index);
+  const byDate = new Map<string, number[]>();
+  indexed.forEach((entry, slot) => {
+    byDate.set(entry.trade.date, [...(byDate.get(entry.trade.date) ?? []), slot]);
+  });
+  for (const slots of byDate.values()) {
+    if (slots.length < 2) continue;
+    if (!slots.every(slot => Boolean(indexed[slot].trade.executionTime))) continue;
+    const sorted = slots.map(slot => indexed[slot]).sort(
+      (a, b) => a.trade.executionTime!.localeCompare(b.trade.executionTime!) || a.index - b.index,
+    );
+    slots.forEach((slot, offset) => { indexed[slot] = sorted[offset]; });
+  }
+  return indexed.map(entry => entry.trade);
+}
+
+interface SameDaySequenceNode {
+  kind: 'existing' | 'new';
+  txn: HoldingTxn;
+}
+
+function assignSameDayCreatedAt(
+  nodes: SameDaySequenceNode[],
+  now: number,
+  recordExistingUpdate: (txnId: string, patch: Partial<HoldingTxn>) => void,
+): void {
+  let prev: number | undefined;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (node.kind === 'existing') {
+      const current = node.txn.createdAt;
+      const next = prev !== undefined && current <= prev ? prev + 1 : current;
+      if (next !== current) {
+        node.txn = { ...node.txn, createdAt: next };
+        recordExistingUpdate(node.txn.id, { createdAt: next });
+      }
+      prev = next;
+      continue;
+    }
+    let nextExistingIndex = -1;
+    for (let j = i + 1; j < nodes.length; j++) {
+      if (nodes[j].kind === 'existing') { nextExistingIndex = j; break; }
+    }
+    const nextExisting = nextExistingIndex >= 0 ? nodes[nextExistingIndex].txn : null;
+    const remainingNew = nextExistingIndex >= 0 ? nextExistingIndex - i : 0;
+    const lowerBound = prev !== undefined ? prev + 1 : 1;
+    const upperBound = nextExisting ? nextExisting.createdAt - remainingNew : Infinity;
+    const desired = node.txn.executionTime ? parseLocalDateTimeMs(node.txn.date, node.txn.executionTime) : null;
+    let assigned: number;
+    if (desired !== null && desired >= lowerBound && desired <= upperBound) {
+      assigned = desired;
+    } else if (nextExisting && lowerBound <= upperBound) {
+      assigned = prev !== undefined
+        ? lowerBound
+        : (desired !== null && desired <= upperBound ? Math.max(1, desired) : Math.max(1, upperBound));
+    } else if (nextExisting) {
+      assigned = lowerBound;
+    } else {
+      assigned = Math.max(lowerBound, desired ?? now);
+    }
+    node.txn.createdAt = assigned;
+    prev = assigned;
+  }
+}
+
 /** Import confirmed screenshot rows atomically; actual dated fills precede the final position reconciliation. */
 export async function importHoldingScreenshot(accountId: string, input: HoldingScreenshotImport, date: string): Promise<HoldingScreenshotImportResult> {
   validatePositionDate(date);
@@ -305,11 +385,16 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
   input.holdings.forEach(row => {
     validatePositionValues(row);
   });
-  input.trades.forEach(trade => {
+  const normalizedTrades: HoldingTradeImportRow[] = input.trades.map(trade => {
     validatePositionDate(trade.date);
     validatePositionValues(trade);
+    const executionTime = trade.executionTime === undefined ? undefined : normalizeLocalTime(trade.executionTime);
     if (!['buy', 'sell'].includes(trade.kind) || trade.shares <= 0 || trade.price <= 0
-      || (trade.brokerRef !== undefined && !trade.brokerRef.trim())) throw new Error('HOLDING_POSITION_VALUES_INVALID');
+      || (trade.brokerRef !== undefined && !trade.brokerRef.trim())
+      || (trade.executionTime !== undefined && !executionTime)) {
+      throw new Error('HOLDING_POSITION_VALUES_INVALID');
+    }
+    return { ...trade, ...(executionTime ? { executionTime } : { executionTime: undefined }) };
   });
   const result = await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
     const account = await requireStockPortfolio(accountId);
@@ -329,10 +414,11 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
       holding: Holding;
       isNew: boolean;
       txns: HoldingTxn[];
+      effectiveTxns: HoldingTxn[];
       snapshot?: HoldingPositionImportRow;
       trades: HoldingTradeImportRow[];
       added: HoldingTxn[];
-      adoptedRefs: { txnId: string; brokerRef: string }[];
+      updatedTxns: Map<string, Partial<HoldingTxn>>;
     }>();
     async function prepare(row: { name?: string; symbol: string; market?: string }) {
       const identity = normalizeHoldingIdentity(row.symbol, row.market, account.currency);
@@ -353,7 +439,14 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
       requireSupportedHolding(holding);
       const txns = isNew ? [] : await db.holdingTxns.where('holdingId').equals(holding.id).toArray();
       if (txns.some(txn => txn.accountId !== accountId)) throw new Error('HOLDING_POSITION_HOLDING_SCOPE');
-      const item = { holding, isNew, txns, trades: [] as HoldingTradeImportRow[], added: [] as HoldingTxn[], adoptedRefs: [] as { txnId: string; brokerRef: string }[], snapshot: undefined as HoldingPositionImportRow | undefined };
+      const item = {
+        holding, isNew, txns,
+        effectiveTxns: txns.map(txn => ({ ...txn })),
+        trades: [] as HoldingTradeImportRow[],
+        added: [] as HoldingTxn[],
+        updatedTxns: new Map<string, Partial<HoldingTxn>>(),
+        snapshot: undefined as HoldingPositionImportRow | undefined,
+      };
       prepared.set(identity.key, item);
       return item;
     }
@@ -363,98 +456,179 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
       if (item.isNew && row.shares > 0 && row.costPrice === undefined) throw new Error('HOLDING_POSITION_COST_REQUIRED');
       item.snapshot = row;
     }
-    for (const trade of input.trades) (await prepare(trade)).trades.push(trade);
+    for (const trade of normalizedTrades) (await prepare(trade)).trades.push(trade);
 
     let insertedTrades = 0, skippedTrades = 0;
+    const now = Date.now();
     for (const item of prepared.values()) {
-      const counts = new Map<string, number>();
-      const anonymousCounts = new Map<string, number>();
-      const anonymousTxns = new Map<string, HoldingTxn[]>();
-      const refs = new Map<string, string>();
-      const refTxns = new Map<string, HoldingTxn>();
-      const fingerprintTxns = new Map<string, HoldingTxn[]>();
-      for (const txn of item.txns) {
-        if (txn.quantitySnapshot !== undefined || txn.balanceSnapshot !== undefined) continue;
-        const fingerprint = tradeFingerprint(txn);
-        counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
-        fingerprintTxns.set(fingerprint, [...(fingerprintTxns.get(fingerprint) ?? []), txn]);
-        if (txn.brokerRef) {
-          refs.set(txn.brokerRef, fingerprint);
-          refTxns.set(txn.brokerRef, txn);
-        }
-        else {
-          anonymousCounts.set(fingerprint, (anonymousCounts.get(fingerprint) ?? 0) + 1);
-          anonymousTxns.set(fingerprint, [...(anonymousTxns.get(fingerprint) ?? []), txn]);
-        }
+      const recordUpdate = (txnId: string, patch: Partial<HoldingTxn>) => {
+        item.updatedTxns.set(txnId, { ...(item.updatedTxns.get(txnId) ?? {}), ...patch });
+        const target = item.effectiveTxns.find(txn => txn.id === txnId);
+        if (target) Object.assign(target, patch);
+      };
+
+      const existingFills = item.effectiveTxns
+        .filter(txn => txn.quantitySnapshot === undefined && txn.balanceSnapshot === undefined)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+      const refs = new Map<string, { fingerprint: string; txn: HoldingTxn }>();
+      for (const txn of existingFills) {
+        if (txn.brokerRef) refs.set(txn.brokerRef, { fingerprint: tradeFingerprint(txn), txn });
       }
-      const occurrences = new Map<string, number>();
-      const anonymousOccurrences = new Map<string, number>();
-      const incomingRefs = new Map<string, string>();
+      const claimedExistingIds = new Set<string>();
+      const incomingRefs = new Map<string, { fingerprint: string; executionTime?: string }>();
       const newFillDates = new Set<string>();
+      const interleavedDates = new Set<string>();
       const matchedByDate = new Map<string, Set<string>>();
-      const matchExisting = (txn: HoldingTxn) => {
-        if (newFillDates.has(txn.date)) throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+      const newByDate = new Map<string, HoldingTxn[]>();
+
+      const markMatched = (txn: HoldingTxn) => {
+        if (newFillDates.has(txn.date)) interleavedDates.add(txn.date);
         const matched = matchedByDate.get(txn.date) ?? new Set<string>();
         matched.add(txn.id);
         matchedByDate.set(txn.date, matched);
       };
-      let createdAt = Math.max(Date.now(), ...item.txns.map(txn => txn.createdAt));
-      for (const trade of [...item.trades].sort((a, b) => a.date.localeCompare(b.date))) {
+
+      const orderedIncoming = orderIncomingHoldingTrades(item.trades);
+      for (const trade of orderedIncoming) {
         const fingerprint = tradeFingerprint(trade);
         const brokerRef = trade.brokerRef?.trim();
+        const executionTime = trade.executionTime;
         if (brokerRef && (refs.has(brokerRef) || incomingRefs.has(brokerRef))) {
-          if ((refs.get(brokerRef) ?? incomingRefs.get(brokerRef)) !== fingerprint) throw new Error('HOLDING_POSITION_TRADE_REFERENCE_CONFLICT');
-          if (incomingRefs.has(brokerRef)) {
-            const matched = refTxns.get(brokerRef);
-            if (matched) matchExisting(matched);
+          const existingRef = refs.get(brokerRef);
+          const incomingRef = incomingRefs.get(brokerRef);
+          const expectedFingerprint = existingRef?.fingerprint ?? incomingRef!.fingerprint;
+          const expectedTime = existingRef?.txn.executionTime ?? incomingRef?.executionTime;
+          if (expectedFingerprint !== fingerprint
+            || (executionTime && expectedTime && executionTime !== expectedTime)) {
+            throw new Error('HOLDING_POSITION_TRADE_REFERENCE_CONFLICT');
+          }
+          if (incomingRef) {
+            if (existingRef) markMatched(existingRef.txn);
             skippedTrades++;
             continue;
           }
         }
-        if (brokerRef) incomingRefs.set(brokerRef, fingerprint);
+        if (brokerRef) incomingRefs.set(brokerRef, { fingerprint, executionTime });
         if (brokerRef && refs.has(brokerRef)) {
-          matchExisting(refTxns.get(brokerRef)!);
+          const matched = refs.get(brokerRef)!.txn;
+          claimedExistingIds.add(matched.id);
+          if (executionTime && !matched.executionTime) recordUpdate(matched.id, { executionTime });
+          markMatched(matched);
           skippedTrades++;
           continue;
         }
-        const sourceOccurrences = brokerRef ? anonymousOccurrences : occurrences;
-        const occurrence = (sourceOccurrences.get(fingerprint) ?? 0) + 1;
-        sourceOccurrences.set(fingerprint, occurrence);
-        const availableMatches = brokerRef ? anonymousCounts.get(fingerprint) ?? 0 : counts.get(fingerprint) ?? 0;
-        if (occurrence <= availableMatches) {
-          const matched = (brokerRef ? anonymousTxns : fingerprintTxns).get(fingerprint)![occurrence - 1];
-          matchExisting(matched);
-          if (brokerRef) {
-            // Preserve the existing fill and remember its newly recognized reference,
-            // so a later distinct reference cannot reuse the same anonymous match.
-            item.adoptedRefs.push({ txnId: matched.id, brokerRef });
-            refs.set(brokerRef, fingerprint);
-            refTxns.set(brokerRef, matched);
-          }
+        const candidates = existingFills.filter(txn => {
+          if (claimedExistingIds.has(txn.id)) return false;
+          if (brokerRef && txn.brokerRef) return false;
+          if (tradeFingerprint(txn) !== fingerprint) return false;
+          if (executionTime && txn.executionTime && txn.executionTime !== executionTime) return false;
+          return true;
+        });
+        const matched = (executionTime ? candidates.find(txn => txn.executionTime === executionTime) : undefined) ?? candidates[0];
+        if (matched) {
+          claimedExistingIds.add(matched.id);
+          const patch: Partial<HoldingTxn> = {};
+          if (brokerRef && !matched.brokerRef) patch.brokerRef = brokerRef;
+          if (executionTime && !matched.executionTime) patch.executionTime = executionTime;
+          if (Object.keys(patch).length) recordUpdate(matched.id, patch);
+          if (brokerRef) refs.set(brokerRef, { fingerprint, txn: matched });
+          markMatched(matched);
           skippedTrades++;
           continue;
         }
         newFillDates.add(trade.date);
-        item.added.push({
+        const addedTxn: HoldingTxn = {
           id: uuidv4(), accountId, holdingId: item.holding.id,
           date: trade.date, kind: trade.kind, shares: trade.shares, price: trade.price,
-          ...(brokerRef ? { brokerRef } : {}), createdAt: ++createdAt,
-        });
+          ...(executionTime ? { executionTime } : {}),
+          ...(brokerRef ? { brokerRef } : {}),
+          createdAt: now,
+        };
+        item.added.push(addedTxn);
+        newByDate.set(trade.date, [...(newByDate.get(trade.date) ?? []), addedTxn]);
         insertedTrades++;
       }
-      for (const txn of item.txns) {
-        if (!newFillDates.has(txn.date)) continue;
-        if (txn.quantitySnapshot !== undefined) {
-          if (!item.snapshot || item.snapshot.costPrice === undefined
-            || item.added.some(trade => trade.date === txn.date && trade.kind === 'sell')) {
-            throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
-          }
+
+      const priorMaxCreatedAt = Math.max(now, ...item.effectiveTxns.map(txn => txn.createdAt));
+      let untimedCursor = priorMaxCreatedAt;
+      for (const fillDate of [...newByDate.keys()].sort()) {
+        const addedOnDate = newByDate.get(fillDate)!;
+        const existingOnDate = item.effectiveTxns
+          .filter(txn => txn.date === fillDate && txn.balanceSnapshot === undefined)
+          .sort((a, b) => a.createdAt - b.createdAt);
+
+        if (existingOnDate.length === 0) {
+          assignSameDayCreatedAt(
+            addedOnDate.map(txn => ({ kind: 'new' as const, txn })),
+            ++untimedCursor,
+            recordUpdate,
+          );
+          untimedCursor = Math.max(untimedCursor, ...addedOnDate.map(txn => txn.createdAt));
           continue;
         }
-        if (txn.balanceSnapshot !== undefined) continue;
-        if (!matchedByDate.get(txn.date)?.has(txn.id)) throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+
+        const allNewTimed = addedOnDate.every(txn => Boolean(txn.executionTime));
+        if (allNewTimed) {
+          // If a same-day quantity anchor was backdated from another day, its createdAt time does not
+          // correspond to fillDate's trading session, so fall back to the explicit-reconciliation rule.
+          const unanchoredSnapshots = existingOnDate.filter(txn =>
+            txn.quantitySnapshot !== undefined && formatLocalDate(new Date(txn.createdAt)) !== fillDate);
+          if (unanchoredSnapshots.length > 0 && (
+            !item.snapshot || item.snapshot.costPrice === undefined
+            || addedOnDate.some(txn => txn.kind === 'sell')
+          )) {
+            throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+          }
+          const nodes: SameDaySequenceNode[] = existingOnDate.map(txn => ({ kind: 'existing', txn }));
+          const anchorTimeOf = (txn: HoldingTxn): string | null => {
+            if (txn.executionTime) return txn.executionTime;
+            if (txn.quantitySnapshot !== undefined && formatLocalDate(new Date(txn.createdAt)) === fillDate) {
+              return formatLocalTime(new Date(txn.createdAt));
+            }
+            return null;
+          };
+          for (const newTxn of addedOnDate) {
+            const insertAt = nodes.findIndex(node => {
+              const anchor = anchorTimeOf(node.txn);
+              return anchor !== null && anchor > newTxn.executionTime!;
+            });
+            if (insertAt >= 0) nodes.splice(insertAt, 0, { kind: 'new', txn: newTxn });
+            else nodes.push({ kind: 'new', txn: newTxn });
+          }
+          assignSameDayCreatedAt(nodes, ++untimedCursor, recordUpdate);
+          untimedCursor = Math.max(untimedCursor, ...nodes.map(node => node.txn.createdAt));
+          continue;
+        }
+
+        // Untimed same-day imports keep strict ambiguity guards against interleaving, unmatched sells,
+        // and same-day calibration anchors.
+        if (interleavedDates.has(fillDate)) throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+        let hasUnmatchedExistingBuy = false;
+        for (const txn of existingOnDate) {
+          if (txn.quantitySnapshot !== undefined) {
+            if (!item.snapshot || item.snapshot.costPrice === undefined
+              || addedOnDate.some(trade => trade.kind === 'sell')) {
+              throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+            }
+            continue;
+          }
+          if (!matchedByDate.get(fillDate)?.has(txn.id)) {
+            if (txn.kind === 'sell') throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+            hasUnmatchedExistingBuy = true;
+          }
+        }
+        if (hasUnmatchedExistingBuy) {
+          const firstNewSell = addedOnDate.find(trade => trade.kind === 'sell');
+          // Buy + buy is commutative; buy followed by sell is only unambiguous without timestamps when
+          // pre-day holdings could not cover that sell on their own.
+          if (firstNewSell && sharesBeforeDate(item.effectiveTxns, fillDate) >= firstNewSell.shares - 1e-9) {
+            throw new Error('HOLDING_POSITION_TRADE_ORDER_AMBIGUOUS');
+          }
+        }
+        for (const newTxn of addedOnDate) newTxn.createdAt = ++untimedCursor;
       }
-      const combined = [...item.txns, ...item.added];
+
+      const combined = [...item.effectiveTxns, ...item.added];
       if (item.added.length) validateTradeTimeline(combined);
       if (item.snapshot) requireCurrentPositionDate(item.holding, combined, date);
     }
@@ -462,22 +636,27 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
     let created = 0, updated = 0;
     for (const item of prepared.values()) {
       const holding = item.holding;
+      const combined = [...item.effectiveTxns, ...item.added];
+      const latestOverallFill = combined
+        .filter(txn => txn.quantitySnapshot === undefined && txn.balanceSnapshot === undefined)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)
+        .at(-1);
       if (item.isNew) {
-        const latestTrade = [...item.trades].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
-        holding.lastPrice = item.snapshot?.price ?? latestTrade?.price ?? 0;
-        holding.priceDate = item.snapshot ? date : latestTrade?.date;
+        holding.lastPrice = item.snapshot?.price ?? latestOverallFill?.price ?? 0;
+        holding.priceDate = item.snapshot ? date : latestOverallFill?.date;
         await db.holdings.add(holding);
         created++;
       }
-      for (const { txnId, brokerRef } of item.adoptedRefs) await db.holdingTxns.update(txnId, { brokerRef });
+      for (const [txnId, patch] of item.updatedTxns.entries()) await db.holdingTxns.update(txnId, patch);
       if (item.added.length) await db.holdingTxns.bulkAdd(item.added);
-      let changed = item.added.length > 0 || item.adoptedRefs.length > 0;
+      let changed = item.added.length > 0 || item.updatedTxns.size > 0;
       if (item.snapshot) {
-        changed = await applyPositionUpdate(holding, [...item.txns, ...item.added], { ...item.snapshot, holdingId: holding.id }, date) || changed;
+        changed = await applyPositionUpdate(holding, combined, { ...item.snapshot, holdingId: holding.id }, date) || changed;
       } else if (!item.isNew) {
-        const latestTrade = item.added.at(-1);
-        if (latestTrade && (!holding.priceDate || latestTrade.date >= holding.priceDate)) {
-          await db.holdings.update(holding.id, { lastPrice: latestTrade.price, priceDate: latestTrade.date });
+        const latestAdded = [...item.added].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt).at(-1);
+        if (latestAdded && latestOverallFill?.id === latestAdded.id
+          && (!holding.priceDate || latestAdded.date >= holding.priceDate)) {
+          await db.holdings.update(holding.id, { lastPrice: latestAdded.price, priceDate: latestAdded.date });
         }
       }
       if (!item.isNew && changed) updated++;

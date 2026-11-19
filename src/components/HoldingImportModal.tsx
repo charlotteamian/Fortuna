@@ -9,7 +9,7 @@ import {
   loadHoldingRecognitionConfig, recognizeHoldingScreenshot,
   type HoldingRecognitionConfig,
 } from '../services/holdingRecognitionService';
-import { formatLocalDate } from '../lib/localDate';
+import { formatLocalDate, normalizeLocalTime } from '../lib/localDate';
 import {
   getHoldingRecognitionProvider, inferHoldingRecognitionProvider,
 } from '../lib/holdingRecognitionProviders';
@@ -38,6 +38,7 @@ interface DraftTrade {
   symbol: string;
   market: string;
   date: string;
+  executionTime: string;
   kind: string;
   shares: string;
   price: string;
@@ -95,6 +96,10 @@ export default function HoldingImportModal({ account, holdings, onClose, onImpor
     setRows(current => current.map(row => row.id === id ? { ...row, [field]: value } : row));
     setError('');
   };
+  const updateTrade = (id: number, patch: Partial<Omit<DraftTrade, 'id'>>) => {
+    setTrades(current => current.map(row => row.id === id ? { ...row, ...patch } : row));
+    setError('');
+  };
   const moveTrade = (index: number, delta: number) => {
     setTrades(current => {
       const next = [...current];
@@ -103,6 +108,7 @@ export default function HoldingImportModal({ account, holdings, onClose, onImpor
       [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
+    setError('');
   };
   const addRows = (incoming: Omit<DraftRow, 'id'>[], append: boolean) => {
     const base = append ? [...rows] : [];
@@ -138,11 +144,33 @@ export default function HoldingImportModal({ account, holdings, onClose, onImpor
         return;
       }
       const conflicts = addRows(result.rows.map(row => ({ ...row, market: inferredMarket(row.symbol, row.market) })), true);
-      const incomingTrades = result.trades.map(trade => ({ ...trade, market: inferredMarket(trade.symbol, trade.market), id: nextId.current++ }));
+      const incomingTrades: DraftTrade[] = result.trades.map(trade => ({
+        ...trade,
+        executionTime: trade.executionTime ?? '',
+        market: inferredMarket(trade.symbol, trade.market),
+        id: nextId.current++,
+      }));
       const overlappingTrades = incomingTrades.some(trade => trades.some(existing =>
         rowIdentity(existing.symbol, existing.market) === rowIdentity(trade.symbol, trade.market)
-        && existing.date === trade.date && existing.kind === trade.kind && existing.shares === trade.shares && existing.price === trade.price));
-      setTrades(current => [...current, ...incomingTrades]);
+        && existing.date === trade.date
+        && (!existing.executionTime || !trade.executionTime || existing.executionTime === trade.executionTime)
+        && existing.kind === trade.kind && existing.shares === trade.shares && existing.price === trade.price));
+      setTrades(current => {
+        const merged = [...current, ...incomingTrades];
+        const byDate = new Map<string, number[]>();
+        merged.forEach((item, slot) => {
+          if (!item.date) return;
+          byDate.set(item.date, [...(byDate.get(item.date) ?? []), slot]);
+        });
+        for (const slots of byDate.values()) {
+          if (slots.length < 2 || !slots.every(slot => Boolean(merged[slot].executionTime))) continue;
+          const sorted = slots.map(slot => merged[slot]).sort(
+            (a, b) => a.executionTime.localeCompare(b.executionTime) || a.id - b.id,
+          );
+          slots.forEach((slot, offset) => { merged[slot] = sorted[offset]; });
+        }
+        return merged;
+      });
       setSource(file.name);
       setNotice([
         t('holding_import_ai_review'), ...result.warnings.map(warning => t(warning, { defaultValue: warning })),
@@ -240,11 +268,18 @@ export default function HoldingImportModal({ account, holdings, onClose, onImpor
         const identity = normalizeHoldingIdentity(trade.symbol, trade.market, account.currency);
         const shares = trade.shares.trim() === '' ? NaN : Number(trade.shares);
         const price = trade.price.trim() === '' ? NaN : Number(trade.price);
+        const rawTime = trade.executionTime.trim();
+        const executionTime = rawTime ? normalizeLocalTime(rawTime) : undefined;
         if (!Number.isFinite(shares) || shares <= 0 || !Number.isFinite(price) || price <= 0
-          || !['buy', 'sell'].includes(trade.kind) || !/^\d{4}-\d{2}-\d{2}$/.test(trade.date)) {
+          || !['buy', 'sell'].includes(trade.kind) || !/^\d{4}-\d{2}-\d{2}$/.test(trade.date)
+          || (rawTime && !executionTime)) {
           throw new Error(t('holding_import_trade_invalid', { row: index + 1 }));
         }
-        return { name: trade.name.trim(), ...identity, date: trade.date, kind: trade.kind as 'buy' | 'sell', shares, price, brokerRef: trade.brokerRef };
+        return {
+          name: trade.name.trim(), ...identity, date: trade.date,
+          ...(executionTime ? { executionTime } : {}),
+          kind: trade.kind as 'buy' | 'sell', shares, price, brokerRef: trade.brokerRef,
+        };
       });
       setBusy(true);
       await importHoldingScreenshot(account.id, { holdings: parsed, trades: parsedTrades }, date);
@@ -332,37 +367,41 @@ export default function HoldingImportModal({ account, holdings, onClose, onImpor
               <div className="holding-import-grid">
                 {(['name', 'symbol'] as const).map(field => <label className="form-label" key={field}>
                   {t('holding_import_header_' + field)}
-                  <input className="form-input" value={trade[field]} onChange={event => setTrades(current => current.map(row => row.id === trade.id ? { ...row, [field]: event.target.value } : row))} />
+                  <input className="form-input" value={trade[field]} onChange={event => updateTrade(trade.id, { [field]: event.target.value })} />
                 </label>)}
                 <label className="form-label">{t('holding_import_header_market')}
-                  <select className="form-select" value={trade.market} onChange={event => setTrades(current => current.map(row => row.id === trade.id ? { ...row, market: event.target.value } : row))}>
+                  <select className="form-select" value={trade.market} onChange={event => updateTrade(trade.id, { market: event.target.value })}>
                     <option value="">{t('holding_import_select_market')}</option>
                     <option value="A股">{t('opt_a_share')}</option><option value="港股">{t('opt_hk_market')}</option><option value="美股">{t('opt_us_market')}</option>
                   </select>
                 </label>
                 <label className="form-label">{t('holding_import_trade_direction')}
-                  <select className="form-select" value={trade.kind} onChange={event => setTrades(current => current.map(row => row.id === trade.id ? { ...row, kind: event.target.value } : row))}>
+                  <select className="form-select" value={trade.kind} onChange={event => updateTrade(trade.id, { kind: event.target.value })}>
                     <option value="">{t('holding_import_select_direction')}</option><option value="buy">{t('buy_in')}</option><option value="sell">{t('sell_out')}</option>
                   </select>
                 </label>
                 <label className="form-label">{t('xh_date')}
                   <input className="form-input" type="date" max={formatLocalDate()} value={trade.date}
-                    onChange={event => setTrades(current => current.map(row => row.id === trade.id ? { ...row, date: event.target.value } : row))} />
+                    onChange={event => updateTrade(trade.id, { date: event.target.value })} />
+                </label>
+                <label className="form-label">{t('holding_import_trade_time')}
+                  <input className="form-input" type="time" step="1" value={trade.executionTime}
+                    onChange={event => updateTrade(trade.id, { executionTime: event.target.value })} />
                 </label>
                 {(['shares', 'price'] as const).map(field => <label className="form-label" key={field}>
                   {t(field === 'price' ? 'holding_import_trade_price' : 'holding_import_header_shares')}
                   <input className="form-input" type="number" min="0" step="any" inputMode="decimal" value={trade[field]}
-                    onChange={event => setTrades(current => current.map(row => row.id === trade.id ? { ...row, [field]: event.target.value } : row))} />
+                    onChange={event => updateTrade(trade.id, { [field]: event.target.value })} />
                 </label>)}
                 {trade.brokerRef !== undefined && <label className="form-label">{t('holding_import_trade_reference')}
                   <input className="form-input" value={trade.brokerRef}
-                    onChange={event => setTrades(current => current.map(row => row.id === trade.id ? { ...row, brokerRef: event.target.value || undefined } : row))} />
+                    onChange={event => updateTrade(trade.id, { brokerRef: event.target.value || undefined })} />
                 </label>}
               </div>
               <div className="holding-import-sources">
-                <button className="btn btn-sm btn-secondary" disabled={index === 0} onClick={() => moveTrade(index, -1)}>{t('holding_import_trade_up')}</button>
-                <button className="btn btn-sm btn-secondary" disabled={index === trades.length - 1} onClick={() => moveTrade(index, 1)}>{t('holding_import_trade_down')}</button>
-                <button className="btn btn-sm btn-secondary" onClick={() => setTrades(current => current.filter(row => row.id !== trade.id))}>{t('holding_import_remove_row')}</button>
+                <button type="button" className="btn btn-sm btn-secondary" disabled={index === 0} onClick={() => moveTrade(index, -1)}>{t('holding_import_trade_up')}</button>
+                <button type="button" className="btn btn-sm btn-secondary" disabled={index === trades.length - 1} onClick={() => moveTrade(index, 1)}>{t('holding_import_trade_down')}</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setTrades(current => current.filter(row => row.id !== trade.id)); setError(''); }}>{t('holding_import_remove_row')}</button>
               </div>
             </fieldset>)}
           </>}

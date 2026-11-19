@@ -562,7 +562,9 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
                 : t(isSell ? 'sell_out' : 'buy_in')}
             </span>
-            <time className="holding-txn-date" dateTime={tx.date}>{tx.date}</time>
+            <time className="holding-txn-date" dateTime={tx.executionTime ? `${tx.date}T${tx.executionTime}` : tx.date}>
+              {tx.executionTime ? `${tx.date} ${tx.executionTime}` : tx.date}
+            </time>
           </div>
           {!readOnly && <div className="holding-txn-actions">
             {!isPositionAdjustment && <button type="button" className="holding-action" aria-label={t('edit_record')} title={t('edit_record')} onClick={() => isBalanceAdjustment ? openBalanceAdjustment(h, tx) : openEditTxn(h, tx)}>{editIcon}</button>}

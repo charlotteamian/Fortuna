@@ -281,6 +281,13 @@ export default function ChartPage() {
   }, [monthlyPnl, timeRange]);
   const monthlyPnlTotal = monthlyPnlView.reduce((s, r) => s + r.realized, 0);
 
+  const navFromDate = useMemo(() => {
+    if (timeRange === 'all' || timeRange === 'quarter' || timeRange === 'year') return undefined;
+    const now = new Date();
+    const months = timeRange === '3m' ? 3 : timeRange === '6m' ? 6 : 12;
+    return formatLocalDate(new Date(now.getFullYear(), now.getMonth() - months, now.getDate()));
+  }, [timeRange]);
+
   const toggleNavAccount = async (accountId: string, enabled: boolean) => {
     if (navSaving) return;
     const nextIds = enabled ? [...navAccountIds, accountId] : navAccountIds.filter(id => id !== accountId);
@@ -325,8 +332,7 @@ export default function ChartPage() {
         {navSaveError && <p role="alert" style={{ color: 'var(--danger)', fontSize: 'var(--fs-sm)', marginBottom: 0 }}>{t('chart_portfolios_save_error')}</p>}
       </div>
       {portfolios.filter(({ account }) => navAccountIds.includes(account.id)).map(({ account, points }) => {
-        const datesInRange = new Set(filterDates(points.map(point => point.date)));
-        const summary = summarizeAccountNav(points.filter(point => datesInRange.has(point.date)));
+        const summary = summarizeAccountNav(points, navFromDate);
         const navLabel = t('chart_unit_nav_title');
         const data = summary.series.map(point => ({ date: point.date, [navLabel]: point.nav }));
         return (

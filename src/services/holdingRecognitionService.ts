@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import Dexie, { type Table } from 'dexie';
 import { getHoldingRecognitionProvider, holdingRecognitionProviderBody, inferHoldingRecognitionProvider } from '../lib/holdingRecognitionProviders.ts';
-import { formatLocalDate } from '../lib/localDate.ts';
+import { formatLocalDate, normalizeLocalTime } from '../lib/localDate.ts';
 
 export interface HoldingRecognitionConfig {
   protocol: 'openai' | 'gemini' | 'anthropic';
@@ -26,6 +26,7 @@ export interface RecognizedHoldingTrade {
   symbol: string;
   market: string;
   date: string;
+  executionTime?: string;
   kind: 'buy' | 'sell' | '';
   shares: string;
   price: string;
@@ -135,10 +136,10 @@ const EXTRACTION_PROMPT = `Extract visible STOCK/ETF holdings and completed buy/
 Return ONLY one JSON object with arrays "holdings", "trades", "warnings". Use empty arrays when that section is not shown. Do not fabricate trades from a holding, infer a holding from trades, or repeat account totals as holdings. Do not extract cash, balances, account numbers, pending/cancelled orders, derivatives, options or futures; warn if excluded.
 Exclude new-bond/convertible-bond subscriptions and subscription placeholders (申购债、债券申购、新债申购、可转债申购、XX发债), even if shown in the holdings table, the quantity is zero, or a subscription is labelled successful/filled. They are not an owned position or an ordinary buy/sell execution. Add warning "HOLDING_RECOGNITION_WARNING_BOND_SUBSCRIPTION" when excluding any. Never exclude an ordinary listed bond/convertible-bond position or an actual secondary-market execution merely because its name contains 债/转债 or its quantity is zero. If a subscription row is nevertheless returned, mark recordType "bond_subscription"; all other rows use recordType "position" or "execution".
 Each holding: {"name":"", "symbol":"", "market":"", "currency":"", "shares":null, "price":null, "costPrice":null, "costType":"average|diluted|unknown"}.
-Each trade: {"name":"", "symbol":"", "market":"", "currency":"", "date":"YYYY-MM-DD", "kind":"buy|sell", "shares":null, "price":null, "brokerRef":"", "executionStatus":"filled|unknown"}.
+Each trade: {"name":"", "symbol":"", "market":"", "currency":"", "date":"YYYY-MM-DD", "time":"HH:MM:SS", "kind":"buy|sell", "shares":null, "price":null, "brokerRef":"", "executionStatus":"filled|unknown"}.
 Names/codes must be visible. Symbols MUST be strings preserving leading zeros (e.g. "000001", "00700"); do not guess a code from a company name. Market is "A股", "港股", "美股", "其他", or "" when not established by the image.
 Holding shares are TOTAL owned/held shares, not available/sellable shares. Holding price is explicitly the latest/current quote, not market value, P&L, transaction price or cost. If no current quote is visible, leave price null; do not derive it from other fields. Cost is the displayed per-share holding cost; identify acquisition/moving-average versus diluted/break-even cost using visible labels. If the distinction is unknown, use costType unknown and warn. Never convert diluted cost into average acquisition cost.
-Trade price is the actual execution price, not an order limit, current quote or total amount. Trade shares are executed quantity, not outstanding order quantity. Date must be a visible full calendar date, possibly using a visible shared date/year header. If no date is shown, date is ""; the app defaults absent dates to the device's current local day for user review. If a date fragment is visible but the full year/date is ambiguous, preserve that fragment verbatim and warn; never infer a year or substitute today's date for a visible date. kind is "" if buy/sell is ambiguous. Extract multiple executions in separate rows, even for the same symbol. brokerRef is an explicitly visible UNIQUE execution/成交编号 only. NEVER use a shared order/委托编号: one order can have multiple fills; when only an order reference is visible, leave brokerRef "" and warn.
+Trade price is the actual execution price, not an order limit, current quote or total amount. Trade shares are executed quantity, not outstanding order quantity. Date must be a visible full calendar date, possibly using a visible shared date/year header. If no date is shown, date is ""; the app defaults absent dates to the device's current local day for user review. If a date fragment is visible but the full year/date is ambiguous, preserve that fragment verbatim and warn; never infer a year or substitute today's date for a visible date. Extract any visible execution time (成交时间) into "time" as "HH:MM:SS" (or "HH:MM"); leave "time" "" when no time is shown. kind is "" if buy/sell is ambiguous. Extract multiple executions in separate rows, even for the same symbol. brokerRef is an explicitly visible UNIQUE execution/成交编号 only. NEVER use a shared order/委托编号: one order can have multiple fills; when only an order reference is visible, leave brokerRef "" and warn.
 The trades array MUST be chronological, earliest execution first, using visible full dates AND execution times when shown. Broker lists are often newest-first: reverse/reorder them according to visible dates and times. Preserve separate fills for the same stock on the same day. NEVER infer an ambiguous within-day sequence from buy/sell direction or make up a time. If within-day chronology is unclear, preserve the visible order and add warning "HOLDING_RECOGNITION_WARNING_TRADE_ORDER" so the user can manually reorder the preview.
 Currency is the explicitly established quote/execution currency (e.g. CNY, HKD, USD), otherwise "". Never convert prices or assume account totals use the same currency as an individual stock. executionStatus filled requires visible executed/trade history, not merely an order submitted; use unknown when uncertain.
 All unknown, masked, cropped, unclear or absent fields stay null or ""; ZERO only when explicitly shown. No negative numeric fields: leave negative cost blank and warn. Convert explicitly labelled thousands/ten-thousands to individual shares, but do not infer units. Numbers are decimal strings or JSON numbers without currency marks or thousands separators. Warn about missing fields, ambiguous cost semantics, excluded records, cropped tables and possible partial pages. Warnings should be concise Chinese sentences. No investment advice.`;
@@ -351,9 +352,8 @@ function parseResponse(protocol: HoldingRecognitionConfig['protocol'], data: unk
       warnings.push('HOLDING_RECOGNITION_WARNING_ORDERS');
       continue;
     }
-    const missingDate = record.date == null || typeof record.date === 'string' && !record.date.trim();
-    const date = missingDate ? defaultTradeDate : dateField(record.date);
-    if (missingDate) warnings.push('HOLDING_RECOGNITION_WARNING_TRADE_DATE_DEFAULTED');
+    const { date, executionTime, defaultedDate } = dateAndTimeFields(record.date, record.time ?? record.executionTime, defaultTradeDate);
+    if (defaultedDate) warnings.push('HOLDING_RECOGNITION_WARNING_TRADE_DATE_DEFAULTED');
     const kind = kindField(record.kind);
     let shares = numberField(record.shares);
     let price = numberField(record.price);
@@ -367,9 +367,15 @@ function parseResponse(protocol: HoldingRecognitionConfig['protocol'], data: unk
     }
     if (!date || !kind || !shares || !price) warnings.push('HOLDING_RECOGNITION_WARNING_TRADE_FIELDS');
     const brokerRef = stringField(record.brokerRef, 160);
-    executions.push({ ...fields(record), date, kind, shares, price, ...(brokerRef ? { brokerRef } : {}) });
+    executions.push({
+      ...fields(record), date, kind, shares, price,
+      ...(executionTime ? { executionTime } : {}),
+      ...(brokerRef ? { brokerRef } : {}),
+    });
   }
-  return { rows, trades: executions, warnings: [...new Set(warnings)] };
+  const orderedTrades = orderRecognizedTrades(executions);
+  const cleanedWarnings = resolveTradeOrderWarning(warnings, orderedTrades);
+  return { rows, trades: orderedTrades, warnings: [...new Set(cleanedWarnings)] };
 }
 
 function stringField(value: unknown, maxLength: number): string {
@@ -404,6 +410,83 @@ function dateField(value: unknown): string {
   const iso = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
   const parsed = new Date(`${iso}T00:00:00Z`);
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso ? iso : '';
+}
+
+function dateAndTimeFields(dateValue: unknown, timeValue: unknown, defaultTradeDate: string): {
+  date: string;
+  executionTime: string;
+  defaultedDate: boolean;
+} {
+  const explicitTime = normalizeLocalTime(timeValue);
+  if (dateValue == null || (typeof dateValue === 'string' && !dateValue.trim())) {
+    return { date: defaultTradeDate, executionTime: explicitTime, defaultedDate: true };
+  }
+  const rawDate = stringField(dateValue, 40).normalize('NFKC');
+  const pureTime = normalizeLocalTime(rawDate);
+  if (pureTime) {
+    return { date: defaultTradeDate, executionTime: explicitTime || pureTime, defaultedDate: true };
+  }
+  const combined = /^(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?)[\sT]+(\d{1,2}:\d{2}(?::\d{2})?)$/.exec(rawDate);
+  if (combined) {
+    return {
+      date: dateField(combined[1]),
+      executionTime: explicitTime || normalizeLocalTime(combined[2]),
+      defaultedDate: false,
+    };
+  }
+  return { date: dateField(rawDate), executionTime: explicitTime, defaultedDate: false };
+}
+
+/** Deterministically order recognized trades when visible execution times establish chronology. */
+function orderRecognizedTrades(trades: RecognizedHoldingTrade[]): RecognizedHoldingTrade[] {
+  if (trades.length < 2 || !trades.some(trade => trade.executionTime)) return trades;
+  const indexed = trades.map((trade, index) => ({ trade, index }));
+  // Reorder across dates only when every row has a concrete calendar date; otherwise preserve cross-row slots.
+  const arranged = indexed.every(entry => entry.trade.date)
+    ? [...indexed].sort((a, b) => a.trade.date.localeCompare(b.trade.date) || a.index - b.index)
+    : [...indexed];
+  // Within each (date, symbol) group whose fills all have executionTime, place earlier timestamps first.
+  const groups = new Map<string, number[]>();
+  arranged.forEach((entry, slot) => {
+    if (!entry.trade.date) return;
+    const key = `${entry.trade.date}|${entry.trade.market}|${entry.trade.symbol.toUpperCase() || entry.trade.name}`;
+    groups.set(key, [...(groups.get(key) ?? []), slot]);
+  });
+  for (const slots of groups.values()) {
+    if (slots.length < 2) continue;
+    if (!slots.every(slot => Boolean(arranged[slot].trade.executionTime))) continue;
+    const sorted = slots.map(slot => arranged[slot]).sort(
+      (a, b) => a.trade.executionTime!.localeCompare(b.trade.executionTime!) || a.index - b.index,
+    );
+    slots.forEach((slot, offset) => { arranged[slot] = sorted[offset]; });
+  }
+  // If all fills on a given date have executionTime (even across symbols), keep the whole date chronological.
+  const byDate = new Map<string, number[]>();
+  arranged.forEach((entry, slot) => {
+    if (!entry.trade.date) return;
+    byDate.set(entry.trade.date, [...(byDate.get(entry.trade.date) ?? []), slot]);
+  });
+  for (const slots of byDate.values()) {
+    if (slots.length < 2) continue;
+    if (!slots.every(slot => Boolean(arranged[slot].trade.executionTime))) continue;
+    const sorted = slots.map(slot => arranged[slot]).sort(
+      (a, b) => a.trade.executionTime!.localeCompare(b.trade.executionTime!) || a.index - b.index,
+    );
+    slots.forEach((slot, offset) => { arranged[slot] = sorted[offset]; });
+  }
+  return arranged.map(entry => entry.trade);
+}
+
+function resolveTradeOrderWarning(warnings: string[], trades: RecognizedHoldingTrade[]): string[] {
+  if (!warnings.includes('HOLDING_RECOGNITION_WARNING_TRADE_ORDER')) return warnings;
+  const groups = new Map<string, RecognizedHoldingTrade[]>();
+  for (const trade of trades) {
+    if (!trade.date) return warnings;
+    const key = `${trade.date}|${trade.market}|${trade.symbol.toUpperCase() || trade.name}`;
+    groups.set(key, [...(groups.get(key) ?? []), trade]);
+  }
+  const hasUnclearSameDayGroup = [...groups.values()].some(group => group.length >= 2 && group.some(trade => !trade.executionTime));
+  return hasUnclearSameDayGroup ? warnings : warnings.filter(warning => warning !== 'HOLDING_RECOGNITION_WARNING_TRADE_ORDER');
 }
 
 function kindField(value: unknown): RecognizedHoldingTrade['kind'] {

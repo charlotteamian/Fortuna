@@ -194,6 +194,7 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
           balanceSnapshot: txn.balanceSnapshot == null ? null : round(txn.balanceSnapshot),
           quantitySnapshot: txn.quantitySnapshot == null ? null : round(txn.quantitySnapshot),
           costPriceSnapshot: txn.costPriceSnapshot == null ? null : round(txn.costPriceSnapshot),
+          executionTime: txn.executionTime ?? null,
           brokerRef: txn.brokerRef ?? null,
           amount: txn.quantitySnapshot != null ? null : txn.balanceSnapshot == null
             ? round(txn.shares * txn.price * (holding ? getHoldingContractMultiplier(holding) : 1))
