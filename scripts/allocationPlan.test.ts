@@ -173,35 +173,72 @@ test('computeFundingWaterfall prioritizes idle cash, then overweight trims, then
 test('preset ladders match gold, chinext, oil and dividend yield position schedules and resolve active tiers', () => {
   const gold = buildPresetLadderConfig('gold_518850');
   assert.equal(gold.rows.length, 12);
+  // 5.02 is above 5.00 (<2350), so it stays in <2600 (5.50) until price actually drops to <= 5.00
   const goldAt502 = resolveActiveLadderTier(gold, 5.02)!;
-  assert.equal(goldAt502.activeRow.label, '<2350');
-  assert.equal(goldAt502.activeRow.positionPercent, 25);
-  assert.equal(goldAt502.nextBuyRow?.triggerValue, 4.5);
-  assert.equal(goldAt502.nextSellRow?.triggerValue, 5.5);
+  assert.equal(goldAt502.activeRow.label, '<2600');
+  assert.equal(goldAt502.activeRow.positionPercent, 15);
+  assert.equal(goldAt502.nextBuyRow?.triggerValue, 5.0);
+  assert.equal(goldAt502.nextSellRow?.triggerValue, 6.0);
+
+  const goldAt500 = resolveActiveLadderTier(gold, 5.00)!;
+  assert.equal(goldAt500.activeRow.label, '<2350');
+  assert.equal(goldAt500.activeRow.positionPercent, 25);
+  assert.equal(goldAt500.nextBuyRow?.triggerValue, 4.5);
+  assert.equal(goldAt500.nextSellRow?.triggerValue, 5.5);
 
   const goldAt530 = resolveActiveLadderTier(gold, 5.30)!;
   assert.equal(goldAt530.activeRow.label, '<2600');
   assert.equal(goldAt530.activeRow.positionPercent, 15);
+
+  // Custom gold schedule matching <3300 (7.0, 4%), <3500 (7.5, 2%), <3800 (8.0, 1%), >3800 (8.1, 0%)
+  const customGold = {
+    kind: 'price' as const,
+    rows: [
+      { id: 'g1', label: '<3300', triggerValue: 7.0, positionPercent: 4 },
+      { id: 'g2', label: '<3500', triggerValue: 7.5, positionPercent: 2 },
+      { id: 'g3', label: '<3800', triggerValue: 8.0, positionPercent: 1 },
+      { id: 'g4', label: '>3800', triggerValue: 8.1, positionPercent: 0 },
+    ],
+  };
+  const goldAt3600Plus = resolveActiveLadderTier(customGold, 7.60)!;
+  assert.equal(goldAt3600Plus.activeRow.label, '<3800');
+  assert.equal(goldAt3600Plus.activeRow.positionPercent, 1);
+  assert.equal(goldAt3600Plus.nextBuyRow?.label, '<3500');
+  assert.equal(goldAt3600Plus.nextSellRow?.label, '>3800');
+  assert.equal(resolveActiveLadderTier(customGold, 7.50)!.activeRow.label, '<3500');
+  assert.equal(resolveActiveLadderTier(customGold, 7.20)!.activeRow.label, '<3500');
+  assert.equal(resolveActiveLadderTier(customGold, 8.20)!.activeRow.label, '>3800');
 
   const chinext = buildPresetLadderConfig('chinext_159915');
   assert.equal(chinext.rows.length, 21);
   const chinextAt2185 = resolveActiveLadderTier(chinext, 2185)!;
   assert.equal(chinextAt2185.activeRow.triggerValue, 2200);
   assert.equal(chinextAt2185.activeRow.positionPercent, 52);
+  // 2050 has not dropped to 2000 yet -> stays in 2200 tier
+  assert.equal(resolveActiveLadderTier(chinext, 2050)!.activeRow.triggerValue, 2200);
+  assert.equal(resolveActiveLadderTier(chinext, 2000)!.activeRow.triggerValue, 2000);
 
   const oil = buildPresetLadderConfig('oil_513350');
   assert.equal(oil.rows.length, 12);
   const oilAt086 = resolveActiveLadderTier(oil, 0.865)!;
   assert.equal(oilAt086.activeRow.triggerValue, 0.9);
   assert.equal(oilAt086.activeRow.positionPercent, 15);
+  assert.equal(resolveActiveLadderTier(oil, 1.35)!.activeRow.positionPercent, 0);
 
   const dividend = buildPresetLadderConfig('dividend_yield');
   assert.equal(dividend.rows.length, 11);
+  // 5.82% has not risen to 6.0% yet -> stays in 5.5% (50%) until yield reaches >= 6.0%
   const divAt582 = resolveActiveLadderTier(dividend, 5.82)!;
-  assert.equal(divAt582.activeRow.triggerValue, 6.0);
-  assert.equal(divAt582.activeRow.positionPercent, 60);
-  assert.equal(divAt582.nextBuyRow?.triggerValue, 6.5);
-  assert.equal(divAt582.nextSellRow?.triggerValue, 5.5);
+  assert.equal(divAt582.activeRow.triggerValue, 5.5);
+  assert.equal(divAt582.activeRow.positionPercent, 50);
+  assert.equal(divAt582.nextBuyRow?.triggerValue, 6.0);
+  assert.equal(divAt582.nextSellRow?.triggerValue, 5.0);
+
+  const divAt600 = resolveActiveLadderTier(dividend, 6.0)!;
+  assert.equal(divAt600.activeRow.triggerValue, 6.0);
+  assert.equal(divAt600.activeRow.positionPercent, 60);
+  assert.equal(divAt600.nextBuyRow?.triggerValue, 6.5);
+  assert.equal(divAt600.nextSellRow?.triggerValue, 5.5);
 });
 
 test('computePlanDynamicMetrics calculates dynamic targets and reserve requirements across ladder, stocks, dividend and simple modes', () => {

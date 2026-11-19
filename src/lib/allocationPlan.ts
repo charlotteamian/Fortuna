@@ -485,13 +485,10 @@ export function resolveActiveLadderTier(
   if (quote === undefined || !Number.isFinite(quote) || quote <= 0) return null;
 
   if (config.kind === 'yield') {
-    // Higher dividend yield = cheaper valuation = higher position ratio (sorted descending: 8.0% -> 3.0%)
-    const sortedRows = [...config.rows].sort((a, b) => b.triggerValue - a.triggerValue);
-    let activeIndex = sortedRows.findIndex((row, idx) => {
-      const nextYield = sortedRows[idx + 1]?.triggerValue ?? -Infinity;
-      const mid = (row.triggerValue + nextYield) / 2;
-      return quote >= mid;
-    });
+    // Higher dividend yield = cheaper valuation = higher position ratio (sorted descending: 8.0% -> 3.0%).
+    // A tier triggers only once yield rises into it (quote >= triggerValue).
+    const sortedRows = [...config.rows].sort((a, b) => b.triggerValue - a.triggerValue || b.positionPercent - a.positionPercent);
+    let activeIndex = sortedRows.findIndex(row => quote >= row.triggerValue);
     if (activeIndex < 0) activeIndex = sortedRows.length - 1;
     const activeRow = sortedRows[activeIndex];
     const nextBuyRow = activeIndex > 0 ? sortedRows[activeIndex - 1] : undefined;
@@ -499,13 +496,10 @@ export function resolveActiveLadderTier(
     return { quote, activeIndex, activeRow, nextBuyRow, nextSellRow, sortedRows };
   }
 
-  // Price or index ladder: lower price/point = cheaper valuation = higher position ratio (sorted ascending: 2.75 -> 8.00)
-  const sortedRows = [...config.rows].sort((a, b) => a.triggerValue - b.triggerValue);
-  let activeIndex = sortedRows.findIndex((row, idx) => {
-    const nextPrice = sortedRows[idx + 1]?.triggerValue ?? Infinity;
-    const mid = (row.triggerValue + nextPrice) / 2;
-    return quote < mid;
-  });
+  // Price or index ladder: lower price/point = cheaper valuation = higher position ratio (sorted ascending: 2.75 -> 8.00).
+  // A tier triggers only once price/index drops into it (quote <= triggerValue).
+  const sortedRows = [...config.rows].sort((a, b) => a.triggerValue - b.triggerValue || b.positionPercent - a.positionPercent);
+  let activeIndex = sortedRows.findIndex(row => quote <= row.triggerValue);
   if (activeIndex < 0) activeIndex = sortedRows.length - 1;
   const activeRow = sortedRows[activeIndex];
   const nextBuyRow = activeIndex > 0 ? sortedRows[activeIndex - 1] : undefined;

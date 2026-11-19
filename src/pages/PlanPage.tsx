@@ -1268,7 +1268,6 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
     const stocks = (board?.stocks ?? []).filter(row => row.plan.group !== 'hidden' || row.plan.shares > 0);
     const buyCount = stocks.filter(row => row.facts.status === 'buy').length;
     const sellCount = stocks.filter(row => row.facts.status === 'sell').length;
-    const staleCount = stocks.filter(row => !row.facts.quoteCurrent).length;
     const sharesLabel = (value: number) => amountVisible ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '••••';
 
     const startInlineStockEdit = (row: DividendStockBoardRow) => {
@@ -1550,23 +1549,40 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             setExpandedStocks(prev => ({ ...prev, [plan.code]: !isExpanded }));
           }}>
             <div className="plan-stock-summary-top">
-              <span className="plan-stock-summary-name">{plan.name}<small> ({plan.code})</small></span>
+              <span className="plan-stock-summary-name">
+                <span className="plan-stock-summary-title">{plan.name}</span>
+                {' '}
+                <small>({plan.code})</small>
+              </span>
               <span className="plan-stock-summary-right">
                 <span className={info.pill}>{info.text}</span>
                 <span className="plan-stock-chevron" aria-hidden="true">▾</span>
               </span>
             </div>
             <div className="plan-stock-summary-meta">
-              <span className="plan-meta-token">{t('plan_div_stock_quote', { price: quoteLabel })}</span>
+              <span className="plan-meta-token">
+                <span className="plan-meta-label">{t('plan_div_stock_label_quote')}</span>
+                <span className="plan-meta-value">{quoteLabel}</span>
+              </span>
               {plan.currentNetYieldBps !== undefined && (
-                <span className="plan-meta-token">· {t('plan_div_stock_net_yield', { yield: fmtPct(plan.currentNetYieldBps / 100) })}</span>
+                <span className="plan-meta-token">
+                  <span className="plan-meta-label">{t('plan_div_stock_label_yield')}</span>
+                  <span className="plan-meta-value">{fmtPct(plan.currentNetYieldBps / 100)}%</span>
+                </span>
               )}
-              <span className="plan-meta-token">· {t('plan_div_stock_budget', {
-                weight: fmtPct(plan.weightBps / 100),
-                amount: budgetMajor !== undefined ? masked(fmt(budgetMajor)) : '—',
-              })}</span>
+              <span className="plan-meta-token">
+                <span className="plan-meta-label">{t('plan_div_stock_label_weight')}</span>
+                <span className="plan-meta-value">{fmtPct(plan.weightBps / 100)}%</span>
+              </span>
+              <span className="plan-meta-token">
+                <span className="plan-meta-label">{t('plan_div_stock_label_budget')}</span>
+                <span className="plan-meta-value">{budgetMajor !== undefined ? masked(fmt(budgetMajor)) : '—'}</span>
+              </span>
               {plan.shares > 0 && (
-                <span className="plan-meta-token">· {t('plan_div_stock_shares', { shares: sharesLabel(plan.shares) })}</span>
+                <span className="plan-meta-token">
+                  <span className="plan-meta-label">{t('plan_div_stock_label_shares')}</span>
+                  <span className="plan-meta-value">{t('plan_div_stock_shares_val', { shares: sharesLabel(plan.shares) })}</span>
+                </span>
               )}
             </div>
           </summary>
@@ -1694,7 +1710,7 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             {board ? (
               <>
                 <div className="plan-trigger-summary">
-                  <span>{t('plan_div_stock_trigger_summary', { buy: buyCount, sell: sellCount, stale: staleCount })}</span>
+                  <span>{t('plan_div_stock_trigger_summary', { buy: buyCount, sell: sellCount })}</span>
                   <span>{t('plan_div_stock_count', { count: stocks.length })}</span>
                 </div>
                 {stocks.length > 0
@@ -2084,22 +2100,22 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
                       </tr>
                     ) : (
                       <tr>
-                        <th scope="col" style={{ width: '26%' }}>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '30%' : '26%' }}>
                           {effectiveLadder.kind === 'yield'
                             ? t('plan_col_yield')
                             : effectiveLadder.kind === 'index'
                               ? t('plan_col_index')
                               : t('plan_col_ref')}
                         </th>
-                        <th scope="col" style={{ width: '24%' }}>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '21%' : '24%' }}>
                           {effectiveLadder.kind === 'yield' || effectiveLadder.kind === 'index'
                             ? t('plan_col_pos_pct')
                             : t('plan_col_price')}
                         </th>
-                        <th scope="col" style={{ width: '24%' }}>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '21%' : '24%' }}>
                           {effectiveLadder.kind === 'price' ? t('plan_col_pos_pct') : t('plan_col_target_amt')}
                         </th>
-                        <th scope="col" style={{ width: '26%' }}>
+                        <th scope="col" style={{ width: effectiveLadder.kind === 'price' ? '28%' : '26%' }}>
                           {effectiveLadder.kind === 'price' ? t('plan_col_target_amt') : t('plan_col_status')}
                         </th>
                       </tr>
