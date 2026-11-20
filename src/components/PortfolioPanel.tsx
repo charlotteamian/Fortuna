@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Account, Holding, HoldingTxn } from '../db';
+import { db, DEFAULT_COMMISSION_RATE_PERCENT, type Account, type Holding, type HoldingTxn } from '../db';
 import {
   getHoldingsWithPositions, getAccountTxns, createHolding, updateHolding, deleteHolding,
   addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, setCalculatedCashBalance, updatePrices, updateBalances, setHoldingBalance,
@@ -25,7 +25,14 @@ import {
   getBalanceFlowActionKey,
   getBalanceFlowConfig,
 } from '../lib/balanceFlow';
-import { deriveBalanceHoldingTimeline } from '../lib/holdingPosition';
+import {
+  calculateHoldingTxnFee,
+  deriveBalanceHoldingTimeline,
+  formatCommissionRatePercent,
+  formatCommissionWan,
+  isValidCommissionRatePercent,
+  resolveHoldingCommissionRatePercent,
+} from '../lib/holdingPosition';
 import { calculatePortfolioCash } from '../lib/portfolioCash';
 import {
   buildUsOptionContract,
@@ -63,6 +70,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const showProductCode = !isBalancePortfolio || shouldShowProductCodeForCategory(account.category);
   const [holdings, setHoldings] = useState<HoldingWithPosition[]>([]);
   const [txns, setTxns] = useState<HoldingTxn[]>([]);
+  const [defaultCommissionRatePercent, setDefaultCommissionRatePercent] = useState(DEFAULT_COMMISSION_RATE_PERCENT);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showArchivedHoldings, setShowArchivedHoldings] = useState(false);
   const [archiveFilters, setArchiveFilters] = useState({ ...DEFAULT_ARCHIVE_FILTERS });
@@ -81,6 +89,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const [hOptionRight, setHOptionRight] = useState<UsOptionRight>('call');
   const [hOptionStrike, setHOptionStrike] = useState('');
   const [hPrice, setHPrice] = useState('');
+  const [hCommissionRate, setHCommissionRate] = useState('');
+  const [hCommissionRateError, setHCommissionRateError] = useState('');
   const [hProductData, setHProductData] = useState<Record<string, string>>({});
   const [hInitShares, setHInitShares] = useState('');
   const [hInitPrice, setHInitPrice] = useState('');
@@ -93,6 +103,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const [txnDate, setTxnDate] = useState(today());
   const [txnShares, setTxnShares] = useState('');
   const [txnPrice, setTxnPrice] = useState('');
+  const [txnFee, setTxnFee] = useState('');
+  const [txnFeeError, setTxnFeeError] = useState('');
   const [txnNote, setTxnNote] = useState('');
 
   // Direct balance adjustment modal (separate from principal-flow transactions)
@@ -128,9 +140,14 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    const [h, tx] = await Promise.all([getHoldingsWithPositions(account.id), getAccountTxns(account.id)]);
+    const [h, tx, settings] = await Promise.all([
+      getHoldingsWithPositions(account.id),
+      getAccountTxns(account.id),
+      db.settings.get('main'),
+    ]);
     setHoldings(h);
     setTxns(tx);
+    setDefaultCommissionRatePercent(settings?.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT);
     return h;
   }, [account.id]);
 
@@ -275,6 +292,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const openCreateHolding = () => {
     setEditingHolding(null);
     setHName(''); setHSymbol(''); setHMarket(''); setHPrice('');
+    setHCommissionRate(''); setHCommissionRateError('');
     setHInstrumentType('security'); setHOptionUnderlying(''); setHOptionExpiration('');
     setHOptionRight('call'); setHOptionStrike('');
     setHProductData({});
@@ -294,6 +312,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     setHOptionRight(optionContract?.right ?? 'call');
     setHOptionStrike(optionContract ? formatStrikeMilli(optionContract.strikeMilli) : '');
     setHPrice(isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
+    setHCommissionRate(h.commissionRatePercent != null ? formatCommissionRatePercent(h.commissionRatePercent) : '');
+    setHCommissionRateError('');
     setHProductData(h.productData ? { ...h.productData } : {});
     setShowHoldingForm(true);
   };
@@ -305,6 +325,19 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       alert(t('required_fields_missing'));
       return;
     }
+    let commissionRatePercent: number | undefined;
+    if (!isBalancePortfolio) {
+      const rawRate = hCommissionRate.trim();
+      if (rawRate !== '') {
+        const parsedRate = Number(rawRate);
+        if (!isValidCommissionRatePercent(parsedRate)) {
+          setHCommissionRateError(t('holding_commission_rate_invalid'));
+          return;
+        }
+        commissionRatePercent = parsedRate;
+      }
+    }
+    setHCommissionRateError('');
     const strikeMilli = parseStrikeMilli(hOptionStrike);
     const optionContract = hInstrumentType === 'us_option' && strikeMilli != null
       ? buildUsOptionContract({
@@ -320,7 +353,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     }
     const meta: Pick<Holding,
       'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
-      | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'productData'
+      | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'productData'
     > = {
       name: hName.trim(),
       symbol: optionContract
@@ -334,6 +367,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       optionStrikeMilli: optionContract?.strikeMilli,
       contractMultiplier: optionContract?.multiplier,
       mode: defaultHoldingMode,
+      commissionRatePercent,
       productData: Object.keys(cleanProductData).length > 0 ? cleanProductData : undefined,
     };
     const priceOrBalance = parseFloat(hPrice);
@@ -374,11 +408,13 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     setTxnHolding(h); setEditingTxn(null); setTxnKind(kind);
     setTxnDate(today()); setTxnShares('');
     setTxnPrice(isBalancePortfolio ? '1' : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
+    setTxnFee(''); setTxnFeeError('');
     setTxnNote('');
   };
   const openEditTxn = (h: HoldingWithPosition, tx: HoldingTxn) => {
     setTxnHolding(h); setEditingTxn(tx); setTxnKind(tx.kind);
     setTxnDate(tx.date); setTxnShares(String(tx.shares)); setTxnPrice(String(tx.price));
+    setTxnFee(tx.fee != null ? String(tx.fee) : ''); setTxnFeeError('');
     setTxnNote(tx.note || '');
   };
   const previewBalanceTxn = (
@@ -427,7 +463,20 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       alert(t(isBalancePortfolio ? 'sell_exceeds_balance' : 'sell_exceeds_shares', { shares: txnHolding.position.shares.toLocaleString('en-US', { maximumFractionDigits: isBalancePortfolio ? 2 : 4 }) }));
       return;
     }
-    const input = { date: txnDate, kind: txnKind, shares, price, note: txnNote.trim() || undefined };
+    let fee: number | undefined;
+    if (!isBalancePortfolio) {
+      const rawFee = txnFee.trim();
+      if (rawFee !== '') {
+        const parsedFee = Number(rawFee);
+        if (!Number.isFinite(parsedFee) || parsedFee < 0) {
+          setTxnFeeError(t('portfolio_cash_invalid'));
+          return;
+        }
+        fee = Math.round(parsedFee * 100) / 100;
+      }
+    }
+    setTxnFeeError('');
+    const input = { date: txnDate, kind: txnKind, shares, price, fee, note: txnNote.trim() || undefined };
     if (editingTxn) await updateHoldingTxn(editingTxn.id, input);
     else await addHoldingTxn(account.id, txnHolding.id, input);
     setTxnHolding(null); setEditingTxn(null);
@@ -551,6 +600,15 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     const txnColor = isSell ? theme.liabilityColor : theme.assetColor;
     const multiplier = getHoldingContractMultiplier(h);
     const quantityUnit = t(resolveUsOptionContract(h) ? 'option_contracts_unit' : 'shares_unit');
+    const txnDayTrade = !holdingIsBalance && !isAdjustment ? h.txnDayTrades[tx.id] : undefined;
+    const txnFeeAmount = !holdingIsBalance && !isAdjustment ? (h.txnFees[tx.id] ?? 0) : 0;
+    const dayTradeKindLabel = txnDayTrade
+      ? t(txnDayTrade.direction === 'buy_then_sell'
+        ? 'holding_day_trade_regular'
+        : txnDayTrade.direction === 'sell_then_buy'
+          ? 'holding_day_trade_reverse'
+          : 'holding_day_trade_mixed')
+      : '';
     return (
       <article key={tx.id} className="holding-txn">
         <div className="holding-txn-heading">
@@ -562,6 +620,9 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
                 : t(isSell ? 'sell_out' : 'buy_in')}
             </span>
+            {txnDayTrade && (
+              <span className="holding-txn-t-badge" title={t('holding_day_trade_badge_title')}>T</span>
+            )}
             <time className="holding-txn-date" dateTime={tx.executionTime ? `${tx.date}T${tx.executionTime}` : tx.date}>
               {tx.executionTime ? `${tx.date} ${tx.executionTime}` : tx.date}
             </time>
@@ -582,13 +643,40 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               <div><dt>{t(isPositionAdjustment ? 'holding_cost_price' : 'holding_import_trade_price')} ({account.currency})</dt>
                 <dd>{isPositionAdjustment && tx.costPriceSnapshot == null ? '—' : masked(fmtPrice(isPositionAdjustment ? tx.costPriceSnapshot! : tx.price))}</dd></div>
               <div><dt>{t('shares')}</dt><dd>{masked(fmtShares(isPositionAdjustment ? tx.quantitySnapshot! : tx.shares))} {quantityUnit}</dd></div>
-              {!isPositionAdjustment && <div className="holding-txn-total">
-                <dt>{t('holding_trade_amount')} ({account.currency}){multiplier > 1 ? ` · ${t('option_multiplier')} × ${multiplier}` : ''}</dt>
-                <dd>{masked(fmtFull(Math.round(tx.shares * tx.price * multiplier * 100) / 100))}</dd>
-              </div>}
+              {!isPositionAdjustment && (
+                <>
+                  <div className="holding-txn-summary-cell">
+                    <dt>{t('holding_trade_amount')} ({account.currency}){multiplier > 1 ? ` · ${t('option_multiplier')} × ${multiplier}` : ''}</dt>
+                    <dd>{masked(fmtFull(Math.round(tx.shares * tx.price * multiplier * 100) / 100))}</dd>
+                  </div>
+                  <div className="holding-txn-summary-cell">
+                    <dt>
+                      {t('holding_txn_fee')} ({account.currency})
+                      {tx.fee != null ? ` · ${t('holding_txn_fee_manual_badge')}` : h.commissionRatePercentEffective > 0 ? ` · ${formatCommissionRatePercent(h.commissionRatePercentEffective)}%` : ''}
+                    </dt>
+                    <dd>{masked(fmtFull(txnFeeAmount))}</dd>
+                  </div>
+                </>
+              )}
             </>
           )}
         </dl>
+        {txnDayTrade && (
+          <div className="holding-txn-day-trade">
+            <span className="holding-txn-day-trade-detail">
+              {t('holding_day_trade_summary', {
+                kind: dayTradeKindLabel,
+                shares: masked(fmtShares(txnDayTrade.matchedShares)),
+                unit: quantityUnit,
+                buyPrice: masked(fmtPrice(txnDayTrade.buyAvgPrice, 4)),
+                sellPrice: masked(fmtPrice(txnDayTrade.sellAvgPrice, 4)),
+              })}
+            </span>
+            <span className="holding-txn-day-trade-pnl" style={{ color: pnlColor(txnDayTrade.pnl) }}>
+              {t('holding_day_trade_net_pnl')} {masked(`${txnDayTrade.pnl >= 0 ? '+' : ''}${fmtFull(txnDayTrade.pnl)}`)}
+            </span>
+          </div>
+        )}
         {tx.note && <p className="holding-txn-note">{tx.note}</p>}
         {tx.brokerRef && <p className="holding-txn-reference">{t('holding_trade_reference')} · {tx.brokerRef}</p>}
       </article>
@@ -692,6 +780,21 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                   {optionContract && <div className="holding-pos-cell"><span className="holding-pos-key">{t('option_multiplier')}</span><span className="holding-pos-val">× {multiplier}</span></div>}
                   <div className="holding-pos-cell"><span className="holding-pos-key">{t('unrealized_pnl')}</span><span className="holding-pos-val" style={{ color: h.position.costBasis > 0 ? pnlColor(h.unrealizedPnl) : 'var(--text-muted)' }}>{h.position.costBasis > 0 ? masked(signed(h.unrealizedPnl)) : '—'}</span></div>
                   <div className="holding-pos-cell"><span className="holding-pos-key">{t('realized_pnl')}</span><span className="holding-pos-val" style={{ color: Math.abs(h.position.realizedPnl) > 0.005 ? pnlColor(h.position.realizedPnl) : 'var(--text-muted)' }}>{Math.abs(h.position.realizedPnl) > 0.005 ? masked(signed(h.position.realizedPnl)) : '—'}</span></div>
+                  <div className="holding-pos-cell">
+                    <span className="holding-pos-key">
+                      {t('holding_day_trade_pnl')}
+                      {h.position.dayTradeCount > 0 ? ` · ${t('holding_day_trade_count', { count: h.position.dayTradeCount })}` : ''}
+                    </span>
+                    <span className="holding-pos-val" style={{ color: h.position.dayTradeCount > 0 ? pnlColor(h.position.dayTradePnl) : 'var(--text-muted)' }}>
+                      {h.position.dayTradeCount > 0 ? masked(signed(h.position.dayTradePnl)) : '—'}
+                    </span>
+                  </div>
+                  <div className="holding-pos-cell holding-pos-cell-action" role="button" tabIndex={0} onClick={() => openEditHolding(h)} onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEditHolding(h); }
+                  }}>
+                    <span className="holding-pos-key">{t('holding_fees_with_rate', { rate: formatCommissionRatePercent(h.commissionRatePercentEffective) })} ✏️</span>
+                    <span className="holding-pos-val">{masked(fmtFull(h.position.totalFees))}</span>
+                  </div>
                 </>
               )}
             </div>
@@ -948,6 +1051,55 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 <div className="form-hint" style={{ marginTop: 'var(--sp-2)' }}>{t('derived_balance_hint')}</div>
               </div>
             )}
+            {!isBalancePortfolio && (() => {
+              const inheritedRate = resolveHoldingCommissionRatePercent(
+                { mode: defaultHoldingMode },
+                defaultCommissionRatePercent,
+                account.category,
+              );
+              const trimmedRate = hCommissionRate.trim();
+              const parsedPreview = trimmedRate === '' ? null : Number(trimmedRate);
+              const validPreview = parsedPreview != null && isValidCommissionRatePercent(parsedPreview);
+              return (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="holding-commission-rate">{t('holding_commission_rate_label')}</label>
+                  <input
+                    id="holding-commission-rate"
+                    name="commissionRatePercent"
+                    className="form-input mono"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="10"
+                    step="0.001"
+                    aria-describedby="holding-commission-rate-hint"
+                    aria-invalid={Boolean(hCommissionRateError)}
+                    placeholder={t('holding_commission_rate_ph', { rate: formatCommissionRatePercent(inheritedRate) })}
+                    value={hCommissionRate}
+                    onChange={event => {
+                      setHCommissionRate(event.target.value);
+                      if (hCommissionRateError) setHCommissionRateError('');
+                    }}
+                  />
+                  <div id="holding-commission-rate-hint" className="form-hint" style={{ marginTop: 'var(--sp-1)' }}>
+                    {validPreview
+                      ? t('holding_commission_rate_custom_hint', {
+                          rate: formatCommissionRatePercent(parsedPreview),
+                          wan: formatCommissionWan(parsedPreview),
+                        })
+                      : t('holding_commission_rate_hint', {
+                          rate: formatCommissionRatePercent(inheritedRate),
+                          wan: formatCommissionWan(inheritedRate),
+                        })}
+                  </div>
+                  {hCommissionRateError && (
+                    <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+                      {hCommissionRateError}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {productHoldingFields.map(field => (
               <div className="form-group" key={field.key}>
                 <label className="form-label">{t(field.labelKey)}{field.required ? ' *' : ''}</label>
@@ -1027,23 +1179,76 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                   placeholder={txnHolding.lastPrice > 0 ? String(txnHolding.lastPrice) : '0.00'}
                   value={txnPrice} onChange={e => setTxnPrice(e.target.value)} />
               </div>}
-              {valid && (
-                <div className="form-calculation" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--sp-1)', marginBottom: 'var(--sp-2)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-3)' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      {t(balanceFlow ? getBalanceFlowActionKey(balanceFlow, txnKind) : (isSell ? 'sell_out' : 'buy_in'))} {shares.toLocaleString('en-US', { maximumFractionDigits: isBalancePortfolio ? 2 : 4 })}
-                      {!isBalancePortfolio && `${txnMultiplier > 1 ? ` × ${txnMultiplier}` : ''} × ${price}`}
-                    </span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', color: txnColor }}>{fmtFull(shares * price * txnMultiplier)} {account.currency}</span>
+              {!isBalancePortfolio && (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="holding-txn-fee">{t('holding_txn_fee_label')} ({account.currency})</label>
+                  <input
+                    id="holding-txn-fee"
+                    name="fee"
+                    className="form-input mono"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    aria-describedby="holding-txn-fee-hint"
+                    aria-invalid={Boolean(txnFeeError)}
+                    placeholder={t('holding_txn_fee_auto_ph', { rate: formatCommissionRatePercent(txnHolding.commissionRatePercentEffective) })}
+                    value={txnFee}
+                    onChange={event => {
+                      setTxnFee(event.target.value);
+                      if (txnFeeError) setTxnFeeError('');
+                    }}
+                  />
+                  <div id="holding-txn-fee-hint" className="form-hint" style={{ marginTop: 'var(--sp-1)' }}>
+                    {t('holding_txn_fee_hint', { rate: formatCommissionRatePercent(txnHolding.commissionRatePercentEffective) })}
                   </div>
-                  {isBalancePortfolio && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: balanceUnderflow ? 'var(--liability-color)' : 'var(--text-muted)' }}>
-                      <span>{balanceUnderflow ? t('balance_decrease_exceeds') : t('balance_after_change')}</span>
-                      {!balanceUnderflow && <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)' }}>{fmtFull(balancePreview?.balance ?? 0)} {account.currency}</span>}
+                  {txnFeeError && (
+                    <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+                      {txnFeeError}
                     </div>
                   )}
                 </div>
               )}
+              {valid && (() => {
+                const rawFee = txnFee.trim();
+                const parsedManualFee = rawFee !== '' && Number.isFinite(Number(rawFee)) && Number(rawFee) >= 0 ? Number(rawFee) : undefined;
+                const previewFee = isBalancePortfolio
+                  ? 0
+                  : calculateHoldingTxnFee(
+                      { shares, price, fee: parsedManualFee },
+                      txnMultiplier,
+                      txnHolding.commissionRatePercentEffective,
+                    );
+                return (
+                  <div className="form-calculation" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--sp-1)', marginBottom: 'var(--sp-2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-3)' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {t(balanceFlow ? getBalanceFlowActionKey(balanceFlow, txnKind) : (isSell ? 'sell_out' : 'buy_in'))} {shares.toLocaleString('en-US', { maximumFractionDigits: isBalancePortfolio ? 2 : 4 })}
+                        {!isBalancePortfolio && `${txnMultiplier > 1 ? ` × ${txnMultiplier}` : ''} × ${price}`}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)', color: txnColor }}>{fmtFull(shares * price * txnMultiplier)} {account.currency}</span>
+                    </div>
+                    {!isBalancePortfolio && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-3)', color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}>
+                        <span>
+                          {parsedManualFee !== undefined
+                            ? t('holding_txn_fee_preview_manual')
+                            : t('holding_txn_fee_preview_auto', { rate: formatCommissionRatePercent(txnHolding.commissionRatePercentEffective) })}
+                        </span>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)' }}>
+                          {fmtFull(previewFee)} {account.currency}
+                        </span>
+                      </div>
+                    )}
+                    {isBalancePortfolio && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: balanceUnderflow ? 'var(--liability-color)' : 'var(--text-muted)' }}>
+                        <span>{balanceUnderflow ? t('balance_decrease_exceeds') : t('balance_after_change')}</span>
+                        {!balanceUnderflow && <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-bold)' }}>{fmtFull(balancePreview?.balance ?? 0)} {account.currency}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="form-group">
                 <label className="form-label">{t('note')}</label>
                 <input className="form-input" placeholder={t('note_placeholder')} value={txnNote} onChange={e => setTxnNote(e.target.value)} />

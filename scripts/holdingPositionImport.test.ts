@@ -18,7 +18,7 @@ registerHooks({
   },
 });
 
-const { db, initializeSettings, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
+const { db, initializeSettings, updateSettings, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
 const { updateHoldingPositions, importHoldingPositions, importHoldingScreenshot, getHoldingsWithPositions, deleteHoldingTxn } = await import('../src/services/holdingService.ts');
 const { holdingRealizedEvents } = await import('../src/services/pnlService.ts');
 const { formatLocalDate } = await import('../src/lib/localDate.ts');
@@ -28,6 +28,7 @@ const today = formatLocalDate();
 beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
   await initializeSettings();
+  await updateSettings({ defaultCommissionRatePercent: 0 });
   await db.accounts.bulkAdd([
     { id: 'stocks', name: 'Broker', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, cashBalance: 123.45, institution: 'Original broker', productData: { custom: 'keep' }, sortOrder: 0, createdAt: 1 },
     { id: 'other-stocks', name: 'Other broker', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, cashBalance: 500, sortOrder: 1, createdAt: 1 },
@@ -248,7 +249,8 @@ test('screenshot holdings reconcile after real dated trades without counting pos
   const h = (await getHoldingsWithPositions('stocks')).find(h => h.id === 'h')!;
   assert.equal(h.position.shares, 120);
   assert.equal(h.position.avgCost, 11);
-  assert.ok(Math.abs(h.position.realizedPnl - (100 + 25 * (15 - 2000 / 180))) < 1e-8);
+  // LIFO pairs the 25 @ 15 sell against the latest 100 @ 12 buy (+75), plus earlier 20 @ 15 vs 10 (+100).
+  assert.ok(Math.abs(h.position.realizedPnl - (100 + 25 * (15 - 12))) < 1e-8);
   assert.equal((await db.holdingTxns.get('buy'))?.shares, 100);
   const first = await state();
   assert.deepEqual(await importHoldingScreenshot('stocks', input, today), { created: 0, updated: 0, insertedTrades: 0, skippedTrades: 2 });

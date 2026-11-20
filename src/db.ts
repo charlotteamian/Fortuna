@@ -21,9 +21,17 @@ import { getHoldingContractMultiplier, type UsOptionRight } from './lib/usOption
 import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 import { describeExcelBackupError, normalizeExcelBackupNumber, type ExcelBackupFailure, type ExcelBackupFailureCode, type ExcelBackupValidationReason } from './lib/excelBackup';
 import { normalizeLocalTime } from './lib/localDate';
+import {
+  analyzeHoldingPosition,
+  DEFAULT_COMMISSION_RATE_PERCENT,
+  isValidCommissionRatePercent,
+  resolveHoldingCommissionRatePercent,
+  type HoldingPositionAnalysis,
+} from './lib/holdingPosition';
 
 export { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
 export { COLOR_THEMES, getTheme, type ColorTheme } from './lib/colorThemes';
+export { DEFAULT_COMMISSION_RATE_PERCENT } from './lib/holdingPosition';
 
 export interface Account {
   id: string;
@@ -141,6 +149,7 @@ export interface Holding {
   optionStrikeMilli?: number; // strike × 1000 (OSI precision)
   contractMultiplier?: number; // normally 100 for US equity options
   mode?: HoldingMode;      // unit = quantity × price, balance = current balance tracked by amount deltas
+  commissionRatePercent?: number; // optional per-holding commission rate override (%)
   productData?: Record<string, string>; // per-product metadata, e.g. deposit rate and maturity
   lastPrice: number;       // latest quote, manually maintained (account currency)
   priceDate?: string;
@@ -156,6 +165,7 @@ export interface HoldingTxn {
   kind: 'buy' | 'sell';
   shares: number;          // positive magnitude
   price: number;           // per share, account currency
+  fee?: number;            // optional explicit fee override in account currency; omitted = auto-calculated from rate
   balanceSnapshot?: number; // balance-mode holdings: direct balance anchor, excluded from principal-flow totals
   quantitySnapshot?: number; // unit holdings: direct quantity anchor, never a synthetic buy/sell
   costPriceSnapshot?: number; // optional average buy cost per share at the quantity anchor
@@ -178,6 +188,7 @@ export interface Settings {
   fontSize?: 'small' | 'normal' | 'large';
   language?: 'auto' | 'zh' | 'en';
   goldPriceSource?: GoldPriceSource;  // which gold price convention to value precious metals with
+  defaultCommissionRatePercent?: number; // default stock/ETF trading commission rate (%) e.g. 0.01 = 0.01% (万1)
   metalTxnMigrated?: boolean;         // legacy metal snapshot records converted to buy/sell deltas
   dividendBudgetMinor?: number; // CNY cents
   dividendWorkbenchInitialized?: boolean;
@@ -390,6 +401,7 @@ function createDefaultSettings(): Settings {
     themeMode: 'auto', fontSize: 'normal',
     language: 'auto',
     goldPriceSource: primaryCurrency === 'CNY' ? 'domestic' : 'international',
+    defaultCommissionRatePercent: DEFAULT_COMMISSION_RATE_PERCENT,
     onboardingVersion: 0,
     snapshotFocusAccountIds: [],
     automaticSnapshotSchemaVersion: CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION,
@@ -426,6 +438,10 @@ async function initializeSettingsOnce(): Promise<Settings> {
   if (settings.goldPriceSource === undefined) {
     // CNY users default to the legacy CNY-per-gram conversion; others use direct account-currency conversion.
     settings.goldPriceSource = settings.primaryCurrency === 'CNY' ? 'domestic' : 'international';
+    updated = true;
+  }
+  if (settings.defaultCommissionRatePercent === undefined) {
+    settings.defaultCommissionRatePercent = DEFAULT_COMMISSION_RATE_PERCENT;
     updated = true;
   }
   if (settings.onboardingVersion === undefined) {
@@ -524,7 +540,9 @@ export async function importData(jsonData: string): Promise<boolean> {
   try {
     const data = JSON.parse(jsonData);
     if (!data.accounts || !data.records || !data.settings) return false;
-    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.dividendManualInputs === undefined || isDividendManualInputsMap(row.dividendManualInputs)) && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
+    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.defaultCommissionRatePercent === undefined || isValidCommissionRatePercent(row.defaultCommissionRatePercent)) && (row.dividendManualInputs === undefined || isDividendManualInputsMap(row.dividendManualInputs)) && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
+    if (data.holdings !== undefined && (!Array.isArray(data.holdings) || !data.holdings.every((row: Holding) => row && (row.commissionRatePercent === undefined || isValidCommissionRatePercent(row.commissionRatePercent))))) return false;
+    if (data.holdingTxns !== undefined && (!Array.isArray(data.holdingTxns) || !data.holdingTxns.every((row: HoldingTxn) => row && (row.fee === undefined || (typeof row.fee === 'number' && Number.isFinite(row.fee) && row.fee >= 0))))) return false;
     if (data.dividendStocks !== undefined && (!Array.isArray(data.dividendStocks) || !data.dividendStocks.every(isDividendStock))) return false;
 
     if (data.priceMonitors !== undefined && (!Array.isArray(data.priceMonitors) || !data.priceMonitors.every(isPriceMonitor) || new Set(data.priceMonitors.map((plan: PriceMonitor) => plan.id)).size !== data.priceMonitors.length)) return false;
@@ -629,6 +647,23 @@ export async function exportToExcel(): Promise<string> {
   const t = i18n.t.bind(i18n);
   const acctById = new Map(accounts.map(a => [a.id, a]));
   const holdingById = new Map(holdings.map(h => [h.id, h]));
+  const defaultCommissionRatePercent = settingsRows[0]?.defaultCommissionRatePercent;
+  const txnsByHoldingId = new Map<string, HoldingTxn[]>();
+  for (const tx of holdingTxns) {
+    const list = txnsByHoldingId.get(tx.holdingId) ?? [];
+    list.push(tx);
+    txnsByHoldingId.set(tx.holdingId, list);
+  }
+  const analysisByHoldingId = new Map<string, HoldingPositionAnalysis>();
+  for (const h of holdings) {
+    const acct = acctById.get(h.accountId);
+    if (acct && getHoldingMode(acct.category, h) === 'balance') continue;
+    const rate = resolveHoldingCommissionRatePercent(h, defaultCommissionRatePercent, acct?.category);
+    analysisByHoldingId.set(
+      h.id,
+      analyzeHoldingPosition(txnsByHoldingId.get(h.id) ?? [], getHoldingContractMultiplier(h), { commissionRatePercent: rate }),
+    );
+  }
   const historyExport = holdingTxns
     .slice()
     .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)
@@ -641,6 +676,9 @@ export async function exportToExcel(): Promise<string> {
         : null;
       const isBalanceAdjustment = tx.balanceSnapshot != null;
       const isPositionAdjustment = tx.quantitySnapshot != null;
+      const analysis = analysisByHoldingId.get(tx.holdingId);
+      const resolvedFee = analysis?.txnFees[tx.id];
+      const dayTrade = analysis?.txnDayTrades[tx.id];
       return {
         [t('xh_date')]: tx.date,
         [t('xh_account')]: acct?.name ?? tx.accountId,
@@ -655,12 +693,14 @@ export async function exportToExcel(): Promise<string> {
           : balanceFlow
           ? t(getBalanceFlowActionKey(balanceFlow, tx.kind))
           : (tx.kind === 'buy' ? t('xh_buy') : t('xh_sell')),
+        [t('xh_day_trade')]: dayTrade ? 'T' : '',
         [t('xh_shares')]: isPositionAdjustment ? tx.quantitySnapshot : isBalanceAdjustment ? '' : tx.shares,
         [t('xh_price')]: isBalanceAdjustment || isPositionAdjustment ? '' : tx.price,
         [t('holding_cost_price')]: isPositionAdjustment ? tx.costPriceSnapshot ?? '' : '',
         [t('xh_amount')]: isPositionAdjustment ? '' : isBalanceAdjustment
           ? tx.balanceSnapshot
           : Math.round(tx.shares * tx.price * multiplier * 100) / 100,
+        [t('xh_fee')]: isBalanceAdjustment || isPositionAdjustment || balanceFlow ? '' : (resolvedFee ?? 0),
         [t('xh_currency')]: acct?.currency ?? '',
         [t('xh_note')]: tx.note ?? '',
       };
@@ -857,9 +897,11 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     sheet = 'Holdings';
     const holdings = wsHoldings
       ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsHoldings).map(row => {
-          const { productData, ...rest } = row;
+          const { productData, commissionRatePercent, ...rest } = row;
+          const hasRate = commissionRatePercent != null && !(typeof commissionRatePercent === 'string' && commissionRatePercent.trim() === '');
           return {
             ...rest,
+            ...(hasRate ? { commissionRatePercent: normalizeExcelBackupNumber(commissionRatePercent) } : {}),
             productData: typeof productData === 'string'
               ? (() => { try { return JSON.parse(productData) as Record<string, string>; } catch { return undefined; } })()
               : undefined,
@@ -871,7 +913,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     const holdingTxns = holdingTxnRows.map(row => {
       const normalized = { ...row };
       for (const field of ['shares', 'price', 'createdAt']) normalized[field] = normalizeExcelBackupNumber(row[field]);
-      for (const field of ['balanceSnapshot', 'quantitySnapshot', 'costPriceSnapshot']) {
+      for (const field of ['balanceSnapshot', 'quantitySnapshot', 'costPriceSnapshot', 'fee']) {
         const value = row[field];
         // Edited workbooks can write empty strings where an exported optional cell was absent.
         if (value == null || (typeof value === 'string' && value.trim() === '')) delete normalized[field];
@@ -946,6 +988,11 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       };
       const targetTotal = Number(row.planTargetTotal);
       if (Number.isFinite(targetTotal) && targetTotal > 0) restored.planTargetTotal = targetTotal;
+      if (row.defaultCommissionRatePercent !== undefined && row.defaultCommissionRatePercent !== null && row.defaultCommissionRatePercent !== '') {
+        const parsedRate = normalizeExcelBackupNumber(row.defaultCommissionRatePercent);
+        if (!isValidCommissionRatePercent(parsedRate)) return [];
+        restored.defaultCommissionRatePercent = parsedRate;
+      }
       return [restored];
     });
     if (restoredSettings.length !== settingsRaw.length) return fail('invalid_data', 'Settings');
@@ -987,6 +1034,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       && Number.isFinite(holding.lastPrice)
       && Number.isFinite(holding.createdAt)
       && Number.isFinite(holding.sortOrder)
+      && (holding.commissionRatePercent === undefined || isValidCommissionRatePercent(holding.commissionRatePercent))
     ))) return fail('invalid_data', 'Holdings');
     const transactionIds = new Set<string>();
     for (const [index, transaction] of holdingTxns.entries()) {
@@ -1006,9 +1054,9 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         ? new Date(`${transaction.date}T00:00:00Z`) : undefined;
       if (!date || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== transaction.date) return failTransaction('date', 'invalid_date');
       if (transaction.kind !== 'buy' && transaction.kind !== 'sell') return failTransaction('kind', 'invalid_kind');
-      for (const field of ['shares', 'price', 'createdAt', 'quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot'] as const) {
+      for (const field of ['shares', 'price', 'createdAt', 'quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot', 'fee'] as const) {
         const value = transaction[field];
-        if (value === undefined && ['quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot'].includes(field)) continue;
+        if (value === undefined && ['quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot', 'fee'].includes(field)) continue;
         if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return failTransaction(field, 'invalid_number');
       }
       if (transaction.executionTime !== undefined && !normalizeLocalTime(transaction.executionTime)) return failTransaction('executionTime', 'invalid_date');

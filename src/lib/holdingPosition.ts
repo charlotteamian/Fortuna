@@ -1,13 +1,85 @@
 import type { HoldingTxn } from '../db';
 
+export const DEFAULT_COMMISSION_RATE_PERCENT = 0.01;
+export const MAX_COMMISSION_RATE_PERCENT = 10;
+
+const UNIT_HOLDING_CATEGORIES = new Set(['股票/ETF', '股票', '场外基金', '数字货币']);
+const STOCK_COMMISSION_CATEGORIES = new Set(['股票/ETF', '股票']);
+
+export type HoldingTxnLike = Pick<
+  HoldingTxn,
+  'date' | 'kind' | 'shares' | 'price' | 'createdAt' | 'quantitySnapshot' | 'costPriceSnapshot' | 'balanceSnapshot' | 'fee'
+> & { id?: string };
+
+export interface HoldingPositionOptions {
+  /** Commission rate as a percentage (e.g. 0.01 means 0.01% = 0.0001). Defaults to 0 when omitted. */
+  commissionRatePercent?: number;
+}
+
+export interface HoldingDayTradeMatch {
+  date: string;
+  direction: 'buy_then_sell' | 'sell_then_buy';
+  buyTxnId: string;
+  sellTxnId: string;
+  shares: number;
+  buyPrice: number;
+  sellPrice: number;
+  buyFee: number;
+  sellFee: number;
+  fee: number;
+  pnl: number;
+  costBasis: number;
+}
+
+export interface HoldingTxnDayTradeSummary {
+  txnId: string;
+  matchedShares: number;
+  totalShares: number;
+  direction: 'buy_then_sell' | 'sell_then_buy' | 'mixed';
+  buyAvgPrice: number;
+  sellAvgPrice: number;
+  pnl: number;
+  fee: number;
+  matchCount: number;
+}
+
+export interface HoldingRealizedEvent {
+  date: string;
+  sellTxnId: string;
+  amount: number;
+  costBasis: number;
+  isDayTrade: boolean;
+}
+
+export interface HoldingDailyState {
+  date: string;
+  shares: number;
+  costBasis: number;
+  realizedPnl: number;
+  realizedCostBasis: number;
+  knownPrice: number;
+}
+
 export interface HoldingPosition {
   shares: number;
-  avgCost: number;       // moving-average buy cost of the remaining position
-  costBasis: number;     // shares * avgCost
-  realizedPnl: number;   // accumulated realized P&L from sells
-  realizedCostBasis: number; // accumulated moving-average cost of sold shares
-  netInvested: number;   // costBasis - realizedPnl; remaining capital after sale proceeds
-  dilutedCost: number;   // broker-style break-even cost per remaining share
+  avgCost: number;          // weighted-average cost of remaining open lots (including buy fees)
+  costBasis: number;        // total cost of remaining open lots (including buy fees)
+  realizedPnl: number;      // accumulated realized P&L from same-day T matches & LIFO sells (net of fees)
+  realizedCostBasis: number;// accumulated cost basis of sold/matched shares (including buy fees)
+  netInvested: number;      // costBasis - realizedPnl; total buy cash out minus net sell proceeds
+  dilutedCost: number;      // broker-style break-even cost per remaining share
+  totalFees: number;        // accumulated commission/fees across buy & sell fills
+  dayTradePnl: number;      // realized P&L specifically from matched same-day T+0 trades (net of fees)
+  dayTradeCount: number;    // count of matched same-day T+0 pairs
+}
+
+export interface HoldingPositionAnalysis {
+  position: HoldingPosition;
+  dayTrades: HoldingDayTradeMatch[];
+  txnDayTrades: Record<string, HoldingTxnDayTradeSummary>;
+  txnFees: Record<string, number>;
+  realizedEvents: HoldingRealizedEvent[];
+  dailyStates: HoldingDailyState[];
 }
 
 export interface HoldingPnl {
@@ -22,6 +94,52 @@ export interface BalanceHoldingTimelineEntry {
   id: string;
   balance: number;
   underflow: boolean;
+}
+
+export function isValidCommissionRatePercent(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_COMMISSION_RATE_PERCENT;
+}
+
+export function normalizeCommissionRatePercent(value: unknown, fallback = 0): number {
+  return isValidCommissionRatePercent(value) ? value : fallback;
+}
+
+export function formatCommissionRatePercent(ratePercent: number): string {
+  const safe = normalizeCommissionRatePercent(ratePercent, 0);
+  return String(Number(safe.toFixed(6)));
+}
+
+export function formatCommissionWan(ratePercent: number): string {
+  const safe = normalizeCommissionRatePercent(ratePercent, 0);
+  return String(Number((safe * 100).toFixed(4)));
+}
+
+export function resolveHoldingCommissionRatePercent(
+  holding?: { mode?: string; commissionRatePercent?: number },
+  defaultCommissionRatePercent?: number,
+  accountCategory?: string,
+): number {
+  if (holding?.mode === 'balance') return 0;
+  if (accountCategory && !holding?.mode && !UNIT_HOLDING_CATEGORIES.has(accountCategory)) return 0;
+  if (isValidCommissionRatePercent(holding?.commissionRatePercent)) return holding.commissionRatePercent;
+  if (accountCategory && !STOCK_COMMISSION_CATEGORIES.has(accountCategory)) return 0;
+  return normalizeCommissionRatePercent(defaultCommissionRatePercent, DEFAULT_COMMISSION_RATE_PERCENT);
+}
+
+export function calculateHoldingTxnFee(
+  tx: Pick<HoldingTxn, 'shares' | 'price' | 'fee' | 'quantitySnapshot' | 'balanceSnapshot'>,
+  multiplier = 1,
+  commissionRatePercent = 0,
+): number {
+  if (tx.quantitySnapshot != null || tx.balanceSnapshot != null) return 0;
+  if (typeof tx.fee === 'number' && Number.isFinite(tx.fee) && tx.fee >= 0) {
+    return Math.round(tx.fee * 100) / 100;
+  }
+  const rate = normalizeCommissionRatePercent(commissionRatePercent, 0) / 100;
+  if (rate <= 0) return 0;
+  const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  const gross = Math.max(0, tx.shares) * Math.max(0, tx.price) * safeMultiplier;
+  return Math.round(gross * rate * 100) / 100;
 }
 
 /** Balance-mode ledger: direct snapshots reset the anchor; principal flows continue from it. */
@@ -52,54 +170,401 @@ export function computeBalanceHoldingPosition(txns: HoldingTxn[]): HoldingPositi
     realizedCostBasis: 0,
     netInvested: balance,
     dilutedCost: balance > POSITION_EPSILON ? 1 : 0,
+    totalFees: 0,
+    dayTradePnl: 0,
+    dayTradeCount: 0,
   };
 }
 
-/** Moving-average ledger math plus broker-style diluted cost. */
-export function computeHoldingPosition(txns: HoldingTxn[], multiplier = 1): HoldingPosition {
+interface OpenLot {
+  txnId: string;
+  date: string;
+  shares: number;
+  price: number;
+  cost: number;
+  fee: number;
+  isAnchor?: boolean;
+}
+
+interface PendingSell {
+  txnId: string;
+  date: string;
+  shares: number;
+  price: number;
+  net: number;
+  fee: number;
+}
+
+/**
+ * Same-day T+0 matching (both buy-then-sell and sell-then-buy) + LIFO lot accounting,
+ * with automatic or explicit per-fill commission fees and broker-style diluted cost.
+ */
+export function analyzeHoldingPosition(
+  txns: readonly HoldingTxnLike[],
+  multiplier = 1,
+  options: HoldingPositionOptions = {},
+): HoldingPositionAnalysis {
   const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
-  const chron = [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
-  let shares = 0;
-  let costBasis = 0;
+  const commissionRatePercent = normalizeCommissionRatePercent(options.commissionRatePercent, 0);
+
+  const normalized = txns.map((tx, index) => ({ tx, txnId: tx.id ?? `__txn_${index}`, index }));
+  normalized.sort(
+    (a, b) => a.tx.date.localeCompare(b.tx.date)
+      || a.tx.createdAt - b.tx.createdAt
+      || a.txnId.localeCompare(b.txnId)
+      || a.index - b.index,
+  );
+
+  const sharesByTxnId = new Map<string, number>();
+  for (const item of normalized) sharesByTxnId.set(item.txnId, item.tx.shares);
+
+  const historicalLots: OpenLot[] = [];
   let realizedPnl = 0;
   let realizedCostBasis = 0;
+  let totalFees = 0;
+  let dayTradePnl = 0;
+  let knownPrice = 0;
 
-  for (const tx of chron) {
-    if (tx.quantitySnapshot != null) {
-      const previousAvg = shares > 0 ? costBasis / (shares * safeMultiplier) : 0;
-      shares = Math.max(0, tx.quantitySnapshot);
-      costBasis = shares * safeMultiplier * (tx.costPriceSnapshot ?? previousAvg);
-    } else if (tx.kind === 'sell') {
-      const avg = shares > 0 ? costBasis / (shares * safeMultiplier) : 0;
-      const sold = Math.min(tx.shares, shares);
-      realizedCostBasis += sold * safeMultiplier * avg;
-      realizedPnl += sold * safeMultiplier * (tx.price - avg);
-      costBasis -= sold * safeMultiplier * avg;
-      shares -= sold;
-    } else {
-      shares += tx.shares;
-      costBasis += tx.shares * safeMultiplier * tx.price;
+  const dayTrades: HoldingDayTradeMatch[] = [];
+  const txnFees: Record<string, number> = {};
+  const dailyStates: HoldingDailyState[] = [];
+  const sellOrder: string[] = [];
+  const realizedBySell = new Map<string, {
+    date: string;
+    amount: number;
+    costBasis: number;
+    dayTradeCount: number;
+    nonDayTradeCount: number;
+  }>();
+
+  const recordSellRealized = (sellTxnId: string, date: string, amount: number, costBasis: number, isDayTrade: boolean) => {
+    let entry = realizedBySell.get(sellTxnId);
+    if (!entry) {
+      entry = { date, amount: 0, costBasis: 0, dayTradeCount: 0, nonDayTradeCount: 0 };
+      realizedBySell.set(sellTxnId, entry);
+      sellOrder.push(sellTxnId);
     }
-    if (shares < POSITION_EPSILON) {
-      shares = 0;
-      costBasis = 0;
+    entry.amount += amount;
+    entry.costBasis += costBasis;
+    if (isDayTrade) entry.dayTradeCount += 1;
+    else entry.nonDayTradeCount += 1;
+  };
+
+  const sumLotShares = (lots: readonly OpenLot[]) => lots.reduce((sum, lot) => sum + lot.shares, 0);
+  const sumLotCost = (lots: readonly OpenLot[]) => lots.reduce((sum, lot) => sum + lot.cost, 0);
+
+  const flushPendingSellsToHistorical = (pendingSells: PendingSell[]) => {
+    for (const pending of pendingSells) {
+      while (pending.shares > POSITION_EPSILON && historicalLots.length > 0) {
+        const lot = historicalLots[historicalLots.length - 1];
+        const take = Math.min(pending.shares, lot.shares);
+        const buyCost = take >= lot.shares - POSITION_EPSILON ? lot.cost : lot.cost * (take / lot.shares);
+        const sellNet = take >= pending.shares - POSITION_EPSILON ? pending.net : pending.net * (take / pending.shares);
+        const pnl = sellNet - buyCost;
+        realizedPnl += pnl;
+        realizedCostBasis += buyCost;
+        recordSellRealized(pending.txnId, pending.date, pnl, buyCost, false);
+        pending.shares -= take;
+        pending.net -= sellNet;
+        lot.shares -= take;
+        lot.cost -= buyCost;
+        if (lot.shares < POSITION_EPSILON) historicalLots.pop();
+      }
     }
+    pendingSells.length = 0;
+  };
+
+  let cursor = 0;
+  while (cursor < normalized.length) {
+    const dayDate = normalized[cursor].tx.date;
+    let dayEnd = cursor + 1;
+    while (dayEnd < normalized.length && normalized[dayEnd].tx.date === dayDate) dayEnd += 1;
+
+    const todayBuys: OpenLot[] = [];
+    const pendingSells: PendingSell[] = [];
+
+    for (let i = cursor; i < dayEnd; i++) {
+      const { tx, txnId } = normalized[i];
+      if (tx.quantitySnapshot != null) {
+        txnFees[txnId] = 0;
+        flushPendingSellsToHistorical(pendingSells);
+        if (todayBuys.length > 0) {
+          historicalLots.push(...todayBuys);
+          todayBuys.length = 0;
+        }
+        const prevShares = sumLotShares(historicalLots);
+        const prevCost = sumLotCost(historicalLots);
+        const previousAvg = prevShares > POSITION_EPSILON ? prevCost / (prevShares * safeMultiplier) : 0;
+        const targetShares = Math.max(0, tx.quantitySnapshot);
+        const nextAvg = tx.costPriceSnapshot ?? previousAvg;
+        historicalLots.length = 0;
+        if (targetShares >= POSITION_EPSILON) {
+          historicalLots.push({
+            txnId,
+            date: tx.date,
+            shares: targetShares,
+            price: nextAvg,
+            cost: targetShares * safeMultiplier * nextAvg,
+            fee: 0,
+            isAnchor: true,
+          });
+        }
+        if (tx.costPriceSnapshot != null && tx.costPriceSnapshot > 0) knownPrice = tx.costPriceSnapshot;
+        else if (knownPrice === 0 && nextAvg > 0) knownPrice = nextAvg;
+        continue;
+      }
+
+      const fee = calculateHoldingTxnFee(tx, safeMultiplier, commissionRatePercent);
+      txnFees[txnId] = fee;
+      if (tx.price > 0) knownPrice = tx.price;
+
+      if (tx.shares < POSITION_EPSILON) {
+        totalFees += fee;
+        continue;
+      }
+
+      if (tx.kind === 'buy') {
+        totalFees += fee;
+        let remShares = tx.shares;
+        let remCost = tx.shares * safeMultiplier * tx.price + fee;
+        let remFee = fee;
+
+        // Same-day reverse T+0 (sell first, then buy back): match against pending sells LIFO.
+        while (remShares > POSITION_EPSILON && pendingSells.length > 0) {
+          const pending = pendingSells[pendingSells.length - 1];
+          const take = Math.min(remShares, pending.shares);
+          const buyCost = take >= remShares - POSITION_EPSILON ? remCost : remCost * (take / remShares);
+          const buyFee = take >= remShares - POSITION_EPSILON ? remFee : remFee * (take / remShares);
+          const sellNet = take >= pending.shares - POSITION_EPSILON ? pending.net : pending.net * (take / pending.shares);
+          const sellFee = take >= pending.shares - POSITION_EPSILON ? pending.fee : pending.fee * (take / pending.shares);
+          const pnl = sellNet - buyCost;
+          realizedPnl += pnl;
+          realizedCostBasis += buyCost;
+          dayTradePnl += pnl;
+          dayTrades.push({
+            date: dayDate,
+            direction: 'sell_then_buy',
+            buyTxnId: txnId,
+            sellTxnId: pending.txnId,
+            shares: take,
+            buyPrice: tx.price,
+            sellPrice: pending.price,
+            buyFee,
+            sellFee,
+            fee: buyFee + sellFee,
+            pnl,
+            costBasis: buyCost,
+          });
+          recordSellRealized(pending.txnId, dayDate, pnl, buyCost, true);
+          remShares -= take;
+          remCost -= buyCost;
+          remFee -= buyFee;
+          pending.shares -= take;
+          pending.net -= sellNet;
+          pending.fee -= sellFee;
+          if (pending.shares < POSITION_EPSILON) pendingSells.pop();
+        }
+
+        if (remShares > POSITION_EPSILON) {
+          todayBuys.push({
+            txnId,
+            date: dayDate,
+            shares: remShares,
+            price: tx.price,
+            cost: remCost,
+            fee: remFee,
+          });
+        }
+      } else {
+        const pendingSellShares = pendingSells.reduce((sum, item) => sum + item.shares, 0);
+        const availableShares = Math.max(0, sumLotShares(historicalLots) + sumLotShares(todayBuys) - pendingSellShares);
+        const sold = Math.min(tx.shares, availableShares);
+        if (sold < POSITION_EPSILON) continue;
+        const effectiveSellFee = sold >= tx.shares - POSITION_EPSILON ? fee : fee * (sold / tx.shares);
+        totalFees += effectiveSellFee;
+
+        let remShares = sold;
+        let remNet = sold * safeMultiplier * tx.price - effectiveSellFee;
+        let remFee = effectiveSellFee;
+
+        // Same-day regular T+0 (buy first, then sell): match against today's open buys LIFO.
+        while (remShares > POSITION_EPSILON && todayBuys.length > 0) {
+          const lot = todayBuys[todayBuys.length - 1];
+          const take = Math.min(remShares, lot.shares);
+          const buyCost = take >= lot.shares - POSITION_EPSILON ? lot.cost : lot.cost * (take / lot.shares);
+          const buyFee = take >= lot.shares - POSITION_EPSILON ? lot.fee : lot.fee * (take / lot.shares);
+          const sellNet = take >= remShares - POSITION_EPSILON ? remNet : remNet * (take / remShares);
+          const sellFee = take >= remShares - POSITION_EPSILON ? remFee : remFee * (take / remShares);
+          const pnl = sellNet - buyCost;
+          realizedPnl += pnl;
+          realizedCostBasis += buyCost;
+          dayTradePnl += pnl;
+          dayTrades.push({
+            date: dayDate,
+            direction: 'buy_then_sell',
+            buyTxnId: lot.txnId,
+            sellTxnId: txnId,
+            shares: take,
+            buyPrice: lot.price,
+            sellPrice: tx.price,
+            buyFee,
+            sellFee,
+            fee: buyFee + sellFee,
+            pnl,
+            costBasis: buyCost,
+          });
+          recordSellRealized(txnId, dayDate, pnl, buyCost, true);
+          remShares -= take;
+          remNet -= sellNet;
+          remFee -= sellFee;
+          lot.shares -= take;
+          lot.cost -= buyCost;
+          lot.fee -= buyFee;
+          if (lot.shares < POSITION_EPSILON) todayBuys.pop();
+        }
+
+        if (remShares > POSITION_EPSILON) {
+          pendingSells.push({
+            txnId,
+            date: dayDate,
+            shares: remShares,
+            price: tx.price,
+            net: remNet,
+            fee: remFee,
+          });
+        }
+      }
+    }
+
+    // End of day: settle remaining unmatched sells against historical lots via LIFO.
+    flushPendingSellsToHistorical(pendingSells);
+    if (todayBuys.length > 0) historicalLots.push(...todayBuys);
+
+    let dayShares = sumLotShares(historicalLots);
+    let dayCostBasis = sumLotCost(historicalLots);
+    if (dayShares < POSITION_EPSILON) {
+      historicalLots.length = 0;
+      dayShares = 0;
+      dayCostBasis = 0;
+    }
+
+    dailyStates.push({
+      date: dayDate,
+      shares: dayShares,
+      costBasis: dayCostBasis,
+      realizedPnl,
+      realizedCostBasis,
+      knownPrice,
+    });
+
+    cursor = dayEnd;
   }
 
+  let shares = sumLotShares(historicalLots);
+  let costBasis = sumLotCost(historicalLots);
+  if (shares < POSITION_EPSILON) {
+    shares = 0;
+    costBasis = 0;
+  }
   const netInvested = costBasis - realizedPnl;
 
+  // Build per-transaction same-day T+0 summary so UI can badge both legs with "T".
+  const txnDayTradeAcc = new Map<string, {
+    matchedShares: number;
+    buyValue: number;
+    sellValue: number;
+    pnl: number;
+    fee: number;
+    matchCount: number;
+    hasBuyThenSell: boolean;
+    hasSellThenBuy: boolean;
+  }>();
+  const accumulateTxnMatch = (txnId: string, match: HoldingDayTradeMatch) => {
+    const current = txnDayTradeAcc.get(txnId) ?? {
+      matchedShares: 0,
+      buyValue: 0,
+      sellValue: 0,
+      pnl: 0,
+      fee: 0,
+      matchCount: 0,
+      hasBuyThenSell: false,
+      hasSellThenBuy: false,
+    };
+    current.matchedShares += match.shares;
+    current.buyValue += match.shares * match.buyPrice;
+    current.sellValue += match.shares * match.sellPrice;
+    current.pnl += match.pnl;
+    current.fee += match.fee;
+    current.matchCount += 1;
+    if (match.direction === 'buy_then_sell') current.hasBuyThenSell = true;
+    else current.hasSellThenBuy = true;
+    txnDayTradeAcc.set(txnId, current);
+  };
+  for (const match of dayTrades) {
+    accumulateTxnMatch(match.buyTxnId, match);
+    accumulateTxnMatch(match.sellTxnId, match);
+  }
+  const txnDayTrades: Record<string, HoldingTxnDayTradeSummary> = {};
+  for (const [txnId, acc] of txnDayTradeAcc.entries()) {
+    txnDayTrades[txnId] = {
+      txnId,
+      matchedShares: acc.matchedShares,
+      totalShares: sharesByTxnId.get(txnId) ?? acc.matchedShares,
+      direction: acc.hasBuyThenSell && acc.hasSellThenBuy
+        ? 'mixed'
+        : acc.hasBuyThenSell
+          ? 'buy_then_sell'
+          : 'sell_then_buy',
+      buyAvgPrice: acc.matchedShares > POSITION_EPSILON ? acc.buyValue / acc.matchedShares : 0,
+      sellAvgPrice: acc.matchedShares > POSITION_EPSILON ? acc.sellValue / acc.matchedShares : 0,
+      pnl: acc.pnl,
+      fee: acc.fee,
+      matchCount: acc.matchCount,
+    };
+  }
+
+  const realizedEvents: HoldingRealizedEvent[] = sellOrder.map(sellTxnId => {
+    const entry = realizedBySell.get(sellTxnId)!;
+    return {
+      date: entry.date,
+      sellTxnId,
+      amount: entry.amount,
+      costBasis: entry.costBasis,
+      isDayTrade: entry.dayTradeCount > 0 && entry.nonDayTradeCount === 0,
+    };
+  });
+
   return {
-    shares,
-    avgCost: shares > 0 ? costBasis / (shares * safeMultiplier) : 0,
-    costBasis,
-    realizedPnl,
-    realizedCostBasis,
-    netInvested,
-    dilutedCost: shares > 0 ? netInvested / (shares * safeMultiplier) : 0,
+    position: {
+      shares,
+      avgCost: shares > POSITION_EPSILON ? costBasis / (shares * safeMultiplier) : 0,
+      costBasis,
+      realizedPnl,
+      realizedCostBasis,
+      netInvested,
+      dilutedCost: shares > POSITION_EPSILON ? netInvested / (shares * safeMultiplier) : 0,
+      totalFees: Math.round(totalFees * 100) / 100,
+      dayTradePnl,
+      dayTradeCount: dayTrades.length,
+    },
+    dayTrades,
+    txnDayTrades,
+    txnFees,
+    realizedEvents,
+    dailyStates,
   };
 }
 
-/** Cumulative P&L includes both the open position and every settled sell. */
+/** LIFO + same-day T+0 ledger math plus broker-style diluted cost. */
+export function computeHoldingPosition(
+  txns: readonly HoldingTxnLike[],
+  multiplier = 1,
+  options?: HoldingPositionOptions,
+): HoldingPosition {
+  return analyzeHoldingPosition(txns, multiplier, options).position;
+}
+
+/** Cumulative P&L includes both the open position and every settled sell / T+0 match. */
 export function computeHoldingPnl(position: HoldingPosition, marketValue: number): HoldingPnl {
   const unrealizedPnl = marketValue - position.costBasis;
   const totalPnl = unrealizedPnl + position.realizedPnl;

@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
-import { db, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, hasLedgerData, type Account, type Settings, type CustomField } from '../db';
+import { useState, useEffect, useRef, useCallback, type CSSProperties, type FormEvent } from 'react';
+import { db, DEFAULT_COMMISSION_RATE_PERCENT, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, hasLedgerData, type Account, type Settings, type CustomField } from '../db';
+import { syncAllPortfolioSnapshots } from '../services/holdingService';
+import { formatCommissionRatePercent, formatCommissionWan, isValidCommissionRatePercent } from '../lib/holdingPosition';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
 import {
@@ -68,6 +70,9 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const [appUpdateProgress, setAppUpdateProgress] = useState(0);
   const [appUpdatePhase, setAppUpdatePhase] = useState<'connecting' | 'downloading' | 'verifying'>('connecting');
   const [appUpdateFailure, setAppUpdateFailure] = useState<AppUpdateFailure | null>(null);
+  const [commissionRateInput, setCommissionRateInput] = useState(formatCommissionRatePercent(DEFAULT_COMMISSION_RATE_PERCENT));
+  const [commissionRateError, setCommissionRateError] = useState('');
+  const [savingCommissionRate, setSavingCommissionRate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -85,6 +90,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         getAutomaticSnapshotStatus(),
       ]);
       setSettings(s);
+      setCommissionRateInput(formatCommissionRatePercent(s.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT));
+      setCommissionRateError('');
       setLastUpdate(ratesUpdatedAt);
       setSnapshotAccounts(accounts);
       setSnapshotStatus(syncStatus);
@@ -120,6 +127,28 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
     const updated = await updateSettings(updates);
     setSettings(updated); onRefresh();
     scheduleAutomaticSnapshot('settings-updated');
+  };
+
+  const handleSaveDefaultCommissionRate = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!settings || savingCommissionRate) return;
+    const raw = commissionRateInput.trim();
+    const parsed = raw === '' ? NaN : Number(raw);
+    if (!isValidCommissionRatePercent(parsed)) {
+      setCommissionRateError(t('default_commission_rate_invalid'));
+      return;
+    }
+    setSavingCommissionRate(true);
+    setCommissionRateError('');
+    try {
+      await save({ defaultCommissionRatePercent: parsed });
+      setCommissionRateInput(formatCommissionRatePercent(parsed));
+      await syncAllPortfolioSnapshots(false);
+      onAccountsChanged();
+      showToast(t('default_commission_rate_saved'));
+    } finally {
+      setSavingCommissionRate(false);
+    }
   };
 
   const handleRefreshRates = async () => {
@@ -543,6 +572,49 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             {(settings.showArchivedAccounts ?? true) ? t('shown') : t('hidden')}
           </button>
         </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">{t('trading_fees_section')}</div>
+        <form onSubmit={event => void handleSaveDefaultCommissionRate(event)} noValidate>
+          <div className="settings-item" style={{ alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <label htmlFor="default-commission-rate" className="settings-item-label">{t('default_commission_rate')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexShrink: 0 }}>
+              <input
+                id="default-commission-rate"
+                name="defaultCommissionRatePercent"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max="10"
+                step="0.001"
+                value={commissionRateInput}
+                disabled={savingCommissionRate}
+                aria-describedby="default-commission-rate-hint"
+                aria-invalid={Boolean(commissionRateError)}
+                style={{ width: 96, textAlign: 'right' }}
+                onChange={event => {
+                  setCommissionRateInput(event.target.value);
+                  if (commissionRateError) setCommissionRateError('');
+                }}
+              />
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 'var(--fw-semibold)' }}>%</span>
+              <button type="submit" className="btn btn-sm btn-primary" disabled={savingCommissionRate}>{t('save')}</button>
+            </div>
+          </div>
+          <div id="default-commission-rate-hint" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)', lineHeight: 'var(--lh-base)' }}>
+            {t('default_commission_rate_hint', {
+              rate: formatCommissionRatePercent(settings.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT),
+              wan: formatCommissionWan(settings.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT),
+            })}
+          </div>
+          {commissionRateError && (
+            <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+              {commissionRateError}
+            </div>
+          )}
+        </form>
       </div>
 
       <div className="settings-section">

@@ -29,6 +29,15 @@
 .holding-txn-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-2); }
 .holding-txn-identity { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); min-width: 0; }
 .holding-txn-kind { font-size: var(--fs-xs); font-weight: var(--fw-bold); border-radius: var(--radius-xs); padding: 3px var(--sp-2); }
+.holding-txn-t-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; padding: 3px 6px;
+  font-size: var(--fs-xs); font-weight: var(--fw-bold); font-family: var(--font-mono);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--theme-on-asset);
+  line-height: 1.1;
+}
 .holding-txn-date { font-size: var(--fs-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .holding-txn-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
 .holding-action {
@@ -50,6 +59,18 @@
 .holding-txn-fields dd { margin: 0; font-size: var(--fs-lg); font-family: var(--font-mono); color: var(--text-primary); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .holding-txn-total { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: var(--sp-2); }
 .holding-txn-total dd { font-weight: var(--fw-semibold); }
+.holding-txn-summary-cell { border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.holding-txn-summary-cell dd { font-weight: var(--fw-semibold); }
+.holding-txn-day-trade {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2);
+  margin-top: var(--sp-2); padding: 5px var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs); line-height: var(--lh-base);
+}
+.holding-txn-day-trade-detail { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.holding-txn-day-trade-pnl { font-family: var(--font-mono); font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .holding-txn-note, .holding-txn-reference { margin: var(--sp-2) 0 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .holding-txn-reference { color: var(--text-muted); font-family: var(--font-mono); }
 .holding-history-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-1); margin: var(--sp-3) 0 var(--sp-2); }

@@ -12,9 +12,12 @@ import { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './snapshotSchema.ts';
 import type { AccountWithLatest } from '../services/assetService';
 import type { PlanStatus } from '../services/planService';
 import {
+  analyzeHoldingPosition,
   computeBalanceHoldingPosition,
   computeHoldingPnl,
-  computeHoldingPosition,
+  isValidCommissionRatePercent,
+  resolveHoldingCommissionRatePercent,
+  type HoldingPositionAnalysis,
 } from './holdingPosition.ts';
 import { getHoldingMode } from './productPortfolio.ts';
 import { minorToMajor } from './allocationPlan.ts';
@@ -31,7 +34,7 @@ export interface PortableSnapshotInput {
   transactions: HoldingTxn[];
   exchangeRates: ExchangeRate[];
   planStatus: PlanStatus;
-  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
+  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'defaultCommissionRatePercent' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
   dividendStocks?: DividendStock[];
   priceMonitors?: PriceMonitor[];
   generatedAt?: Date;
@@ -94,14 +97,24 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       .filter(record => record.accountId === account.id)
       .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 
+    const analysisByHoldingId = new Map<string, HoldingPositionAnalysis>();
     const holdings = accountHoldings.map(holding => {
       const holdingTransactions = accountTransactions.filter(txn => txn.holdingId === holding.id);
       const mode = getHoldingMode(account.category, holding);
       const multiplier = getHoldingContractMultiplier(holding);
       const optionContract = resolveUsOptionContract(holding);
-      const position = mode === 'balance'
-        ? computeBalanceHoldingPosition(holdingTransactions)
-        : computeHoldingPosition(holdingTransactions, multiplier);
+      const commissionRatePercent = mode === 'balance'
+        ? 0
+        : isValidCommissionRatePercent(holding.commissionRatePercent)
+          ? holding.commissionRatePercent
+          : input.settings.defaultCommissionRatePercent === undefined
+            ? 0
+            : resolveHoldingCommissionRatePercent(holding, input.settings.defaultCommissionRatePercent, account.category);
+      const analysis = mode === 'balance'
+        ? null
+        : analyzeHoldingPosition(holdingTransactions, multiplier, { commissionRatePercent });
+      if (analysis) analysisByHoldingId.set(holding.id, analysis);
+      const position = analysis ? analysis.position : computeBalanceHoldingPosition(holdingTransactions);
       const marketValue = mode === 'balance' ? position.shares : position.shares * multiplier * (holding.lastPrice || 0);
       const pnl = computeHoldingPnl(position, marketValue);
       const status = position.shares > 1e-9 ? 'active' as const : 'closed' as const;
@@ -137,6 +150,10 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
         realizedPnl: round(position.realizedPnl),
         totalPnl: round(pnl.totalPnl),
         totalPnlRate: pnl.totalPnlRate == null ? null : round(pnl.totalPnlRate),
+        commissionRatePercent: round(commissionRatePercent, 6),
+        totalFees: round(position.totalFees),
+        dayTradePnl: round(position.dayTradePnl),
+        dayTradeCount: position.dayTradeCount,
         productData: holding.productData ?? null,
       };
     });
@@ -182,6 +199,9 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt)
       .map(txn => {
         const holding = holdingById.get(txn.holdingId);
+        const analysis = analysisByHoldingId.get(txn.holdingId);
+        const txnFee = analysis?.txnFees[txn.id];
+        const txnDayTrade = analysis?.txnDayTrades[txn.id];
         return {
           id: txn.id,
           date: txn.date,
@@ -191,6 +211,10 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
           symbol: holding?.symbol ?? null,
           shares: txn.balanceSnapshot == null && txn.quantitySnapshot == null ? round(txn.shares) : null,
           price: txn.balanceSnapshot == null && txn.quantitySnapshot == null ? round(txn.price) : null,
+          fee: txnFee == null ? null : round(txnFee),
+          isDayTrade: Boolean(txnDayTrade),
+          dayTradeShares: txnDayTrade ? round(txnDayTrade.matchedShares) : null,
+          dayTradePnl: txnDayTrade ? round(txnDayTrade.pnl) : null,
           balanceSnapshot: txn.balanceSnapshot == null ? null : round(txn.balanceSnapshot),
           quantitySnapshot: txn.quantitySnapshot == null ? null : round(txn.quantitySnapshot),
           costPriceSnapshot: txn.costPriceSnapshot == null ? null : round(txn.costPriceSnapshot),

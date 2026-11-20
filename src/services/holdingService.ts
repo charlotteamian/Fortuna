@@ -3,11 +3,15 @@ import { db, type Holding, type HoldingTxn } from '../db';
 import { addRecord } from './assetService';
 import { getDefaultHoldingModeForCategory, getHoldingMode, usesBalanceHoldings } from '../lib/productPortfolio';
 import {
+  analyzeHoldingPosition,
   computeBalanceHoldingPosition,
   computeHoldingPnl,
   computeHoldingPosition,
+  resolveHoldingCommissionRatePercent,
+  type HoldingDayTradeMatch,
   type HoldingPnl,
   type HoldingPosition,
+  type HoldingTxnDayTradeSummary,
 } from '../lib/holdingPosition';
 import { requestPortableSnapshot } from './portableSnapshotEvents';
 import { getHoldingContractMultiplier } from '../lib/usOption';
@@ -15,8 +19,22 @@ import { formatLocalDate, formatLocalTime, normalizeLocalTime, parseLocalDateTim
 import { normalizeHoldingIdentity } from '../lib/holdingImportIdentity';
 import { calculatePortfolioCash } from '../lib/portfolioCash';
 
-export { computeBalanceHoldingPosition, computeHoldingPnl, computeHoldingPosition } from '../lib/holdingPosition';
-export type { HoldingPnl, HoldingPosition } from '../lib/holdingPosition';
+export {
+  analyzeHoldingPosition,
+  calculateHoldingTxnFee,
+  computeBalanceHoldingPosition,
+  computeHoldingPnl,
+  computeHoldingPosition,
+  DEFAULT_COMMISSION_RATE_PERCENT,
+  resolveHoldingCommissionRatePercent,
+} from '../lib/holdingPosition';
+export type {
+  HoldingDayTradeMatch,
+  HoldingPnl,
+  HoldingPosition,
+  HoldingPositionAnalysis,
+  HoldingTxnDayTradeSummary,
+} from '../lib/holdingPosition';
 
 // ---- Holding CRUD ----
 export async function getHoldings(accountId: string): Promise<Holding[]> {
@@ -26,7 +44,7 @@ export async function getHoldings(accountId: string): Promise<Holding[]> {
 
 export async function createHolding(accountId: string, data: Pick<Holding,
   'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
-  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'productData'
+  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'productData'
   | 'lastPrice' | 'priceDate'
 >): Promise<string> {
   const count = await db.holdings.where('accountId').equals(accountId).count();
@@ -66,6 +84,7 @@ export interface HoldingTxnInput {
   kind: 'buy' | 'sell';
   shares: number;
   price: number;
+  fee?: number;
   balanceSnapshot?: number;
   note?: string;
 }
@@ -105,26 +124,64 @@ async function touchPriceFromTxn(holdingId: string, input: HoldingTxnInput): Pro
 export interface HoldingWithPosition extends Holding, HoldingPnl {
   position: HoldingPosition;
   marketValue: number;     // position.shares * lastPrice
+  commissionRatePercentEffective: number;
+  dayTrades: HoldingDayTradeMatch[];
+  txnDayTrades: Record<string, HoldingTxnDayTradeSummary>;
+  txnFees: Record<string, number>;
 }
 
 export async function getHoldingsWithPositions(accountId: string): Promise<HoldingWithPosition[]> {
-  const [account, holdings, txns] = await Promise.all([db.accounts.get(accountId), getHoldings(accountId), getAccountTxns(accountId)]);
+  const [account, holdings, txns, settings] = await Promise.all([
+    db.accounts.get(accountId),
+    getHoldings(accountId),
+    getAccountTxns(accountId),
+    db.settings.get('main'),
+  ]);
+  const defaultCommissionRatePercent = settings?.defaultCommissionRatePercent;
   return holdings.map(h => {
     const mode = getHoldingMode(account?.category ?? '', h);
     const multiplier = getHoldingContractMultiplier(h);
     const holdingTxns = txns.filter(tx => tx.holdingId === h.id);
-    const position = mode === 'balance'
-      ? computeBalanceHoldingPosition(holdingTxns)
-      : computeHoldingPosition(holdingTxns, multiplier);
-    const marketValue = mode === 'balance' ? position.shares : position.shares * multiplier * (h.lastPrice || 0);
-    return { ...h, position, marketValue, ...computeHoldingPnl(position, marketValue) };
+    if (mode === 'balance') {
+      const position = computeBalanceHoldingPosition(holdingTxns);
+      const marketValue = position.shares;
+      return {
+        ...h,
+        position,
+        marketValue,
+        ...computeHoldingPnl(position, marketValue),
+        commissionRatePercentEffective: 0,
+        dayTrades: [],
+        txnDayTrades: {},
+        txnFees: {},
+      };
+    }
+    const commissionRatePercentEffective = resolveHoldingCommissionRatePercent(
+      h,
+      defaultCommissionRatePercent,
+      account?.category,
+    );
+    const analysis = analyzeHoldingPosition(holdingTxns, multiplier, {
+      commissionRatePercent: commissionRatePercentEffective,
+    });
+    const marketValue = analysis.position.shares * multiplier * (h.lastPrice || 0);
+    return {
+      ...h,
+      position: analysis.position,
+      marketValue,
+      ...computeHoldingPnl(analysis.position, marketValue),
+      commissionRatePercentEffective,
+      dayTrades: analysis.dayTrades,
+      txnDayTrades: analysis.txnDayTrades,
+      txnFees: analysis.txnFees,
+    };
   });
 }
 
 // ---- Account-level value ----
 export async function setCashBalance(accountId: string, cash: number): Promise<void> {
   if (!Number.isFinite(cash)) throw new Error('PORTFOLIO_CASH_INVALID');
-  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records, db.settings], async () => {
     await db.accounts.update(accountId, { cashBalance: Math.round(Math.max(0, cash) * 100) / 100, cashCalculationMode: 'manual' });
     await syncPortfolioSnapshot(accountId, false);
   });
@@ -133,7 +190,7 @@ export async function setCashBalance(accountId: string, cash: number): Promise<v
 
 export async function setCalculatedCashBalance(accountId: string, initialAmountMinor: number): Promise<void> {
   if (!Number.isSafeInteger(initialAmountMinor) || initialAmountMinor < 0) throw new Error('PORTFOLIO_CASH_INVALID');
-  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records, db.settings], async () => {
     const account = await db.accounts.get(accountId);
     if (!account?.portfolio || !['股票/ETF', '股票'].includes(account.category)) throw new Error('PORTFOLIO_CASH_UNSUPPORTED');
     await db.accounts.update(accountId, { cashCalculationMode: 'initial-minus-holdings', cashInitialAmountMinor: initialAmountMinor });
@@ -230,9 +287,15 @@ function requireCurrentPositionDate(holding: Holding, txns: HoldingTxn[], date: 
   }
 }
 
-async function applyPositionUpdate(holding: Holding, txns: HoldingTxn[], update: HoldingPositionUpdate, date: string): Promise<boolean> {
+async function applyPositionUpdate(
+  holding: Holding,
+  txns: HoldingTxn[],
+  update: HoldingPositionUpdate,
+  date: string,
+  commissionRatePercent: number,
+): Promise<boolean> {
   const multiplier = getHoldingContractMultiplier(holding);
-  const position = computeHoldingPosition(txns, multiplier);
+  const position = computeHoldingPosition(txns, multiplier, { commissionRatePercent });
   if (update.shares > 0 && position.shares === 0 && update.costPrice === undefined) {
     throw new Error('HOLDING_POSITION_COST_REQUIRED');
   }
@@ -261,8 +324,9 @@ export async function updateHoldingPositions(accountId: string, updates: Holding
   if (!updates.length) throw new Error('HOLDING_POSITION_EMPTY');
   if (new Set(updates.map(update => update.holdingId)).size !== updates.length) throw new Error('HOLDING_POSITION_DUPLICATE');
   updates.forEach(validatePositionValues);
-  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
-    await requireStockPortfolio(accountId);
+  await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records, db.settings], async () => {
+    const account = await requireStockPortfolio(accountId);
+    const settings = await db.settings.get('main');
     const prepared = await Promise.all(updates.map(async update => {
       const holding = await db.holdings.get(update.holdingId);
       if (!holding || holding.accountId !== accountId) throw new Error('HOLDING_POSITION_HOLDING_SCOPE');
@@ -272,7 +336,10 @@ export async function updateHoldingPositions(accountId: string, updates: Holding
       requireCurrentPositionDate(holding, txns, date);
       return { holding, txns, update };
     }));
-    for (const { holding, txns, update } of prepared) await applyPositionUpdate(holding, txns, update, date);
+    for (const { holding, txns, update } of prepared) {
+      const rate = resolveHoldingCommissionRatePercent(holding, settings?.defaultCommissionRatePercent, account.category);
+      await applyPositionUpdate(holding, txns, update, date, rate);
+    }
     await syncPortfolioSnapshot(accountId, false);
   });
   requestPortableSnapshot('holding-positions-updated');
@@ -396,8 +463,9 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
     }
     return { ...trade, ...(executionTime ? { executionTime } : { executionTime: undefined }) };
   });
-  const result = await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records], async () => {
+  const result = await db.transaction('rw', [db.accounts, db.holdings, db.holdingTxns, db.records, db.settings], async () => {
     const account = await requireStockPortfolio(accountId);
+    const settings = await db.settings.get('main');
     const holdings = await getHoldings(accountId);
     const byIdentity = new Map<string, Holding[]>();
     for (const holding of holdings) {
@@ -651,7 +719,8 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
       if (item.added.length) await db.holdingTxns.bulkAdd(item.added);
       let changed = item.added.length > 0 || item.updatedTxns.size > 0;
       if (item.snapshot) {
-        changed = await applyPositionUpdate(holding, combined, { ...item.snapshot, holdingId: holding.id }, date) || changed;
+        const rate = resolveHoldingCommissionRatePercent(holding, settings?.defaultCommissionRatePercent, account.category);
+        changed = await applyPositionUpdate(holding, combined, { ...item.snapshot, holdingId: holding.id }, date, rate) || changed;
       } else if (!item.isNew) {
         const latestAdded = [...item.added].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt).at(-1);
         if (latestAdded && latestOverallFill?.id === latestAdded.id
@@ -807,4 +876,10 @@ export async function syncPortfolioSnapshot(accountId: string, notify = true): P
   if (todayRecs.length > 0) await db.records.update(todayRecs[0].id, { amount: rounded });
   else await db.records.add({ id: uuidv4(), accountId, date: today, amount: rounded, createdAt: Date.now() });
   if (notify) requestPortableSnapshot('portfolio-changed');
+}
+
+export async function syncAllPortfolioSnapshots(notify = true): Promise<void> {
+  const accounts = await db.accounts.filter(account => Boolean(account.portfolio) && !account.archivedAt).toArray();
+  for (const account of accounts) await syncPortfolioSnapshot(account.id, false);
+  if (notify && accounts.length > 0) requestPortableSnapshot('portfolio-commission-updated');
 }

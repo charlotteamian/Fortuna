@@ -19,13 +19,14 @@ registerHooks({
   },
 });
 
-const { db, initializeSettings } = await import('../src/db.ts');
-const { addHoldingTxn, createHolding, getHoldingsWithPositions, setCalculatedCashBalance, setCashBalance, updateHoldingPositions, updatePrices, setAccountPortfolioMode } = await import('../src/services/holdingService.ts');
+const { db, initializeSettings, updateSettings } = await import('../src/db.ts');
+const { addHoldingTxn, createHolding, getHoldingsWithPositions, setCalculatedCashBalance, setCashBalance, syncAllPortfolioSnapshots, updateHolding, updateHoldingPositions, updatePrices, setAccountPortfolioMode } = await import('../src/services/holdingService.ts');
 const { formatLocalDate } = await import('../src/lib/localDate.ts');
 
 beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
   await initializeSettings();
+  await updateSettings({ defaultCommissionRatePercent: 0 });
   await db.accounts.add({ id: 'stocks', name: 'Strategy', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, cashBalance: 100, sortOrder: 0, createdAt: 1 });
 });
 after(() => db.close());
@@ -113,4 +114,24 @@ test('a failed account snapshot rolls back the initial amount, mode, and cached 
     assert.deepEqual(await db.accounts.get('stocks'), before);
     assert.equal(await db.records.count(), 0);
   } finally { db.records.add = originalAdd; }
+});
+
+test('reverse cash updates when default commission rate or per-holding override changes', async () => {
+  await updateSettings({ defaultCommissionRatePercent: 0.01 });
+  const holdingId = await createHolding('stocks', { name: 'ETF', symbol: '159915', lastPrice: 12 });
+  await addHoldingTxn('stocks', holdingId, { date: '2026-11-20', kind: 'buy', shares: 1000, price: 10 }); // gross 10000, fee 1.00
+  await addHoldingTxn('stocks', holdingId, { date: '2026-11-20', kind: 'sell', shares: 1000, price: 12 }); // gross 12000, fee 1.20
+  await setCalculatedCashBalance('stocks', 1000000); // 10,000.00
+  // realized = 2000 - 2.20 = 1997.80 -> cash = 11997.80
+  assert.equal((await db.accounts.get('stocks'))?.cashBalance, 11997.8);
+
+  // Override commission rate on this holding to 0.05% (buy fee 5.00, sell fee 6.00 -> realized 1989.00).
+  await updateHolding(holdingId, { commissionRatePercent: 0.05 });
+  assert.equal((await db.accounts.get('stocks'))?.cashBalance, 11989);
+
+  // Clear per-holding override and switch global default to 0%.
+  await updateHolding(holdingId, { commissionRatePercent: undefined });
+  await updateSettings({ defaultCommissionRatePercent: 0 });
+  await syncAllPortfolioSnapshots(false);
+  assert.equal((await db.accounts.get('stocks'))?.cashBalance, 12000);
 });

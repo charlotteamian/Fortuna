@@ -1,5 +1,10 @@
-import { db, initializeSettings, type AccountRecord, type Holding, type HoldingTxn } from '../db';
+import { db, initializeSettings, type AccountRecord, type Holding } from '../db';
 import { getHoldingContractMultiplier } from '../lib/usOption';
+import {
+  analyzeHoldingPosition,
+  resolveHoldingCommissionRatePercent,
+  type HoldingTxnLike,
+} from '../lib/holdingPosition';
 import { convertAmountFromCache } from './rateService';
 import { isAccountHidden } from '../lib/accountPreferences';
 
@@ -10,36 +15,25 @@ export interface MonthlyPnl {
 
 interface RealizedEvent { date: string; amount: number; currency: string; }
 
-// Realized P&L events (one per sell) using moving-average cost — the same convention as
-// computeHoldingPosition / computeMetalPosition. Because it walks every sell in history,
-// sold-out (archived) holdings are naturally included: their sells still contribute.
+// Realized P&L events (one per sell) using the same LIFO + same-day T+0 + fee ledger
+// as analyzeHoldingPosition. Because it walks every sell in history, sold-out (archived)
+// holdings are naturally included: their sells still contribute.
 export function holdingRealizedEvents(
-  txns: Pick<HoldingTxn, 'date' | 'kind' | 'shares' | 'price' | 'createdAt' | 'quantitySnapshot' | 'costPriceSnapshot'>[],
+  txns: readonly HoldingTxnLike[],
   currency: string,
-  holding: Pick<Holding, 'instrumentType' | 'contractMultiplier'> = {},
+  holding: Pick<Holding, 'instrumentType' | 'contractMultiplier' | 'commissionRatePercent'> = {},
+  commissionRatePercent = 0,
 ): RealizedEvent[] {
   const multiplier = getHoldingContractMultiplier(holding);
-  const chron = [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
-  let shares = 0, costBasis = 0;
-  const events: RealizedEvent[] = [];
-  for (const tx of chron) {
-    if (tx.quantitySnapshot != null) {
-      const previousAvg = shares > 0 ? costBasis / (shares * multiplier) : 0;
-      shares = Math.max(0, tx.quantitySnapshot);
-      costBasis = shares * multiplier * (tx.costPriceSnapshot ?? previousAvg);
-    } else if (tx.kind === 'sell') {
-      const avg = shares > 0 ? costBasis / (shares * multiplier) : 0;
-      const sold = Math.min(tx.shares, shares);
-      events.push({ date: tx.date, amount: sold * multiplier * (tx.price - avg), currency });
-      costBasis -= sold * multiplier * avg;
-      shares -= sold;
-    } else {
-      shares += tx.shares;
-      costBasis += tx.shares * multiplier * tx.price;
-    }
-    if (shares < 1e-9) { shares = 0; costBasis = 0; }
-  }
-  return events;
+  const effectiveRate = holding.commissionRatePercent ?? commissionRatePercent;
+  const { realizedEvents } = analyzeHoldingPosition(txns, multiplier, {
+    commissionRatePercent: effectiveRate,
+  });
+  return realizedEvents.map(event => ({
+    date: event.date,
+    amount: event.amount,
+    currency,
+  }));
 }
 
 // Same logic for precious-metal accounts, whose buy/sell deltas live on their records.
@@ -93,7 +87,8 @@ export async function getMonthlyRealizedPnl(): Promise<MonthlyPnl[]> {
     const acct = acctById.get(h.accountId);
     const txns = txnsByHolding[h.id];
     if (!acct || !txns?.length) continue;
-    events.push(...holdingRealizedEvents(txns, acct.currency, h));
+    const rate = resolveHoldingCommissionRatePercent(h, settings.defaultCommissionRatePercent, acct.category);
+    events.push(...holdingRealizedEvents(txns, acct.currency, h, rate));
   }
 
   // Precious-metal accounts

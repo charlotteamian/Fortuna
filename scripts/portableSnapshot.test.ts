@@ -197,8 +197,42 @@ test('automatic snapshot v11 exports all active accounts and marks optional focu
   assert.equal(position.totalPnl, 140);
   assert.equal(position.totalPnlRate, 26.923077);
   assert.equal(position.priceDate, '2026-07-10');
+  assert.equal(position.commissionRatePercent, 0);
+  assert.equal(position.totalFees, 0);
+  assert.equal(position.dayTradePnl, 0);
+  assert.equal(position.dayTradeCount, 0);
 
   assert.doesNotMatch(JSON.stringify(snapshot), /哨兵|GPT|Claude|快账户/i);
+});
+
+test('automatic snapshot includes commission fees and same-day T+0 match metadata', () => {
+  const snapshot = buildAutomaticSnapshot({
+    accounts: [focusAccount],
+    records,
+    holdings: [holding],
+    transactions: [
+      { id: 'buy-am', accountId: focusAccount.id, holdingId: holding.id, date: '2026-11-20', executionTime: '10:00:00', kind: 'buy', shares: 200, price: 2.239, createdAt: 1 },
+      { id: 'sell-am', accountId: focusAccount.id, holdingId: holding.id, date: '2026-11-20', executionTime: '10:45:02', kind: 'sell', shares: 100, price: 2.249, createdAt: 2 },
+    ],
+    exchangeRates: [],
+    planStatus: emptyPlanStatus(700),
+    settings: { primaryCurrency: 'CNY', defaultCommissionRatePercent: 0.01 },
+  });
+  const exportedHolding = snapshot.accounts[0].holdings[0];
+  assert.equal(exportedHolding.commissionRatePercent, 0.01);
+  assert.equal(exportedHolding.totalFees, 0.06);
+  assert.equal(exportedHolding.dayTradeCount, 1);
+  assert.equal(exportedHolding.dayTradePnl, 0.96);
+  assert.equal(exportedHolding.realizedPnl, 0.96);
+  const sellTxn = snapshot.accounts[0].transactions.find(tx => tx.id === 'sell-am')!;
+  const buyTxn = snapshot.accounts[0].transactions.find(tx => tx.id === 'buy-am')!;
+  assert.equal(sellTxn.fee, 0.02);
+  assert.equal(sellTxn.isDayTrade, true);
+  assert.equal(sellTxn.dayTradeShares, 100);
+  assert.equal(sellTxn.dayTradePnl, 0.96);
+  assert.equal(buyTxn.fee, 0.04);
+  assert.equal(buyTxn.isDayTrade, true);
+  assert.equal(buyTxn.dayTradeShares, 100);
 });
 
 test('automatic snapshot identifies quantity adjustments and preserves their cost anchors and fill references', () => {

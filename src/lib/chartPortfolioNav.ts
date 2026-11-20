@@ -1,4 +1,10 @@
 import type { PortfolioNavSeriesPoint, PortfolioNavSummary } from './balanceFlow.ts';
+import {
+  analyzeHoldingPosition,
+  isValidCommissionRatePercent,
+  normalizeCommissionRatePercent,
+  type HoldingDailyState,
+} from './holdingPosition.ts';
 import { getHoldingContractMultiplier } from './usOption.ts';
 
 interface PortfolioAccountLike {
@@ -15,6 +21,7 @@ interface PnlHoldingLike {
   mode?: string;
   lastPrice: number;
   priceDate?: string;
+  commissionRatePercent?: number;
   instrumentType?: 'us_option';
   contractMultiplier?: number;
 }
@@ -27,6 +34,7 @@ interface PnlTxnLike {
   kind: 'buy' | 'sell';
   shares: number;
   price: number;
+  fee?: number;
   quantitySnapshot?: number;
   costPriceSnapshot?: number;
   createdAt: number;
@@ -60,59 +68,67 @@ function isValidIsoDate(value?: string): value is string {
  * Historical dates value open positions at each holding's latest known execution/cost
  * price as of that date, and adopt current `lastPrice` on the holding's valuation date.
  */
-export function buildAccountNavPoints(accountId: string, holdings: readonly PnlHoldingLike[], txns: readonly PnlTxnLike[]): PnlNavPoint[] {
+export function buildAccountNavPoints(
+  accountId: string,
+  holdings: readonly PnlHoldingLike[],
+  txns: readonly PnlTxnLike[],
+  defaultCommissionRatePercent = 0,
+  accountCategory?: string,
+): PnlNavPoint[] {
   const byDate = new Map<string, { pnl: number; cost: number }>();
   const txnsByHolding = new Map<string, PnlTxnLike[]>();
   for (const tx of txns) {
     if (tx.accountId !== accountId) continue;
     const list = txnsByHolding.get(tx.holdingId) ?? [];
-    list.push(tx); txnsByHolding.set(tx.holdingId, list);
+    list.push(tx);
+    txnsByHolding.set(tx.holdingId, list);
   }
 
   const prepared: {
     holding: PnlHoldingLike;
-    chron: PnlTxnLike[];
+    dailyStates: HoldingDailyState[];
     lastTxnDate: string;
     quoteDate: string | null;
   }[] = [];
   let finalDate = '';
 
+  const fallbackRate = accountCategory && !['股票/ETF', '股票'].includes(accountCategory)
+    ? 0
+    : normalizeCommissionRatePercent(defaultCommissionRatePercent, 0);
+
   for (const holding of holdings) {
     if (holding.accountId !== accountId || holding.mode === 'balance') continue;
-    const chron = (txnsByHolding.get(holding.id) ?? [])
-      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-    if (!chron.length) continue;
-    let endShares = 0;
-    for (const tx of chron) {
-      if (tx.quantitySnapshot != null) endShares = Math.max(0, tx.quantitySnapshot);
-      else if (tx.kind === 'sell') endShares = Math.max(0, endShares - Math.min(tx.shares, endShares));
-      else endShares += tx.shares;
-      if (endShares < 1e-9) endShares = 0;
-    }
-    const lastTxnDate = chron[chron.length - 1].date;
-    const quoteDate = endShares > 1e-9 && isValidIsoDate(holding.priceDate) && holding.priceDate >= lastTxnDate
+    const holdingTxns = txnsByHolding.get(holding.id) ?? [];
+    if (!holdingTxns.length) continue;
+    const multiplier = getHoldingContractMultiplier(holding);
+    const commissionRatePercent = isValidCommissionRatePercent(holding.commissionRatePercent)
+      ? holding.commissionRatePercent
+      : fallbackRate;
+    const analysis = analyzeHoldingPosition(holdingTxns, multiplier, { commissionRatePercent });
+    if (!analysis.dailyStates.length) continue;
+    const lastState = analysis.dailyStates[analysis.dailyStates.length - 1];
+    const lastTxnDate = lastState.date;
+    const quoteDate = lastState.shares > 1e-9 && isValidIsoDate(holding.priceDate) && holding.priceDate >= lastTxnDate
       ? holding.priceDate
       : null;
     if (lastTxnDate > finalDate) finalDate = lastTxnDate;
     if (quoteDate && quoteDate > finalDate) finalDate = quoteDate;
-    prepared.push({ holding, chron, lastTxnDate, quoteDate });
+    prepared.push({ holding, dailyStates: analysis.dailyStates, lastTxnDate, quoteDate });
   }
 
   if (!prepared.length) return [];
 
-  for (const { holding, chron, lastTxnDate, quoteDate } of prepared) {
+  for (const { holding, dailyStates, lastTxnDate, quoteDate } of prepared) {
     const mark = Number.isFinite(holding.lastPrice) && holding.lastPrice > 0 ? holding.lastPrice : 0;
     const markDate = quoteDate ?? finalDate;
     const multiplier = getHoldingContractMultiplier(holding);
-    let shares = 0, costBasis = 0, realizedPnl = 0, realizedCostBasis = 0;
-    let knownPrice = 0;
     let previousPnl = 0, previousCost = 0;
 
-    const recordState = (date: string, valuationPrice: number) => {
-      const marketValue = shares * multiplier * valuationPrice;
-      const floatingPnl = marketValue - costBasis;
-      const pnl = realizedPnl + floatingPnl;
-      const buyCost = costBasis + realizedCostBasis;
+    const recordState = (state: HoldingDailyState, date: string, valuationPrice: number) => {
+      const marketValue = state.shares * multiplier * valuationPrice;
+      const floatingPnl = marketValue - state.costBasis;
+      const pnl = state.realizedPnl + floatingPnl;
+      const buyCost = state.costBasis + state.realizedCostBasis;
       const entry = byDate.get(date) ?? { pnl: 0, cost: 0 };
       // Sum changes, then carry the account's state through all valuation dates.
       entry.pnl += pnl - previousPnl;
@@ -122,38 +138,14 @@ export function buildAccountNavPoints(accountId: string, holdings: readonly PnlH
       previousCost = buyCost;
     };
 
-    for (let i = 0; i < chron.length; i++) {
-      const tx = chron[i];
-      if (tx.quantitySnapshot != null) {
-        const previousAvg = shares > 0 ? costBasis / (shares * multiplier) : 0;
-        shares = Math.max(0, tx.quantitySnapshot);
-        const nextAvg = tx.costPriceSnapshot ?? previousAvg;
-        costBasis = shares * multiplier * nextAvg;
-        if (tx.costPriceSnapshot != null && tx.costPriceSnapshot > 0) knownPrice = tx.costPriceSnapshot;
-        else if (knownPrice === 0 && nextAvg > 0) knownPrice = nextAvg;
-      } else if (tx.kind === 'sell') {
-        const avg = shares > 0 ? costBasis / (shares * multiplier) : 0;
-        const sold = Math.min(tx.shares, shares);
-        realizedCostBasis += sold * multiplier * avg;
-        realizedPnl += sold * multiplier * (tx.price - avg);
-        costBasis -= sold * multiplier * avg;
-        shares -= sold;
-        if (tx.price > 0) knownPrice = tx.price;
-      } else {
-        shares += tx.shares;
-        costBasis += tx.shares * multiplier * tx.price;
-        if (tx.price > 0) knownPrice = tx.price;
-      }
-      if (shares < 1e-9) { shares = 0; costBasis = 0; }
-      const isLastTxnOnDate = i === chron.length - 1 || chron[i + 1].date !== tx.date;
-      if (isLastTxnOnDate) {
-        const valuationPrice = tx.date >= markDate ? mark : knownPrice;
-        recordState(tx.date, valuationPrice);
-      }
+    for (const state of dailyStates) {
+      const valuationPrice = state.date >= markDate ? mark : state.knownPrice;
+      recordState(state, state.date, valuationPrice);
     }
 
-    if (shares > 1e-9 && markDate > lastTxnDate) {
-      recordState(markDate, mark);
+    const lastState = dailyStates[dailyStates.length - 1];
+    if (lastState.shares > 1e-9 && markDate > lastTxnDate) {
+      recordState(lastState, markDate, mark);
     }
   }
 

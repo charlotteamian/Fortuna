@@ -38,11 +38,17 @@ beforeEach(async () => {
 });
 after(() => db.close());
 
-test('portfolio chart reads named portfolios only and requires an explicit saved selection', async () => {
-  assert.equal((await initializeSettings()).chartNavAccountIds, undefined);
-  const portfolios = await getChartPortfolios();
-  assert.deepEqual(portfolios.map(item => item.account.name), ['My strategy']);
-  assert.deepEqual(portfolios[0].points.map(point => point.nav), [1.1]);
+test('portfolio chart reads named portfolios only, applies default 0.01% commission, and requires an explicit saved selection', async () => {
+  const initialSettings = await initializeSettings();
+  assert.equal(initialSettings.chartNavAccountIds, undefined);
+  assert.equal(initialSettings.defaultCommissionRatePercent, 0.01);
+  const portfoliosWithFee = await getChartPortfolios();
+  assert.deepEqual(portfoliosWithFee.map(item => item.account.name), ['My strategy']);
+  assert.ok(Math.abs(portfoliosWithFee[0].points[0].nav - (1100 / 1000.1)) < 1e-9);
+
+  await updateSettings({ defaultCommissionRatePercent: 0 });
+  const portfoliosZeroFee = await getChartPortfolios();
+  assert.deepEqual(portfoliosZeroFee[0].points.map(point => point.nav), [1.1]);
   const beforeAccounts = await db.accounts.toArray(), beforeRecords = await db.records.toArray();
   await updateSettings({ chartNavAccountIds: ['strategy'] });
   assert.deepEqual((await initializeSettings()).chartNavAccountIds, ['strategy']);
@@ -50,15 +56,23 @@ test('portfolio chart reads named portfolios only and requires an explicit saved
   assert.deepEqual(await db.records.toArray(), beforeRecords);
 });
 
-test('portfolio statistics choice survives JSON and Excel backups and can be turned off', async () => {
-  await updateSettings({ chartNavAccountIds: ['strategy'] });
+test('portfolio statistics choice and commission settings survive JSON and Excel backups and can be turned off', async () => {
+  await updateSettings({ chartNavAccountIds: ['strategy'], defaultCommissionRatePercent: 0.025 });
+  await db.holdings.update('h1', { commissionRatePercent: 0.03 });
+  await db.holdingTxns.update('t1', { fee: 1.5 });
   const json = await exportData(), excel = await exportToExcel();
-  await updateSettings({ chartNavAccountIds: [] });
+  await updateSettings({ chartNavAccountIds: [], defaultCommissionRatePercent: 0 });
   assert.equal(await importData(json), true);
   assert.deepEqual((await initializeSettings()).chartNavAccountIds, ['strategy']);
-  await updateSettings({ chartNavAccountIds: [] });
+  assert.equal((await initializeSettings()).defaultCommissionRatePercent, 0.025);
+  assert.equal((await db.holdings.get('h1'))?.commissionRatePercent, 0.03);
+  assert.equal((await db.holdingTxns.get('t1'))?.fee, 1.5);
+  await updateSettings({ chartNavAccountIds: [], defaultCommissionRatePercent: 0 });
   assert.equal(await importFromExcel(excel), true);
   assert.deepEqual((await initializeSettings()).chartNavAccountIds, ['strategy']);
+  assert.equal((await initializeSettings()).defaultCommissionRatePercent, 0.025);
+  assert.equal((await db.holdings.get('h1'))?.commissionRatePercent, 0.03);
+  assert.equal((await db.holdingTxns.get('t1'))?.fee, 1.5);
   await updateSettings({ chartNavAccountIds: [] });
   assert.deepEqual((await initializeSettings()).chartNavAccountIds, []);
 });

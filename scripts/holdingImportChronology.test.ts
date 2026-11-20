@@ -18,7 +18,7 @@ registerHooks({
   },
 });
 
-const { db, initializeSettings, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
+const { db, initializeSettings, updateSettings, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
 const { importHoldingScreenshot, getHoldingsWithPositions, updateHoldingPositions } = await import('../src/services/holdingService.ts');
 const { holdingRealizedEvents } = await import('../src/services/pnlService.ts');
 const { formatLocalDate, parseLocalDateTimeMs } = await import('../src/lib/localDate.ts');
@@ -26,6 +26,7 @@ const { formatLocalDate, parseLocalDateTimeMs } = await import('../src/lib/local
 beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
   await initializeSettings();
+  await updateSettings({ defaultCommissionRatePercent: 0 });
   await db.accounts.add({ id: 'stocks', name: 'Broker', category: '股票/ETF', type: 'asset', currency: 'CNY', portfolio: true, cashBalance: 100, sortOrder: 0, createdAt: 1 });
 });
 after(() => db.close());
@@ -84,7 +85,9 @@ test('same-day T+0 trades with execution times import cleanly alongside morning,
   assert.deepEqual(await importHoldingScreenshot('stocks', { holdings: [], trades: t0Trades }, tradeDate), { created: 0, updated: 1, insertedTrades: 2, skippedTrades: 0 });
   const afterMorning = (await getHoldingsWithPositions('stocks')).find(h => h.id === 'etf')!;
   assert.equal(afterMorning.position.shares, 900);
-  assert.ok(Math.abs(afterMorning.position.realizedPnl - 200 * (2.317 - 2.30)) < 1e-9);
+  // Same-day reverse-T pairs 100 @ 2.317 with 100 @ 2.299 (+1.80) and settles the remaining 100 against 2.30 (+1.70).
+  assert.ok(Math.abs(afterMorning.position.realizedPnl - (100 * (2.317 - 2.299) + 100 * (2.317 - 2.30))) < 1e-9);
+  assert.equal(afterMorning.position.dayTradeCount, 1);
   assert.equal(afterMorning.lastPrice, 2.299);
   // Idempotent on retry.
   assert.deepEqual(await importHoldingScreenshot('stocks', { holdings: [], trades: t0Trades }, tradeDate), { created: 0, updated: 0, insertedTrades: 0, skippedTrades: 2 });
@@ -109,7 +112,8 @@ test('same-day T+0 trades with execution times import cleanly alongside morning,
   assert.deepEqual(await importHoldingScreenshot('stocks', { holdings: [], trades: t0Trades }, tradeDate), { created: 0, updated: 1, insertedTrades: 2, skippedTrades: 0 });
   const afterAfternoon = (await getHoldingsWithPositions('stocks')).find(h => h.id === 'etf')!;
   assert.equal(afterAfternoon.position.shares, 900);
-  assert.ok(Math.abs(afterAfternoon.position.realizedPnl - 200 * (2.317 - 2.30)) < 1e-9);
+  assert.ok(Math.abs(afterAfternoon.position.realizedPnl - (100 * (2.317 - 2.299) + 100 * (2.317 - 2.30))) < 1e-9);
+  assert.equal(afterAfternoon.position.dayTradeCount, 1);
   const afternoonSeq = (await db.holdingTxns.where('holdingId').equals('etf').toArray())
     .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
   assert.deepEqual(afternoonSeq.map(t => t.executionTime ?? t.id), ['base', '13:00:02', '14:30:02', 'afternoon-cal']);
@@ -150,8 +154,9 @@ test('timed same-day fills merge with existing untimed or timed fills, adopt exe
   assert.deepEqual(seq.map(t => [t.kind, t.executionTime ?? null]), [['buy', null], ['sell', '13:00:02'], ['buy', '14:30:02']]);
   const holding = (await getHoldingsWithPositions('stocks')).find(h => h.id === 'etf')!;
   assert.equal(holding.position.shares, 900);
-  // Realized P&L used pre-13:00 cost (2.30), NOT the 14:30 buy price!
-  assert.ok(Math.abs(holding.position.realizedPnl - 200 * (2.317 - 2.30)) < 1e-9);
+  // Same-day reverse-T pairs 100 @ 2.317 with 100 @ 2.299 (+1.80) and settles the remaining 100 against base 2.30 (+1.70).
+  assert.ok(Math.abs(holding.position.realizedPnl - (100 * (2.317 - 2.299) + 100 * (2.317 - 2.30))) < 1e-9);
+  assert.equal(holding.position.dayTradeCount, 1);
   // Identical buy at a DIFFERENT executionTime (14:55:00) is kept as a distinct execution rather than deduplicated.
   assert.equal((await importHoldingScreenshot('stocks', {
     holdings: [],
