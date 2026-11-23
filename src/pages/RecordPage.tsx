@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { getAccountsWithLatest, deleteAccount, updateAccount, archiveAccount, restoreAccount, type AccountWithLatest } from '../services/assetService';
 import { updateSettings, type Account, type Settings } from '../db';
 import { useAppContext } from '../app-context';
+import { formatAmountCompact } from '../lib/amountFormat';
 import AccountForm from '../components/AccountForm';
 import AccountEditModal from '../components/AccountEditModal';
 import { useTranslation } from 'react-i18next';
@@ -288,17 +289,7 @@ export default function RecordPage({ onOpenAccount }: Props) {
     }
   };
 
-  const fmt = (n: number) => {
-    const isEn = i18n.language.startsWith('en');
-    if (isEn) {
-      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + t('unit_yi');
-      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + t('unit_wan');
-      return n.toFixed(2);
-    }
-    if (Math.abs(n) >= 1e8) return (n / 1e8).toFixed(2) + t('unit_yi');
-    if (Math.abs(n) >= 1e4) return (n / 1e4).toFixed(2) + t('unit_wan');
-    return n.toFixed(2);
-  };
+  const fmt = (n: number) => formatAmountCompact(n, i18n.language.startsWith('en'), t('unit_wan'), t('unit_yi'));
   const masked = (text: string) => amountVisible ? text : '****';
   const assetAccounts = accounts.filter(a => a.type === 'asset');
   const liabilityAccounts = accounts.filter(a => a.type === 'liability');

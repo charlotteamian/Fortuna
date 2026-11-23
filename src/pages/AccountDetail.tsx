@@ -5,6 +5,7 @@ import { getAccount, getRecords, addRecord, updateRecord, deleteRecord, updateAc
   addMetalTransaction, updateMetalTransaction, computeMetalPosition, restoreAccount } from '../services/assetService';
 import { initializeSettings, type Account, type AccountRecord, type Settings, METAL_TYPES } from '../db';
 import { pnlGainColor, pnlLossColor } from '../lib/colorThemes';
+import { formatAmountCompact } from '../lib/amountFormat';
 import { getMetalPricePerGram } from '../services/rateService';
 import { useAppContext } from '../app-context';
 import { useTranslation } from 'react-i18next';
@@ -288,17 +289,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
   };
   const masked = (text: string) => amountVisible ? text : '****';
 
-  const fmt = (n: number) => {
-    const isEn = i18n.language.startsWith('en');
-    if (isEn) {
-      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + t('unit_yi');
-      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + t('unit_wan');
-      return n.toFixed(2);
-    }
-    if (Math.abs(n) >= 1e8) return (n / 1e8).toFixed(2) + t('unit_yi');
-    if (Math.abs(n) >= 1e4) return (n / 1e4).toFixed(2) + t('unit_wan');
-    return n.toFixed(2);
-  };
+  const fmt = (n: number) => formatAmountCompact(n, i18n.language.startsWith('en'), t('unit_wan'), t('unit_yi'));
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
   if (loadError && (!account || !settings)) return (

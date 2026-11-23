@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatAmountCompact } from '../lib/amountFormat';
 import { initializeSettings, type Settings, type PlanItem, type PlanResourceAllocation, type PlanTargetRole } from '../db';
 import {
   getPlanStatus, createPlanItem, createInitialPlanItems, updatePlanItem, movePlanItem, deletePlanItem, setPlanTargetTotal,
@@ -334,17 +335,7 @@ export default function PlanPage() {
 
   const masked = (text: string) => amountVisible ? text : '****';
   // Format amounts without RMB symbol (¥)
-  const fmt = (n: number) => {
-    const isEn = i18n.language.startsWith('en');
-    if (isEn) {
-      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + t('unit_yi');
-      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + t('unit_wan');
-      return n.toFixed(2);
-    }
-    if (Math.abs(n) >= 1e8) return (n / 1e8).toFixed(2) + t('unit_yi');
-    if (Math.abs(n) >= 1e4) return (n / 1e4).toFixed(2) + t('unit_wan');
-    return n.toFixed(2);
-  };
+  const fmt = (n: number) => formatAmountCompact(n, i18n.language.startsWith('en'), t('unit_wan'), t('unit_yi'));
   const fmtPct = (n: number) => String(Number(n.toFixed(2)));
   const fmtQuote = (n: number, kind?: PlanLadderKind) => {
     if (kind === 'index') return String(Math.round(n * 10) / 10);

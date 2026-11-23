@@ -2,6 +2,7 @@ import type { AccountWithLatest } from '../services/assetService';
 import type { Settings } from '../db';
 import { getFieldsForCategory } from './categoryFields';
 import { isAccountIncludedInTotals } from './accountPreferences';
+import { formatAmountCompact } from './amountFormat';
 
 export interface ReportOpts {
   accounts: AccountWithLatest[];
@@ -16,14 +17,7 @@ export interface ReportOpts {
 }
 
 function fmtNum(n: number, isEn: boolean, t: (k: string) => string): string {
-  if (isEn) {
-    if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + t('unit_yi');
-    if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + t('unit_wan');
-    return n.toFixed(0);
-  }
-  if (Math.abs(n) >= 1e8) return (n / 1e8).toFixed(2) + t('unit_yi');
-  if (Math.abs(n) >= 1e4) return (n / 1e4).toFixed(2) + t('unit_wan');
-  return n.toFixed(0);
+  return formatAmountCompact(n, isEn, t('unit_wan'), t('unit_yi'));
 }
 
 function fmtAmount(amt: number, currency: string): string {

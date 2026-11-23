@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { db, DEFAULT_COMMISSION_RATE_PERCENT, type Account, type Holding, type HoldingTxn } from '../db';
 import { pnlGainColor, pnlLossColor } from '../lib/colorThemes';
+import { formatAmountCompact, formatAmountFull, formatPrice, formatShares } from '../lib/amountFormat';
 import {
   getHoldingsWithPositions, getAccountTxns, createHolding, updateHolding, deleteHolding,
   addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, setCalculatedCashBalance, updatePrices, updateBalances, setHoldingBalance,
@@ -248,20 +249,10 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const changed = async () => { await load(); onChanged(); };
 
   const masked = (text: string) => amountVisible ? text : '****';
-  const fmt = (n: number) => {
-    const isEn = i18n.language.startsWith('en');
-    if (isEn) {
-      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + t('unit_yi');
-      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + t('unit_wan');
-      return n.toFixed(2);
-    }
-    if (Math.abs(n) >= 1e8) return (n / 1e8).toFixed(2) + t('unit_yi');
-    if (Math.abs(n) >= 1e4) return (n / 1e4).toFixed(2) + t('unit_wan');
-    return n.toFixed(2);
-  };
-  const fmtFull = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const fmtPrice = (n: number, precision = 8) => n.toLocaleString('en-US', { minimumFractionDigits: account.currency === 'JPY' ? 0 : 2, maximumFractionDigits: precision });
-  const fmtShares = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 8 });
+  const fmt = (n: number) => formatAmountCompact(n, i18n.language.startsWith('en'), t('unit_wan'), t('unit_yi'));
+  const fmtFull = (n: number) => formatAmountFull(n);
+  const fmtPrice = (n: number, precision = 8) => formatPrice(n, account.currency, precision);
+  const fmtShares = (n: number) => formatShares(n);
   const pnlColor = (n: number) => n >= 0 ? pnlGainColor(theme, appSettings?.pnlColorScheme) : pnlLossColor(theme, appSettings?.pnlColorScheme);
   const signed = (n: number) => (n >= 0 ? '+' : '') + fmt(n);
 
