@@ -13,6 +13,7 @@ import PortfolioPanel from '../components/PortfolioPanel';
 import PriceMonitorPanel from '../components/PriceMonitorPanel';
 import { refreshPriceMonitorQuotes } from '../services/priceMonitorQuoteService';
 import AccountEditModal from '../components/AccountEditModal';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { getDefaultHoldingModeForCategory } from '../lib/productPortfolio';
 import {
   deriveBalanceTimeline,
@@ -47,6 +48,12 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
   const [newNote, setNewNote] = useState('');
   const [recordKind, setRecordKind] = useState<BalanceFlowKind>('buy');
   const [recordEntryMode, setRecordEntryMode] = useState<'flow' | 'adjust'>('flow');
+  // B3: ask before a stray tap on the backdrop throws away an in-progress entry.
+  const [confirmDiscardRecord, setConfirmDiscardRecord] = useState(false);
+  // Snapshot of the record fields at the moment the modal opened, so the dirty
+  // check only fires when the user actually changed something (a balance
+  // adjustment opens with a pre-filled amount and is not "dirty" by itself).
+  const recordInitialRef = useRef<{ amount: string; note: string; date: string }>({ amount: '', note: '', date: '' });
   const [metalPricePerGram, setMetalPricePerGram] = useState<number | null>(null);
   // Precious-metal buy/sell transaction modal
   const [showMetalTxn, setShowMetalTxn] = useState(false);
@@ -241,6 +248,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     setNewAmount('');
     setNewNote('');
     setNewDate(formatLocalDate());
+    recordInitialRef.current = { amount: '', note: '', date: formatLocalDate() };
     setStockShares('');
     setStockPrice('');
     setRecordKind(usesDerivedRecordFlow && (records[0]?.amount ?? 0) > 0 ? 'sell' : 'buy');
@@ -252,6 +260,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     setNewAmount(String(records[0]?.amount ?? 0));
     setNewNote('');
     setNewDate(formatLocalDate());
+    recordInitialRef.current = { amount: String(records[0]?.amount ?? 0), note: '', date: formatLocalDate() };
     setShowAddRecord(true);
   };
   const openEditRecord = (r: AccountRecord) => {
@@ -261,6 +270,21 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     setNewAmount(String(r.deltaAmount ?? r.amount));
     setNewNote(r.note || '');
     setRecordKind(r.kind ?? 'buy');
+    recordInitialRef.current = { amount: String(r.deltaAmount ?? r.amount), note: r.note || '', date: r.date };
+  };
+  // True when the open record form holds input the user would lose by dismissing it.
+  const recordFormHasInput = () => {
+    const init = recordInitialRef.current;
+    return newAmount !== init.amount || newNote !== init.note || newDate !== init.date;
+  };
+  const requestCloseRecord = () => {
+    if (recordFormHasInput()) setConfirmDiscardRecord(true);
+    else { setShowAddRecord(false); setEditingRecord(null); }
+  };
+  const discardRecordAndClose = () => {
+    setConfirmDiscardRecord(false);
+    setShowAddRecord(false);
+    setEditingRecord(null);
   };
   const masked = (text: string) => amountVisible ? text : '****';
 
@@ -741,13 +765,13 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
       )}
 
       {(showAddRecord || editingRecord) && (
-        <div className="modal-overlay" onClick={() => { setShowAddRecord(false); setEditingRecord(null); }}>
+        <div className="modal-overlay" onClick={requestCloseRecord}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">
                 {t(isBalanceAdjustmentInput ? 'balance_adjustment' : editingRecord ? 'edit_record' : isFlowRecordInput ? 'record_balance_change' : 'add_record')}
               </h2>
-              <button className="modal-close" onClick={() => { setShowAddRecord(false); setEditingRecord(null); }}>✕</button>
+              <button className="modal-close" onClick={requestCloseRecord}>✕</button>
             </div>
             {isFlowRecordInput && balanceFlow && (
               <div className="form-group">
@@ -834,7 +858,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               <input className="form-input" placeholder={t('note_placeholder')} value={newNote} onChange={e => setNewNote(e.target.value)} />
             </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary btn-block" onClick={() => { setShowAddRecord(false); setEditingRecord(null); }}>{t('cancel')}</button>
+              <button className="btn btn-secondary btn-block" onClick={requestCloseRecord}>{t('cancel')}</button>
               <button className="btn btn-primary btn-block" disabled={Boolean(balancePreview?.underflow)} onClick={editingRecord ? handleUpdateRecord : handleAddRecord}>
                 {editingRecord ? t('update') : t('save')}
               </button>
@@ -904,6 +928,16 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
           </div>
         );
       })()}
+
+      <ConfirmDialog
+        open={confirmDiscardRecord}
+        message={t('discard_unsaved_changes')}
+        confirmLabel={t('discard')}
+        cancelLabel={t('keep_editing')}
+        danger
+        onConfirm={discardRecordAndClose}
+        onCancel={() => setConfirmDiscardRecord(false)}
+      />
     </div>
   );
 }
