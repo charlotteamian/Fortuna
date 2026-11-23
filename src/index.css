@@ -133,7 +133,7 @@
   --btn-h: 2.75rem;      /* 44px · default button */
   --btn-h-md: 2.5rem;    /* 40px · header / dense bars */
   --btn-h-sm: 2.25rem;   /* 36px · small & inline controls */
-  --btn-h-xs: 2rem;      /* 32px · dense inline chips */
+  --btn-h-xs: 2.25rem;   /* 36px · dense inline chips (matches --btn-h-sm for a comfortable tap target) */
   --control-radius: var(--radius-sm);
 
   /* ---- Motion ---- */
