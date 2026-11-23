@@ -1,4 +1,4 @@
-import { db, DEFAULT_COMMISSION_RATE_PERCENT, initializeSettings } from '../db';
+import { db, initializeSettings } from '../db';
 import { buildAccountNavPoints, getEligibleNavAccounts } from '../lib/chartPortfolioNav';
 
 export async function getChartPortfolios() {
@@ -8,9 +8,12 @@ export async function getChartPortfolios() {
     db.holdings.toArray(),
     db.holdingTxns.toArray(),
   ]);
-  const defaultRate = settings.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT;
+  const feeSettings = {
+    defaultCommissionRatePercent: settings.defaultCommissionRatePercent,
+    minCommission: settings.minCommission,
+  };
   return getEligibleNavAccounts(accounts).map(account => ({
     account,
-    points: buildAccountNavPoints(account.id, holdings, txns, defaultRate, account.category),
+    points: buildAccountNavPoints(account.id, holdings, txns, feeSettings, account.category),
   }));
 }

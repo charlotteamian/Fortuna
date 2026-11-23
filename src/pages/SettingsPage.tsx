@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type CSSProperties, type FormEvent } from 'react';
 import { db, DEFAULT_COMMISSION_RATE_PERCENT, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, hasLedgerData, type Account, type Settings, type CustomField } from '../db';
-import { syncAllPortfolioSnapshots } from '../services/holdingService';
-import { formatCommissionRatePercent, formatCommissionWan, isValidCommissionRatePercent } from '../lib/holdingPosition';
+import { recalculateAutoTxnFees, syncAllPortfolioSnapshots } from '../services/holdingService';
+import { formatCommissionRatePercent, formatCommissionWan, isValidCommissionRatePercent, isValidMinCommission, DEFAULT_STAMP_DUTY_RATE_PERCENT } from '../lib/holdingPosition';
 import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
 import {
@@ -73,6 +73,14 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const [commissionRateInput, setCommissionRateInput] = useState(formatCommissionRatePercent(DEFAULT_COMMISSION_RATE_PERCENT));
   const [commissionRateError, setCommissionRateError] = useState('');
   const [savingCommissionRate, setSavingCommissionRate] = useState(false);
+  const [minCommissionInput, setMinCommissionInput] = useState('0');
+  const [minCommissionError, setMinCommissionError] = useState('');
+  const [savingMinCommission, setSavingMinCommission] = useState(false);
+  const [defaultStampDutyInput, setDefaultStampDutyInput] = useState(formatCommissionRatePercent(DEFAULT_STAMP_DUTY_RATE_PERCENT));
+  const [defaultStampDutyError, setDefaultStampDutyError] = useState('');
+  const [savingDefaultStampDuty, setSavingDefaultStampDuty] = useState(false);
+  const [confirmRecalcFees, setConfirmRecalcFees] = useState(false);
+  const [recalcFeesBusy, setRecalcFeesBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -92,6 +100,8 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       setSettings(s);
       setCommissionRateInput(formatCommissionRatePercent(s.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT));
       setCommissionRateError('');
+      setMinCommissionInput(s.minCommission != null ? String(s.minCommission) : '0');
+      setDefaultStampDutyInput(formatCommissionRatePercent(s.defaultStampDutyRatePercent ?? DEFAULT_STAMP_DUTY_RATE_PERCENT));
       setLastUpdate(ratesUpdatedAt);
       setSnapshotAccounts(accounts);
       setSnapshotStatus(syncStatus);
@@ -117,10 +127,10 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   }, []);
 
   useEffect(() => {
-    const hasOpenModal = showAddCategory || showHiddenAccounts || Boolean(pendingImport);
+    const hasOpenModal = showAddCategory || showHiddenAccounts || Boolean(pendingImport) || confirmRecalcFees;
     document.documentElement.classList.toggle('modal-open', hasOpenModal);
     return () => document.documentElement.classList.remove('modal-open');
-  }, [pendingImport, showAddCategory, showHiddenAccounts]);
+  }, [pendingImport, showAddCategory, showHiddenAccounts, confirmRecalcFees]);
 
   const save = async (updates: Partial<Settings>) => {
     if (!settings) return;
@@ -148,6 +158,64 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       showToast(t('default_commission_rate_saved'));
     } finally {
       setSavingCommissionRate(false);
+    }
+  };
+
+  const handleSaveMinCommission = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!settings || savingMinCommission) return;
+    const raw = minCommissionInput.trim();
+    const parsed = raw === '' ? NaN : Number(raw);
+    if (!isValidMinCommission(parsed)) {
+      setMinCommissionError(t('default_min_commission_invalid'));
+      return;
+    }
+    setSavingMinCommission(true);
+    setMinCommissionError('');
+    try {
+      await save({ minCommission: parsed });
+      setMinCommissionInput(String(parsed));
+      showToast(t('default_min_commission_saved'));
+    } finally {
+      setSavingMinCommission(false);
+    }
+  };
+
+  const handleSaveDefaultStampDuty = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!settings || savingDefaultStampDuty) return;
+    const raw = defaultStampDutyInput.trim();
+    const parsed = raw === '' ? NaN : Number(raw);
+    if (!isValidCommissionRatePercent(parsed)) {
+      setDefaultStampDutyError(t('default_stamp_duty_rate_invalid'));
+      return;
+    }
+    setSavingDefaultStampDuty(true);
+    setDefaultStampDutyError('');
+    try {
+      await save({ defaultStampDutyRatePercent: parsed });
+      setDefaultStampDutyInput(formatCommissionRatePercent(parsed));
+      showToast(t('default_stamp_duty_rate_saved'));
+    } finally {
+      setSavingDefaultStampDuty(false);
+    }
+  };
+
+  const handleRecalcAllFees = async () => {
+    if (recalcFeesBusy) return;
+    setRecalcFeesBusy(true);
+    try {
+      const count = await recalculateAutoTxnFees();
+      setConfirmRecalcFees(false);
+      await syncAllPortfolioSnapshots(false);
+      onAccountsChanged();
+      showToast(count > 0 ? t('recalc_auto_fees_done', { count }) : t('recalc_auto_fees_none'));
+    } catch (error) {
+      console.error('Fee recalculation failed', error);
+      setConfirmRecalcFees(false);
+      showToast(t('recalc_auto_fees_error'), 'error');
+    } finally {
+      setRecalcFeesBusy(false);
     }
   };
 
@@ -615,6 +683,81 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             </div>
           )}
         </form>
+        <form onSubmit={event => void handleSaveMinCommission(event)} noValidate>
+          <div className="settings-item" style={{ alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <label htmlFor="default-min-commission" className="settings-item-label">{t('default_min_commission')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexShrink: 0 }}>
+              <input
+                id="default-min-commission"
+                name="minCommission"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={minCommissionInput}
+                disabled={savingMinCommission}
+                aria-describedby="default-min-commission-hint"
+                aria-invalid={Boolean(minCommissionError)}
+                style={{ width: 96, textAlign: 'right' }}
+                onChange={event => {
+                  setMinCommissionInput(event.target.value);
+                  if (minCommissionError) setMinCommissionError('');
+                }}
+              />
+              <button type="submit" className="btn btn-sm btn-primary" disabled={savingMinCommission}>{t('save')}</button>
+            </div>
+          </div>
+          <div id="default-min-commission-hint" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)', lineHeight: 'var(--lh-base)' }}>
+            {t('default_min_commission_hint')}
+          </div>
+          {minCommissionError && (
+            <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+              {minCommissionError}
+            </div>
+          )}
+        </form>
+        <form onSubmit={event => void handleSaveDefaultStampDuty(event)} noValidate>
+          <div className="settings-item" style={{ alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <label htmlFor="default-stamp-duty-rate" className="settings-item-label">{t('default_stamp_duty_rate')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexShrink: 0 }}>
+              <input
+                id="default-stamp-duty-rate"
+                name="defaultStampDutyRatePercent"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max="10"
+                step="0.001"
+                value={defaultStampDutyInput}
+                disabled={savingDefaultStampDuty}
+                aria-describedby="default-stamp-duty-rate-hint"
+                aria-invalid={Boolean(defaultStampDutyError)}
+                style={{ width: 96, textAlign: 'right' }}
+                onChange={event => {
+                  setDefaultStampDutyInput(event.target.value);
+                  if (defaultStampDutyError) setDefaultStampDutyError('');
+                }}
+              />
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 'var(--fw-semibold)' }}>%</span>
+              <button type="submit" className="btn btn-sm btn-primary" disabled={savingDefaultStampDuty}>{t('save')}</button>
+            </div>
+          </div>
+          <div id="default-stamp-duty-rate-hint" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)', lineHeight: 'var(--lh-base)' }}>
+            {t('default_stamp_duty_rate_hint')}
+          </div>
+          {defaultStampDutyError && (
+            <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+              {defaultStampDutyError}
+            </div>
+          )}
+        </form>
+        <div className="settings-item" style={{ alignItems: 'center', justifyContent: 'center', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
+          <button type="button" className="btn btn-sm btn-secondary" disabled={recalcFeesBusy} onClick={() => setConfirmRecalcFees(true)}>
+            {recalcFeesBusy ? t('recalc_auto_fees_busy') : t('recalc_auto_fees')}
+          </button>
+        </div>
       </div>
 
       <div className="settings-section">
@@ -942,6 +1085,18 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
         </div>
       )}
 
+      {confirmRecalcFees && (
+        <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="recalc-fees-title" onClick={() => !recalcFeesBusy && setConfirmRecalcFees(false)}>
+          <div className="confirm-box" onClick={event => event.stopPropagation()}>
+            <h2 className="confirm-title" id="recalc-fees-title">{t('recalc_auto_fees_confirm_title')}</h2>
+            <p className="confirm-msg">{t('recalc_auto_fees_confirm_message')}</p>
+            <div className="confirm-actions">
+              <button type="button" className="btn btn-secondary" disabled={recalcFeesBusy} onClick={() => setConfirmRecalcFees(false)}>{t('cancel')}</button>
+              <button type="button" className="btn btn-danger" disabled={recalcFeesBusy} onClick={() => void handleRecalcAllFees()}>{recalcFeesBusy ? t('recalc_auto_fees_busy') : t('recalc_auto_fees_yes')}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {pendingImport && (
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="import-confirm-title" onClick={() => !importing && setPendingImport(null)}>
           <div className="confirm-box backup-restore-dialog" onClick={event => event.stopPropagation()}>

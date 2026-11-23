@@ -20,7 +20,7 @@ registerHooks({
 });
 
 const { db, initializeSettings, updateSettings } = await import('../src/db.ts');
-const { addHoldingTxn, createHolding, getHoldingsWithPositions, setCalculatedCashBalance, setCashBalance, syncAllPortfolioSnapshots, updateHolding, updateHoldingPositions, updatePrices, setAccountPortfolioMode } = await import('../src/services/holdingService.ts');
+const { addHoldingTxn, createHolding, getHoldingsWithPositions, recalculateAutoTxnFees, setCalculatedCashBalance, setCashBalance, syncAllPortfolioSnapshots, updateHolding, updateHoldingPositions, updatePrices, setAccountPortfolioMode } = await import('../src/services/holdingService.ts');
 const { formatLocalDate } = await import('../src/lib/localDate.ts');
 
 beforeEach(async () => {
@@ -125,13 +125,17 @@ test('reverse cash updates when default commission rate or per-holding override 
   // realized = 2000 - 2.20 = 1997.80 -> cash = 11997.80
   assert.equal((await db.accounts.get('stocks'))?.cashBalance, 11997.8);
 
-  // Override commission rate on this holding to 0.05% (buy fee 5.00, sell fee 6.00 -> realized 1989.00).
+  // Stored fees are history: a rate change alone does not reprice past fills. The user must
+  // ask to recalculate, which now rewrites both automatic fees (buy 5.00, sell 6.00 -> realized 1989.00).
   await updateHolding(holdingId, { commissionRatePercent: 0.05 });
+  assert.equal((await db.accounts.get('stocks'))?.cashBalance, 11997.8);
+  await recalculateAutoTxnFees({ holdingId });
   assert.equal((await db.accounts.get('stocks'))?.cashBalance, 11989);
 
-  // Clear per-holding override and switch global default to 0%.
+  // Clear per-holding override, switch global default to 0%, and reprice the whole ledger.
   await updateHolding(holdingId, { commissionRatePercent: undefined });
   await updateSettings({ defaultCommissionRatePercent: 0 });
+  await recalculateAutoTxnFees();
   await syncAllPortfolioSnapshots(false);
   assert.equal((await db.accounts.get('stocks'))?.cashBalance, 12000);
 });

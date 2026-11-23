@@ -2,7 +2,8 @@ import { db, initializeSettings, type AccountRecord, type Holding } from '../db'
 import { getHoldingContractMultiplier } from '../lib/usOption';
 import {
   analyzeHoldingPosition,
-  resolveHoldingCommissionRatePercent,
+  resolveHoldingFeeTerms,
+  type HoldingFeeTerms,
   type HoldingTxnLike,
 } from '../lib/holdingPosition';
 import { convertAmountFromCache } from './rateService';
@@ -21,14 +22,10 @@ interface RealizedEvent { date: string; amount: number; currency: string; }
 export function holdingRealizedEvents(
   txns: readonly HoldingTxnLike[],
   currency: string,
-  holding: Pick<Holding, 'instrumentType' | 'contractMultiplier' | 'commissionRatePercent'> = {},
-  commissionRatePercent = 0,
+  holding: Pick<Holding, 'instrumentType' | 'contractMultiplier'> = {},
+  feeTerms: HoldingFeeTerms = { commissionRatePercent: 0, minCommission: 0, stampDutyRatePercent: 0 },
 ): RealizedEvent[] {
-  const multiplier = getHoldingContractMultiplier(holding);
-  const effectiveRate = holding.commissionRatePercent ?? commissionRatePercent;
-  const { realizedEvents } = analyzeHoldingPosition(txns, multiplier, {
-    commissionRatePercent: effectiveRate,
-  });
+  const { realizedEvents } = analyzeHoldingPosition(txns, getHoldingContractMultiplier(holding), feeTerms);
   return realizedEvents.map(event => ({
     date: event.date,
     amount: event.amount,
@@ -87,8 +84,7 @@ export async function getMonthlyRealizedPnl(): Promise<MonthlyPnl[]> {
     const acct = acctById.get(h.accountId);
     const txns = txnsByHolding[h.id];
     if (!acct || !txns?.length) continue;
-    const rate = resolveHoldingCommissionRatePercent(h, settings.defaultCommissionRatePercent, acct.category);
-    events.push(...holdingRealizedEvents(txns, acct.currency, h, rate));
+    events.push(...holdingRealizedEvents(txns, acct.currency, h, resolveHoldingFeeTerms(h, settings, acct.category)));
   }
 
   // Precious-metal accounts

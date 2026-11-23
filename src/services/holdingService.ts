@@ -4,11 +4,14 @@ import { addRecord } from './assetService';
 import { getDefaultHoldingModeForCategory, getHoldingMode, usesBalanceHoldings } from '../lib/productPortfolio';
 import {
   analyzeHoldingPosition,
+  calculateAutoTxnFee,
   computeBalanceHoldingPosition,
   computeHoldingPnl,
   computeHoldingPosition,
-  resolveHoldingCommissionRatePercent,
+  isManualTxnFee,
+  resolveHoldingFeeTerms,
   type HoldingDayTradeMatch,
+  type HoldingFeeTerms,
   type HoldingPnl,
   type HoldingPosition,
   type HoldingTxnDayTradeSummary,
@@ -21,15 +24,19 @@ import { calculatePortfolioCash } from '../lib/portfolioCash';
 
 export {
   analyzeHoldingPosition,
+  calculateAutoTxnFee,
   calculateHoldingTxnFee,
   computeBalanceHoldingPosition,
   computeHoldingPnl,
   computeHoldingPosition,
   DEFAULT_COMMISSION_RATE_PERCENT,
+  isManualTxnFee,
   resolveHoldingCommissionRatePercent,
+  resolveHoldingFeeTerms,
 } from '../lib/holdingPosition';
 export type {
   HoldingDayTradeMatch,
+  HoldingFeeTerms,
   HoldingPnl,
   HoldingPosition,
   HoldingPositionAnalysis,
@@ -44,7 +51,7 @@ export async function getHoldings(accountId: string): Promise<Holding[]> {
 
 export async function createHolding(accountId: string, data: Pick<Holding,
   'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
-  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'productData'
+  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'stampDutyRatePercent' | 'productData'
   | 'lastPrice' | 'priceDate'
 >): Promise<string> {
   const count = await db.holdings.where('accountId').equals(accountId).count();
@@ -54,10 +61,16 @@ export async function createHolding(accountId: string, data: Pick<Holding,
   return id;
 }
 
-export async function updateHolding(id: string, updates: Partial<Holding>): Promise<void> {
+export async function updateHolding(
+  id: string,
+  updates: Partial<Holding>,
+  options: { recalculateAutoFees?: boolean } = {},
+): Promise<void> {
   const existing = await db.holdings.get(id);
   if (!existing) return;
   await db.holdings.update(id, updates);
+  // New fee terms price new fills only, unless the user asks to reprice this holding's history.
+  if (options.recalculateAutoFees) await recalculateAutoTxnFees({ holdingId: id });
   // Metadata can change valuation semantics (for example a 1x security becoming a
   // 100x option contract), so the account snapshot must be recalculated even when
   // the displayed price itself did not change.
@@ -89,9 +102,44 @@ export interface HoldingTxnInput {
   note?: string;
 }
 
+const roundToCents = (value: number) => Math.round(value * 100) / 100;
+
+async function getHoldingFeeContext(holdingId: string): Promise<{ terms: HoldingFeeTerms; multiplier: number }> {
+  const [holding, settings] = await Promise.all([db.holdings.get(holdingId), db.settings.get('main')]);
+  const account = holding ? await db.accounts.get(holding.accountId) : undefined;
+  return {
+    terms: resolveHoldingFeeTerms(holding, settings, account?.category),
+    multiplier: holding ? getHoldingContractMultiplier(holding) : 1,
+  };
+}
+
+/**
+ * The fee stored with a fill. A typed fee is manual. Otherwise the fee is priced once from
+ * the current terms and then kept, so an edit that leaves the fill itself alone (date, note)
+ * does not reprice it.
+ */
+async function resolveStoredTxnFee(
+  holdingId: string,
+  input: HoldingTxnInput,
+  existing?: HoldingTxn,
+): Promise<Pick<HoldingTxn, 'fee' | 'feeSource'>> {
+  const merged = { ...existing, ...input };
+  if (merged.balanceSnapshot != null || merged.quantitySnapshot != null) return { fee: undefined, feeSource: undefined };
+  if (typeof input.fee === 'number' && Number.isFinite(input.fee) && input.fee >= 0) {
+    return { fee: roundToCents(input.fee), feeSource: 'manual' };
+  }
+  if (existing?.feeSource === 'auto' && typeof existing.fee === 'number'
+    && existing.kind === input.kind && existing.shares === input.shares && existing.price === input.price) {
+    return { fee: existing.fee, feeSource: 'auto' };
+  }
+  const { terms, multiplier } = await getHoldingFeeContext(holdingId);
+  return { fee: calculateAutoTxnFee(input, multiplier, terms), feeSource: 'auto' };
+}
+
 export async function addHoldingTxn(accountId: string, holdingId: string, input: HoldingTxnInput): Promise<string> {
   const id = uuidv4();
-  await db.holdingTxns.add({ id, accountId, holdingId, createdAt: Date.now(), ...input });
+  const storedFee = await resolveStoredTxnFee(holdingId, input);
+  await db.holdingTxns.add({ id, accountId, holdingId, createdAt: Date.now(), ...input, ...storedFee });
   await touchPriceFromTxn(holdingId, input);
   await syncPortfolioSnapshot(accountId);
   return id;
@@ -100,9 +148,47 @@ export async function addHoldingTxn(accountId: string, holdingId: string, input:
 export async function updateHoldingTxn(txnId: string, input: HoldingTxnInput): Promise<void> {
   const txn = await db.holdingTxns.get(txnId);
   if (!txn) return;
-  await db.holdingTxns.update(txnId, { ...input });
+  const storedFee = await resolveStoredTxnFee(txn.holdingId, input, txn);
+  await db.holdingTxns.update(txnId, { ...input, ...storedFee });
   await touchPriceFromTxn(txn.holdingId, input);
   await syncPortfolioSnapshot(txn.accountId);
+}
+
+/**
+ * Reprice every automatic fee at today's terms, for one holding or the whole ledger.
+ * Typed fees are never touched. Returns how many fills ended up with a different fee.
+ */
+export async function recalculateAutoTxnFees(scope: { holdingId?: string } = {}): Promise<number> {
+  const affectedAccountIds = new Set<string>();
+  const changed = await db.transaction('rw', [db.settings, db.accounts, db.holdings, db.holdingTxns], async () => {
+    const [settings, accounts, holdings, txns] = await Promise.all([
+      db.settings.get('main'),
+      db.accounts.toArray(),
+      scope.holdingId ? db.holdings.where('id').equals(scope.holdingId).toArray() : db.holdings.toArray(),
+      scope.holdingId ? db.holdingTxns.where('holdingId').equals(scope.holdingId).toArray() : db.holdingTxns.toArray(),
+    ]);
+    const categoryByAccountId = new Map(accounts.map(account => [account.id, account.category]));
+    const holdingById = new Map(holdings.map(holding => [holding.id, holding]));
+    const repriced: HoldingTxn[] = [];
+    for (const tx of txns) {
+      if (tx.quantitySnapshot != null || tx.balanceSnapshot != null || isManualTxnFee(tx)) continue;
+      const holding = holdingById.get(tx.holdingId);
+      if (!holding) continue;
+      const fee = calculateAutoTxnFee(
+        tx,
+        getHoldingContractMultiplier(holding),
+        resolveHoldingFeeTerms(holding, settings, categoryByAccountId.get(holding.accountId)),
+      );
+      if (tx.fee === fee && tx.feeSource === 'auto') continue;
+      repriced.push({ ...tx, fee, feeSource: 'auto' });
+      affectedAccountIds.add(holding.accountId);
+    }
+    if (repriced.length > 0) await db.holdingTxns.bulkPut(repriced);
+    return repriced.length;
+  });
+  for (const accountId of affectedAccountIds) await syncPortfolioSnapshot(accountId, false);
+  if (changed > 0) requestPortableSnapshot('trading-fees-recalculated');
+  return changed;
 }
 
 export async function deleteHoldingTxn(txnId: string): Promise<void> {
@@ -125,6 +211,8 @@ export interface HoldingWithPosition extends Holding, HoldingPnl {
   position: HoldingPosition;
   marketValue: number;     // position.shares * lastPrice
   commissionRatePercentEffective: number;
+  /** Terms that price this holding's next automatic fee. Stored fees are not affected by them. */
+  feeTerms: HoldingFeeTerms;
   dayTrades: HoldingDayTradeMatch[];
   txnDayTrades: Record<string, HoldingTxnDayTradeSummary>;
   txnFees: Record<string, number>;
@@ -137,7 +225,6 @@ export async function getHoldingsWithPositions(accountId: string): Promise<Holdi
     getAccountTxns(accountId),
     db.settings.get('main'),
   ]);
-  const defaultCommissionRatePercent = settings?.defaultCommissionRatePercent;
   return holdings.map(h => {
     const mode = getHoldingMode(account?.category ?? '', h);
     const multiplier = getHoldingContractMultiplier(h);
@@ -151,26 +238,22 @@ export async function getHoldingsWithPositions(accountId: string): Promise<Holdi
         marketValue,
         ...computeHoldingPnl(position, marketValue),
         commissionRatePercentEffective: 0,
+        feeTerms: { commissionRatePercent: 0, minCommission: 0, stampDutyRatePercent: 0 },
         dayTrades: [],
         txnDayTrades: {},
         txnFees: {},
       };
     }
-    const commissionRatePercentEffective = resolveHoldingCommissionRatePercent(
-      h,
-      defaultCommissionRatePercent,
-      account?.category,
-    );
-    const analysis = analyzeHoldingPosition(holdingTxns, multiplier, {
-      commissionRatePercent: commissionRatePercentEffective,
-    });
+    const feeTerms = resolveHoldingFeeTerms(h, settings, account?.category);
+    const analysis = analyzeHoldingPosition(holdingTxns, multiplier, feeTerms);
     const marketValue = analysis.position.shares * multiplier * (h.lastPrice || 0);
     return {
       ...h,
       position: analysis.position,
       marketValue,
       ...computeHoldingPnl(analysis.position, marketValue),
-      commissionRatePercentEffective,
+      commissionRatePercentEffective: feeTerms.commissionRatePercent,
+      feeTerms,
       dayTrades: analysis.dayTrades,
       txnDayTrades: analysis.txnDayTrades,
       txnFees: analysis.txnFees,
@@ -292,10 +375,10 @@ async function applyPositionUpdate(
   txns: HoldingTxn[],
   update: HoldingPositionUpdate,
   date: string,
-  commissionRatePercent: number,
+  feeTerms: HoldingFeeTerms,
 ): Promise<boolean> {
   const multiplier = getHoldingContractMultiplier(holding);
-  const position = computeHoldingPosition(txns, multiplier, { commissionRatePercent });
+  const position = computeHoldingPosition(txns, multiplier, feeTerms);
   if (update.shares > 0 && position.shares === 0 && update.costPrice === undefined) {
     throw new Error('HOLDING_POSITION_COST_REQUIRED');
   }
@@ -338,8 +421,7 @@ export async function updateHoldingPositions(accountId: string, updates: Holding
       return { holding, txns, update };
     }));
     for (const { holding, txns, update } of prepared) {
-      const rate = resolveHoldingCommissionRatePercent(holding, settings?.defaultCommissionRatePercent, account.category);
-      await applyPositionUpdate(holding, txns, update, date, rate);
+      await applyPositionUpdate(holding, txns, update, date, resolveHoldingFeeTerms(holding, settings, account.category));
     }
     await syncPortfolioSnapshot(accountId, false);
   });
@@ -609,6 +691,8 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
         const addedTxn: HoldingTxn = {
           id: uuidv4(), accountId, holdingId: item.holding.id,
           date: trade.date, kind: trade.kind, shares: trade.shares, price: trade.price,
+          fee: calculateAutoTxnFee(trade, getHoldingContractMultiplier(item.holding), resolveHoldingFeeTerms(item.holding, settings, account.category)),
+          feeSource: 'auto',
           ...(executionTime ? { executionTime } : {}),
           ...(brokerRef ? { brokerRef } : {}),
           createdAt: now,
@@ -720,8 +804,7 @@ export async function importHoldingScreenshot(accountId: string, input: HoldingS
       if (item.added.length) await db.holdingTxns.bulkAdd(item.added);
       let changed = item.added.length > 0 || item.updatedTxns.size > 0;
       if (item.snapshot) {
-        const rate = resolveHoldingCommissionRatePercent(holding, settings?.defaultCommissionRatePercent, account.category);
-        changed = await applyPositionUpdate(holding, combined, { ...item.snapshot, holdingId: holding.id }, date, rate) || changed;
+        changed = await applyPositionUpdate(holding, combined, { ...item.snapshot, holdingId: holding.id }, date, resolveHoldingFeeTerms(holding, settings, account.category)) || changed;
       } else if (!item.isNew) {
         const latestAdded = [...item.added].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt).at(-1);
         if (latestAdded && latestOverallFill?.id === latestAdded.id

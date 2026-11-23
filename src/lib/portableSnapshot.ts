@@ -17,6 +17,7 @@ import {
   computeHoldingPnl,
   isValidCommissionRatePercent,
   resolveHoldingCommissionRatePercent,
+  resolveHoldingFeeTerms,
   type HoldingPositionAnalysis,
 } from './holdingPosition.ts';
 import { getHoldingMode } from './productPortfolio.ts';
@@ -34,7 +35,7 @@ export interface PortableSnapshotInput {
   transactions: HoldingTxn[];
   exchangeRates: ExchangeRate[];
   planStatus: PlanStatus;
-  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'defaultCommissionRatePercent' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
+  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'defaultCommissionRatePercent' | 'minCommission' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
   dividendStocks?: DividendStock[];
   priceMonitors?: PriceMonitor[];
   generatedAt?: Date;
@@ -112,7 +113,10 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
             : resolveHoldingCommissionRatePercent(holding, input.settings.defaultCommissionRatePercent, account.category);
       const analysis = mode === 'balance'
         ? null
-        : analyzeHoldingPosition(holdingTransactions, multiplier, { commissionRatePercent });
+        : analyzeHoldingPosition(holdingTransactions, multiplier, resolveHoldingFeeTerms(holding, {
+            defaultCommissionRatePercent: input.settings.defaultCommissionRatePercent ?? 0,
+            minCommission: input.settings.minCommission,
+          }, account.category));
       if (analysis) analysisByHoldingId.set(holding.id, analysis);
       const position = analysis ? analysis.position : computeBalanceHoldingPosition(holdingTransactions);
       const marketValue = mode === 'balance' ? position.shares : position.shares * multiplier * (holding.lastPrice || 0);

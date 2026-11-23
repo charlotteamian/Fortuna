@@ -2,6 +2,8 @@ import type { HoldingTxn } from '../db';
 
 export const DEFAULT_COMMISSION_RATE_PERCENT = 0.01;
 export const MAX_COMMISSION_RATE_PERCENT = 10;
+export const DEFAULT_STAMP_DUTY_RATE_PERCENT = 0.05;
+export const MAX_MIN_COMMISSION = 1_000_000;
 
 const UNIT_HOLDING_CATEGORIES = new Set(['股票/ETF', '股票', '场外基金', '数字货币']);
 const STOCK_COMMISSION_CATEGORIES = new Set(['股票/ETF', '股票']);
@@ -11,10 +13,17 @@ export type HoldingTxnLike = Pick<
   'date' | 'kind' | 'shares' | 'price' | 'createdAt' | 'quantitySnapshot' | 'costPriceSnapshot' | 'balanceSnapshot' | 'fee'
 > & { id?: string };
 
-export interface HoldingPositionOptions {
-  /** Commission rate as a percentage (e.g. 0.01 means 0.01% = 0.0001). Defaults to 0 when omitted. */
-  commissionRatePercent?: number;
+export interface HoldingFeeTerms {
+  /** Commission as a percentage of the traded amount (0.01 means 0.01% = 0.0001). */
+  commissionRatePercent: number;
+  /** Smallest commission charged per fill, in the account currency. Only applies where a commission applies. */
+  minCommission: number;
+  /** Stamp duty as a percentage of the traded amount, charged on sells only. */
+  stampDutyRatePercent: number;
 }
+
+/** Terms used to price a fill that has no stored fee. Every omitted term is 0. */
+export type HoldingPositionOptions = Partial<HoldingFeeTerms>;
 
 export interface HoldingDayTradeMatch {
   date: string;
@@ -126,20 +135,80 @@ export function resolveHoldingCommissionRatePercent(
   return normalizeCommissionRatePercent(defaultCommissionRatePercent, DEFAULT_COMMISSION_RATE_PERCENT);
 }
 
-export function calculateHoldingTxnFee(
-  tx: Pick<HoldingTxn, 'shares' | 'price' | 'fee' | 'quantitySnapshot' | 'balanceSnapshot'>,
+export function isValidMinCommission(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_MIN_COMMISSION;
+}
+
+function normalizeFeeTerms(terms: number | Partial<HoldingFeeTerms> | undefined): HoldingFeeTerms {
+  const source = typeof terms === 'number' ? { commissionRatePercent: terms } : terms ?? {};
+  return {
+    commissionRatePercent: normalizeCommissionRatePercent(source.commissionRatePercent, 0),
+    minCommission: isValidMinCommission(source.minCommission) ? source.minCommission : 0,
+    stampDutyRatePercent: normalizeCommissionRatePercent(source.stampDutyRatePercent, 0),
+  };
+}
+
+/**
+ * Fee terms that price a new fill of this holding. Stamp duty is opt-in per holding, so
+ * ETFs and funds stay duty-free unless the user sets a rate on them.
+ */
+export function resolveHoldingFeeTerms(
+  holding?: { mode?: string; commissionRatePercent?: number; stampDutyRatePercent?: number },
+  settings?: { defaultCommissionRatePercent?: number; minCommission?: number },
+  accountCategory?: string,
+): HoldingFeeTerms {
+  const tradesUnits = holding?.mode !== 'balance'
+    && !(accountCategory && !holding?.mode && !UNIT_HOLDING_CATEGORIES.has(accountCategory));
+  if (!tradesUnits) return { commissionRatePercent: 0, minCommission: 0, stampDutyRatePercent: 0 };
+  return normalizeFeeTerms({
+    commissionRatePercent: resolveHoldingCommissionRatePercent(holding, settings?.defaultCommissionRatePercent, accountCategory),
+    minCommission: settings?.minCommission,
+    stampDutyRatePercent: holding?.stampDutyRatePercent,
+  });
+}
+
+type FeeFill = Pick<HoldingTxn, 'shares' | 'price'> & Partial<Pick<HoldingTxn, 'kind' | 'quantitySnapshot' | 'balanceSnapshot'>>;
+
+const roundToCents = (value: number) => Math.round(value * 100) / 100;
+
+function hasStoredFee(tx: Pick<HoldingTxn, 'fee'>): tx is { fee: number } {
+  return typeof tx.fee === 'number' && Number.isFinite(tx.fee) && tx.fee >= 0;
+}
+
+/** A fee typed by the user. Fees stored before fee sources existed were always typed. */
+export function isManualTxnFee(tx: Pick<HoldingTxn, 'fee' | 'feeSource'>): boolean {
+  return typeof tx.fee === 'number' && Number.isFinite(tx.fee) && tx.fee >= 0 && tx.feeSource !== 'auto';
+}
+
+/** Commission (never below the minimum) plus stamp duty on sells, each rounded to cents. */
+export function calculateAutoTxnFee(
+  tx: FeeFill,
   multiplier = 1,
-  commissionRatePercent = 0,
+  terms: number | Partial<HoldingFeeTerms> = 0,
 ): number {
   if (tx.quantitySnapshot != null || tx.balanceSnapshot != null) return 0;
-  if (typeof tx.fee === 'number' && Number.isFinite(tx.fee) && tx.fee >= 0) {
-    return Math.round(tx.fee * 100) / 100;
-  }
-  const rate = normalizeCommissionRatePercent(commissionRatePercent, 0) / 100;
-  if (rate <= 0) return 0;
+  const { commissionRatePercent, minCommission, stampDutyRatePercent } = normalizeFeeTerms(terms);
   const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   const gross = Math.max(0, tx.shares) * Math.max(0, tx.price) * safeMultiplier;
-  return Math.round(gross * rate * 100) / 100;
+  if (!(gross > 0)) return 0;
+  const commission = commissionRatePercent > 0
+    ? Math.max(roundToCents(gross * (commissionRatePercent / 100)), minCommission)
+    : 0;
+  const stampDuty = tx.kind === 'sell' && stampDutyRatePercent > 0
+    ? roundToCents(gross * (stampDutyRatePercent / 100))
+    : 0;
+  return roundToCents(commission + stampDuty);
+}
+
+/** The fee a fill carries: its stored fee, or the automatic fee when nothing is stored yet. */
+export function calculateHoldingTxnFee(
+  tx: FeeFill & Pick<HoldingTxn, 'fee'>,
+  multiplier = 1,
+  terms: number | Partial<HoldingFeeTerms> = 0,
+): number {
+  if (tx.quantitySnapshot != null || tx.balanceSnapshot != null) return 0;
+  if (hasStoredFee(tx)) return roundToCents(tx.fee);
+  return calculateAutoTxnFee(tx, multiplier, terms);
 }
 
 /** Balance-mode ledger: direct snapshots reset the anchor; principal flows continue from it. */
@@ -197,7 +266,7 @@ interface PendingSell {
 
 /**
  * Same-day T+0 matching (both buy-then-sell and sell-then-buy) + LIFO lot accounting,
- * with automatic or explicit per-fill commission fees and broker-style diluted cost.
+ * with each fill's stored fee (or the automatic fee when none is stored) and broker-style diluted cost.
  */
 export function analyzeHoldingPosition(
   txns: readonly HoldingTxnLike[],
@@ -205,7 +274,6 @@ export function analyzeHoldingPosition(
   options: HoldingPositionOptions = {},
 ): HoldingPositionAnalysis {
   const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
-  const commissionRatePercent = normalizeCommissionRatePercent(options.commissionRatePercent, 0);
 
   const normalized = txns.map((tx, index) => ({ tx, txnId: tx.id ?? `__txn_${index}`, index }));
   normalized.sort(
@@ -314,7 +382,7 @@ export function analyzeHoldingPosition(
         continue;
       }
 
-      const fee = calculateHoldingTxnFee(tx, safeMultiplier, commissionRatePercent);
+      const fee = calculateHoldingTxnFee(tx, safeMultiplier, options);
       txnFees[txnId] = fee;
       if (tx.price > 0) knownPrice = tx.price;
 

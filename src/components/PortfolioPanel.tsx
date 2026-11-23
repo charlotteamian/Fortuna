@@ -27,6 +27,7 @@ import {
 } from '../lib/balanceFlow';
 import {
   calculateHoldingTxnFee,
+  DEFAULT_STAMP_DUTY_RATE_PERCENT,
   deriveBalanceHoldingTimeline,
   formatCommissionRatePercent,
   formatCommissionWan,
@@ -91,6 +92,9 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const [hPrice, setHPrice] = useState('');
   const [hCommissionRate, setHCommissionRate] = useState('');
   const [hCommissionRateError, setHCommissionRateError] = useState('');
+  const [hStampDutyRate, setHStampDutyRate] = useState('');
+  const [hStampDutyRateError, setHStampDutyRateError] = useState('');
+  const [hRecalcFees, setHRecalcFees] = useState(false);
   const [hProductData, setHProductData] = useState<Record<string, string>>({});
   const [hInitShares, setHInitShares] = useState('');
   const [hInitPrice, setHInitPrice] = useState('');
@@ -293,6 +297,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     setEditingHolding(null);
     setHName(''); setHSymbol(''); setHMarket(''); setHPrice('');
     setHCommissionRate(''); setHCommissionRateError('');
+    setHStampDutyRate(''); setHStampDutyRateError(''); setHRecalcFees(false);
     setHInstrumentType('security'); setHOptionUnderlying(''); setHOptionExpiration('');
     setHOptionRight('call'); setHOptionStrike('');
     setHProductData({});
@@ -314,6 +319,9 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     setHPrice(isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
     setHCommissionRate(h.commissionRatePercent != null ? formatCommissionRatePercent(h.commissionRatePercent) : '');
     setHCommissionRateError('');
+    setHStampDutyRate(h.stampDutyRatePercent != null ? formatCommissionRatePercent(h.stampDutyRatePercent) : '');
+    setHStampDutyRateError('');
+    setHRecalcFees(false);
     setHProductData(h.productData ? { ...h.productData } : {});
     setShowHoldingForm(true);
   };
@@ -326,6 +334,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       return;
     }
     let commissionRatePercent: number | undefined;
+    let stampDutyRatePercent: number | undefined;
     if (!isBalancePortfolio) {
       const rawRate = hCommissionRate.trim();
       if (rawRate !== '') {
@@ -336,8 +345,18 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
         }
         commissionRatePercent = parsedRate;
       }
+      const rawStampDuty = hStampDutyRate.trim();
+      if (rawStampDuty !== '') {
+        const parsedStampDuty = Number(rawStampDuty);
+        if (!isValidCommissionRatePercent(parsedStampDuty)) {
+          setHStampDutyRateError(t('holding_stamp_duty_rate_invalid'));
+          return;
+        }
+        stampDutyRatePercent = parsedStampDuty;
+      }
     }
     setHCommissionRateError('');
+    setHStampDutyRateError('');
     const strikeMilli = parseStrikeMilli(hOptionStrike);
     const optionContract = hInstrumentType === 'us_option' && strikeMilli != null
       ? buildUsOptionContract({
@@ -353,7 +372,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     }
     const meta: Pick<Holding,
       'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
-      | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'productData'
+      | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'stampDutyRatePercent' | 'productData'
     > = {
       name: hName.trim(),
       symbol: optionContract
@@ -368,11 +387,12 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       contractMultiplier: optionContract?.multiplier,
       mode: defaultHoldingMode,
       commissionRatePercent,
+      stampDutyRatePercent,
       productData: Object.keys(cleanProductData).length > 0 ? cleanProductData : undefined,
     };
     const priceOrBalance = parseFloat(hPrice);
     if (editingHolding) {
-      await updateHolding(editingHolding.id, meta);
+      await updateHolding(editingHolding.id, meta, { recalculateAutoFees: hRecalcFees });
       if (isBalancePortfolio && !usesDerivedBalance) {
         if (!isNaN(priceOrBalance) && priceOrBalance >= 0 && Math.abs(priceOrBalance - editingHolding.marketValue) > 0.005) {
           await setHoldingBalance(account.id, editingHolding.id, priceOrBalance, today(), t('balance_adjustment_note'));
@@ -1100,6 +1120,55 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 </div>
               );
             })()}
+            {!isBalancePortfolio && (() => {
+              const defaultStampDutyLabel = t('holding_stamp_duty_default_btn', { rate: formatCommissionRatePercent(DEFAULT_STAMP_DUTY_RATE_PERCENT) });
+              return (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="holding-stamp-duty-rate">{t('holding_stamp_duty_rate_label')}</label>
+                  <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
+                    <input
+                      id="holding-stamp-duty-rate"
+                      name="stampDutyRatePercent"
+                      className="form-input mono"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max="10"
+                      step="0.001"
+                      aria-describedby="holding-stamp-duty-rate-hint"
+                      aria-invalid={Boolean(hStampDutyRateError)}
+                      placeholder={t('holding_stamp_duty_rate_ph')}
+                      value={hStampDutyRate}
+                      onChange={event => {
+                        setHStampDutyRate(event.target.value);
+                        if (hStampDutyRateError) setHStampDutyRateError('');
+                      }}
+                    />
+                    <button type="button" className="btn btn-sm btn-secondary" style={{ flexShrink: 0 }}
+                      onClick={() => { setHStampDutyRate(formatCommissionRatePercent(DEFAULT_STAMP_DUTY_RATE_PERCENT)); setHStampDutyRateError(''); }}>
+                      {defaultStampDutyLabel}
+                    </button>
+                  </div>
+                  <div id="holding-stamp-duty-rate-hint" className="form-hint" style={{ marginTop: 'var(--sp-1)' }}>
+                    {t('holding_stamp_duty_rate_hint')}
+                  </div>
+                  {hStampDutyRateError && (
+                    <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+                      {hStampDutyRateError}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {editingHolding && !isBalancePortfolio && (
+              <div className="form-group">
+                <label className="form-check-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
+                  <input type="checkbox" checked={hRecalcFees} onChange={event => setHRecalcFees(event.target.checked)} />
+                  <span>{t('holding_recalc_fees')}</span>
+                </label>
+                <div className="form-hint" style={{ marginTop: 'var(--sp-1)' }}>{t('holding_recalc_fees_hint')}</div>
+              </div>
+            )}
             {productHoldingFields.map(field => (
               <div className="form-group" key={field.key}>
                 <label className="form-label">{t(field.labelKey)}{field.required ? ' *' : ''}</label>
@@ -1200,7 +1269,11 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                     }}
                   />
                   <div id="holding-txn-fee-hint" className="form-hint" style={{ marginTop: 'var(--sp-1)' }}>
-                    {t('holding_txn_fee_hint', { rate: formatCommissionRatePercent(txnHolding.commissionRatePercentEffective) })}
+                    {t('holding_txn_fee_hint', {
+                      rate: formatCommissionRatePercent(txnHolding.commissionRatePercentEffective),
+                      min: txnHolding.feeTerms.minCommission,
+                      stamp: formatCommissionRatePercent(txnHolding.feeTerms.stampDutyRatePercent),
+                    })}
                   </div>
                   {txnFeeError && (
                     <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
@@ -1217,7 +1290,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                   : calculateHoldingTxnFee(
                       { shares, price, fee: parsedManualFee },
                       txnMultiplier,
-                      txnHolding.commissionRatePercentEffective,
+                      txnHolding.feeTerms,
                     );
                 return (
                   <div className="form-calculation" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 'var(--sp-1)', marginBottom: 'var(--sp-2)' }}>
@@ -1238,6 +1311,14 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)' }}>
                           {fmtFull(previewFee)} {account.currency}
                         </span>
+                      </div>
+                    )}
+                    {!isBalancePortfolio && (txnHolding.feeTerms.minCommission > 0 || txnHolding.feeTerms.stampDutyRatePercent > 0) && (
+                      <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}>
+                        {t('holding_txn_fee_terms_note', {
+                          min: txnHolding.feeTerms.minCommission,
+                          stamp: formatCommissionRatePercent(txnHolding.feeTerms.stampDutyRatePercent),
+                        })}
                       </div>
                     )}
                     {isBalancePortfolio && (

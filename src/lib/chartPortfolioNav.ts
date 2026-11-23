@@ -1,8 +1,8 @@
 import type { PortfolioNavSeriesPoint, PortfolioNavSummary } from './balanceFlow.ts';
 import {
   calculateHoldingTxnFee,
-  isValidCommissionRatePercent,
-  normalizeCommissionRatePercent,
+  resolveHoldingFeeTerms,
+  type HoldingFeeTerms,
 } from './holdingPosition.ts';
 import { getHoldingContractMultiplier } from './usOption.ts';
 
@@ -21,6 +21,7 @@ interface PnlHoldingLike {
   lastPrice: number;
   priceDate?: string;
   commissionRatePercent?: number;
+  stampDutyRatePercent?: number;
   instrumentType?: 'us_option';
   contractMultiplier?: number;
 }
@@ -38,6 +39,7 @@ interface PnlTxnLike {
   quantitySnapshot?: number;
   costPriceSnapshot?: number;
   marketPriceSnapshot?: number;
+  feeSource?: 'auto' | 'manual';
   createdAt: number;
 }
 
@@ -69,7 +71,7 @@ interface NavSlot {
   /** Latest valuation price: execution price, calibration price, or the current quote once marked. */
   price: number;
   multiplier: number;
-  commissionRatePercent: number;
+  feeTerms: HoldingFeeTerms;
   lastTxnDate: string;
 }
 
@@ -142,7 +144,7 @@ function runNav(
         continue;
       }
 
-      const fee = calculateHoldingTxnFee(tx, slot.multiplier, slot.commissionRatePercent);
+      const fee = calculateHoldingTxnFee(tx, slot.multiplier, slot.feeTerms);
       // A zero price (for example bonus shares) carries no valuation information.
       if (tx.price > 0) {
         slot.price = tx.price;
@@ -195,13 +197,15 @@ export function buildAccountNavPoints(
   accountId: string,
   holdings: readonly PnlHoldingLike[],
   txns: readonly PnlTxnLike[],
-  defaultCommissionRatePercent = 0,
+  feeSettings: { defaultCommissionRatePercent?: number; minCommission?: number } = {},
   accountCategory?: string,
 ): PnlNavPoint[] {
-  const fallbackRate = accountCategory && !['股票/ETF', '股票'].includes(accountCategory)
-    ? 0
-    : normalizeCommissionRatePercent(defaultCommissionRatePercent, 0);
-
+  // A bare call prices fills at 0 commission, matching the historical default; callers with
+  // real settings pass the configured default and minimum instead.
+  const normalizedFeeSettings = {
+    defaultCommissionRatePercent: feeSettings.defaultCommissionRatePercent ?? 0,
+    minCommission: feeSettings.minCommission ?? 0,
+  };
   const slots = new Map<string, NavSlot>();
   const holdingById = new Map<string, PnlHoldingLike>();
   for (const holding of holdings) {
@@ -211,9 +215,7 @@ export function buildAccountNavPoints(
       shares: 0,
       price: 0,
       multiplier: getHoldingContractMultiplier(holding),
-      commissionRatePercent: isValidCommissionRatePercent(holding.commissionRatePercent)
-        ? holding.commissionRatePercent
-        : fallbackRate,
+      feeTerms: resolveHoldingFeeTerms(holding, normalizedFeeSettings, accountCategory),
       lastTxnDate: '',
     });
   }
