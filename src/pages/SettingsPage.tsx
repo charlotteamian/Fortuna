@@ -22,6 +22,7 @@ import UserGuide from '../components/UserGuide';
 import HoldingRecognitionSettings from '../components/HoldingRecognitionSettings';
 import DividendAdvisorSettings from '../components/DividendAdvisorSettings';
 import SettingsMenu from '../components/SettingsMenu';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatLocalDate } from '../lib/localDate';
 import { readExcelBackupFile, describeExcelBackupError, type ExcelBackupFailure } from '../lib/excelBackup';
 import { Capacitor } from '@capacitor/core';
@@ -46,6 +47,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [confirmCategoryReset, setConfirmCategoryReset] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -327,7 +329,10 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       showToast(t('categories_reset_blocked', { categories: usedCustomCategories.join('、') }), 'error');
       return;
     }
-    if (!confirm(t('categories_reset_confirm'))) return;
+    setConfirmCategoryReset(true);
+  };
+  const confirmResetCategories = async () => {
+    setConfirmCategoryReset(false);
     await save({ categories: [...DEFAULT_CATEGORIES] });
     showToast(t('cat_reset'));
   };
@@ -1170,6 +1175,16 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmCategoryReset}
+        message={t('categories_reset_confirm')}
+        confirmLabel={t('confirm_delete')}
+        cancelLabel={t('cancel')}
+        danger
+        onConfirm={() => void confirmResetCategories()}
+        onCancel={() => setConfirmCategoryReset(false)}
+      />
     </>
   );
 }
