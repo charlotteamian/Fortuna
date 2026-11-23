@@ -62,17 +62,19 @@ function generateFixedTicks(dates: string[], range: TimeRange): string[] {
   return ticks;
 }
 
-/** Interpolate a value map to fixed ticks (carry-forward) */
+/** Interpolate a value map to fixed ticks (carry-forward). Ticks before the first
+ * observed value carry it backward so the line never starts from a fake zero. */
 function interpolateToTicks(ticks: string[], valuesMap: Record<string, number>, allDates: string[]): Record<string, number> {
   const sorted = allDates.sort();
+  const firstVal = sorted.length > 0 ? (valuesMap[sorted[0]] ?? 0) : 0;
   const result: Record<string, number> = {};
   for (const tick of ticks) {
-    let val = 0;
+    let val: number | undefined;
     for (const d of sorted) {
       if (d <= tick) val = valuesMap[d] ?? val;
       else break;
     }
-    result[tick] = val;
+    result[tick] = val ?? firstVal;
   }
   return result;
 }

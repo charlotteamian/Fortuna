@@ -63,10 +63,15 @@ export async function restoreAccount(id: string): Promise<void> {
   requestPortableSnapshot('account-restored');
 }
 export async function deleteAccount(id: string): Promise<void> {
-  await db.records.where('accountId').equals(id).delete();
-  await db.holdingTxns.where('accountId').equals(id).delete();
-  await db.holdings.where('accountId').equals(id).delete();
-  await db.accounts.delete(id);
+  // Deleting in one transaction avoids orphan records, holdings, transactions or
+  // independent price monitors if the process is interrupted mid-delete.
+  await db.transaction('rw', [db.records, db.holdingTxns, db.holdings, db.priceMonitors, db.accounts], async () => {
+    await db.records.where('accountId').equals(id).delete();
+    await db.holdingTxns.where('accountId').equals(id).delete();
+    await db.holdings.where('accountId').equals(id).delete();
+    await db.priceMonitors.where('accountId').equals(id).delete();
+    await db.accounts.delete(id);
+  });
   requestPortableSnapshot('account-deleted');
 }
 

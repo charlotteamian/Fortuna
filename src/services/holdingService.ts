@@ -80,8 +80,10 @@ export async function updateHolding(
 
 export async function deleteHolding(id: string): Promise<void> {
   const h = await db.holdings.get(id);
-  await db.holdingTxns.where('holdingId').equals(id).delete();
-  await db.holdings.delete(id);
+  await db.transaction('rw', [db.holdingTxns, db.holdings], async () => {
+    await db.holdingTxns.where('holdingId').equals(id).delete();
+    await db.holdings.delete(id);
+  });
   if (h) await syncPortfolioSnapshot(h.accountId);
 }
 
@@ -136,8 +138,39 @@ async function resolveStoredTxnFee(
   return { fee: calculateAutoTxnFee(input, multiplier, terms), feeSource: 'auto' };
 }
 
+/** The shares a sell dated `date` can still dispose of, given the ledger up to that date. */
+async function sellableSharesAt(holdingId: string, date: string, excludeTxnId?: string): Promise<number> {
+  const holding = await db.holdings.get(holdingId);
+  if (!holding) return Infinity;
+  const account = await db.accounts.get(holding.accountId);
+  if (getHoldingMode(account?.category ?? '', holding) === 'balance') return Infinity;
+  const txns = (await db.holdingTxns.where('holdingId').equals(holdingId).toArray())
+    .filter(tx => tx.id !== excludeTxnId && tx.date <= date)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+  let available = 0;
+  for (const tx of txns) {
+    if (tx.quantitySnapshot != null) available = Math.max(0, tx.quantitySnapshot);
+    else if (tx.kind === 'buy') available += tx.shares;
+    else available -= Math.min(tx.shares, available);
+  }
+  return Math.max(0, available);
+}
+
+/**
+ * A sell the position cannot cover is rejected instead of being silently truncated.
+ * Truncation mis-stated the position and still charged the fill its fee (audit A1).
+ */
+async function assertSellWithinPosition(holdingId: string, input: HoldingTxnInput, excludeTxnId?: string): Promise<void> {
+  if (input.kind !== 'sell' || !(input.shares > 0)) return;
+  if (input.balanceSnapshot != null) return;
+  const sellable = await sellableSharesAt(holdingId, input.date, excludeTxnId);
+  if (sellable === Infinity) return;
+  if (input.shares > sellable + 1e-9) throw new Error('SELL_EXCEEDS_AVAILABLE');
+}
+
 export async function addHoldingTxn(accountId: string, holdingId: string, input: HoldingTxnInput): Promise<string> {
   const id = uuidv4();
+  await assertSellWithinPosition(holdingId, input);
   const storedFee = await resolveStoredTxnFee(holdingId, input);
   await db.holdingTxns.add({ id, accountId, holdingId, createdAt: Date.now(), ...input, ...storedFee });
   await touchPriceFromTxn(holdingId, input);
@@ -148,6 +181,7 @@ export async function addHoldingTxn(accountId: string, holdingId: string, input:
 export async function updateHoldingTxn(txnId: string, input: HoldingTxnInput): Promise<void> {
   const txn = await db.holdingTxns.get(txnId);
   if (!txn) return;
+  await assertSellWithinPosition(txn.holdingId, input, txnId);
   const storedFee = await resolveStoredTxnFee(txn.holdingId, input, txn);
   await db.holdingTxns.update(txnId, { ...input, ...storedFee });
   await touchPriceFromTxn(txn.holdingId, input);
@@ -197,12 +231,13 @@ export async function deleteHoldingTxn(txnId: string): Promise<void> {
   if (txn) await syncPortfolioSnapshot(txn.accountId);
 }
 
-/** A transaction at or after the holding's quote date is the freshest price we know — adopt it. */
+/** A transaction is the freshest price only when it is strictly newer than the quote date,
+ * so a same-day fill never overwrites that day's live quote. */
 async function touchPriceFromTxn(holdingId: string, input: HoldingTxnInput): Promise<void> {
   if (input.balanceSnapshot != null) return;
   const h = await db.holdings.get(holdingId);
   if (!h || input.price <= 0) return;
-  if (!h.priceDate || input.date >= h.priceDate) {
+  if (!h.priceDate || input.date > h.priceDate) {
     await db.holdings.update(holdingId, { lastPrice: input.price, priceDate: input.date });
   }
 }

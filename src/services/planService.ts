@@ -143,8 +143,10 @@ export async function movePlanItem(id: string, direction: 'up' | 'down'): Promis
 }
 
 export async function deletePlanItem(id: string): Promise<void> {
-  await db.planTargets.where('planItemId').equals(id).delete();
-  await db.planItems.delete(id);
+  await db.transaction('rw', [db.planTargets, db.planItems], async () => {
+    await db.planTargets.where('planItemId').equals(id).delete();
+    await db.planItems.delete(id);
+  });
   requestPortableSnapshot('allocation-plan-item-deleted');
 }
 
@@ -177,7 +179,9 @@ export async function updatePlanTarget(id: string, updates: Partial<PlanTarget>)
 }
 
 export async function deletePlanTarget(id: string): Promise<void> {
-  await db.planTargets.delete(id);
+  await db.transaction('rw', db.planTargets, async () => {
+    await db.planTargets.delete(id);
+  });
   requestPortableSnapshot('allocation-target-deleted');
 }
 
@@ -823,7 +827,8 @@ export async function refreshPlanQuotes(): Promise<{ updated: number; failed: nu
       let itemChanged = false;
       let nextLadder = item.ladderConfig;
       const ladderSym = nextLadder?.symbol?.trim();
-      if (nextLadder && ladderSym && quotes.has(ladderSym)) {
+      // A yield ladder prices by dividend yield; a market quote must not replace it.
+      if (nextLadder && nextLadder.kind !== 'yield' && ladderSym && quotes.has(ladderSym)) {
         const q = quotes.get(ladderSym)!;
         const price = Math.round((q.priceMicros / 1_000_000) * 10000) / 10000;
         if (price > 0 && nextLadder.currentQuote !== price) {

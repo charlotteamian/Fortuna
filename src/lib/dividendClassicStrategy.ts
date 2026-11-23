@@ -1,4 +1,5 @@
 import { stockBudgetMinor, type DividendStock, type GridLevel } from './dividendWorkbench.ts';
+import { formatLocalDate } from './localDate.ts';
 
 export const CLASSIC_BUY_YIELD_LADDER = [550, 575, 600, 650] as const;
 export const CLASSIC_SELL_YIELD_LADDER = [480, 450, 420, 400] as const;
@@ -233,7 +234,7 @@ export function buildClassicStockPlan(
   } = {},
 ): ClassicStockPlan {
   const taxBps: ClassicTaxRateBps = options.taxBps ?? (stock.gridProvenance?.taxBps ?? 1000);
-  const asOf = options.asOf ?? new Date().toISOString().slice(0, 10);
+  const asOf = options.asOf ?? formatLocalDate(new Date());
   const shares = options.shares ?? (stock.shareMode === 'manual' ? stock.manualShares : 0);
   const budgetMinor = options.totalBudgetMinor === undefined ? undefined : stockBudgetMinor(options.totalBudgetMinor, stock.weightBps);
   const base = resolveClassicDividendBase({ taxBps, basis: options.basis });

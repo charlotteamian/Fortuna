@@ -217,9 +217,10 @@ export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaT
     if (announcements.some(known => known.reportDate === reportDate)) continue;
     // Payment may fall after ex-date; entitlement controls eligibility, payment controls receipt window when known.
     if (expectedPaymentDate && expectedPaymentDate > through) continue;
-    if (item.dpsMicros === undefined) { result.incompleteReportDates.push(reportDate); continue; }
-    if (item.dpsMicros <= 0) continue;
-    events.set(`${reportDate}:${expectedExDate}`, { reportDate, dpsMicros: item.dpsMicros, basis: 'historical', basisDate: item.announcedAt,
+    const projectedDpsMicros = item.normalizedDpsMicros ?? item.dpsMicros;
+    if (projectedDpsMicros === undefined) { result.incompleteReportDates.push(reportDate); continue; }
+    if (projectedDpsMicros <= 0) continue;
+    events.set(`${reportDate}:${expectedExDate}`, { reportDate, dpsMicros: projectedDpsMicros, basis: 'historical', basisDate: item.announcedAt,
       basisReportDate: item.reportDate, stage: 'implemented', expectedExDate, expectedPaymentDate, dateEstimated: true, sourceUrl: item.sourceUrl });
   }
   for (const item of future) {
@@ -230,8 +231,8 @@ export function forecastHoldingYearDividends(stock: DividendStock, asOf = chinaT
     // and use a clearly estimated date, never fabricate an official pay date.
     const expectedExDate = item.exDate ?? (seasonalExDate && seasonalExDate > asOf ? seasonalExDate : through);
     if (expectedExDate <= asOf || expectedExDate > through || item.paymentDate && item.paymentDate > through) continue;
-    const previousAmount = item.dpsMicros === undefined ? priorYearAmount(item) : undefined;
-    const dpsMicros = item.dpsMicros ?? previousAmount?.dpsMicros;
+    const previousAmount = (item.normalizedDpsMicros ?? item.dpsMicros) === undefined ? priorYearAmount(item) : undefined;
+    const dpsMicros = (item.normalizedDpsMicros ?? item.dpsMicros) ?? previousAmount?.dpsMicros;
     if (dpsMicros === undefined) { result.incompleteReportDates.push(item.reportDate); continue; }
     events.set(`${item.reportDate}:${expectedExDate}`, { reportDate: item.reportDate, dpsMicros, basis: previousAmount ? 'historical' : 'announced',
       basisDate: previousAmount?.basisDate ?? item.announcedAt, basisReportDate: previousAmount?.basisReportDate,

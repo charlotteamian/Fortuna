@@ -72,7 +72,7 @@ function futuresCode(symbol: string): string | null {
 }
 
 /** Candidate Tencent codes for one holding, best guess first. */
-function tencentCodes(symbol: string, market?: string): string[] {
+export function tencentCodes(symbol: string, market?: string): string[] {
   const s = symbol.trim();
   if (!s) return [];
   // Already prefixed (sh510300 / sz159915 / hk00700 / usAAPL)
@@ -84,6 +84,9 @@ function tencentCodes(symbol: string, market?: string): string[] {
   if (isHk(market) || /^\d{4,5}$/.test(s)) return ['hk' + s.padStart(5, '0')];
   if (/^\d{6}$/.test(s)) {
     if (s.startsWith('92')) return ['bj' + s];
+    // Convertible bonds use a digit-1 prefix the generic rules below would send to Shenzhen.
+    if (/^11[0-3]/.test(s)) return ['sh' + s];
+    if (/^12/.test(s)) return ['sz' + s];
     const first = s[0];
     if ('569'.includes(first)) return ['sh' + s];
     if ('0123'.includes(first)) return ['sz' + s];
@@ -281,7 +284,8 @@ export async function fetchEquityQuotes(targets: QuoteTarget[]): Promise<QuoteRe
   return { prices, ok: Object.keys(prices).length, total: withSymbol.length };
 }
 
-/** OTC fund quotes via 天天基金: intraday estimated NAV, falling back to the latest published NAV. */
+/** OTC fund quotes via 天天基金: the published NAV first, the intraday estimate only as a fallback,
+ * because an estimate published before the daily NAV must not keep replacing a settled value. */
 export async function fetchFundQuotes(targets: QuoteTarget[]): Promise<QuoteResult> {
   const withSymbol = targets.filter(t => (t.symbol || '').trim());
   const valid = withSymbol.filter(t => /^\d{6}$/.test(t.symbol!.trim()));
@@ -291,7 +295,7 @@ export async function fetchFundQuotes(targets: QuoteTarget[]): Promise<QuoteResu
       const text = await httpGetText(FUND_BASE + t.symbol!.trim() + '.js');
       const gsz = text.match(/"gsz"\s*:\s*"([\d.]+)"/);
       const dwjz = text.match(/"dwjz"\s*:\s*"([\d.]+)"/);
-      const p = parseFloat(gsz?.[1] ?? dwjz?.[1] ?? '');
+      const p = parseFloat(dwjz?.[1] ?? gsz?.[1] ?? '');
       if (isFinite(p) && p > 0) prices[t.id] = p;
     } catch { /* this fund failed; others may still succeed */ }
   }));

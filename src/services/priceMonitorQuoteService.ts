@@ -1,5 +1,4 @@
 import { db, initializeSettings } from '../db';
-import { formatLocalDate } from '../lib/localDate';
 import { fetchSecurityMonitorQuotes } from './quoteService';
 import { fetchLatestRates, getMetalPricePerGram } from './rateService';
 import { evaluatePriceMonitorQuotes, markPriceMonitorQuoteFailures, type ObservedPriceMonitorQuote } from './priceMonitorService';
@@ -20,11 +19,11 @@ export async function refreshPriceMonitorQuotes({ force = false }: { force?: boo
 
 async function refresh(force: boolean) {
   const now = Date.now();
-  const today = formatLocalDate(new Date(now));
   const settings = await initializeSettings();
+  // A price can move inside one day (a late intraday breach), so the throttle is the
+  // backoff interval only — never once-per-calendar-day.
   const plans = (await db.priceMonitors.where('status').equals('active').toArray()).filter(plan => force || (
-    (!plan.lastCheckedAt || formatLocalDate(new Date(plan.lastCheckedAt)) !== today)
-    && now - (lastAttempts.get(plan.id) ?? 0) >= 5 * 60000
+    now - (lastAttempts.get(plan.id) ?? 0) >= 5 * 60000
   ));
   if (!plans.length) return { checked: 0, near: 0, reached: 0, failed: 0 };
   for (const plan of plans) lastAttempts.set(plan.id, now);
