@@ -18,7 +18,7 @@ export const homeAssetZh = {
   plan_priority_up: '上移 {{name}}',
   plan_priority_down: '下移 {{name}}',
   chart_unit_nav_title: '组合单位净值',
-  chart_unit_nav_subtitle: '基准 1.0000 · 按持仓盈亏计算',
+  chart_unit_nav_subtitle: '起始 1.0000 · 时间加权',
   chart_unit_nav_latest: '最新单位净值',
   chart_unit_nav_return: '累计收益',
   chart_unit_nav_drawdown: '最大回撤',
@@ -27,9 +27,9 @@ export const homeAssetZh = {
   chart_portfolios_opt_in: '选择需要统计的组合账户，开启后分别展示净值和收益。',
   chart_portfolios_none: '暂无组合账户。可在账户设置中开启“按组合记录”，用来记录你的投资策略。',
   chart_portfolios_save_error: '选择未保存，请重试。',
-  chart_portfolios_basis: '{{currency}} · 按持仓已实现+浮动盈亏计算 · 成本基准 1.0000',
+  chart_portfolios_basis: '{{currency}} · 时间加权单位净值 · 起始 1.0000',
   chart_portfolios_history_needed: '此区间不足两个持仓交易或行情记录日期，暂不绘制曲线；账户总值记录不参与此统计。',
-  chart_portfolios_flow_note: '按持仓已实现+浮动盈亏计算，不计现金余额和出入金；历史节点按当时成交价估值，最新节点按当前价格估值。',
+  chart_portfolios_flow_note: '时间加权单位净值：买入按成交时的净值申购份额，卖出按成交时的净值赎回份额，加仓和减仓本身不改变净值，手续费计入当笔亏损；不计现金余额。清仓后再买入沿用清仓时的净值。历史节点按成交价或校准时记录的市价估值，最新节点按当前价格估值。选择 3 个月、6 个月或 1 年时，以区间起点前的最后一个净值为 1.0000 重新起算，最大回撤只统计区间内。',
 };
 
 export const homeAssetEn = {
@@ -52,7 +52,7 @@ export const homeAssetEn = {
   plan_priority_up: 'Move {{name}} up',
   plan_priority_down: 'Move {{name}} down',
   chart_unit_nav_title: 'Portfolio Unit NAV',
-  chart_unit_nav_subtitle: 'Base 1.0000 · Based on holdings P&L',
+  chart_unit_nav_subtitle: 'Starts at 1.0000 · Time-weighted',
   chart_unit_nav_latest: 'Latest Unit NAV',
   chart_unit_nav_return: 'Cumulative Return',
   chart_unit_nav_drawdown: 'Max Drawdown',
@@ -61,7 +61,7 @@ export const homeAssetEn = {
   chart_portfolios_opt_in: 'Choose portfolio accounts to show their NAV and returns separately.',
   chart_portfolios_none: 'No portfolio accounts yet. Enable portfolio tracking in account settings to track an investment strategy.',
   chart_portfolios_save_error: 'Could not save your selection. Please try again.',
-  chart_portfolios_basis: '{{currency}} · Holdings realised + floating P&L · Cost base 1.0000',
+  chart_portfolios_basis: '{{currency}} · Time-weighted unit NAV · Starts at 1.0000',
   chart_portfolios_history_needed: 'This range has fewer than two dates with holdings trades or quote records. Account total-value records are not used for this chart.',
-  chart_portfolios_flow_note: 'Based on holdings realised + floating P&L, excluding cash and deposits/withdrawals. Historical dates use execution prices; latest date uses current prices.',
+  chart_portfolios_flow_note: 'Time-weighted unit NAV: a buy subscribes units and a sell redeems units at the NAV at that fill, so adding or reducing a position does not move the NAV by itself. Fees count as a loss on the trade that paid them, and cash balances are excluded. A new buy after a full exit continues from the closing NAV. Historical dates use execution prices or the market price recorded with a calibration; the latest date uses current prices. For 3M, 6M and 1Y, the last NAV before the range becomes 1.0000 and max drawdown covers the range only.',
 };

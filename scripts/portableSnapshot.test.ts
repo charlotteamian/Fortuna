@@ -241,7 +241,7 @@ test('automatic snapshot identifies quantity adjustments and preserves their cos
     transactions: [
       ...transactions.map(txn => ({ ...txn, brokerRef: txn.id === 'sell' ? 'execution-123' : undefined })),
       { id: 'position-anchor', accountId: focusAccount.id, holdingId: holding.id, date: '2026-07-13',
-        kind: 'buy', shares: 0, price: 0, quantitySnapshot: 8, costPriceSnapshot: 101.25, createdAt: 30 },
+        kind: 'buy', shares: 0, price: 0, quantitySnapshot: 8, costPriceSnapshot: 101.25, marketPriceSnapshot: 103.5, createdAt: 30 },
     ],
     exchangeRates: [], planStatus: emptyPlanStatus(920),
     settings: { primaryCurrency: 'CNY', snapshotFocusAccountIds: [] },
@@ -250,6 +250,7 @@ test('automatic snapshot identifies quantity adjustments and preserves their cos
   assert.equal(anchor.kind, 'position_adjustment');
   assert.equal(anchor.quantitySnapshot, 8);
   assert.equal(anchor.costPriceSnapshot, 101.25);
+  assert.equal(anchor.marketPriceSnapshot, 103.5);
   assert.equal(anchor.amount, null);
   assert.equal(anchor.shares, null);
   assert.equal(snapshot.accounts[0].transactions.find(txn => txn.id === 'sell')?.brokerRef, 'execution-123');

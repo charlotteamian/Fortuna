@@ -60,6 +60,7 @@ test('portfolio statistics choice and commission settings survive JSON and Excel
   await updateSettings({ chartNavAccountIds: ['strategy'], defaultCommissionRatePercent: 0.025 });
   await db.holdings.update('h1', { commissionRatePercent: 0.03 });
   await db.holdingTxns.update('t1', { fee: 1.5 });
+  await db.holdingTxns.add({ id: 'anchor', accountId: 'strategy', holdingId: 'h1', date: '2026-01-15', kind: 'buy', shares: 0, price: 0, quantitySnapshot: 120, costPriceSnapshot: 10.2, marketPriceSnapshot: 10.8, createdAt: 5 });
   const json = await exportData(), excel = await exportToExcel();
   await updateSettings({ chartNavAccountIds: [], defaultCommissionRatePercent: 0 });
   assert.equal(await importData(json), true);
@@ -67,8 +68,11 @@ test('portfolio statistics choice and commission settings survive JSON and Excel
   assert.equal((await initializeSettings()).defaultCommissionRatePercent, 0.025);
   assert.equal((await db.holdings.get('h1'))?.commissionRatePercent, 0.03);
   assert.equal((await db.holdingTxns.get('t1'))?.fee, 1.5);
+  assert.equal((await db.holdingTxns.get('anchor'))?.marketPriceSnapshot, 10.8);
+  await db.holdingTxns.update('anchor', { marketPriceSnapshot: 1 });
   await updateSettings({ chartNavAccountIds: [], defaultCommissionRatePercent: 0 });
   assert.equal(await importFromExcel(excel), true);
+  assert.equal((await db.holdingTxns.get('anchor'))?.marketPriceSnapshot, 10.8);
   assert.deepEqual((await initializeSettings()).chartNavAccountIds, ['strategy']);
   assert.equal((await initializeSettings()).defaultCommissionRatePercent, 0.025);
   assert.equal((await db.holdings.get('h1'))?.commissionRatePercent, 0.03);

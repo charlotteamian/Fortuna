@@ -169,6 +169,7 @@ export interface HoldingTxn {
   balanceSnapshot?: number; // balance-mode holdings: direct balance anchor, excluded from principal-flow totals
   quantitySnapshot?: number; // unit holdings: direct quantity anchor, never a synthetic buy/sell
   costPriceSnapshot?: number; // optional average buy cost per share at the quantity anchor
+  marketPriceSnapshot?: number; // optional market price per share at the quantity anchor, used to value history
   executionTime?: string; // optional local wall-clock execution time 'HH:MM:SS' for same-day ordering
   brokerRef?: string; // optional broker fill/reference ID, scoped to this holding for import deduplication
   note?: string;
@@ -913,7 +914,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     const holdingTxns = holdingTxnRows.map(row => {
       const normalized = { ...row };
       for (const field of ['shares', 'price', 'createdAt']) normalized[field] = normalizeExcelBackupNumber(row[field]);
-      for (const field of ['balanceSnapshot', 'quantitySnapshot', 'costPriceSnapshot', 'fee']) {
+      for (const field of ['balanceSnapshot', 'quantitySnapshot', 'costPriceSnapshot', 'marketPriceSnapshot', 'fee']) {
         const value = row[field];
         // Edited workbooks can write empty strings where an exported optional cell was absent.
         if (value == null || (typeof value === 'string' && value.trim() === '')) delete normalized[field];
@@ -1054,13 +1055,14 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         ? new Date(`${transaction.date}T00:00:00Z`) : undefined;
       if (!date || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== transaction.date) return failTransaction('date', 'invalid_date');
       if (transaction.kind !== 'buy' && transaction.kind !== 'sell') return failTransaction('kind', 'invalid_kind');
-      for (const field of ['shares', 'price', 'createdAt', 'quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot', 'fee'] as const) {
+      for (const field of ['shares', 'price', 'createdAt', 'quantitySnapshot', 'costPriceSnapshot', 'marketPriceSnapshot', 'balanceSnapshot', 'fee'] as const) {
         const value = transaction[field];
-        if (value === undefined && ['quantitySnapshot', 'costPriceSnapshot', 'balanceSnapshot', 'fee'].includes(field)) continue;
+        if (value === undefined && ['quantitySnapshot', 'costPriceSnapshot', 'marketPriceSnapshot', 'balanceSnapshot', 'fee'].includes(field)) continue;
         if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return failTransaction(field, 'invalid_number');
       }
       if (transaction.executionTime !== undefined && !normalizeLocalTime(transaction.executionTime)) return failTransaction('executionTime', 'invalid_date');
       if (transaction.costPriceSnapshot !== undefined && transaction.quantitySnapshot === undefined) return failTransaction('costPriceSnapshot', 'requires_quantity_snapshot');
+      if (transaction.marketPriceSnapshot !== undefined && transaction.quantitySnapshot === undefined) return failTransaction('marketPriceSnapshot', 'requires_quantity_snapshot');
     }
     if (!uniqueIds(products)) return fail('invalid_data', 'Products');
     if (!uniqueIds(planItems)) return fail('invalid_data', 'Plan');

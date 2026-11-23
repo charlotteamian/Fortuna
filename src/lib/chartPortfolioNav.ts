@@ -1,9 +1,8 @@
 import type { PortfolioNavSeriesPoint, PortfolioNavSummary } from './balanceFlow.ts';
 import {
-  analyzeHoldingPosition,
+  calculateHoldingTxnFee,
   isValidCommissionRatePercent,
   normalizeCommissionRatePercent,
-  type HoldingDailyState,
 } from './holdingPosition.ts';
 import { getHoldingContractMultiplier } from './usOption.ts';
 
@@ -35,14 +34,16 @@ interface PnlTxnLike {
   shares: number;
   price: number;
   fee?: number;
+  balanceSnapshot?: number;
   quantitySnapshot?: number;
   costPriceSnapshot?: number;
+  marketPriceSnapshot?: number;
   createdAt: number;
 }
 
 export interface PnlNavPoint {
   date: string;
-  /** 1 + totalPnl / totalBuyCost, i.e. return on total capital deployed. */
+  /** Time-weighted unit NAV; the first subscription is priced at 1.0000. */
   nav: number;
 }
 
@@ -57,16 +58,138 @@ export function normalizeNavAccountIds(ids: readonly string[] | undefined, accou
 }
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const EPSILON = 1e-9;
 
 function isValidIsoDate(value?: string): value is string {
   return typeof value === 'string' && ISO_DATE_PATTERN.test(value);
 }
 
+interface NavSlot {
+  shares: number;
+  /** Latest valuation price: execution price, calibration price, or the current quote once marked. */
+  price: number;
+  multiplier: number;
+  commissionRatePercent: number;
+  lastTxnDate: string;
+}
+
+interface NavRun {
+  points: PnlNavPoint[];
+  slots: Map<string, NavSlot>;
+}
+
 /**
- * Unit NAV from holdings P&L only (realised + floating), anchored to 1.0000 on
- * deployed capital so cash balances and deposits/withdrawals never distort the return.
- * Historical dates value open positions at each holding's latest known execution/cost
- * price as of that date, and adopt current `lastPrice` on the holding's valuation date.
+ * Holdings-only fund accounting: every buy subscribes units and every sell redeems units
+ * at the NAV implied by that fill's price, so adding or withdrawing capital never moves
+ * the NAV. Only price changes and fees do.
+ */
+function runNav(
+  slots: Map<string, NavSlot>,
+  txnsByDate: Map<string, PnlTxnLike[]>,
+  marksByDate: Map<string, { holdingId: string; price: number }[]>,
+): NavRun {
+  for (const slot of slots.values()) { slot.shares = 0; slot.price = 0; slot.lastTxnDate = ''; }
+  let units = 0;
+  let nav = 1;
+
+  const totalValue = () => {
+    let value = 0;
+    for (const slot of slots.values()) value += slot.shares * slot.multiplier * slot.price;
+    return value;
+  };
+  /** Re-derive the NAV from current valuations; units only change through flows. */
+  const reprice = () => {
+    const value = totalValue();
+    if (units > EPSILON) nav = Math.max(0, value / units);
+    else if (value > EPSILON && nav > 0) units = value / nav;
+  };
+  const flow = (amount: number) => {
+    if (!(nav > 0) || Math.abs(amount) < EPSILON) return;
+    units = Math.max(0, units + amount / nav);
+  };
+  /** An emptied book keeps its closing NAV so the next subscription continues from it. */
+  const closeIfEmpty = () => {
+    if (totalValue() < EPSILON) units = 0;
+  };
+
+  const points: PnlNavPoint[] = [];
+  const dates = [...new Set([...txnsByDate.keys(), ...marksByDate.keys()])].sort();
+  for (const date of dates) {
+    for (const tx of txnsByDate.get(date) ?? []) {
+      const slot = slots.get(tx.holdingId)!;
+      slot.lastTxnDate = date;
+
+      if (tx.quantitySnapshot != null) {
+        const target = Math.max(0, tx.quantitySnapshot);
+        const marketPrice = tx.marketPriceSnapshot;
+        if (typeof marketPrice === 'number' && Number.isFinite(marketPrice) && marketPrice > 0) {
+          // The recorded quote is a real valuation: the move up to it is return,
+          // and only the share difference is capital in or out.
+          slot.price = marketPrice;
+          reprice();
+          flow((target - slot.shares) * slot.multiplier * marketPrice);
+        } else {
+          // No quote was recorded, so the cost price stands in as the valuation and the
+          // whole value change is a flow: the calibration itself earns nothing.
+          const cost = tx.costPriceSnapshot;
+          const nextPrice = typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : slot.price;
+          flow((target * nextPrice - slot.shares * slot.price) * slot.multiplier);
+          slot.price = nextPrice;
+        }
+        slot.shares = target;
+        closeIfEmpty();
+        reprice();
+        continue;
+      }
+
+      const fee = calculateHoldingTxnFee(tx, slot.multiplier, slot.commissionRatePercent);
+      // A zero price (for example bonus shares) carries no valuation information.
+      if (tx.price > 0) {
+        slot.price = tx.price;
+        reprice();
+      }
+      if (!(tx.shares > EPSILON)) continue;
+
+      if (tx.kind === 'buy') {
+        flow(tx.shares * slot.multiplier * tx.price + fee);
+        slot.shares += tx.shares;
+        reprice();
+        continue;
+      }
+
+      const sold = Math.min(tx.shares, slot.shares);
+      if (sold < EPSILON) continue;
+      const sellFee = sold >= tx.shares - EPSILON ? fee : fee * (sold / tx.shares);
+      const proceeds = sold * slot.multiplier * tx.price;
+      const bookValue = sold * slot.multiplier * slot.price;
+      const before = totalValue();
+      if (units > EPSILON) {
+        // The fee, and any shortfall of a zero-price disposal against book value, is a loss
+        // shared by all units before the net proceeds are redeemed.
+        nav = Math.max(0, (before - sellFee - (bookValue - proceeds)) / units);
+        const remaining = before - bookValue;
+        units = nav > 0 ? Math.max(0, remaining / nav) : (remaining > EPSILON ? units : 0);
+      }
+      slot.shares -= sold;
+      if (slot.shares < EPSILON) slot.shares = 0;
+      closeIfEmpty();
+    }
+
+    for (const mark of marksByDate.get(date) ?? []) {
+      const slot = slots.get(mark.holdingId)!;
+      slot.price = mark.price;
+    }
+    if (marksByDate.has(date)) reprice();
+
+    points.push({ date, nav: Math.max(0, nav) });
+  }
+  return { points, slots };
+}
+
+/**
+ * Time-weighted unit NAV of an account's unit holdings, independent of cash balances.
+ * Historical dates value each position at its latest execution price (or the market price
+ * recorded with a calibration), and adopt the current `lastPrice` on the valuation date.
  */
 export function buildAccountNavPoints(
   accountId: string,
@@ -75,101 +198,94 @@ export function buildAccountNavPoints(
   defaultCommissionRatePercent = 0,
   accountCategory?: string,
 ): PnlNavPoint[] {
-  const byDate = new Map<string, { pnl: number; cost: number }>();
-  const txnsByHolding = new Map<string, PnlTxnLike[]>();
-  for (const tx of txns) {
-    if (tx.accountId !== accountId) continue;
-    const list = txnsByHolding.get(tx.holdingId) ?? [];
-    list.push(tx);
-    txnsByHolding.set(tx.holdingId, list);
-  }
-
-  const prepared: {
-    holding: PnlHoldingLike;
-    dailyStates: HoldingDailyState[];
-    lastTxnDate: string;
-    quoteDate: string | null;
-  }[] = [];
-  let finalDate = '';
-
   const fallbackRate = accountCategory && !['股票/ETF', '股票'].includes(accountCategory)
     ? 0
     : normalizeCommissionRatePercent(defaultCommissionRatePercent, 0);
 
+  const slots = new Map<string, NavSlot>();
+  const holdingById = new Map<string, PnlHoldingLike>();
   for (const holding of holdings) {
     if (holding.accountId !== accountId || holding.mode === 'balance') continue;
-    const holdingTxns = txnsByHolding.get(holding.id) ?? [];
-    if (!holdingTxns.length) continue;
-    const multiplier = getHoldingContractMultiplier(holding);
-    const commissionRatePercent = isValidCommissionRatePercent(holding.commissionRatePercent)
-      ? holding.commissionRatePercent
-      : fallbackRate;
-    const analysis = analyzeHoldingPosition(holdingTxns, multiplier, { commissionRatePercent });
-    if (!analysis.dailyStates.length) continue;
-    const lastState = analysis.dailyStates[analysis.dailyStates.length - 1];
-    const lastTxnDate = lastState.date;
-    const quoteDate = lastState.shares > 1e-9 && isValidIsoDate(holding.priceDate) && holding.priceDate >= lastTxnDate
+    holdingById.set(holding.id, holding);
+    slots.set(holding.id, {
+      shares: 0,
+      price: 0,
+      multiplier: getHoldingContractMultiplier(holding),
+      commissionRatePercent: isValidCommissionRatePercent(holding.commissionRatePercent)
+        ? holding.commissionRatePercent
+        : fallbackRate,
+      lastTxnDate: '',
+    });
+  }
+
+  const ordered = txns
+    .filter(tx => tx.accountId === accountId && slots.has(tx.holdingId) && tx.balanceSnapshot == null)
+    .map((tx, index) => ({ tx, index }))
+    .sort((a, b) => a.tx.date.localeCompare(b.tx.date)
+      || a.tx.createdAt - b.tx.createdAt
+      || a.tx.id.localeCompare(b.tx.id)
+      || a.index - b.index);
+  if (!ordered.length) return [];
+  const txnsByDate = new Map<string, PnlTxnLike[]>();
+  for (const { tx } of ordered) {
+    const list = txnsByDate.get(tx.date) ?? [];
+    list.push(tx);
+    txnsByDate.set(tx.date, list);
+  }
+
+  // First pass finds each holding's closing position, which decides where its quote applies.
+  const dryRun = runNav(slots, txnsByDate, new Map());
+  let finalDate = '';
+  const pending: { holdingId: string; quoteDate: string | null; price: number }[] = [];
+  for (const [holdingId, slot] of dryRun.slots) {
+    if (!slot.lastTxnDate) continue;
+    const holding = holdingById.get(holdingId)!;
+    const open = slot.shares > EPSILON;
+    const quoteDate = open && isValidIsoDate(holding.priceDate) && holding.priceDate >= slot.lastTxnDate
       ? holding.priceDate
       : null;
-    if (lastTxnDate > finalDate) finalDate = lastTxnDate;
+    if (slot.lastTxnDate > finalDate) finalDate = slot.lastTxnDate;
     if (quoteDate && quoteDate > finalDate) finalDate = quoteDate;
-    prepared.push({ holding, dailyStates: analysis.dailyStates, lastTxnDate, quoteDate });
-  }
-
-  if (!prepared.length) return [];
-
-  for (const { holding, dailyStates, lastTxnDate, quoteDate } of prepared) {
-    const mark = Number.isFinite(holding.lastPrice) && holding.lastPrice > 0 ? holding.lastPrice : 0;
-    const markDate = quoteDate ?? finalDate;
-    const multiplier = getHoldingContractMultiplier(holding);
-    let previousPnl = 0, previousCost = 0;
-
-    const recordState = (state: HoldingDailyState, date: string, valuationPrice: number) => {
-      const marketValue = state.shares * multiplier * valuationPrice;
-      const floatingPnl = marketValue - state.costBasis;
-      const pnl = state.realizedPnl + floatingPnl;
-      const buyCost = state.costBasis + state.realizedCostBasis;
-      const entry = byDate.get(date) ?? { pnl: 0, cost: 0 };
-      // Sum changes, then carry the account's state through all valuation dates.
-      entry.pnl += pnl - previousPnl;
-      entry.cost += buyCost - previousCost;
-      byDate.set(date, entry);
-      previousPnl = pnl;
-      previousCost = buyCost;
-    };
-
-    for (const state of dailyStates) {
-      const valuationPrice = state.date >= markDate ? mark : state.knownPrice;
-      recordState(state, state.date, valuationPrice);
-    }
-
-    const lastState = dailyStates[dailyStates.length - 1];
-    if (lastState.shares > 1e-9 && markDate > lastTxnDate) {
-      recordState(lastState, markDate, mark);
+    if (open) {
+      pending.push({
+        holdingId,
+        quoteDate,
+        price: Number.isFinite(holding.lastPrice) && holding.lastPrice > 0 ? holding.lastPrice : 0,
+      });
     }
   }
+  const marksByDate = new Map<string, { holdingId: string; price: number }[]>();
+  for (const { holdingId, quoteDate, price } of pending) {
+    const date = quoteDate ?? finalDate;
+    const list = marksByDate.get(date) ?? [];
+    list.push({ holdingId, price });
+    marksByDate.set(date, list);
+  }
 
-  let totalPnl = 0, totalCost = 0;
-  return [...byDate.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, { pnl, cost }]) => {
-      totalPnl += pnl; totalCost += cost;
-      return { date, nav: totalCost > 0 ? Math.max(0, 1 + totalPnl / totalCost) : 1 };
-    });
+  return runNav(slots, txnsByDate, marksByDate).points;
 }
 
+/**
+ * With `fromDate`, the range is rebased on the last NAV before it (carried in as 1.0000
+ * at the range start), so both the return and the drawdown describe the range alone.
+ */
 export function summarizeAccountNav(points: readonly PnlNavPoint[], fromDate?: string): PortfolioNavSummary {
   const ordered = [...points].sort((a, b) => a.date.localeCompare(b.date));
-  const filtered = fromDate ? ordered.filter(point => point.date >= fromDate) : ordered;
-  const trimmed = Boolean(fromDate) && filtered.length < ordered.length;
+  let inRange = ordered;
+  let base = 1;
+  if (fromDate) {
+    inRange = ordered.filter(point => point.date >= fromDate);
+    const before = ordered.filter(point => point.date < fromDate).at(-1);
+    if (before && before.nav > 0) {
+      base = before.nav;
+      if (inRange[0]?.date !== fromDate) inRange = [{ date: fromDate, nav: before.nav }, ...inRange];
+    }
+  }
   const series: PortfolioNavSeriesPoint[] = [];
-  // Each point.nav is already anchored to 1.0000 on deployed capital. Do not re-divide
-  // by filtered[0].nav: doing so discards day-1 P&L and can turn a losing portfolio whose
-  // earlier purchases fell more than later buys into an artificial positive return.
-  let peak = trimmed ? Math.max(0, filtered[0]?.nav ?? 1) : 1;
+  let peak = 1;
   let maxDrawdown = 0;
-  for (const point of filtered) {
-    const nav = Math.round(Math.max(0, point.nav) * 10000) / 10000;
+  for (const point of inRange) {
+    const nav = Math.round((Math.max(0, point.nav) / base) * 10000) / 10000;
     if (nav > peak) peak = nav;
     const drawdown = (peak > 0 ? Math.round(((peak - nav) / peak) * 10000) / 100 : 0) || 0;
     if (drawdown > maxDrawdown) maxDrawdown = drawdown;

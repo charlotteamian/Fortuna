@@ -310,6 +310,7 @@ async function applyPositionUpdate(
       date, kind: 'buy', shares: 0, price: 0,
       quantitySnapshot: update.shares,
       costPriceSnapshot: costPrice,
+      ...(update.price > 0 ? { marketPriceSnapshot: update.price } : {}),
       createdAt: Math.max(Date.now(), ...txns.map(txn => txn.createdAt)) + 1,
     });
   }

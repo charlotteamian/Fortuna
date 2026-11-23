@@ -71,6 +71,8 @@ test('batch quantities and prices only change the chosen stock account and prese
   assert.deepEqual(afterState.accounts, before.accounts);
   assert.deepEqual(afterState.holdings.filter(h => h.id !== 'h'), before.holdings.filter(h => h.id !== 'h'));
   assert.deepEqual(afterState.txns.filter(tx => tx.quantitySnapshot === undefined), before.txns);
+  // The quote entered with the calibration is kept so history can be valued at market, not at cost.
+  assert.deepEqual(afterState.txns.filter(tx => tx.quantitySnapshot !== undefined).map(tx => tx.marketPriceSnapshot), [12.345]);
   assert.deepEqual(afterState.records.filter(r => r.accountId !== 'stocks'), before.records);
   assert.deepEqual((await db.planTargets.get('target'))?.refKeys, ['h:h']);
   assert.deepEqual((await db.planItems.get('plan'))?.categories, ['hold:h']);

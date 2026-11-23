@@ -86,7 +86,7 @@ test('binary reads with missing or generic MIME restore all ledger tables and fi
   const { defaultDividendFundPlan } = await import('../src/lib/dividendFundPlan.ts');
   await db.accounts.update(account.id, { includeInTotals: false, hidden: true, cashBalance: 234.56, productData: { code: '000001' } });
   await db.holdings.add({ id: 'fixture-holding', accountId: account.id, name: 'Fixture security', symbol: '000001', lastPrice: 1.2345, priceDate: '2026-10-14', productData: { note: 'metadata' }, sortOrder: 0, createdAt: 3 });
-  await db.holdingTxns.add({ id: 'fixture-position', accountId: account.id, holdingId: 'fixture-holding', date: '2026-10-14', kind: 'buy', shares: 0, price: 0, quantitySnapshot: 123.45, costPriceSnapshot: 1.2345, brokerRef: 'fixture-fill', createdAt: 4 });
+  await db.holdingTxns.add({ id: 'fixture-position', accountId: account.id, holdingId: 'fixture-holding', date: '2026-10-14', kind: 'buy', shares: 0, price: 0, quantitySnapshot: 123.45, costPriceSnapshot: 1.2345, marketPriceSnapshot: 1.3456, brokerRef: 'fixture-fill', createdAt: 4 });
   await db.products.add({ id: 'fixture-product', sectionId: 'bank_deposit', sortOrder: 0, createdAt: 5, updatedAt: 6, data: { code: '001234', note: 'fixture' } });
   await db.planItems.add({ id: 'fixture-plan', name: 'Fixture plan', targetPercent: 60, categories: ['现金'], allocations: [{ refKey: 'h:fixture-holding', amountMinor: 12345 }], plannedPurchases: 'purchase notes', sortOrder: 0, createdAt: 7 });
   await db.planTargets.add({ id: 'fixture-target', planItemId: 'fixture-plan', label: 'Fixture target', refKeys: ['h:fixture-holding'], allocations: [{ refKey: 'h:fixture-holding', amountMinor: 12345 }], targetPercent: 40, sortOrder: 0, createdAt: 8 });
@@ -239,6 +239,7 @@ test('invalid transaction cells identify the exact worksheet row and field and p
     { patch: { date: 46309.5 }, field: 'date', reason: 'invalid_date' },
     { patch: { quantitySnapshot: '-1' }, field: 'quantitySnapshot', reason: 'invalid_number' },
     { patch: { costPriceSnapshot: '12' }, field: 'costPriceSnapshot', reason: 'requires_quantity_snapshot' },
+    { patch: { marketPriceSnapshot: '12' }, field: 'marketPriceSnapshot', reason: 'requires_quantity_snapshot' },
     { patch: { balanceSnapshot: 'NaN' }, field: 'balanceSnapshot', reason: 'invalid_number' },
     { patch: { kind: 'transfer' }, field: 'kind', reason: 'invalid_kind' },
     { patch: { accountId: 'missing-account' }, field: 'accountId', reason: 'missing_account' },
