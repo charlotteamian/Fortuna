@@ -57,3 +57,12 @@ export function getTheme(id: string, appearance: 'dark' | 'light' = 'dark'): Col
     ? { ...theme, ...LIGHT_THEME_COLORS[theme.id] }
     : theme;
 }
+
+/** The colour for a positive P&L. Default green-up; 'red-up' swaps the palette (B6). */
+export function pnlGainColor(theme: ColorTheme, scheme: 'green-up' | 'red-up' | undefined): string {
+  return scheme === 'red-up' ? theme.liabilityColor : theme.assetColor;
+}
+/** The colour for a negative P&L. Default green-up; 'red-up' swaps the palette (B6). */
+export function pnlLossColor(theme: ColorTheme, scheme: 'green-up' | 'red-up' | undefined): string {
+  return scheme === 'red-up' ? theme.assetColor : theme.liabilityColor;
+}

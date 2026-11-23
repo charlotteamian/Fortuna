@@ -188,6 +188,7 @@ export interface Settings {
   categories: CategoryDef[];
   currencies: string[];
   colorTheme: string;        // theme id
+  pnlColorScheme?: 'green-up' | 'red-up'; // gain/loss colours, independent of the account palette
   amountVisible: boolean;    // false = masked by default
   showArchivedAccounts?: boolean; // whether archived accounts are expanded on the asset overview
   chartNavAccountIds?: string[]; // explicit opt-in for named portfolio-account NAV statistics
@@ -406,7 +407,7 @@ function createDefaultSettings(): Settings {
   return {
     id: 'main', primaryCurrency,
     categories: [...DEFAULT_CATEGORIES], currencies,
-    colorTheme: 'emerald-rose', amountVisible: false,
+    colorTheme: 'emerald-rose', pnlColorScheme: 'green-up', amountVisible: false,
     showArchivedAccounts: true,
     themeMode: 'auto', fontSize: 'normal',
     language: 'auto',

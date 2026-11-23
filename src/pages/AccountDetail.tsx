@@ -4,6 +4,7 @@ import { getAccount, getRecords, addRecord, updateRecord, deleteRecord, updateAc
   addBalanceAdjustment, addBalanceTransaction, updateBalanceTransaction,
   addMetalTransaction, updateMetalTransaction, computeMetalPosition, restoreAccount } from '../services/assetService';
 import { initializeSettings, type Account, type AccountRecord, type Settings, METAL_TYPES } from '../db';
+import { pnlGainColor, pnlLossColor } from '../lib/colorThemes';
 import { getMetalPricePerGram } from '../services/rateService';
 import { useAppContext } from '../app-context';
 import { useTranslation } from 'react-i18next';
@@ -26,7 +27,7 @@ interface Props { accountId: string; onBack: () => void; onOpenApiSettings: () =
 
 export default function AccountDetail({ accountId, onBack, onOpenApiSettings, apiConfigRevision }: Props) {
   const { t, i18n } = useTranslation();
-  const { theme, amountVisible, setAmountVisible } = useAppContext();
+  const { theme, amountVisible, setAmountVisible, settings: appSettings } = useAppContext();
   const [account, setAccount] = useState<Account | null>(null);
   const [records, setRecords] = useState<AccountRecord[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -472,7 +473,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 {position.costBasis > 0 && metalPricePerGram != null && metalPricePerGram > 0 && (
                   <div className="pos-cell">
                     <span className="pos-key">{t('unrealized_pnl')}</span>
-                    <span className="pos-val" style={{ color: unrealizedPnl >= 0 ? theme.assetColor : theme.liabilityColor }}>
+                    <span className="pos-val" style={{ color: unrealizedPnl >= 0 ? pnlGainColor(theme, appSettings?.pnlColorScheme) : pnlLossColor(theme, appSettings?.pnlColorScheme) }}>
                       {masked((unrealizedPnl >= 0 ? '+' : '') + fmt(unrealizedPnl))}
                     </span>
                   </div>
@@ -480,7 +481,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                 {Math.abs(position.realizedPnl) > 0.005 && (
                   <div className="pos-cell">
                     <span className="pos-key">{t('realized_pnl')}</span>
-                    <span className="pos-val" style={{ color: position.realizedPnl >= 0 ? theme.assetColor : theme.liabilityColor }}>
+                    <span className="pos-val" style={{ color: position.realizedPnl >= 0 ? pnlGainColor(theme, appSettings?.pnlColorScheme) : pnlLossColor(theme, appSettings?.pnlColorScheme) }}>
                       {masked((position.realizedPnl >= 0 ? '+' : '') + fmt(position.realizedPnl))}
                     </span>
                   </div>

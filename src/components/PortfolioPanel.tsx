@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { db, DEFAULT_COMMISSION_RATE_PERCENT, type Account, type Holding, type HoldingTxn } from '../db';
+import { pnlGainColor, pnlLossColor } from '../lib/colorThemes';
 import {
   getHoldingsWithPositions, getAccountTxns, createHolding, updateHolding, deleteHolding,
   addHoldingTxn, updateHoldingTxn, deleteHoldingTxn, setCashBalance, setCalculatedCashBalance, updatePrices, updateBalances, setHoldingBalance,
@@ -60,7 +61,7 @@ const deleteIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 
 export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, apiConfigRevision }: Props) {
   const { t, i18n } = useTranslation();
-  const { theme, amountVisible } = useAppContext();
+  const { theme, amountVisible, settings: appSettings } = useAppContext();
   const defaultHoldingMode = getDefaultHoldingModeForCategory(account.category);
   const isBalancePortfolio = defaultHoldingMode === 'balance';
   const isStockPortfolio = account.type === 'asset' && ['股票/ETF', '股票'].includes(account.category);
@@ -261,7 +262,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const fmtFull = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPrice = (n: number, precision = 8) => n.toLocaleString('en-US', { minimumFractionDigits: account.currency === 'JPY' ? 0 : 2, maximumFractionDigits: precision });
   const fmtShares = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 8 });
-  const pnlColor = (n: number) => n >= 0 ? theme.assetColor : theme.liabilityColor;
+  const pnlColor = (n: number) => n >= 0 ? pnlGainColor(theme, appSettings?.pnlColorScheme) : pnlLossColor(theme, appSettings?.pnlColorScheme);
   const signed = (n: number) => (n >= 0 ? '+' : '') + fmt(n);
 
   const cashCalculation = calculatePortfolioCash(account, holdings);

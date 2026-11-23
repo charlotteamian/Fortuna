@@ -809,6 +809,20 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
             </button>
           ))}
         </div>
+
+        {/* Profit/loss colours are independent of the asset/liability palette above, so a
+            red-is-up market convention can be chosen without changing account colours. */}
+        <div className="settings-item" style={{ alignItems: 'center', gap: 'var(--sp-2)', marginTop: 'var(--sp-3)' }}>
+          <span className="settings-item-label">{t('pnl_color_section')}</span>
+          <div className="chip-group">
+            <button type="button" className={`chip${settings.pnlColorScheme === 'green-up' ? ' active' : ''}`}
+              aria-pressed={settings.pnlColorScheme === 'green-up'}
+              onClick={() => save({ pnlColorScheme: 'green-up' })}>{t('pnl_color_scheme_green_up')}</button>
+            <button type="button" className={`chip${settings.pnlColorScheme === 'red-up' ? ' active' : ''}`}
+              aria-pressed={settings.pnlColorScheme === 'red-up'}
+              onClick={() => save({ pnlColorScheme: 'red-up' })}>{t('pnl_color_scheme_red_up')}</button>
+          </div>
+        </div>
       </SettingsMenu>
 
       {/* Amount Visibility */}
