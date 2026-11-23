@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, type CSSProperties, type Form
 import { db, DEFAULT_COMMISSION_RATE_PERCENT, initializeSettings, updateSettings, DEFAULT_CATEGORIES, CURRENCY_NAMES, COLOR_THEMES, getTheme, exportToExcel, importFromExcel, hasLedgerData, type Account, type Settings, type CustomField } from '../db';
 import { recalculateAutoTxnFees, syncAllPortfolioSnapshots } from '../services/holdingService';
 import { formatCommissionRatePercent, formatCommissionWan, isValidCommissionRatePercent, isValidMinCommission, DEFAULT_STAMP_DUTY_RATE_PERCENT } from '../lib/holdingPosition';
-import { refreshAllRates, getLastUpdateTime } from '../services/rateService';
+import { refreshAllRates, getLastUpdateTime, convertAmountFromCache } from '../services/rateService';
 import { useTranslation } from 'react-i18next';
 import {
   getDefaultSnapshotFocusAccountIds,
@@ -137,6 +137,23 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
     const updated = await updateSettings(updates);
     setSettings(updated); onRefresh();
     scheduleAutomaticSnapshot('settings-updated');
+  };
+
+  /** Convert primary-currency-denominated values when the base currency changes (audit A12). */
+  const handlePrimaryCurrencyChange = async (nextCurrency: string) => {
+    if (!settings || nextCurrency === settings.primaryCurrency) return;
+    const oldCurrency = settings.primaryCurrency;
+    const updates: Partial<Settings> = { primaryCurrency: nextCurrency };
+    const convert = async (value: number | undefined): Promise<number | undefined> => {
+      if (!value || value <= 0) return value;
+      const converted = await convertAmountFromCache(value, oldCurrency, nextCurrency);
+      return converted === undefined ? value : Math.round(converted);
+    };
+    if (settings.planTargetTotal) {
+      const converted = await convert(settings.planTargetTotal);
+      if (converted !== undefined) updates.planTargetTotal = converted;
+    }
+    await save(updates);
   };
 
   const handleSaveDefaultCommissionRate = async (event?: FormEvent) => {
@@ -815,7 +832,7 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           <span className="settings-item-label">{t('summary_currency')}</span>
           <select className="form-select form-select-inline"
             aria-label={t('summary_currency')}
-            value={settings.primaryCurrency} onChange={e => save({ primaryCurrency: e.target.value })}>
+            value={settings.primaryCurrency} onChange={e => void handlePrimaryCurrencyChange(e.target.value)}>
             {settings.currencies.map(c => <option key={c} value={c}>{c} - {t(c + '_name')}</option>)}
           </select>
         </div>

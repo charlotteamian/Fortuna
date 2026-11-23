@@ -184,10 +184,17 @@ function example(formula: unknown, inputs: unknown, language: string): string | 
 /** Invalid blocks reject the whole explanation, so a dangerous leading sentence
  * is never retained with a warning appended after it. No provider reason/action
  * is returned, even if an otherwise valid block is included alongside it. */
+/** Models often wrap JSON in markdown fences; strip them so valid JSON inside a fence parses. */
+function stripCodeFences(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
 export function renderDividendExplanation(raw: string, facts: DividendExplanationFact[], language = 'zh', options: DividendExplanationRenderOptions = {}): string | null {
   if (typeof raw !== 'string' || raw.length > 18_000) return null;
   let data: unknown;
-  try { data = JSON.parse(raw); } catch { return null; }
+  try { data = JSON.parse(stripCodeFences(raw)); } catch { return null; }
   if (!object(data) || !exactKeys(data, ['version', 'blocks']) || data.version !== 1 || !Array.isArray(data.blocks) || data.blocks.length < 1 || data.blocks.length > 6) return null;
   const byId = new Map(facts.map(fact => [fact.id, fact])), rendered: string[] = [], copy = copyFor(language), cited = new Set<string>();
   for (const block of data.blocks) {

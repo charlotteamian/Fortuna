@@ -433,7 +433,12 @@ export function resolveFundYieldSnapshot(
         anchorPriceMicros = exactMatch;
         anchorDateMatched = true;
       } else {
-        anchorPriceMicros = fundCache?.navMicros ?? priceMicros;
+        // No price was observed exactly on the anchor date. Prefer the saved reference
+        // anchor over the latest NAV, which belongs to a different date and would misprice
+        // the tier (audit A13). A reference that does not match the anchor date is still
+        // only a fallback, so it is not treated as an exact anchor match.
+        anchorPriceMicros = fund.reference?.priceMicros ?? fundCache?.navMicros ?? priceMicros;
+        anchorDateMatched = Boolean(fund.reference?.priceMicros && fund.reference.asOf === anchorDate);
       }
     } else {
       anchorPriceMicros = fund.reference?.priceMicros ?? priceMicros;

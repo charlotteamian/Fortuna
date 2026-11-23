@@ -714,7 +714,7 @@ export async function getPlanStatus(): Promise<PlanStatus> {
       targetValue,
       gapValue: targetValue - currentValue,
       gapPercent: item.targetPercent - currentPercent,
-      dynamicTargetPercent: dynamicMetrics.activePositionPercent,
+      dynamicTargetPercent: dynamicMetrics.activePositionPercent ?? undefined,
       dynamicTargetValue: dynamicMetrics.dynamicTargetValue,
       reserveNeededValue: dynamicMetrics.reserveNeededValue,
       dynamicGapValue: dynamicMetrics.dynamicGapValue,

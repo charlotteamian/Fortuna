@@ -118,7 +118,9 @@ export function dividendCheckSummary(input: {
   const sellTierIndices = hasSaved ? tierIndices(stock.sellLevels) : sellLevels.map((_, i) => i + 1);
   const partialBuy = hasSaved && (stock.buyLevels?.length ?? 0) !== savedBuy.length;
   const partialSell = hasSaved && (stock.sellLevels?.length ?? 0) !== savedSell.length;
-  const gridStatus = hasSaved ? gridReview.basisState === 'verified' && gridReview.hasCompleteSavedGrid && (!evidence || evidence.usable) ? 'verified' : 'saved_unverified'
+  // An expired dividend ledger is still structured, but its payout may have changed, so a
+  // saved grid must not keep a "verified" badge after the evidence goes stale (audit A14).
+  const gridStatus = hasSaved ? gridReview.basisState === 'verified' && gridReview.hasCompleteSavedGrid && (!evidence || evidence.status === 'current') ? 'verified' : 'saved_unverified'
     : currentPlan ? 'verified' : 'unavailable';
   const gridReasons = distinct([...(hasSaved && !gridReview.hasCompleteSavedGrid ? ['grid_partial'] : []),
     ...(hasSaved && gridReview.provenanceMissing ? ['grid_provenance_missing'] : []), ...gridReview.staleReasons, ...(!basisMatches ? ['pricing_basis_changed'] : []),

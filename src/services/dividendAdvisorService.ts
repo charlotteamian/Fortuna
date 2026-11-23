@@ -116,17 +116,27 @@ export interface DividendAdvisorOptions {
   systemPrompt?: string;
   /** Existing dated research being discussed, never an input to an action. */
   explanationResearch?: DividendResearchSnapshot;
+  /** When false, no portfolio snapshot (budget, holdings, personal notes) is sent.
+   * Use this for a question already supplied with the facts it needs, so the user's
+   * private plan never leaves the device for a concept-only question (audit C2). */
+  includeSnapshot?: boolean;
 }
 export async function askDividendAdvisor(config: DividendAdvisorConfig, context: DividendAdvisorContext, question: string,
   history: DividendAdvisorMessage[] = [], options: DividendAdvisorOptions = {}): Promise<string> {
   const normalized = validateDividendAdvisorConfig(config);
   if (typeof question !== 'string' || !question.trim() || question.length > 2000) throw new DividendAdvisorError('QUESTION');
-  const snapshot = JSON.stringify(dividendAdvisorReadableSnapshot(context));
+  const includeSnapshot = options.includeSnapshot !== false;
+  const snapshot = includeSnapshot ? JSON.stringify(dividendAdvisorReadableSnapshot(context)) : '';
   if (snapshot.length > 500_000) throw new DividendAdvisorError('CONTEXT');
   const system = options.systemPrompt ?? dividendAdvisorSystemPrompt(options.language ?? 'zh');
   const previous = history.slice(-8).filter(message => ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
     .map(message => ({ role: message.role, content: message.content.slice(0, MAX_ANSWER_LENGTH) }));
-  const messages = [...previous, { role: 'user' as const, content: `Current dividend snapshot (JSON data):\n${snapshot}\n\nUser question:\n${question.trim()}` }];
+  const messages = [...previous, {
+    role: 'user' as const,
+    content: includeSnapshot
+      ? `Current dividend snapshot (JSON data):\n${snapshot}\n\nUser question:\n${question.trim()}`
+      : question.trim(),
+  }];
   return sendDividendAdvisorRequest(normalized, system, messages, options);
 }
 
@@ -353,7 +363,9 @@ export async function askDividendAdvisorWithActions(config: DividendAdvisorConfi
   const renderOptions = { evidenceOnly: evidenceQuestion, requiredFactIds: relevant.map(fact => fact.id) };
   try {
     const modelQuestion = followup && topicQuestion !== question ? `${question}\n\nEarlier user topic to explain (data): ${topicQuestion}`.slice(0, 2000) : question;
-    const raw = await askDividendAdvisor(config, context, modelQuestion, history, { ...options, systemPrompt: dividendExplanationPrompt(facts, language, renderOptions) });
+    // The explanation prompt already carries exactly the facts this question needs, so the
+    // user's whole private plan snapshot is not shipped to the provider for a concept question.
+    const raw = await askDividendAdvisor(config, context, modelQuestion, history, { ...options, systemPrompt: dividendExplanationPrompt(facts, language, renderOptions), includeSnapshot: false });
     const explanation = renderDividendExplanation(raw, facts, language, renderOptions);
     if (!explanation) return fallback('rejected', [ui.rejected, /什么是|\bwhat is\b/i.test(question) ? ui.uncheckedConcept : ''].filter(Boolean).join('\n'));
     return { ...local, explanationStatus: 'complete', answer: [`### ${ui.explanationTitle}`, explanation,

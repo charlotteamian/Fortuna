@@ -509,11 +509,14 @@ export function resolveActiveLadderTier(
 
 export interface PlanDynamicMetrics {
   mode: PlanManagementMode;
-  activePositionPercent: number;
+  /** Position ratio at the active ladder tier; null when no quote is available to place a tier. */
+  activePositionPercent: number | null;
   dynamicTargetValue: number;
   reserveNeededValue: number;
   dynamicGapValue: number;
   resolvedLadder: ResolvedLadderTier | null;
+  /** True when a ladder/dividend plan has tiers but no quote, so a tier cannot be placed. */
+  quoteMissing: boolean;
 }
 
 export function computePlanDynamicMetrics(
@@ -535,8 +538,10 @@ export function computePlanDynamicMetrics(
       ? buildPresetLadderConfig('dividend_yield')
       : item.ladderConfig;
     const resolvedLadder = resolveActiveLadderTier(fallbackLadder, options.overrideQuote);
-    const activePositionPercent = resolvedLadder ? resolvedLadder.activeRow.positionPercent : 100;
-    const dynamicTargetValue = Math.round(fullTarget * activePositionPercent) / 100;
+    // Without a quote no tier can be placed, so never fabricate a 100% "buy to full" stance.
+    const quoteMissing = !resolvedLadder;
+    const activePositionPercent = resolvedLadder ? resolvedLadder.activeRow.positionPercent : null;
+    const dynamicTargetValue = activePositionPercent === null ? fullTarget : Math.round(fullTarget * activePositionPercent) / 100;
     const reserveNeededValue = Math.max(0, Math.round((fullTarget - dynamicTargetValue) * 100) / 100);
     const dynamicGapValue = Math.round((dynamicTargetValue - current) * 100) / 100;
     return {
@@ -546,6 +551,7 @@ export function computePlanDynamicMetrics(
       reserveNeededValue,
       dynamicGapValue,
       resolvedLadder,
+      quoteMissing,
     };
   }
 
@@ -564,6 +570,7 @@ export function computePlanDynamicMetrics(
       reserveNeededValue,
       dynamicGapValue,
       resolvedLadder: null,
+      quoteMissing: false,
     };
   }
 
@@ -575,6 +582,7 @@ export function computePlanDynamicMetrics(
     reserveNeededValue: 0,
     dynamicGapValue: Math.round((fullTarget - current) * 100) / 100,
     resolvedLadder: null,
+    quoteMissing: false,
   };
 }
 

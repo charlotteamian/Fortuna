@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
+    <!-- Only the app-private cache (exports and downloaded updates) is shared; the
+         external-storage root is never exposed to other apps via this provider. -->
     <cache-path name="my_cache_images" path="." />
 </paths>

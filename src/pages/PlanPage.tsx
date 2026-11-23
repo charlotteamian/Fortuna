@@ -543,14 +543,15 @@ export default function PlanPage() {
       }];
     });
     const parsedQuote = formCurrentQuote.trim() ? Number(formCurrentQuote) : undefined;
+    // No tiers means no ladder. Substituting a preset would silently swap an index or
+    // dividend plan for a different asset's price tiers (audit A3), so leave it empty.
+    if (validRows.length === 0) return undefined;
     return {
       kind: formMode === 'dividend' ? 'yield' : formLadderKind,
       ...(formSymbol.trim() ? { symbol: formSymbol.trim().toUpperCase() } : {}),
       ...(formSymbolName.trim() ? { symbolName: formSymbolName.trim() } : {}),
       ...(parsedQuote !== undefined && Number.isFinite(parsedQuote) && parsedQuote > 0 ? { currentQuote: parsedQuote } : {}),
-      rows: validRows.length > 0
-        ? validRows
-        : buildPresetLadderConfig(formMode === 'dividend' ? 'dividend_yield' : 'gold_518850').rows,
+      rows: validRows,
     };
   };
 
@@ -1768,13 +1769,14 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
       { overrideQuote: fallbackQuote && fallbackQuote > 0 ? fallbackQuote : undefined },
     );
 
-    const activePct = dyn.activePositionPercent;
+    const activePct = dyn.activePositionPercent ?? 0;
     const dynamicTargetVal = dyn.dynamicTargetValue;
     const reserveNeededVal = dyn.reserveNeededValue;
     const dynamicGap = dyn.dynamicGapValue; // + = need to buy, - = need to trim
     const actualRatioOfFull = item.targetValue > 0 ? (item.currentValue / item.targetValue) * 100 : 0;
     const tolerance = Math.max(100, item.targetValue * 0.015);
-    const isAtTarget = Math.abs(dynamicGap) <= tolerance;
+    // Without a quote no ladder tier can be placed, so a gap is not a real trading cue.
+    const isAtTarget = !dyn.quoteMissing && Math.abs(dynamicGap) <= tolerance;
     const notes = item.plannedPurchases ?? '';
 
     const modeBadgeKey = dyn.mode === 'ladder'
@@ -1787,25 +1789,29 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
 
     const statusPillClass = dyn.mode === 'stocks'
       ? 'plan-pill plan-pill-neutral'
-      : isAtTarget
-        ? 'plan-pill plan-pill-target'
-        : dynamicGap > 0
-          ? 'plan-pill plan-pill-buy'
-          : 'plan-pill plan-pill-trim';
+      : dyn.quoteMissing
+        ? 'plan-pill plan-pill-neutral'
+        : isAtTarget
+          ? 'plan-pill plan-pill-target'
+          : dynamicGap > 0
+            ? 'plan-pill plan-pill-buy'
+            : 'plan-pill plan-pill-trim';
 
     const statusPillText = dyn.mode === 'stocks'
       ? t('plan_pill_stock_count', { count: item.stockCards?.length ?? 0 })
-      : dyn.mode === 'simple'
-        ? isAtTarget
-          ? t('plan_pill_simple_on_target')
-          : dynamicGap > 0
-            ? t('plan_pill_simple_need_buy')
-            : t('plan_pill_simple_need_trim')
-        : isAtTarget
-          ? t('plan_pill_on_target', { pct: fmtPct(activePct) })
-          : dynamicGap > 0
-            ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
-            : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
+      : dyn.quoteMissing
+        ? t('plan_pill_no_quote')
+        : dyn.mode === 'simple'
+          ? isAtTarget
+            ? t('plan_pill_simple_on_target')
+            : dynamicGap > 0
+              ? t('plan_pill_simple_need_buy')
+              : t('plan_pill_simple_need_trim')
+          : isAtTarget
+            ? t('plan_pill_on_target', { pct: fmtPct(activePct) })
+            : dynamicGap > 0
+              ? t('plan_pill_need_buy', { pct: fmtPct(activePct) })
+              : t('plan_pill_need_trim', { pct: fmtPct(activePct) });
 
     const effectiveLadder = dyn.mode === 'dividend' && (!item.ladderConfig || item.ladderConfig.rows.length === 0)
       ? buildPresetLadderConfig('dividend_yield')

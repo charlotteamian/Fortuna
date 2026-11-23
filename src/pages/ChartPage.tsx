@@ -372,6 +372,16 @@ export default function ChartPage() {
     </section>
   );
 
+  // The range selector stays reachable even when the chosen range has no data, so a
+  // "no data" state is a recoverable filter result rather than a dead end.
+  const rangeFilterBar = (
+    <div className="filter-bar">
+      {([['3m', '3M'], ['6m', '6M'], ['1y', '1Y'], ['quarter', 'Q'], ['year', 'Y'], ['all', 'All']] as [TimeRange, string][]).map(([k, l]) => (
+        <button key={k} type="button" className={`filter-chip ${timeRange === k ? 'active' : ''}`} onClick={() => setTimeRange(k)}>{l}</button>
+      ))}
+    </div>
+  );
+
   if (loading) return <div className="loading"><div className="spinner" /></div>;
   if (loadError && !chartData) return (
     <div className="empty-state" role="alert">
@@ -385,6 +395,7 @@ export default function ChartPage() {
     <>
       <div className="page-header"><div><h1 className="page-title">{t('chart_analysis')}</h1><p className="page-subtitle">{t('visualize_assets')}</p></div></div>
       {unavailableValuations > 0 && <div className="valuation-warning" role="status">⚠️ {t('some_values_excluded', { count: unavailableValuations })}</div>}
+      {rangeFilterBar}
       {portfolioNavSection}
       <div className="empty-state"><div className="empty-icon">📈</div><div className="empty-text">{t('no_data')}</div><div className="empty-hint">{t('no_data_hint')}</div></div>
     </>
@@ -418,11 +429,7 @@ export default function ChartPage() {
 
 
       {/* Time range */}
-      <div className="filter-bar">
-        {([['3m', '3M'], ['6m', '6M'], ['1y', '1Y'], ['quarter', 'Q'], ['year', 'Y'], ['all', 'All']] as [TimeRange, string][]).map(([k, l]) => (
-          <button key={k} className={`filter-chip ${timeRange === k ? 'active' : ''}`} onClick={() => setTimeRange(k)}>{l}</button>
-        ))}
-      </div>
+      {rangeFilterBar}
 
       {portfolioNavSection}
 

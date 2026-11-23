@@ -49,7 +49,13 @@ function wrapTextToLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
 }
 
 export function generateReportCanvas(opts: ReportOpts): HTMLCanvasElement {
-  const { accounts, totalAssets, totalLiabilities, netWorth, settings, t, isEn, assetColor, liabilityColor } = opts;
+  const { accounts, settings, t, isEn, assetColor, liabilityColor } = opts;
+  // Totals are derived from exactly the accounts shown below, so the header never includes
+  // accounts the report omits from its detail (audit A11).
+  const included = accounts.filter(a => isAccountIncludedInTotals(a));
+  const totalAssets = included.filter(a => a.type === 'asset').reduce((sum, a) => sum + a.convertedAmount, 0);
+  const totalLiabilities = included.filter(a => a.type === 'liability').reduce((sum, a) => sum + a.convertedAmount, 0);
+  const netWorth = totalAssets - totalLiabilities;
 
   const W = 900;
   const PAD = 44;
@@ -264,14 +270,18 @@ export function generateReportCanvas(opts: ReportOpts): HTMLCanvasElement {
         ctx.fillText(' · ' + inst, PAD + 20 + nameW, y + 16);
       }
 
-      // Amount on right
-      const signedAmt = a.type === 'liability' ? -a.latestAmount : a.latestAmount;
+      // Amount on right. A precious-metal account stores grams in `latestAmount`; its
+      // monetary value is `metalValueInCurrency`, so never print grams as money (audit A11).
+      const displayAmount = a.unit === 'gram' && a.metalValueInCurrency !== undefined
+        ? a.metalValueInCurrency
+        : a.latestAmount;
+      const signedAmt = a.type === 'liability' ? -displayAmount : displayAmount;
       const amtText = fmtAmount(signedAmt, a.currency);
       ctx.fillStyle = color;
       ctx.font = `600 16px ${FONT}`;
       ctx.textAlign = 'right';
 
-      if (a.currency !== primary && a.latestAmount > 0) {
+      if (a.currency !== primary && displayAmount > 0) {
         const signedConv = a.type === 'liability' ? -a.convertedAmount : a.convertedAmount;
         const convText = ` ≈ ${primary} ${fmtNum(signedConv, isEn, t)}`;
         ctx.font = `14px ${FONT}`;

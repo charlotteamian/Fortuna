@@ -23,6 +23,7 @@ const { addHoldingTxn } = await import('../src/services/holdingService.ts');
 const { tencentCodes } = await import('../src/services/quoteService.ts');
 const { forecastHoldingYearDividends, parseDividendResponse, defaultDividendStocks } = await import('../src/lib/dividendWorkbench.ts');
 const { deleteAccount } = await import('../src/services/assetService.ts');
+const { computePlanDynamicMetrics } = await import('../src/lib/allocationPlan.ts');
 
 beforeEach(async () => {
   await db.transaction('rw', db.tables, async () => { for (const table of db.tables) await table.clear(); });
@@ -110,4 +111,29 @@ test('deleting an account clears its holdings, transactions and price monitors',
   assert.equal(await db.holdingTxns.count(), 0);
   assert.equal(await db.priceMonitors.count(), 0);
   assert.equal(await db.accounts.count(), 0);
+});
+
+// A4: without a quote no ladder tier can be placed, so no fake "buy to full" stance is shown.
+test('a plan without a quote reports quoteMissing instead of a 100% buy stance', () => {
+  const dyn = computePlanDynamicMetrics(
+    { targetValue: 1_000_000, currentValue: 500_000, planMode: 'ladder',
+      ladderConfig: { kind: 'price', symbol: '600000', currentQuote: undefined, rows: [
+        { id: 'r1', triggerValue: 8, positionPercent: 100 }, { id: 'r2', triggerValue: 6, positionPercent: 60 },
+      ] } },
+    {},
+  );
+  assert.equal(dyn.quoteMissing, true);
+  assert.equal(dyn.activePositionPercent, null);
+  assert.equal(dyn.dynamicTargetValue, 1_000_000);
+  assert.equal(dyn.reserveNeededValue, 0);
+  // With a quote the tier resolves and quoteMissing is false.
+  const withQuote = computePlanDynamicMetrics(
+    { targetValue: 1_000_000, currentValue: 500_000, planMode: 'ladder',
+      ladderConfig: { kind: 'price', symbol: '600000', currentQuote: 7, rows: [
+        { id: 'r1', triggerValue: 8, positionPercent: 100 }, { id: 'r2', triggerValue: 6, positionPercent: 60 },
+      ] } },
+    {},
+  );
+  assert.equal(withQuote.quoteMissing, false);
+  assert.equal(withQuote.activePositionPercent, 100);
 });

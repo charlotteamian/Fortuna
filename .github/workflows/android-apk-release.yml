@@ -97,16 +97,23 @@ jobs:
       - name: Prepare APK artifact
         id: apk
         shell: bash
+        env:
+          # Never interpolate user input directly into the shell body (audit C4).
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${{ inputs.release_tag }}" ]]; then
-            TAG="${{ inputs.release_tag }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${RELEASE_TAG}" ]]; then
+            TAG="${RELEASE_TAG}"
           fi
 
-          VERSION="${TAG#v}"
-          if [[ -z "$VERSION" || "$VERSION" == "$TAG" && "$TAG" == "${GITHUB_REF_NAME}" && "${GITHUB_REF_TYPE}" != "tag" ]]; then
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            VERSION="${TAG#v}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -z "${RELEASE_TAG}" ]]; then
             VERSION="manual-${GITHUB_RUN_NUMBER}"
+          else
+            echo "::error::Release tag '$TAG' is not a valid v<major>.<minor>.<patch> tag"
+            exit 1
           fi
 
           mkdir -p release

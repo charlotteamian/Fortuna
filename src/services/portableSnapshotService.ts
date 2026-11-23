@@ -20,6 +20,9 @@ export interface PortableSnapshotResult {
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let hasPendingChanges = false;
+// Incremented on every schedule so a write that started before a newer change was
+// scheduled does not clear the marker that change set (audit A16).
+let pendingGeneration = 0;
 let writeChain: Promise<PortableSnapshotResult> = Promise.resolve({
   written: false,
   status: { supported: false, configured: false },
@@ -70,9 +73,10 @@ async function performSnapshotWrite(trigger: string): Promise<PortableSnapshotRe
 }
 
 function enqueueSnapshotWrite(trigger: string): Promise<PortableSnapshotResult> {
+  const startedGeneration = pendingGeneration;
   const run = async () => {
     const result = await performSnapshotWrite(trigger);
-    if (result.written || !result.status.supported || !result.status.configured) hasPendingChanges = false;
+    if ((result.written || !result.status.supported || !result.status.configured) && pendingGeneration === startedGeneration) hasPendingChanges = false;
     return result;
   };
   writeChain = writeChain.then(run, run);
@@ -81,6 +85,7 @@ function enqueueSnapshotWrite(trigger: string): Promise<PortableSnapshotResult> 
 
 export function schedulePortableSnapshot(trigger: string, delayMs = 700): void {
   hasPendingChanges = true;
+  pendingGeneration += 1;
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
