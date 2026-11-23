@@ -10,6 +10,7 @@ import { flushPortableSnapshot, schedulePortableSnapshot } from './services/port
 import { addPortableSnapshotBackgroundListener } from './native/portableSnapshot';
 import { refreshRatesInBackground } from './services/rateService';
 import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_SETTINGS_REQUEST_EVENT } from './lib/dividendAdvisorNavigation';
+import { installAppBackBridge, setAppBackHandler } from './lib/appBack';
 import { usePriceMonitors } from './hooks/usePriceMonitors';
 import PriceMonitorBanner from './components/PriceMonitorBanner';
 import AppErrorBoundary from './components/AppErrorBoundary';
@@ -202,6 +203,22 @@ function App() {
     // RecordPage remounts asynchronously (loading → data); retry the restore a few times.
     restoreMainScroll('record', 4);
   };
+
+  // Android back gesture walks the SPA back one level (B1) instead of closing the Activity.
+  // Registered on every navigation-state change so the native side always sees fresh state.
+  useEffect(() => {
+    installAppBackBridge();
+    setAppBackHandler(() => {
+      if (onboardingOpen) { setOnboardingOpen(false); return true; }
+      if (holdingApiSettingsOpen) { setHoldingApiSettingsOpen(false); return true; }
+      if (dividendApiSettingsOpen) { setDividendApiSettingsOpen(false); return true; }
+      if (editingAccountId) { closeAccount(); return true; }
+      if (tab === 'settings') { switchTab(returnTab); return true; }
+      if (tab === 'plan' || tab === 'chart' || tab === 'products') { switchTab('record'); return true; }
+      return false;
+    });
+    return () => setAppBackHandler(null);
+  }, [onboardingOpen, holdingApiSettingsOpen, dividendApiSettingsOpen, editingAccountId, tab, returnTab, closeAccount, switchTab]);
 
   const pageFallback = <div className="loading" role="status" aria-label={t('loading')}><div className="spinner" /></div>;
 

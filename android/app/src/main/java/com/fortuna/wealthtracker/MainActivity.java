@@ -28,7 +28,7 @@ public class MainActivity extends BridgeActivity {
                 checkingReader = true;
                 webView.evaluateJavascript(
                     "(function() {"
-                        + "if (window.location.hash !== '#/dividend/advice') return false;"
+                        + "if (window.location.hash === '#/dividend/advice') {"
                         + "if (window.history.state && window.history.state.fortunaDividendReader === true && window.history.length > 1) {"
                         + "window.history.back();"
                         + "} else {"
@@ -36,6 +36,9 @@ public class MainActivity extends BridgeActivity {
                         + "window.history.replaceState(window.history.state, '', address.href);"
                         + "window.dispatchEvent(new HashChangeEvent('hashchange'));"
                         + "} return true;"
+                        + "}"
+                        + "if (window.__fortunaBack && window.__fortunaBack.goBack && window.__fortunaBack.goBack()) return true;"
+                        + "return false;"
                         + "})()",
                     handled -> {
                         checkingReader = false;
