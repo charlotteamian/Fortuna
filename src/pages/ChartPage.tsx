@@ -212,7 +212,10 @@ export default function ChartPage() {
 
     // Fixed-frequency ticks
     const ticks = isAggregated ? [] : generateFixedTicks(filteredDates, timeRange);
-    const formatLabel = (d: string) => isAggregated ? d : d.slice(5); // MM-DD
+    // A range that crosses a year boundary needs the year on its axis, otherwise
+    // Dec 2025 and Dec 2026 read as the same point (audit B7).
+    const firstYear = filteredDates[0]?.slice(0, 4);
+    const formatLabel = (d: string) => isAggregated ? d : (d.slice(0, 4) === firstYear ? d.slice(5) : d); // MM-DD, or the full date once the year changes
 
     // Total series
     const buildTotalData = (valMap: Record<string, number>, label: string) => {
@@ -337,6 +340,8 @@ export default function ChartPage() {
         const summary = summarizeAccountNav(points, navFromDate);
         const navLabel = t('chart_unit_nav_title');
         const data = summary.series.map(point => ({ date: point.date, [navLabel]: point.nav }));
+        const navFirstYear = summary.series[0]?.date.slice(0, 4);
+        const formatNavLabel = (date: string) => date.slice(0, 4) === navFirstYear ? date.slice(5) : date;
         return (
           <div className="chart-card" key={account.id} style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 'var(--fs-md)', fontWeight: 'var(--fw-semibold)', overflowWrap: 'anywhere' }}>{account.name} · {navLabel}</div>
@@ -356,7 +361,7 @@ export default function ChartPage() {
                 <ResponsiveContainer width="100%" height={150}>
                   <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                    <XAxis dataKey="date" tickFormatter={(date: string) => date.slice(5)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
+                    <XAxis dataKey="date" tickFormatter={formatNavLabel} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} />
                     <YAxis domain={['auto', 'auto']} tickFormatter={(value: number) => value.toFixed(2)} tick={{ fill: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }} width={45} />
                     <Tooltip formatter={(value) => Number(value).toFixed(4)} contentStyle={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
                     <ReferenceLine y={1} stroke="var(--border-active)" strokeDasharray="3 3" />
@@ -376,8 +381,8 @@ export default function ChartPage() {
   // "no data" state is a recoverable filter result rather than a dead end.
   const rangeFilterBar = (
     <div className="filter-bar">
-      {([['3m', '3M'], ['6m', '6M'], ['1y', '1Y'], ['quarter', 'Q'], ['year', 'Y'], ['all', 'All']] as [TimeRange, string][]).map(([k, l]) => (
-        <button key={k} type="button" className={`filter-chip ${timeRange === k ? 'active' : ''}`} onClick={() => setTimeRange(k)}>{l}</button>
+      {([['3m', 'chart_range_3m'], ['6m', 'chart_range_6m'], ['1y', 'chart_range_1y'], ['quarter', 'chart_range_quarter'], ['year', 'chart_range_year'], ['all', 'chart_range_all']] as [TimeRange, string][]).map(([k, labelKey]) => (
+        <button key={k} type="button" className={`filter-chip ${timeRange === k ? 'active' : ''}`} onClick={() => setTimeRange(k)}>{t(labelKey)}</button>
       ))}
     </div>
   );

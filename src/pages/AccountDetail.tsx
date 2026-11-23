@@ -35,6 +35,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AccountRecord | null>(null);
+  const [confirmDeleteRecord, setConfirmDeleteRecord] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [showEditAccount, setShowEditAccount] = useState(false);
   const [nameText, setNameText] = useState('');
@@ -185,7 +186,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
     setEditingRecord(null); setNewAmount(''); setNewNote(''); load();
   };
 
-  const handleDeleteRecord = async (id: string) => { await deleteRecord(id); load(); };
+  const handleDeleteRecord = async (id: string) => { await deleteRecord(id); setConfirmDeleteRecord(null); load(); };
 
   // ---- Precious-metal buy/sell ----
   const openMetalTxn = (kind: 'buy' | 'sell') => {
@@ -283,14 +284,25 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
       <button type="button" className="btn btn-primary" onClick={() => void load(true)}>{t('retry')}</button>
     </div>
   );
-  if (!account || !settings) return null;
+  // A missing account (deleted meanwhile or a bad link) must never leave a blank page
+  // with no way back (B9).
+  if (!account || !settings) return (
+    <div className="empty-state" role="alert">
+      <div className="empty-icon">⚠️</div>
+      <div className="empty-text">{t('account_not_found')}</div>
+      <div className="empty-hint">{t('account_not_found_hint')}</div>
+      <button type="button" className="btn btn-primary" onClick={onBack}>{t('back')}</button>
+    </div>
+  );
 
   const isMetal = account.unit === 'gram';
   const isPortfolio = !!account.portfolio;
   const isArchived = Boolean(account.archivedAt);
   const usesUnitRecordInput = !isPortfolio && getDefaultHoldingModeForCategory(account.category) === 'unit';
   const costPerShare = account.productData?.cost ? parseFloat(account.productData.cost) : null;
-  const metalName = METAL_TYPES.find(m => m.code === account.metalType)?.name || '';
+  // METAL_TYPES stores the Chinese name as the i18n key; translate it for the current UI language (B8).
+  const metalNameRaw = METAL_TYPES.find(m => m.code === account.metalType)?.name || '';
+  const metalName = metalNameRaw ? t(metalNameRaw) : '';
   const color = account.type === 'asset' ? theme.assetColor : theme.liabilityColor;
   const position = isMetal ? computeMetalPosition(records) : null;
   const marketValue = position && metalPricePerGram ? position.remainingGrams * metalPricePerGram : 0;
@@ -601,7 +613,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                   {!isArchived && (
                     <div className="entry-actions" style={{ flexShrink: 0 }}>
                       <button className="btn btn-sm btn-secondary" onClick={() => openEditMetalRec(r)}>✏️</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
+                      <button className="btn btn-sm btn-danger" aria-label={t('delete')} onClick={() => setConfirmDeleteRecord(r.id)}>✕</button>
                     </div>
                   )}
                 </div>
@@ -633,7 +645,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
                   {!isArchived && (
                     <div className="entry-actions balance-record-actions">
                       <button className="btn btn-sm btn-secondary" onClick={() => openEditRecord(r)}>✏️</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
+                      <button className="btn btn-sm btn-danger" aria-label={t('delete')} onClick={() => setConfirmDeleteRecord(r.id)}>✕</button>
                     </div>
                   )}
                 </div>
@@ -665,7 +677,7 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
               {!isArchived && (
                 <div className="entry-actions">
                   {!isPortfolio && <button className="btn btn-sm btn-secondary" onClick={() => openEditRecord(r)}>✏️</button>}
-                  <button className="btn btn-sm btn-danger" onClick={() => handleDeleteRecord(r.id)}>✕</button>
+                  <button className="btn btn-sm btn-danger" aria-label={t('delete')} onClick={() => setConfirmDeleteRecord(r.id)}>✕</button>
                 </div>
               )}
             </div>
@@ -673,6 +685,18 @@ export default function AccountDetail({ accountId, onBack, onOpenApiSettings, ap
         )}
         </>}
       </div>
+
+      {confirmDeleteRecord && (
+        <div className="confirm-overlay" onClick={() => setConfirmDeleteRecord(null)}>
+          <div className="confirm-box" onClick={e => e.stopPropagation()}>
+            <div className="confirm-msg">{t('delete_confirm_msg')}</div>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={() => setConfirmDeleteRecord(null)}>{t('cancel')}</button>
+              <button className="btn btn-danger" onClick={() => handleDeleteRecord(confirmDeleteRecord)}>{t('confirm_delete')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEditProductData && account && (
         <div className="modal-overlay" onClick={() => setShowEditProductData(false)}>

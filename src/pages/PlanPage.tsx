@@ -114,6 +114,7 @@ export default function PlanPage() {
   const [formExpandedCats, setFormExpandedCats] = useState<string[]>([]);
   const [formAllocationAmounts, setFormAllocationAmounts] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState<string | null>(null);
 
   // Inline grid editing states (keeps the exact grid format on PlanPage)
   const [expandedLadders, setExpandedLadders] = useState<Record<string, boolean>>({});
@@ -287,13 +288,13 @@ export default function PlanPage() {
   };
 
   useEffect(() => {
-    const hasOpenModal = showForm || showTarget || showFundEdit || Boolean(confirmDelete) || Boolean(targetItem) || Boolean(purchaseItem);
+    const hasOpenModal = showForm || showTarget || showFundEdit || Boolean(confirmDelete) || Boolean(confirmDeleteTarget) || Boolean(targetItem) || Boolean(purchaseItem);
     document.documentElement.classList.toggle('modal-open', hasOpenModal);
     return () => document.documentElement.classList.remove('modal-open');
-  }, [showForm, showTarget, showFundEdit, confirmDelete, targetItem, purchaseItem]);
+  }, [showForm, showTarget, showFundEdit, confirmDelete, confirmDeleteTarget, targetItem, purchaseItem]);
 
   useEffect(() => {
-    if (!showForm && !showTarget && !showFundEdit && !confirmDelete && !targetItem && !purchaseItem) return;
+    if (!showForm && !showTarget && !showFundEdit && !confirmDelete && !confirmDeleteTarget && !targetItem && !purchaseItem) return;
     const previousFocus = document.activeElement as HTMLElement | null;
     const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
     const dialog = dialogs[dialogs.length - 1];
@@ -307,6 +308,7 @@ export default function PlanPage() {
       if (event.key === 'Escape' && !saving) {
         event.preventDefault();
         if (confirmDelete) setConfirmDelete(null);
+        else if (confirmDeleteTarget) setConfirmDeleteTarget(null);
         else if (purchaseItem) setPurchaseItem(null);
         else if (targetItem) { setTargetItem(null); setEditingTarget(null); setTargetRole(null); }
         else if (showFundEdit) setShowFundEdit(false);
@@ -413,10 +415,10 @@ export default function PlanPage() {
     setFormSymbolName(cfg.symbolName ?? '');
     setFormLadderRows(toEditableRows(cfg.rows));
     if (!formName.trim()) {
-      if (preset === 'gold_518850') setFormName('黄金投资计划');
-      else if (preset === 'chinext_159915') setFormName('创业板ETF');
-      else if (preset === 'oil_513350') setFormName('原油投资计划');
-      else if (preset === 'dividend_yield') setFormName('红利价值板块');
+      if (preset === 'gold_518850') setFormName(t('plan_preset_gold'));
+      else if (preset === 'chinext_159915') setFormName(t('plan_preset_chinext'));
+      else if (preset === 'oil_513350') setFormName(t('plan_preset_oil'));
+      else if (preset === 'dividend_yield') setFormName(t('plan_preset_dividend'));
     }
   };
 
@@ -3189,7 +3191,7 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             </div>
             {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
             {editingTarget && (
-              <button className="btn btn-danger btn-block" onClick={() => handleDeleteTarget(editingTarget.id)}>
+              <button className="btn btn-danger btn-block" onClick={() => setConfirmDeleteTarget(editingTarget.id)}>
                 🗑️ {t('delete')}
               </button>
             )}
@@ -3261,6 +3263,17 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             <div className="confirm-actions">
               <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>{t('cancel')}</button>
               <button className="btn btn-danger" disabled={saving} onClick={() => handleDelete(confirmDelete)}>{t('confirm_delete')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDeleteTarget && (
+        <div className="confirm-overlay" onClick={() => setConfirmDeleteTarget(null)}>
+          <div className="confirm-box" role="dialog" aria-modal="true" aria-label={t('delete_plan_item')} onClick={e => e.stopPropagation()}>
+            <div className="confirm-msg">{t('delete_plan_confirm')}</div>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" onClick={() => setConfirmDeleteTarget(null)}>{t('cancel')}</button>
+              <button className="btn btn-danger" disabled={saving} onClick={() => handleDeleteTarget(confirmDeleteTarget)}>{t('confirm_delete')}</button>
             </div>
           </div>
         </div>

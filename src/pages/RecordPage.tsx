@@ -21,6 +21,12 @@ const SCROLL_Y_KEY = 'fortuna-record-scroll-y';
 const getSavedScrollY = () => Number(sessionStorage.getItem(SCROLL_Y_KEY) || 0);
 const setSavedScrollY = (value: number) => sessionStorage.setItem(SCROLL_Y_KEY, String(value));
 
+/** Capacitor's Share plugin rejects with "Share canceled" when the user dismisses the sheet. */
+const isShareCancellation = (error: unknown) =>
+  error instanceof Error ? /cancel/i.test(error.message)
+    : typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string'
+      ? /cancel/i.test((error as { message: string }).message) : false;
+
 export default function RecordPage({ onOpenAccount }: Props) {
   const { t, i18n } = useTranslation();
   const { theme, amountVisible, setAmountVisible, settings: appSettings } = useAppContext();
@@ -151,16 +157,21 @@ export default function RecordPage({ onOpenAccount }: Props) {
       const dataUrl = canvas.toDataURL('image/png');
       const base64 = dataUrl.split(',')[1];
       const fileName = `Fortuna_Report_${formatLocalDate()}.png`;
-      try {
-        const f = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
-        await Share.share({ title: t('export_report_title'), url: f.uri, dialogTitle: t('export_report_title') });
-      } catch {
+      const downloadFallback = () => {
         const byteArr = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
         const blob = new Blob([byteArr], { type: 'image/png' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = fileName; a.click();
         URL.revokeObjectURL(url);
+      };
+      const f = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
+      try {
+        await Share.share({ title: t('export_report_title'), url: f.uri, dialogTitle: t('export_report_title') });
+      } catch (shareError) {
+        // Cancelling the native share sheet is not a failure; do not claim success (B4).
+        if (isShareCancellation(shareError)) return;
+        downloadFallback();
       }
       showToast(t('export_success'));
     } catch (e) {
@@ -255,16 +266,20 @@ export default function RecordPage({ onOpenAccount }: Props) {
       const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 
       const fileName = `Fortuna_Assets_${formatLocalDate()}.xlsx`;
-      try {
-        const f = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
-        await Share.share({ title: t('export_report_title'), url: f.uri, dialogTitle: t('export_report_title') });
-      } catch {
+      const downloadFallback = () => {
         const byteArr = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
         const blob = new Blob([byteArr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = fileName; a.click();
         URL.revokeObjectURL(url);
+      };
+      const f = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
+      try {
+        await Share.share({ title: t('export_report_title'), url: f.uri, dialogTitle: t('export_report_title') });
+      } catch (shareError) {
+        if (isShareCancellation(shareError)) return;
+        downloadFallback();
       }
       showToast(t('export_success'));
     } catch (e) {

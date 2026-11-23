@@ -9,6 +9,7 @@ import {
   type BalanceFlowKind,
 } from '../lib/balanceFlow';
 import { isAccountHidden, isAccountIncludedInTotals } from '../lib/accountPreferences';
+import { formatLocalDate } from '../lib/localDate';
 
 // ---- Account CRUD ----
 export interface AccountQueryOptions {
@@ -372,7 +373,10 @@ export async function getChartData(): Promise<{
   const settings = await initializeSettings();
   const goldSource = settings.goldPriceSource ?? 'international';
   const primary = settings.primaryCurrency;
-  const allAccounts = await getAccounts();
+  // Include archived accounts: they keep their history (db.ts), so dropping them here would
+  // erase every past point of a large account. Each contributes only up to its archive date.
+  const allAccounts = await db.accounts.orderBy('sortOrder').toArray();
+  const archiveDate = (acct: Account): string | undefined => acct.archivedAt ? formatLocalDate(new Date(acct.archivedAt)) : undefined;
   const valuate = createAccountValuator(goldSource);
   const allRecords = await db.records.toArray();
   const recordsByAccount: Record<string, AccountRecord[]> = {};
@@ -389,9 +393,11 @@ export async function getChartData(): Promise<{
 
   for (const acct of allAccounts) {
     if (!isAccountIncludedInTotals(acct) || acct.type !== 'asset') continue;
+    const acctArchiveDate = archiveDate(acct);
     const acctRecords = (recordsByAccount[acct.id] || []).sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
     for (let i = 0; i < acctRecords.length; i++) {
       const r = acctRecords[i];
+      if (acctArchiveDate && r.date > acctArchiveDate) continue;
       if (r.deltaAmount != null && r.kind) {
         const { converted } = await valuate(acct, Math.max(0, r.deltaAmount), primary);
         dailyFlows[r.date] = Math.round((dailyFlows[r.date] || 0) + (r.kind === 'buy' ? converted : -converted));
@@ -405,6 +411,9 @@ export async function getChartData(): Promise<{
   for (const date of dates) {
     let dayAssets = 0, dayLiabilities = 0;
     for (const acct of allAccounts) {
+      // An archived account belongs to the history only up to (and including) its archive date.
+      const acctArchiveDate = archiveDate(acct);
+      if (acctArchiveDate && date > acctArchiveDate) continue;
       const acctRecords = (recordsByAccount[acct.id] || []).sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
       let value = 0;
       for (const r of acctRecords) { if (r.date <= date) value = r.amount; else break; }
