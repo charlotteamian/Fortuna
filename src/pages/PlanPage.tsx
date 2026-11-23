@@ -569,7 +569,8 @@ export default function PlanPage() {
         id: card.id || `card-${idx + 1}`,
         name: card.name.trim(),
         ...(card.symbol.trim() ? { symbol: card.symbol.trim().toUpperCase() } : {}),
-        weightPercent: Number.isFinite(weight) && weight >= 0 ? weight : 0,
+        // A weight is a share of the plan, so it is a 0–100 percent like the target position (B10).
+        weightPercent: Number.isFinite(weight) && weight >= 0 && weight <= 100 ? weight : 0,
         targetPositionPercent: Number.isFinite(pos) && pos >= 0 && pos <= 100 ? pos : 100,
         ...(price !== undefined && Number.isFinite(price) && price > 0 ? { currentPrice: price } : {}),
         ...(actual !== undefined && Number.isFinite(actual) && actual >= 0 ? { actualAmount: actual } : {}),
@@ -3035,6 +3036,9 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
               {itemAllocationInvalid && <p className="plan-error-text" role="alert" style={{ marginTop: 'var(--sp-1)' }}>{t('plan_allocation_invalid')}</p>}
             </details>
 
+            {/* Surface the quota error outside the collapsed allocation section, so a
+                disabled save button always explains itself (B10). */}
+            {itemAllocationInvalid && <p className="plan-error-text" role="alert" style={{ marginTop: 'var(--sp-2)' }}>{t('plan_allocation_invalid')}</p>}
             {saveError && <p className="plan-error-text" role="alert">{t('plan_save_failed')}</p>}
             {editingItem && (
               <button type="button" className="plan-text-button plan-error-text" onClick={() => setConfirmDelete(editingItem.id)}>
