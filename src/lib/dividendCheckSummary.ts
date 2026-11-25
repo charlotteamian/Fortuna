@@ -61,10 +61,40 @@ export interface DividendFundCheckSummary extends DividendCheckSummaryBase {
 export type DividendCheckSummary = DividendStockCheckSummary | DividendFundCheckSummary;
 type CheckBasis = DividendGridBasisCheck & Partial<Pick<DividendLedgerBase, 'flags' | 'sourceUrls' | 'selectedBatchIds' | 'reportPeriods'>>
   & { evidenceStatus?: DividendEvidenceStatus['status']; evidenceIssues?: string[]; error?: string };
+const REASON_ALIASES: Record<string, string> = {
+  SOURCE_CONFLICT: 'dividend_source_conflict',
+  SOURCE_PAGES_INCOMPLETE: 'source_pages_incomplete',
+  SOURCE_COVERAGE_INCOMPLETE: 'source_pages_incomplete',
+  CURRENT_ANNOUNCEMENT_UNVERIFIED: 'announcement_fields_unverified',
+  ANNOUNCEMENT_UNVERIFIED: 'announcement_fields_unverified',
+  HISTORICAL_ANNOUNCEMENT_GAPS: 'historical_announcement_gaps',
+  CAPITAL_OR_CASH_UNVERIFIED: 'dividend_base_unverified',
+  CAPITAL_ACTIONS_UNVERIFIED: 'capital_actions_unverified',
+  CROSSCHECK_MISSING: 'crosscheck_missing',
+  DIVIDEND_LEDGER_CODE_MISMATCH: 'dividend_ledger_code_mismatch',
+  DIVIDEND_LEDGER_READ_FAILED: 'dividend_ledger_read_failed',
+  DIVIDEND_RESEARCH_CACHE_UNAVAILABLE: 'research_cache_unavailable',
+  INVALID_RESEARCH_CACHE: 'research_cache_unavailable',
+  DIVIDEND_CHECK_ITEM_INVALID: 'dividend_check_item_invalid',
+  additional_rules: 'additional_rules_unverified',
+};
+const canonicalReason = (reason: string) =>
+  REASON_ALIASES[reason] ?? (reason.startsWith('CNINFO_') ? 'announcement_refresh_failed' : reason.toLowerCase());
 const distinct = (values: string[]) => [...new Set(values)];
+const distinctReasons = (values: string[]) => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const key = canonicalReason(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
+};
 const aggregate = (buy: DividendTriggerState, sell: DividendTriggerState): DividendTriggerState => buy === 'triggered' || sell === 'triggered' ? 'triggered'
   : buy === 'unknown' || sell === 'unknown' ? 'unknown' : 'not_triggered';
-const action = (status: DividendActionCheck['status'], reasons: string[] = []): DividendActionCheck => ({ status, reasons: distinct(reasons), requiresUserConfirmation: status === 'confirmation_candidate' || status === 'review' });
+const action = (status: DividendActionCheck['status'], reasons: string[] = []): DividendActionCheck => ({ status, reasons: distinctReasons(reasons), requiresUserConfirmation: status === 'confirmation_candidate' || status === 'review' });
 const explicit = (levels?: GridLevel[]) => (Array.isArray(levels) ? levels : []).filter(level => level && Number.isSafeInteger(level.priceMinor) && level.priceMinor! > 0).map(level => ({ ...level }));
 const priceState = (levels: GridLevel[], current: number | undefined, side: 'buy' | 'sell', indices?: number[]) => {
   const reached = current === undefined ? [] : levels.flatMap((level, index) => (side === 'buy' ? current <= level.priceMinor! : current >= level.priceMinor!) ? [indices?.[index] ?? index + 1] : []);
@@ -122,7 +152,7 @@ export function dividendCheckSummary(input: {
   // saved grid must not keep a "verified" badge after the evidence goes stale (audit A14).
   const gridStatus = hasSaved ? gridReview.basisState === 'verified' && gridReview.hasCompleteSavedGrid && (!evidence || evidence.status === 'current') ? 'verified' : 'saved_unverified'
     : currentPlan ? 'verified' : 'unavailable';
-  const gridReasons = distinct([...(hasSaved && !gridReview.hasCompleteSavedGrid ? ['grid_partial'] : []),
+  const gridReasons = distinctReasons([...(hasSaved && !gridReview.hasCompleteSavedGrid ? ['grid_partial'] : []),
     ...(hasSaved && gridReview.provenanceMissing ? ['grid_provenance_missing'] : []), ...gridReview.staleReasons, ...(!basisMatches ? ['pricing_basis_changed'] : []),
     ...(evidence && !evidence.usable ? evidence.reasons.length ? evidence.reasons : [`evidence_${evidence.status}`] : []),
     ...(!hasSaved && !currentPlan ? pricing?.blockers.length ? pricing.blockers : ['grid_unavailable'] : [])]);
@@ -186,7 +216,8 @@ export function dividendCheckSummary(input: {
   const informational = new Set(['stock_trend', 'market_trend', 'yield_history', 'treasury_missing', 'treasury_stale',
     'opportunity_cost_missing', 'opportunity_cost_stale', 'yield_history_missing', 'capital_actions_unverified', 'roe_bps_missing']);
   const add = (group: keyof typeof risk, reason: string, impact: DividendCheckRisk['impact'] = 'new_buy', period?: string) => {
-    if (risk[group].some(item => item.reason === reason)) return;
+    const canonical = canonicalReason(reason);
+    if (risk[group].some(item => canonicalReason(item.reason) === canonical)) return;
     const lower = reason.toLowerCase(), financial = reason.startsWith('rule_') && !['rule_yield', 'rule_dividendYears'].includes(reason)
       || /financial|earnings|roe|fcf|payout|cashflow/.test(lower);
     const quoteIssue = lower.startsWith('quote_');
@@ -217,7 +248,7 @@ export function dividendCheckSummary(input: {
   const basisUnavailable = !!basis && !basis.verified || !!evidence && !evidence.usable;
   const eligibility: DividendCheckSummaryBase['eligibility'] = {
     status: failed.length ? 'fail' : !checks.length || missing.length || !researchCurrent || basisUnavailable || input.principles?.notes?.trim() ? 'unknown' : 'pass',
-    reasons: [...failed, ...missing].slice(0, 3).map(check => `rule_${check.rule}`), checks,
+    reasons: distinctReasons([...failed, ...missing].map(check => `rule_${check.rule}`)).slice(0, 3), checks,
   };
   if (!eligibility.reasons.length && eligibility.status === 'unknown') eligibility.reasons = [!checks.length ? 'research_missing' : !researchCurrent ? researchTimeValid ? 'research_not_current' : 'research_time_missing' : basisUnavailable ? 'grid_not_verified' : 'additional_rules_unverified'];
   if (research) {
@@ -228,9 +259,9 @@ export function dividendCheckSummary(input: {
     for (const reason of advice.pricingMissingReasons) add('evidenceInsufficient', reason);
   }
   for (const blocker of pricing?.blockers ?? []) add(['dividend_source_conflict', 'dividend_crosscheck_mismatch'].includes(blocker) ? 'blocking' : 'evidenceInsufficient', blocker, 'new_price');
-  for (const reason of gridReasons) add(reason === 'dividend_source_conflict' ? 'blocking' : 'evidenceInsufficient', reason);
-  for (const reason of quote.reasons) add(reason === 'quote_source_conflict' ? 'blocking' : 'evidenceInsufficient', reason);
   if (basis?.flags?.includes('CROSSCHECK_MISSING')) add('evidenceInsufficient', 'crosscheck_missing');
+  for (const reason of gridReasons) add(canonicalReason(reason) === 'dividend_source_conflict' ? 'blocking' : 'evidenceInsufficient', reason);
+  for (const reason of quote.reasons) add(reason === 'quote_source_conflict' ? 'blocking' : 'evidenceInsufficient', reason);
   const comparisonBatchIds = new Set([...selectedIds, ...input.savedEvidenceSnapshot?.selectedBatchIds ?? []]);
   const earliestSelectedExDate = selectedEvents.flatMap(event => event.exDate ? [event.exDate] : []).sort()[0];
   const relevantSpecialEvents = ledgerEvents.filter(event => {
@@ -257,7 +288,7 @@ export function dividendCheckSummary(input: {
       impact: 'information', autoRepair: false, unresolvedAction: 'review' });
   }
   if (hasSaved && (!input.savedEvidenceSnapshot?.sourceUrls.length || !input.savedEvidenceSnapshot.selectedBatchIds.length)) add('evidenceInsufficient', 'saved_evidence_snapshot_missing');
-  const buyConstraints = distinct([...gridReasons, ...(gridStatus !== 'verified' ? ['grid_not_verified'] : []),
+  const buyConstraints = distinctReasons([...gridReasons, ...(gridStatus !== 'verified' ? ['grid_not_verified'] : []),
     ...risk.blocking.map(item => item.reason), ...risk.evidenceInsufficient.filter(item => item.impact !== 'information' && !item.reason.startsWith('quote_')).map(item => item.reason),
     ...(!quote.sessionConfirmed ? ['execution_session_unverified'] : []),
     ...(!hasSaved && currentPlan ? ['current_grid_not_saved'] : [])]);

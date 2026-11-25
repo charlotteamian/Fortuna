@@ -13,6 +13,7 @@ import { dividendPricingPlan, dividendPricingPlanChange, dividendPricingProvenan
 import { dividendCheckSummary } from '../src/lib/dividendCheckSummary.ts';
 import { defaultDividendStocks } from '../src/lib/dividendWorkbench.ts';
 import { dividendCheckZh } from '../src/i18n/dividendCheckTranslations.ts';
+import { dividendReviewZh } from '../src/i18n/dividendReviewTranslations.ts';
 import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
 
 registerHooks({
@@ -33,7 +34,7 @@ registerHooks({
 });
 const { default: PricingUpdate } = await import('../src/components/DividendPricingUpdate.tsx');
 const i18n = createInstance();
-await i18n.init({ lng: 'zh', resources: { zh: { translation: dividendCheckZh } }, interpolation: { escapeValue: false } });
+await i18n.init({ lng: 'zh', resources: { zh: { translation: { ...dividendCheckZh, ...dividendReviewZh } } }, interpolation: { escapeValue: false } });
 const asOf = '2026-11-11', now = Date.parse('2026-11-11T02:00:00Z');
 const pricing = calculateDividendPricing({ code: '300750', name: 'Synthetic', financialSector: false, annuals: [], asOf,
   method: defaultDividendPricingMethod(), dividendBase: verifiedDividendBase(8368000, asOf) });
@@ -67,9 +68,25 @@ test('unchanged prices, changed tier settings and missing saved prices have sepa
   assert.match(render({ savedStock: undefined }), /新价格已生成，尚未保存/);
 });
 
-test('matching prices still expose confirmation when the saved evidence needs review', () => {
-  assert.match(render(), /重算完成，8 档价格与已保存一致/);
-  assert.match(render({ check: { ...checked, grid: { ...checked.grid, status: 'saved_unverified' } } }), /价格一致，计算依据待确认/);
+test('no-op grid updates matching the saved plan suppress any update prompt even if provenance is unverified', () => {
+  assert.equal(render(), '');
+  assert.equal(render({ check: { ...checked, grid: { ...checked.grid, status: 'saved_unverified' } } }), '');
+  assert.equal(render({ savedStock: { ...stock, priceMode: 'manual' } }), '');
+});
+
+test('auto-reviewing shows a calm inline status instead of a stale retry prompt, and failures surface concise deduplicated reasons', () => {
+  const reviewing = render({ outdated: true, autoReviewing: true });
+  assert.match(reviewing, /正在自动刷新并复核最新数据/);
+  assert.doesNotMatch(reviewing, /价格需要重新检查|重新检查本股/);
+  const failed = render({
+    outdated: true,
+    autoReviewing: false,
+    failureReasons: ['DIVIDEND_LEDGER_MISSING', 'dividend_ledger_missing', 'quote_refresh_failed'],
+  });
+  assert.match(failed, /本次自动复核未成功/);
+  assert.match(failed, /分红台账缺失/);
+  assert.match(failed, /本次行情刷新失败/);
+  assert.equal(failed.match(/分红台账缺失/g)?.length, 1);
 });
 
 test('hidden amounts and stale or mismatched calculations never expose a fresh price update', () => {

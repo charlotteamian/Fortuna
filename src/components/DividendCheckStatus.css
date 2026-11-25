@@ -33,3 +33,7 @@
 
 .div-check-advisory { margin: var(--sp-2) 0; padding-left: var(--sp-4); color: var(--text-secondary); font-size: var(--fs-xs); }
 .div-check-data-date { color: var(--text-muted); font-size: var(--fs-xs); line-height: var(--lh-relaxed); overflow-wrap: anywhere; }
+.div-auto-review-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); margin: var(--sp-2) 0; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); font-size: var(--fs-sm); line-height: var(--lh-relaxed); color: var(--text-secondary); }
+.div-auto-review-banner.is-failed { border-color: var(--danger); color: var(--text-primary); }
+.div-auto-review-banner .btn { flex: 0 0 auto; white-space: nowrap; }
+.div-price-update.is-reviewing { color: var(--text-secondary); }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dividendCheckSummary, dividendFundCheckSummary } from '../src/lib/dividendCheckSummary.ts';
+import { dividendCheckReasonText, dividendCheckSummaryText } from '../src/lib/dividendCheckExplanation.ts';
 import { dividendQuoteUsability } from '../src/lib/dividendQuoteUsability.ts';
 import { calculateDividendPricing, defaultDividendPricingMethod } from '../src/lib/dividendPricing.ts';
 import { dividendPricingPlan, dividendPricingProvenance } from '../src/lib/dividendPricingPlan.ts';
@@ -424,4 +425,64 @@ test('malformed evidence and a partial cached financial section downgrade one it
   assert.equal(result.freshness.reportPeriod, undefined);
   const invalidPricing = summarize({ research: { ...research, pricing: { calculationVersion: 5 } } as unknown as DividendStockResearch });
   assert.ok(invalidPricing.risk.evidenceInsufficient.some(item => item.reason === 'pricing_invalid'));
+});
+
+test('check summaries and formatted reason text name every screening rule and never emit duplicate review strings', () => {
+  const allRules = [
+    'yield', 'roe', 'revenueGrowth', 'profitGrowth', 'debtAsset', 'cashProfit',
+    'payout', 'fiveYearPayout', 'dividendYears', 'financialSector', 'reportFreshness', 'fcfCoverage',
+  ] as const;
+  for (const rule of allRules) {
+    const zhLabel = dividendCheckReasonText(`rule_${rule}`, 'zh');
+    const enLabel = dividendCheckReasonText(`rule_${rule}`, 'en');
+    assert.doesNotMatch(zhLabel, /已保存的选股原则/, `zh rule_${rule} should have a specific name`);
+    assert.doesNotMatch(enLabel, /Saved screening rule/, `en rule_${rule} should have a specific name`);
+  }
+
+  const multiRule = summarize({
+    research: {
+      ...research,
+      status: 'risk',
+      checks: [
+        { rule: 'roe', status: 'risk', value: 500, threshold: 800 },
+        { rule: 'fcfCoverage', status: 'risk', value: 9000, threshold: 15000 },
+        { rule: 'cashProfit', status: 'risk', value: 6000, threshold: 8000 },
+        { rule: 'roe', status: 'risk', value: 500, threshold: 800 },
+      ],
+    },
+    basis: { ...pricing.dividendBase!, flags: ['CROSSCHECK_MISSING'], evidenceIssues: ['CROSSCHECK_MISSING'] },
+  });
+
+  const crosscheckItems = multiRule.risk.evidenceInsufficient.filter(
+    item => item.reason.toLowerCase() === 'crosscheck_missing',
+  );
+  assert.equal(crosscheckItems.length, 1);
+  assert.deepEqual(multiRule.eligibility.reasons, ['rule_roe', 'rule_fcfCoverage', 'rule_cashProfit']);
+
+  const withNotes = summarize({
+    principles: {
+      minYieldBps: 400, minRoeBps: 800, minRevenueGrowthBps: 0, minProfitGrowthBps: 0,
+      maxDebtAssetBps: 7000, minCashProfitBps: 8000, minFcfCoverageBps: 15000,
+      maxPayoutBps: 10000, minDividendYears: 5, notes: '关注渠道库存',
+    },
+  });
+  const additionalItems = withNotes.risk.evidenceInsufficient.filter(
+    item => item.reason === 'additional_rules_unverified' || item.reason === 'additional_rules',
+  );
+  assert.equal(additionalItems.length, 1);
+
+  const formattedZh = dividendCheckSummaryText([multiRule], 'zh');
+  assert.match(formattedZh, /ROE需要复核/);
+  assert.match(formattedZh, /自由现金流覆盖需要复核/);
+  assert.match(formattedZh, /现金利润匹配需要复核/);
+  assert.doesNotMatch(formattedZh, /已保存的选股原则需要复核/);
+
+  // Even two unmapped future rules must deduplicate their fallback rendered text
+  const unknownRulesSummary = {
+    ...multiRule,
+    actionCheck: { ...multiRule.actionCheck, buy: { ...multiRule.actionCheck.buy, reasons: [] }, sell: { ...multiRule.actionCheck.sell, reasons: [] } },
+    eligibility: { ...multiRule.eligibility, reasons: ['rule_futureMetricA', 'rule_futureMetricB'] },
+  };
+  const dedupedText = dividendCheckSummaryText([unknownRulesSummary], 'zh');
+  assert.equal(dedupedText.match(/已保存的选股原则需要复核/g)?.length, 1);
 });

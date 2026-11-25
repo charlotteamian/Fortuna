@@ -39,24 +39,38 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
               : code.startsWith('annual_') || code.startsWith('fcf_') || code.includes('earnings') || code.includes('payout') || code === 'financial_sector_review' ? 'financial' : 'unknown');
     return translated(`div_check_help_${group}`, 'div_check_help_unknown');
   };
+  const dedupeReasons = (items: string[]) => {
+    const seenCodes = new Set<string>();
+    const seenLabels = new Set<string>();
+    const result: string[] = [];
+    for (const reason of items) {
+      const code = dividendCheckReasonCode(reason);
+      const label = reasonLabel(reason);
+      if (seenCodes.has(code) || seenLabels.has(label)) continue;
+      seenCodes.add(code);
+      seenLabels.add(label);
+      result.push(reason);
+    }
+    return result;
+  };
   const allRisks = (['blocking', 'evidenceInsufficient', 'attention'] as const)
     .flatMap(group => summary.risk[group].map(item => ({ ...item, group })));
-  const reasons = [...new Map([
+  const reasons = dedupeReasons([
     ...summary.actionCheck.buy.reasons.filter(reason => reason === 'manual_pause'),
     ...summary.risk.blocking.map(item => item.reason), ...summary.eligibility.reasons,
     ...summary.risk.evidenceInsufficient.map(item => item.reason), ...summary.actionCheck.buy.reasons,
     ...summary.risk.attention.map(item => item.reason), ...summary.actionCheck.sell.reasons, ...summary.grid.reasons,
-  ].map(reason => [dividendCheckReasonCode(reason), reason])).values()];
+  ]);
   const routine = new Set(['no_holding', 'cash_fees_liquidity_unverified', 'fees_liquidity_unverified', 'execution_session_unverified', 'covered', 'below_lot']);
   const failedRule = summary.eligibility.reasons.find(reason => reason.startsWith('rule_') && summary.eligibility.checks.some(check => check.rule === reason.slice(5) && check.status === 'risk'));
   const rankedReasons = summary.eligibility.status === 'fail'
     ? [failedRule ?? summary.eligibility.reasons[0], ...reasons.filter(reason => reason === 'manual_pause'), ...summary.eligibility.reasons, ...reasons].filter((reason): reason is string => !!reason)
     : reasons;
-  const focusReasons = [...new Set(rankedReasons)].filter(reason => !routine.has(dividendCheckReasonCode(reason)));
+  const focusReasons = dedupeReasons(rankedReasons).filter(reason => !routine.has(dividendCheckReasonCode(reason)));
   const primaryReasons = mode === 'full' ? reasons : mode === 'row' ? focusReasons.filter(reason => reason === 'manual_pause' || summary.eligibility.checks.some(check => `rule_${check.rule}` === reason && check.status === 'risk')).slice(0, 1) : reasons.slice(0, 3);
   const riskReasons = new Set(allRisks.map(item => dividendCheckReasonCode(item.reason)));
-  const remainingReasons = (mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [])
-    .filter(reason => !riskReasons.has(dividendCheckReasonCode(reason)) && !primaryReasons.includes(reason) && !routine.has(dividendCheckReasonCode(reason)));
+  const remainingReasons = dedupeReasons((mode === 'row' ? reasons : mode === 'compact' ? reasons.slice(3) : [])
+    .filter(reason => !riskReasons.has(dividendCheckReasonCode(reason)) && !primaryReasons.includes(reason) && !routine.has(dividendCheckReasonCode(reason))));
   const dates = summary.freshness;
   const dateTime = (timestamp: number) => new Date(timestamp).toLocaleString(i18n.language);
   const quote = summary.trigger.quote;
@@ -92,12 +106,12 @@ export default function DividendCheckStatus({ summary, mode = 'compact', childre
   </li>;
   const gridKey = summary.grid.userConfirmedAt && summary.grid.status === 'verified' ? 'div_manual_grid_confirmed' : summary.kind === 'fund' && summary.grid.status === 'saved_unverified' ? 'div_check_fund_grid_saved_unverified' : `div_check_grid_${summary.grid.status}`;
   if (mode === 'row') {
-    const actionable = [...new Set([
+    const actionable = dedupeReasons([
       ...reasons.filter(reason => reason === 'manual_pause'),
       ...summary.grid.reasons.filter(reason => ['dividend_extraction_changed', 'base_changed', 'tax_changed', 'parameters_changed', 'basis_kind_changed', 'ex_dividend_since_generation'].includes(reason)),
       ...genuineRisks.map(item => item.reason),
       ...primaryReasons,
-    ])].slice(0, 2);
+    ]).slice(0, 2);
     const evidenceDates = [...new Set(dates.evidenceVerifiedDates)].sort();
     const evidenceDate = evidenceDates.length > 1 ? `${evidenceDates[0]} – ${evidenceDates.at(-1)}` : evidenceDates[0];
     return <section className="div-check-status div-check-status-row" aria-label={t('div_check_status_title')}>

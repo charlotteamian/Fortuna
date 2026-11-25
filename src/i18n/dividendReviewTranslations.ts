@@ -28,6 +28,14 @@ export const dividendReviewZh = {
   div_v3_review_margin_reference: '安全边际参考 {{margin}}；不重复叠加到每档门槛。',
   div_v3_review_advisory: '以上风险与资料缺口供你判断，不会自动暂停；是否行动仍按价格档位、预算和持仓决定。',
   div_v3_review_acknowledge: '我已阅读本次提示，自主决定恢复已保存的网格', div_v3_review_active: '当前网格已启用，无需恢复。',
+  div_auto_review_detecting: '正在检查待复核个股…',
+  div_auto_review_running: '正在自动刷新并复核待复核个股（{{done}} / {{total}}）…',
+  div_auto_review_stock_running: '正在自动刷新并复核最新数据…',
+  div_auto_review_completed: '已自动刷新并复核 {{count}} 只待复核个股。',
+  div_auto_review_failed_summary: '有 {{count}} 只个股未自动复核成功（{{stocks}}），原计划已保留。',
+  div_auto_review_stock_failed: '本次自动复核未成功：{{reasons}}',
+  div_auto_review_retry: '重试未复核个股',
+  div_pricing_already_current: '当前保存的 8 档计划已与最新计算一致，无需更新。',
 };
 export const dividendReviewEn: Record<keyof typeof dividendReviewZh, string> = {
   div_v4_alert_overview: 'Check overview', div_v4_risk_count: 'Risks {{count}}', div_v4_missing_count: 'Missing {{count}}',
@@ -59,4 +67,12 @@ export const dividendReviewEn: Record<keyof typeof dividendReviewZh, string> = {
   div_v3_review_margin_reference: 'Safety-margin reference {{margin}}; no extra margin is imposed on each level.',
   div_v3_review_advisory: 'These risks and evidence gaps inform your decision and do not pause buying automatically. Actions depend on price levels, budget and holdings.',
   div_v3_review_acknowledge: 'I have read this review and choose to resume the saved grid', div_v3_review_active: 'The grid is already enabled; resuming is unnecessary.',
+  div_auto_review_detecting: 'Checking stocks that need review…',
+  div_auto_review_running: 'Auto-refreshing and reviewing pending stocks ({{done}} / {{total}})…',
+  div_auto_review_stock_running: 'Auto-refreshing and verifying latest data…',
+  div_auto_review_completed: 'Automatically refreshed and verified {{count}} pending stocks.',
+  div_auto_review_failed_summary: '{{count}} stocks could not be auto-verified ({{stocks}}); saved plans remain intact.',
+  div_auto_review_stock_failed: 'Auto-review did not complete: {{reasons}}',
+  div_auto_review_retry: 'Retry pending stocks',
+  div_pricing_already_current: 'Your saved 8-tier plan already matches the latest calculation; no update needed.',
 };

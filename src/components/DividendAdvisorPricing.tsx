@@ -7,7 +7,7 @@ import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { DividendFinancialSectorReview } from '../lib/dividendResearch';
 import type { DividendStock } from '../lib/dividendWorkbench';
 import DividendAdvisorPlanActions from './DividendAdvisorPlanActions';
-import { dividendPricingPlanForCheck, dividendPricingProvenance } from '../lib/dividendPricingPlan';
+import { dividendPricingPlanChange, dividendPricingPlanForCheck, dividendPricingProvenance } from '../lib/dividendPricingPlan';
 import { validateDividendPricingProposal } from '../services/dividendAdvisorActionsService';
 import './DividendReviewAlerts.css';
 import DividendLedgerView from './DividendLedgerView';
@@ -119,11 +119,12 @@ export function DividendPricingEditor({ method, disabled, onSave }: { method: Di
   </form>;
 }
 
-export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated, check, onRetry, retryDisabled, onResearchUpdated }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown>; check?: DividendStockCheckSummary; onRetry?: () => void; retryDisabled?: boolean; onResearchUpdated?: (value: DividendResearchSnapshot) => Promise<void> }) {
+export function DividendPricingCard({ code, pricing: sourcePricing, method, generatedAt, disabled, onUpdated, check, savedStock, onRetry, retryDisabled, onResearchUpdated }: { code: string; pricing: DividendPricingResult; method?: DividendPricingMethod; generatedAt: number; disabled: boolean; onUpdated: () => Promise<unknown>; check?: DividendStockCheckSummary; savedStock?: DividendStock; onRetry?: () => void; retryDisabled?: boolean; onResearchUpdated?: (value: DividendResearchSnapshot) => Promise<void> }) {
   const { t } = useTranslation();
   const [filling, setFilling] = useState(false);
   const pricing = invalidateOutdatedDividendPricing(sourcePricing);
   const plan = dividendPricingPlanForCheck(pricing, check?.currentPlan);
+  const planMatchesSaved = Boolean(plan && savedStock && dividendPricingPlanChange(plan, savedStock).status === 'same');
   const yuan = (value?: number) => value === undefined ? '—' : `¥${(value / 100).toFixed(2)}`;
   const pct = (value: number) => `${Number((value / 100).toFixed(2))}%`;
   const comparison = dividendPricingMarketComparison(pricing);
@@ -132,7 +133,7 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
     : comparison.quoteUsable ? pricing.currentPriceMinor : undefined;
   const belowQuoteBps = comparisonPrice !== undefined && firstBuy?.priceMinor !== undefined && comparisonPrice > firstBuy.priceMinor
     ? Math.round((comparisonPrice - firstBuy.priceMinor) * 10000 / comparisonPrice) : undefined;
-  const proposal: DividendPlanProposal | null = plan ? {
+  const proposal: DividendPlanProposal | null = plan && !planMatchesSaved ? {
     id: `pricing-${code}`, code, reason: t('div_v2_pricing_apply_reason', { d1: `¥${((pricing.d1Micros ?? 0) / 1e6).toFixed(6)}`, price: yuan(pricing.theoreticalPriceMinor) }), ...plan,
     gridProvenance: dividendPricingProvenance(pricing, generatedAt),
   } : null;
@@ -160,6 +161,7 @@ export function DividendPricingCard({ code, pricing: sourcePricing, method, gene
         {(['buy', 'sell'] as const).map(side => <table className="div-check-grid-table" key={side}><caption>{t(`div_home_${side}`)} · {t('div_check_origin_saved')}</caption>
           <thead><tr><th>{t('div_grid_level_column')}</th><th>{t('div_grid_target_yield')}</th><th>{t('div_grid_price_short')}</th></tr></thead>
           <tbody>{check.grid[side === 'buy' ? 'buyLevels' : 'sellLevels'].map((level, index) => <tr key={index}><th>{check.grid[side === 'buy' ? 'buyTierIndices' : 'sellTierIndices'][index]}</th><td>{pct(level.yieldBps)}</td><td>{yuan(level.priceMinor)}</td></tr>)}</tbody></table>)}</details>}
+      {planMatchesSaved && <p className="div-ai-muted">{t('div_pricing_already_current')}</p>}
       {proposal && <DividendAdvisorPlanActions proposals={[proposal]} disabled={disabled} onUpdated={onUpdated} embedded direct
         beforePreview={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })}
         beforeApply={() => validateDividendPricingProposal(proposal, { pricing, method, generatedAt })} />}
