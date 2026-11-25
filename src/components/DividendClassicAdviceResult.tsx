@@ -12,9 +12,9 @@ export default function DividendClassicAdviceResult({ output, targetLabel, amoun
   const { t, i18n } = useTranslation();
   if (!amountVisible) return <p className="div-advisor-hidden" role="status">{t('div_ai_reading_hidden')}</p>;
   const ui = dividendExplanationUi[i18n.language.startsWith('zh') ? 'zh' : 'en'];
-  const notice = output.explanationStatus === 'unconfigured' ? ui.notConfigured
-    : output.explanationStatus === 'rejected' ? ui.rejected
-      : output.explanationStatus === 'unavailable' ? ui.unavailable : undefined;
+  const notice = output.explanationStatus === 'unconfigured' ? (output.errorMessage ?? ui.notConfigured)
+    : output.explanationStatus === 'rejected' ? (output.errorMessage ?? ui.rejected)
+      : output.explanationStatus === 'unavailable' ? (output.errorMessage ?? ui.unavailable) : undefined;
   return (
     <div className="div-classic-advice">
       <section className="div-classic-advice-local" aria-label={t('div_cs_ai_local_badge')}>
@@ -27,7 +27,7 @@ export default function DividendClassicAdviceResult({ output, targetLabel, amoun
           <DividendAdvisorMarkdown language={i18n.language}>{output.modelMarkdown}</DividendAdvisorMarkdown>
         </details>
       )}
-      {notice && <p className="div-muted" role="status">{notice}</p>}
+      {notice && <p className="div-warning div-classic-advice-error" role="alert">{notice}</p>}
     </div>
   );
 }

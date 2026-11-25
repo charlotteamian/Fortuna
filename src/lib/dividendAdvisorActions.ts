@@ -11,6 +11,39 @@ export interface DividendPlanProposal {
   gridProvenance?: DividendGridProvenance;
 }
 
+function normalizeGridLevels(levels?: GridLevel[]) {
+  return (levels ?? []).map(level => ({
+    priceMinor: level.priceMinor ?? null,
+    yieldBps: level.yieldBps,
+    portionBps: level.portionBps,
+  }));
+}
+
+/** True when two ladders have identical normalized priceMinor, yieldBps and portionBps rows. */
+export function gridLevelsEqual(a?: GridLevel[], b?: GridLevel[]): boolean {
+  const left = normalizeGridLevels(a);
+  const right = normalizeGridLevels(b);
+  if (left.length !== right.length) return false;
+  return left.every((row, index) => {
+    const other = right[index];
+    return row.priceMinor === other.priceMinor
+      && row.yieldBps === other.yieldBps
+      && row.portionBps === other.portionBps;
+  });
+}
+
+/** Suppresses no-op grid adjustment proposals whose levels and pause status match the saved plan. */
+export function hasEffectiveGridPlanChange(
+  saved: Pick<DividendStock, 'buyLevels' | 'sellLevels' | 'buyPaused'> | undefined,
+  proposed: Pick<DividendPlanProposal, 'buyLevels' | 'sellLevels' | 'buyPaused'>,
+): boolean {
+  if (!saved) return Boolean(proposed.buyLevels || proposed.sellLevels || proposed.buyPaused !== undefined);
+  const buyChanged = proposed.buyLevels !== undefined && !gridLevelsEqual(saved.buyLevels, proposed.buyLevels);
+  const sellChanged = proposed.sellLevels !== undefined && !gridLevelsEqual(saved.sellLevels, proposed.sellLevels);
+  const pauseChanged = proposed.buyPaused !== undefined && Boolean(saved.buyPaused) !== proposed.buyPaused;
+  return buyChanged || sellChanged || pauseChanged;
+}
+
 /** Model output is a draft. Only these grid fields may cross into a confirmed write. */
 export function isDividendPlanProposal(value: unknown): value is DividendPlanProposal {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

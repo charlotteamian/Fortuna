@@ -52,6 +52,67 @@ export function scopeClassicAdvicePlans(plans: ClassicStockPlan[], selectedCode?
     : plans.filter(plan => plan.group !== 'hidden' || plan.shares > 0);
 }
 
+/** Clean, human-unit structured snapshot for genuine AI interpretation in the classic daily-check dialog. */
+export function buildClassicAdviceSnapshot(
+  plans: ClassicStockPlan[],
+  options: { selectedCode?: string; totalBudgetMinor?: number; asOf: string; now?: number },
+) {
+  const now = options.now ?? Date.now();
+  const scoped = scopeClassicAdvicePlans(plans, options.selectedCode);
+  const yuanNumber = (minor?: number) => minor === undefined ? null : Number((minor / 100).toFixed(2));
+  const pctNumber = (bps?: number) => bps === undefined ? null : Number((bps / 100).toFixed(2));
+  const dpsNumber = (micros?: number) => micros === undefined ? null : Number((micros / 1e6).toFixed(4));
+  return {
+    'Date in China': options.asOf,
+    'Total dividend stock budget (CNY)': yuanNumber(options.totalBudgetMinor),
+    'Scoped stocks': scoped.map(plan => {
+      const facts = getClassicAdviceFacts(plan, options.asOf, now);
+      return {
+        'Name': plan.name,
+        'Code': plan.code,
+        'Group': plan.group,
+        'Planned weight (%)': pctNumber(plan.weightBps),
+        'Planned budget (CNY)': yuanNumber(plan.budgetMinor),
+        'Recorded shares': plan.shares,
+        'Lot size': plan.lotSize,
+        'Buying paused by user': plan.buyPaused,
+        'Grid origin': plan.gridOrigin,
+        'Current quote (CNY)': yuanNumber(plan.quotePriceMinor),
+        'Quote source date': plan.quoteDate ?? null,
+        'Quote usable for today trigger': facts.quoteCurrent,
+        'Dividend basis status': plan.base.tier === 'recent_batches' ? 'Verified recent implemented batches' : 'Unverified / unavailable',
+        'Pretax annual DPS base (CNY/share)': dpsNumber(plan.base.grossDpsMicros),
+        'After-tax annual DPS base (CNY/share)': dpsNumber(plan.base.netDpsMicros),
+        'Applied tax rate (%)': pctNumber(plan.base.taxBps),
+        'Report periods': plan.base.reportPeriods,
+        'Capped at latest annual EPS': Boolean(plan.base.cappedAtEarnings),
+        'Today status': facts.status,
+        'Touched buy tier': facts.touchedBuyLevel || null,
+        'Touched sell tier': facts.touchedSellLevel || null,
+        'Suggested shares (if actionable)': facts.shares || 0,
+        'Buy grid tiers': plan.buyRows.map(row => ({
+          level: row.level,
+          'Target yield (%)': pctNumber(row.yieldBps),
+          'Price (CNY)': yuanNumber(row.priceMinor),
+          'Gap from quote (%)': pctNumber(row.gapFromQuoteBps),
+          'Target shares': row.targetShares ?? null,
+          'Touched today': facts.quoteCurrent && row.touched,
+          status: row.status,
+        })),
+        'Sell grid tiers': plan.sellRows.map(row => ({
+          level: row.level,
+          'Target yield (%)': pctNumber(row.yieldBps),
+          'Price (CNY)': yuanNumber(row.priceMinor),
+          'Gap from quote (%)': pctNumber(row.gapFromQuoteBps),
+          'Sell shares': row.sellShares ?? null,
+          'Touched today': facts.quoteCurrent && row.touched,
+          status: row.status,
+        })),
+      };
+    }),
+  };
+}
+
 function tierText(plan: ClassicStockPlan, row: ClassicGridTierRow, impliedYield: number | undefined, zh: boolean): string {
   const classicLevels = row.side === 'buy' ? plan.classicBuyLevels : plan.classicSellLevels;
   const saved = plan.gridOrigin === 'custom_saved' || row.yieldBps !== classicLevels[row.level - 1]?.yieldBps;

@@ -73,9 +73,15 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
       if (snapshot.planKey !== current.planKey || dividendDailyCheckIsStale(current, snapshot.planKey)) { setError(t('div_s3_stale')); return; }
       const context = await loadDividendAdvisorContext(fundOnly);
       if (!active()) return;
-      const result = await askDividendAdvisorWithActions(config, context, t('div_s3_explain_question'), [], { signal: request.signal, language: i18n.language,
-        onLocalResult: result => { if (active()) setExplanation(result.answer); } });
-      if (active()) setExplanation(result.answer);
+      const result = await askDividendAdvisorWithActions(config, context, t('div_s3_explain_question'), [], { signal: request.signal, language: i18n.language });
+      if (active()) {
+        if (result.explanationStatus === 'unconfigured' || result.explanationStatus === 'unavailable') {
+          setExplanation('');
+          setError(result.answer);
+        } else {
+          setExplanation(result.answer);
+        }
+      }
     } catch { if (active()) setError(t('div_s3_explain_failed')); }
     finally { if (explanationController.current === request) { explanationController.current = null; if (mounted.current) setExplaining(false); } }
   };

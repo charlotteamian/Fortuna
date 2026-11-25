@@ -27,7 +27,7 @@ registerHooks({
 });
 
 const { db, initializeSettings, updateSettings, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
-const { isDividendPlanProposal, parseDividendAdvisorActions } = await import('../src/lib/dividendAdvisorActions.ts');
+const { gridLevelsEqual, hasEffectiveGridPlanChange, isDividendPlanProposal, parseDividendAdvisorActions } = await import('../src/lib/dividendAdvisorActions.ts');
 const { defaultDividendSelectionPrinciples } = await import('../src/lib/dividendResearch.ts');
 const { previewDividendPlanChange, applyDividendPlanChange, previewDividendRiskRemoval, removeDividendRiskStocks,
   addDividendResearchCandidate, loadDividendSelectionPrinciples, saveDividendSelectionPrinciples, loadDividendPricingMethod, saveDividendPricingMethod } = await import('../src/services/dividendAdvisorActionsService.ts');
@@ -131,6 +131,32 @@ test('fallback parsing retains unrelated JSON and code, handles brackets and esc
   const multiple = parseDividendAdvisorActions(`${JSON.stringify([draft])}\nKeep the review condition.\n${JSON.stringify([{ ...draft, id: 'duplicate' }])}`, ['601398']);
   assert.equal(multiple.actions.length, 1);
   assert.equal(multiple.answer, 'Keep the review condition.');
+});
+
+test('hasEffectiveGridPlanChange filters out identical no-op grid and pause proposals', () => {
+  const buyLevels: GridLevel[] = [
+    { priceMinor: 7036, yieldBps: 550, portionBps: 2500 },
+    { priceMinor: 6730, yieldBps: 575, portionBps: 2500 },
+    { priceMinor: 6450, yieldBps: 600, portionBps: 2500 },
+    { priceMinor: 5953, yieldBps: 650, portionBps: 2500 },
+  ];
+  const sellLevels: GridLevel[] = [
+    { priceMinor: 8063, yieldBps: 480, portionBps: 2500 },
+    { priceMinor: 8600, yieldBps: 450, portionBps: 2500 },
+    { priceMinor: 9215, yieldBps: 420, portionBps: 2500 },
+    { priceMinor: 9675, yieldBps: 400, portionBps: 2500 },
+  ];
+  const saved = { buyLevels, sellLevels, buyPaused: false };
+  assert.equal(gridLevelsEqual(buyLevels, structuredClone(buyLevels)), true);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyLevels: structuredClone(buyLevels), sellLevels: structuredClone(sellLevels) }), false);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyLevels: structuredClone(buyLevels), sellLevels: structuredClone(sellLevels), buyPaused: false }), false);
+  assert.equal(hasEffectiveGridPlanChange({ ...saved, buyPaused: true }, { buyPaused: true }), false);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyPaused: true }), true);
+  assert.equal(hasEffectiveGridPlanChange({ buyLevels: undefined, sellLevels: undefined, buyPaused: false }, { buyLevels, sellLevels }), true);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyLevels: [{ ...buyLevels[0], priceMinor: 7035 }, ...buyLevels.slice(1)], sellLevels }), true);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyLevels, sellLevels: [{ ...sellLevels[0], yieldBps: 475 }, ...sellLevels.slice(1)] }), true);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyLevels: [{ ...buyLevels[0], portionBps: 3000 }, ...buyLevels.slice(1)], sellLevels }), true);
+  assert.equal(hasEffectiveGridPlanChange(saved, { buyLevels: buyLevels.slice(0, 3), sellLevels }), true);
 });
 
 test('valid descending buy and ascending sell grids accept explicit prices and separate yield ladders', () => {

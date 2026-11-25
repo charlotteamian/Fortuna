@@ -1,5 +1,5 @@
-.div-daily-local, .div-daily-previous, .div-daily-legacy { margin-top: var(--sp-3); font-size: var(--fs-sm); }
-.div-daily-advice summary { min-height: var(--btn-h); padding-block: var(--sp-2); cursor: pointer; }
+.div-daily-local, .div-daily-previous, .div-daily-legacy { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.div-daily-advice summary { min-height: 40px; padding-block: var(--sp-1); cursor: pointer; }
 .div-daily-result { padding: var(--sp-2) 0; background: transparent; }
 .div-daily-stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1); padding: 0; list-style: none; }
 .div-daily-stages li { min-width: 0; padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: var(--fs-sm); }

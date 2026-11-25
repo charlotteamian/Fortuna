@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { DividendPlanProposal } from '../lib/dividendAdvisorActions';
+import { hasEffectiveGridPlanChange, type DividendPlanProposal } from '../lib/dividendAdvisorActions';
 import type { GridLevel } from '../lib/dividendWorkbench';
 import { applyDividendPlanChange, previewDividendPlanChange } from '../services/dividendAdvisorActionsService';
 
@@ -46,6 +46,7 @@ export default function DividendAdvisorPlanActions({ proposals, disabled, onUpda
     finally { lock.current = false; setBusy(false); }
   };
   const Container = embedded ? 'section' : 'details';
+  const previewUnchanged = preview ? !hasEffectiveGridPlanChange(preview.value.before, preview.value.after) : false;
   return <div className="div-ai-plan-actions">{proposals.map(proposal => <Container key={proposal.id} className="div-ai-plan-action" {...(embedded ? {} : { open: initiallyExpanded })}>
     {!embedded && <><summary>{t('div_ai_plan_proposal')} · {proposal.code}</summary><p>{proposal.reason}</p></>}
     <button type="button" className={direct ? 'btn btn-primary' : 'btn btn-secondary'} disabled={disabled || busy} onClick={() => void execute(async () => {
@@ -54,11 +55,16 @@ export default function DividendAdvisorPlanActions({ proposals, disabled, onUpda
       else setPreview({ proposal, value });
     })}>{direct ? (confirmLabel ?? t('div_ai_plan_confirm')) : (previewLabel ?? t('div_ai_plan_preview'))}</button>
     {!direct && preview?.proposal.id === proposal.id && <div className="div-ai-confirm"><strong>{preview.value.name} · {preview.value.code}</strong>
-      <div className="div-ai-grid-comparison"><section className="div-ai-grid-proposed"><h3>{t('div_ai_plan_after')}</h3><PreviewLevels value={preview.value.after} /></section>
-        <details className="div-ai-grid-current"><summary>{t('div_ai_plan_before')}</summary><PreviewLevels value={preview.value.before} /></details></div>
-      <p className="div-ai-muted">{t('div_ai_plan_preview_hint')}</p><div className="div-actions"><button type="button" className="btn btn-primary" disabled={disabled || busy} onClick={() => void execute(async () => {
-        await beforeApply?.(); await applyDividendPlanChange(proposal, preview.value.fingerprint); setPreview(null); await onUpdated(); setNotice(t('div_ai_plan_applied'));
-      })}>{t('div_ai_plan_confirm')}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setPreview(null)}>{t('cancel')}</button></div>
+      {previewUnchanged ? <>
+        <p className="div-advisor-status" role="status">{t('div_ai_plan_no_change')}</p>
+        <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setPreview(null)}>{t('close')}</button></div>
+      </> : <>
+        <div className="div-ai-grid-comparison"><section className="div-ai-grid-proposed"><h3>{t('div_ai_plan_after')}</h3><PreviewLevels value={preview.value.after} /></section>
+          <details className="div-ai-grid-current"><summary>{t('div_ai_plan_before')}</summary><PreviewLevels value={preview.value.before} /></details></div>
+        <p className="div-ai-muted">{t('div_ai_plan_preview_hint')}</p><div className="div-actions"><button type="button" className="btn btn-primary" disabled={disabled || busy} onClick={() => void execute(async () => {
+          await beforeApply?.(); await applyDividendPlanChange(proposal, preview.value.fingerprint); setPreview(null); await onUpdated(); setNotice(t('div_ai_plan_applied'));
+        })}>{t('div_ai_plan_confirm')}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setPreview(null)}>{t('cancel')}</button></div>
+      </>}
     </div>}
   </Container>)}{error && <p className="div-warning" role="alert">{error}</p>}{notice && <p className="div-advisor-status" role="status">{notice}</p>}</div>;
 }

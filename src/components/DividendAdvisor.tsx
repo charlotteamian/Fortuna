@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { db } from '../db';
 import type { DividendAdvisorContext, DividendAdvisorMessage } from '../lib/dividendAdvisor';
 import { DIVIDEND_ADVISOR_READER_HASH, DIVIDEND_AI_CONFIG_CHANGED_EVENT, DIVIDEND_AI_SETTINGS_REQUEST_EVENT, dividendAdvisorReaderUrl } from '../lib/dividendAdvisorNavigation';
-import { askDividendAdvisorWithActions, DividendAdvisorError, loadDividendAdvisorConfig, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
+import { askDividendAdvisorWithActions, DividendAdvisorError, formatDividendAdvisorFailure, loadDividendAdvisorConfig, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
 import { loadDividendAdvisorContext } from '../services/dividendAdvisorContextService';
 import DividendAdvisorReader from './DividendAdvisorReader';
 import DividendAdvisorWorkspace from './DividendAdvisorWorkspace';
@@ -148,8 +148,15 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
     if (readerOpen) closeReader();
     window.dispatchEvent(new CustomEvent(DIVIDEND_AI_SETTINGS_REQUEST_EVENT));
   };
-  const describeError = (cause: unknown) => cause instanceof DividendAdvisorError
-    ? t(`div_ai_error_${cause.code.toLowerCase()}`, { defaultValue: t('div_ai_error_network') }) : t('div_ai_error_storage');
+  const describeError = (cause: unknown) => {
+    if (cause instanceof DividendAdvisorError) {
+      if (['STORAGE', 'QUESTION', 'CONTEXT', 'CANCELLED'].includes(cause.code)) {
+        return t(`div_ai_error_${cause.code.toLowerCase()}`, { defaultValue: t('div_ai_error_network') });
+      }
+      return formatDividendAdvisorFailure(cause, i18n.language);
+    }
+    return t('div_ai_error_storage');
+  };
   const changeConversation = async (operation: () => Promise<DividendAdvisorHistoryState>) => {
     if (lock.current || historyBusy) return;
     lock.current = true;
@@ -221,28 +228,28 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       };
       const answer = await askDividendAdvisorWithActions(saved, context, prompt, previousMessages, {
         language: i18n.language, signal: requestController.signal, explanationResearch: discussionResearch.current ?? undefined,
-        onLocalResult: local => {
-          if (!currentRequest()) return;
-          // A local draft remains a usable, evidence-bound preview even if the
-          // optional explanation is cancelled before its final response.
-          registerPriceContexts(local.actions);
-          // Local checks remain readable while an optional explanation is
-          // pending. Only the final/fallback result is saved as a completed turn.
-          setMessages([...submittedMessages, { role: 'assistant', content: local.answer, actions: local.actions,
-            pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }]);
-        },
       });
       if (currentRequest()) {
-        registerPriceContexts(answer.actions);
-        const nextMessages: DividendAdvisorMessage[] = [...submittedMessages, { role: 'assistant', content: answer.answer, actions: answer.actions,
-          pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }];
-        setSnapshot(context);
-        setCheckedAt(context.generatedAt); setMessages(nextMessages);
-        setQuestion(''); setLastQuestion('');
-        try {
-          const savedHistory = await saveDividendAdvisorConversation(conversation.id, nextMessages, context.generatedAt);
-          if (currentRequest()) { setHistory(savedHistory); setPendingSave(null); }
-        } catch { if (mounted.current) { setPendingSave({ conversationId: conversation.id, messages: nextMessages, checkedAt: context.generatedAt }); setError(t('div_ai_history_save_failed')); } }
+        const failed = answer.explanationStatus === 'unconfigured' || answer.explanationStatus === 'unavailable';
+        if (failed && answer.actions.length === 0) {
+          setSnapshot(context);
+          setCheckedAt(context.generatedAt);
+          setError(answer.answer);
+        } else {
+          registerPriceContexts(answer.actions);
+          const content = failed ? (answer.localAnswer || answer.answer) : answer.answer;
+          const nextMessages: DividendAdvisorMessage[] = [...submittedMessages, { role: 'assistant', content, actions: answer.actions,
+            pricingCalculationVersion: DIVIDEND_PRICING_CALCULATION_VERSION }];
+          setSnapshot(context);
+          setCheckedAt(context.generatedAt); setMessages(nextMessages);
+          setQuestion('');
+          if (failed) setError(answer.answer);
+          else setLastQuestion('');
+          try {
+            const savedHistory = await saveDividendAdvisorConversation(conversation.id, nextMessages, context.generatedAt);
+            if (currentRequest()) { setHistory(savedHistory); setPendingSave(null); }
+          } catch { if (mounted.current) { setPendingSave({ conversationId: conversation.id, messages: nextMessages, checkedAt: context.generatedAt }); setError(t('div_ai_history_save_failed')); } }
+        }
       }
     } catch (cause) { if (mounted.current && !requestController.signal.aborted) setError(describeError(cause)); }
     finally {
@@ -256,10 +263,17 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
   const refreshLimited = Boolean(snapshot && (snapshot.coverage.quoteRefreshFailures || snapshot.coverage.dividendRefreshFailures || snapshot.dividendRefreshDeferredCodes.length));
   return <>
     <section className="div-advisor div-home-advisor" aria-labelledby="div-ai-title" ref={entryRef}>
-      <div className="div-advisor-heading"><span className="div-advisor-badge" aria-hidden="true">AI</span><div><h2 id="div-ai-title">{t('div_ai_title')}</h2></div></div>
-      <div className="div-advisor-entry-actions"><button className="div-advisor-text-button" disabled={loading} onClick={() => openReader()}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
-        <button type="button" className="div-advisor-text-button" onClick={() => openReader('research')}>{t('div_ai_tab_research')} <span aria-hidden="true">↗</span></button>
-        {!saved && !loading && <button type="button" className="div-advisor-text-button" onClick={openSettings}>{t('div_ai_go_settings')}</button>}
+      <div className="div-advisor-heading">
+        <span className="div-advisor-badge" aria-hidden="true">AI</span>
+        <div>
+          <h2 id="div-ai-title">{t('div_ai_title')}</h2>
+          {!loading && <span className={`div-advisor-state ${saved ? 'is-ready' : 'is-unconfigured'}`}>{t(saved ? 'div_ai_ready' : 'div_ai_setup_needed')}</span>}
+        </div>
+      </div>
+      <div className="div-advisor-entry-actions">
+        <button type="button" className="div-advisor-action-pill is-primary" disabled={loading} onClick={() => openReader()}>{t(messages.length || busy ? 'div_ai_resume_reader' : 'div_ai_open_reader')} <span aria-hidden="true">↗</span></button>
+        <button type="button" className="div-advisor-action-pill" onClick={() => openReader('research')}>{t('div_ai_tab_research')} <span aria-hidden="true">↗</span></button>
+        {!saved && !loading && <button type="button" className="div-advisor-action-pill" onClick={openSettings}>{t('div_ai_go_settings')}</button>}
       </div>
       {showDailyCheck && <DividendDailyAdvice fundOnly config={saved} disabled={loading || busy || historyBusy || readerOpen} amountVisible={amountVisible} planKey={planKey} onUpdated={onUpdated} onOpenSettings={openSettings} onOpenItem={onOpenCheckItem} />}
       {busy && !readerOpen && <p className="div-advisor-status" role="status">{t(phase === 'thinking' ? 'div_ai_thinking' : 'div_ai_refreshing')}</p>}

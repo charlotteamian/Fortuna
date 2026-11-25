@@ -8,7 +8,6 @@ import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import { defaultDividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
 import type { DividendStock } from '../src/lib/dividendWorkbench.ts';
 import { askDividendAdvisorWithActions, type DividendAdvisorConfig, type DividendAdvisorTransport } from '../src/services/dividendAdvisorService.ts';
-import { buildDividendExplanationFacts } from '../src/lib/dividendAdvisorExplanation.ts';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -39,8 +38,6 @@ function context(): DividendAdvisorContext {
         financial: { code: stock.code, asOf: '2026-10-31', financialSector: true,
           latest: { reportDate: '2026-09-30', roeBps: 500 }, periods: [{ reportDate: '2026-09-30', roeBps: 500 }] } }] } }, now);
 }
-const envelope = (blocks: unknown[]) => JSON.stringify({ version: 1, blocks });
-const concept = (text: string) => envelope([{ type: 'concept', text }]);
 const transport = (content: string): DividendAdvisorTransport => async () => ({ status: 200, data: { choices: [{ finish_reason: 'stop', message: { content } }] } });
 const state = async () => JSON.stringify(await Promise.all(db.tables.map(async table => [table.name, await table.toArray()])));
 async function readOnlyAsk(question: string, content: string, history: DividendAdvisorMessage[] = [], data = context()) {
@@ -57,70 +54,74 @@ beforeEach(async () => {
 });
 after(() => db.close());
 
-test('a normal concept outside the fixed glossary receives a relevant model explanation', async () => {
-  const text = '自由现金流通常指经营活动现金流减去资本性支出。它帮助理解经营产生的现金在维持必要投资后还剩多少。';
-  const answer = await readOnlyAsk('什么是自由现金流', concept(text));
-  assert.match(answer.answer, /自由现金流通常指经营活动现金流减去资本性支出/);
-  assert.doesNotMatch(answer.answer, /这个概念尚未提供已核对的解释/);
+test('normal Markdown AI answers are displayed directly for concepts and risk explanations', async () => {
+  const conceptReply = '自由现金流通常指经营活动现金流减去资本性支出，用于衡量公司维持必要投资后还能剩下多少可自由支配现金。';
+  const conceptAnswer = await readOnlyAsk('什么是自由现金流', conceptReply);
+  assert.equal(conceptAnswer.explanationStatus, 'complete');
+  assert.equal(conceptAnswer.answer, conceptReply);
+
+  const riskReply = '模拟银行目前只有 2026-09-30 季度累计 ROE（5%），缺少完整年报口径，因此 ROE 暂标记为待核实。';
+  const riskAnswer = await readOnlyAsk('根据已有资料解释ROE为什么待核实', riskReply);
+  assert.equal(riskAnswer.explanationStatus, 'complete');
+  assert.equal(riskAnswer.answer, riskReply);
+  assert.doesNotMatch(riskAnswer.answer, /已有的本地说明和检查会保留|### 本地检查/);
 });
 
 test('a requested dividend-yield example is labelled hypothetical and calculated locally', async () => {
-  const answer = await readOnlyAsk('举一个股息率计算例子', envelope([{ type: 'example', formula: 'cash_yield', inputs: [0.5, 10] }]));
+  const answer = await readOnlyAsk('举一个股息率计算例子', 'should not need model');
   assert.match(answer.answer, /假设|示例/); assert.match(answer.answer, /5(?:\.0+)?%/);
   assert.match(answer.answer, /0\.5|0\.50/); assert.match(answer.answer, /10/);
   assert.doesNotMatch(answer.answer, /已满足买入|立即买入/);
 });
 
-test('risk explanation quotes the supplied ROE gap without fabricating a report value or source', async () => {
-  const data = context(), facts = buildDividendExplanationFacts(data, 'zh');
-  const roe = facts.find(fact => fact.id === 'stock:601398:check:roe');
-  assert.ok(roe);
-  const text = '缺少可核对的完整年度财务口径时，这项指标不能用于可靠比较。季度累计数据不能直接充当全年结果。';
-  const answer = await readOnlyAsk('根据已有资料解释ROE为什么待核实', envelope([{ type: 'evidence', factIds: [roe.id, 'stock:601398:financial:roe_basis'], text }]), [], data);
-  assert.match(answer.answer, /完整年度财务口径|完整年报|年报ROE/);
-  assert.match(answer.answer, /季度|年化/);
-  assert.doesNotMatch(answer.answer, /ROE(?:已经|为|达到)15%|https:\/\/invented|核验通过/);
-  assert.ok(answer.answer.includes(text), answer.answer);
-});
-
-test('a simpler-language follow-up retains the earlier topic and uses the new model explanation', async () => {
-  const initial = await readOnlyAsk('什么是自由现金流', concept('自由现金流通常指经营活动现金流减去资本性支出。'));
-  const history: DividendAdvisorMessage[] = [{ role: 'user', content: '什么是自由现金流' }, { role: 'assistant', content: initial.answer }];
-  const simpler = '可以把自由现金流理解成经营收到的钱在扣掉必要设备投入后留下的余钱。这里说明现金的来去与结余。';
+test('a follow-up like 解释一下 or 换个简单说法 passes conversation history to AI', async () => {
+  const initialReply = '自由现金流是经营活动现金流减去资本性支出。';
+  const history: DividendAdvisorMessage[] = [{ role: 'user', content: '什么是自由现金流' }, { role: 'assistant', content: initialReply }];
+  const simpler = '可以把自由现金流理解成经营收到的钱在扣掉必要设备投入后留下的余钱。';
   let historySeen = false;
-  const answer = await askDividendAdvisorWithActions(config, context(), '换个简单说法', history, { language: 'zh', transport: async request => {
+  const answer = await askDividendAdvisorWithActions(config, context(), '解释一下', history, { language: 'zh', transport: async request => {
     const body = JSON.stringify(request.body);
-    historySeen = body.includes('什么是自由现金流') && body.includes('经营活动现金流减去资本性支出');
-    return transport(concept(simpler))(request);
+    historySeen = body.includes('什么是自由现金流') && body.includes(initialReply);
+    return transport(simpler)(request);
   } });
-  assert.equal(historySeen, true); assert.ok(answer.answer.includes(simpler));
-  assert.notEqual(answer.answer, initial.answer); assert.deepEqual(answer.actions, []);
+  assert.equal(historySeen, true);
+  assert.equal(answer.explanationStatus, 'complete');
+  assert.equal(answer.answer, simpler);
+  assert.deepEqual(answer.actions, []);
 });
 
-test('known local explanations and operation checks do not require configuration or a successful model', async () => {
+test('built-in glossary definitions work offline while operational questions honestly report unconfigured AI', async () => {
   let calls = 0;
   const never: DividendAdvisorTransport = async () => { calls++; throw new Error('should not request a model'); };
   const definition = await askDividendAdvisorWithActions(null, context(), '什么是股息率？', [], { transport: never });
   assert.match(definition.answer, /每股现金分红除以股价/);
+  assert.equal(definition.explanationStatus, 'not_needed');
+
   const operation = await askDividendAdvisorWithActions(null, context(), '今天怎么操作？', [], { transport: never });
-  assert.match(operation.answer, /手动暂停|受限/);
+  assert.equal(operation.explanationStatus, 'unconfigured');
+  assert.equal(operation.errorCode, 'CONFIG');
+  assert.match(operation.answer, /尚未配置 AI/);
+  assert.doesNotMatch(operation.answer, /操作建议已按确定性检查限制|选股资格|### 本地检查/);
   assert.equal(calls, 0);
 });
 
-test('local output is delivered before an explanation request completes', async () => {
-  let callbackAnswer = '', release: ((value: { status: number; data: unknown }) => void) | undefined;
+test('pending AI calls do not flash a premature local check dump before the provider responds', async () => {
+  let localCalled = false;
+  let release: ((value: { status: number; data: unknown }) => void) | undefined;
   const pending = askDividendAdvisorWithActions(config, context(), '根据已有资料解释ROE为什么待核实', [], {
-    onLocalResult: result => { callbackAnswer = result.answer; },
+    onLocalResult: () => { localCalled = true; },
     transport: async () => new Promise(resolve => { release = resolve; }),
   });
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.match(callbackAnswer, /ROE|净资产收益率/); assert.match(callbackAnswer, /缺|待核实|复核/);
+  assert.equal(localCalled, false, 'normal AI questions must wait for the real AI response instead of flashing local dumps');
   assert.ok(release);
-  release({ status: 200, data: { choices: [{ message: { content: concept('财务比较需要可核对的报告口径。') } }] } });
-  await pending;
+  release({ status: 200, data: { choices: [{ message: { content: '财务比较需要可核对的完整年度报告口径。' } }] } });
+  const result = await pending;
+  assert.equal(result.explanationStatus, 'complete');
+  assert.equal(result.answer, '财务比较需要可核对的完整年度报告口径。');
 });
 
-for (const failure of ['unconfigured', 'http', 'network', 'timeout'] as const) test(`model ${failure} retains local known facts and deterministic restrictions`, async () => {
+for (const failure of ['unconfigured', 'http', 'network', 'timeout'] as const) test(`model ${failure} returns an explicit failure reason without leaking secrets or dumping checks`, async () => {
   const data = context(), before = await state();
   const result = await askDividendAdvisorWithActions(failure === 'unconfigured' ? null : config, data, '根据已有资料解释ROE为什么待核实', [], {
     timeoutMs: 5,
@@ -130,32 +131,18 @@ for (const failure of ['unconfigured', 'http', 'network', 'timeout'] as const) t
       return new Promise(() => {});
     },
   });
-  assert.match(result.answer, /ROE|净资产收益率/);
-  assert.match(result.answer, /缺|待核实|复核/); assert.match(result.answer, /手动暂停|受限/);
-  assert.doesNotMatch(result.answer, /PRIVATE_PROVIDER_ERROR|synthetic-key/);
+  assert.equal(result.explanationStatus, failure === 'unconfigured' ? 'unconfigured' : 'unavailable');
+  assert.match(result.answer, failure === 'unconfigured' ? /尚未配置 AI/ : failure === 'http' ? /HTTP 503/ : failure === 'timeout' ? /超时/ : /网络异常/);
+  assert.doesNotMatch(result.answer, /PRIVATE_PROVIDER_ERROR|synthetic-key|操作建议已按确定性检查限制|### 本地检查/);
   assert.deepEqual(result.actions, []); assert.equal(await state(), before);
-});
-
-for (const [label, payload] of [
-  ['raw action prose', '今天已到价，请立即新增买入100份。'],
-  ['action field', JSON.stringify({ version: 1, blocks: [{ type: 'concept', text: '自由现金流描述经营现金。' }], actions: [{ buyPaused: false }] })],
-  ['concept instruction', concept('自由现金流是赶紧冲，闭眼拿。')],
-  ['fabricated evidence', envelope([{ type: 'evidence', factIds: ['stock:601398:invented'], text: '原资料可以用于财务比较。' }])],
-  ['invented factual number', concept('模拟银行的ROE为15%，已经达到门槛。')],
-  ['invented source', concept('根据https://invented.example/report，财务已经通过。')],
-] as const) test(`explanation protocol rejects ${label} while retaining local checks`, async () => {
-  const answer = await readOnlyAsk('根据已有资料解释ROE为什么待核实', payload);
-  assert.doesNotMatch(answer.answer, /立即新增买入100份|赶紧冲|闭眼拿|ROE为15%|invented\.example|已经达到门槛/);
-  assert.match(answer.answer, /ROE|净资产收益率/);
-  assert.match(answer.answer, /手动暂停|受限/);
 });
 
 test('explaining a pause is not a request to pause or regenerate the plan', async () => {
   const data = context(); data.stockPlan.stocks[0].buyPaused = false;
-  const answer = await readOnlyAsk('解释模拟银行为什么暂停现有计划加仓', concept('资料不足不代表经营已经恶化。'), [], data);
+  const answer = await readOnlyAsk('解释模拟银行为什么暂停现有计划加仓', '资料不足本身不会自动暂停网格，手动暂停需要用户自己确认。', [], data);
   assert.deepEqual(answer.actions, []);
   assert.equal(data.stockPlan.stocks[0].buyPaused, false);
-  const definition = await readOnlyAsk('解释网格价格为什么这样计算', concept('价格纪律需要区分假设与事实。'));
+  const definition = await readOnlyAsk('解释网格价格为什么这样计算', '价格由税后已实施分红除以固定股息率计算。');
   assert.deepEqual(definition.actions, []);
 });
 
@@ -175,33 +162,18 @@ test('a partial or invalid teaching input stays missing instead of inventing ano
   assert.match(invalid.answer, /未生成结果/); assert.deepEqual(invalid.actions, []);
 });
 
-for (const text of ['所需财务资料齐备，规则已经符合，仓位可继续扩张。', '材料均已到位，条件完全具备。', '证据充分，账户能够增加敞口。']) {
-  test(`a real fact ID cannot legitimise contradictory readiness prose: ${text}`, async () => {
-    const answer = await readOnlyAsk('根据已有资料解释ROE为什么待核实', envelope([{ type: 'evidence', factIds: ['stock:601398:check:roe'], text }]));
-    assert.ok(!answer.answer.includes(text)); assert.equal(answer.explanationStatus, 'rejected');
-    assert.match(answer.answer, /缺少|待核实/); assert.match(answer.answer, /手动暂停/);
-  });
-}
-
-test('an evidence follow-up retains the evidence constraint as well as the conversational topic', async () => {
-  const history: DividendAdvisorMessage[] = [{ role: 'user', content: '根据已有资料解释ROE为什么待核实' }, { role: 'assistant', content: '缺少可核对的年度口径，不能直接比较。' }];
-  const unsafe = envelope([{ type: 'concept', text: '材料均已到位，条件完全具备。' }, { type: 'evidence', factIds: ['stock:601398:check:roe'], text: '缺少完整年度口径，不能直接比较。' }]);
-  const answer = await readOnlyAsk('换个简单说法', unsafe, history);
-  assert.equal(answer.explanationStatus, 'rejected'); assert.doesNotMatch(answer.answer, /材料均已到位/);
-});
-
 test('repeated short follow-ups retain the substantive topic beyond the provider history window', async () => {
   const history: DividendAdvisorMessage[] = [{ role: 'user', content: '根据已有资料解释ROE为什么待核实' }, { role: 'assistant', content: '缺少可核对的年度口径，不能直接比较。' }];
   for (let i = 0; i < 6; i++) history.push({ role: 'user', content: '换个简单说法' }, { role: 'assistant', content: '缺少可核对的口径，不能直接比较。' });
-  const payload = envelope([{ type: 'evidence', factIds: ['stock:601398:check:roe'], text: '缺少完整年度口径，不能直接比较。' }]);
+  const reply = '简单来说，现在只有三季报累计数字，缺少完整年度口径，所以暂时不能直接和年化门槛对比。';
   let topicSent = false;
   const answer = await askDividendAdvisorWithActions(config, context(), '换个简单说法', history, { transport: async request => {
     topicSent = JSON.stringify(request.body).includes('根据已有资料解释ROE为什么待核实');
-    return transport(payload)(request);
+    return transport(reply)(request);
   } });
   assert.equal(topicSent, true); assert.equal(answer.explanationStatus, 'complete');
-  assert.match(answer.localAnswer, /年化口径|未提供已报告月数/);
+  assert.equal(answer.answer, reply);
   assert.deepEqual(answer.actions, []);
-  const more = await askDividendAdvisorWithActions(config, context(), '再详细一点', history, { transport: transport(payload) });
+  const more = await askDividendAdvisorWithActions(config, context(), '再详细一点', history, { transport: transport(reply) });
   assert.equal(more.explanationStatus, 'complete'); assert.deepEqual(more.actions, []);
 });

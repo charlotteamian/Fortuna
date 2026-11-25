@@ -74,8 +74,8 @@ test('potential price touches cannot report sell without holdings or buy without
   }
 });
 
-test('daily check stays local while custom AI questions accept only guarded explanations', async () => {
-  await saveDividendAdvisorConfig({ protocol: 'openai', baseUrl: 'https://api.example.com/v1', apiKey: 'synthetic', model: 'synthetic' });
+test('daily check stays local while custom AI questions call the configured provider with structured context and honest errors', async () => {
+  await saveDividendAdvisorConfig({ protocol: 'openai', baseUrl: 'https://api.example.com/v1', apiKey: 'synthetic-secret', model: 'synthetic' });
   try {
     const plans = [makePlan(), makePlan({ code: '000001', name: '其他股票' })];
     const base = { plans, selectedCode: plans[0].code, asOf };
@@ -87,26 +87,44 @@ test('daily check stays local while custom AI questions accept only guarded expl
     assert.equal(sent, false);
     assert.match(local.localMarkdown, /美的集团/);
 
-    for (const content of ['| 股票 | 现价 |\n|---|---|\n|其他股票|¥888|',
-      JSON.stringify({ version: 1, blocks: [{ type: 'concept', text: '建议买入一百股。' }] })]) {
-      const result = await generateClassicDividendAdvice({ ...base, question: '解释一下收益率', transport: async request => {
-        const payload = JSON.stringify(request.body);
-        assert.match(payload, /美的集团/);
-        assert.doesNotMatch(payload, /其他股票/);
-        return { status: 200, data: { choices: [{ message: { content } }] } };
-      } });
-      assert.equal(result.explanationStatus, 'rejected');
-      assert.equal(result.modelMarkdown, undefined);
-      assert.equal(result.localMarkdown, local.localMarkdown);
-    }
-
-    const text = '股息率表示每股分红相对于股价的比例。';
-    const accepted = await generateClassicDividendAdvice({ ...base, question: '解释一下收益率', transport: async () => ({
-      status: 200, data: { choices: [{ message: { content: JSON.stringify({ version: 1, blocks: [{ type: 'concept', text }] }) } }] },
-    }) });
-    assert.equal(accepted.modelMarkdown, text);
+    const markdownReply = '### 美的集团解读\n\n当前报价 ¥88.88 距买1（¥78.18）还有 12.04% 空间，暂无触发，耐心等待即可。';
+    let requestBody = '';
+    const accepted = await generateClassicDividendAdvice({ ...base, question: '美的集团现在需要操作吗？', transport: async request => {
+      requestBody = JSON.stringify(request.body);
+      return { status: 200, data: { choices: [{ message: { content: markdownReply } }] } };
+    } });
+    assert.match(requestBody, /美的集团/);
+    assert.doesNotMatch(requestBody, /其他股票/);
+    assert.equal(accepted.explanationStatus, 'complete');
+    assert.equal(accepted.modelMarkdown, markdownReply);
     assert.equal(accepted.localMarkdown, local.localMarkdown);
+
+    // Provider HTTP failure surfaces explicit failure details without leaking API key.
+    const httpFailed = await generateClassicDividendAdvice({ ...base, question: '解释一下收益率', transport: async () => ({
+      status: 401, data: JSON.stringify({ error: { code: 'invalid_api_key', message: 'Bad key synthetic-secret' } }),
+    }) });
+    assert.equal(httpFailed.explanationStatus, 'unavailable');
+    assert.equal(httpFailed.errorCode, 'AUTH');
+    assert.equal(httpFailed.httpStatus, 401);
+    assert.equal(httpFailed.modelMarkdown, undefined);
+    assert.match(httpFailed.errorMessage ?? '', /HTTP 401|认证失败/);
+    assert.doesNotMatch(httpFailed.errorMessage ?? '', /synthetic-secret/);
+
+    // Network exception surfaces clear network failure.
+    const netFailed = await generateClassicDividendAdvice({ ...base, question: '今天做什么？', transport: async () => {
+      throw new Error('Failed to fetch');
+    } });
+    assert.equal(netFailed.explanationStatus, 'unavailable');
+    assert.equal(netFailed.errorCode, 'NETWORK');
+    assert.match(netFailed.errorMessage ?? '', /网络异常|无法连接/);
   } finally {
     await clearDividendAdvisorConfig();
   }
+
+  // Unconfigured AI reports explicit setup message.
+  const unconfigured = await generateClassicDividendAdvice({ plans: [makePlan()], asOf, question: '今天做什么？' });
+  assert.equal(unconfigured.configured, false);
+  assert.equal(unconfigured.explanationStatus, 'unconfigured');
+  assert.equal(unconfigured.errorCode, 'CONFIG');
+  assert.match(unconfigured.errorMessage ?? '', /尚未配置 AI/);
 });
