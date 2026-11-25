@@ -3,6 +3,7 @@ import { loadDividendFundPositions } from '../services/dividendAdvisorContextSer
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
+import { useAppContext } from '../app-context';
 import {
   dateInChina,
   mainlandCode,
@@ -45,6 +46,11 @@ import DividendAdvisor from '../components/DividendAdvisor';
 import { useDividendQuotes } from '../hooks/useDividendQuotes';
 import { loadDividendDailyAdvicePlanKey } from '../services/dividendDailyAdviceScopeService';
 import { loadDividendGridBases, type DividendGridBasisResult } from '../services/dividendGridBasisService';
+import {
+  autoReviewPendingDividendStocks,
+  type DividendAutoReviewProgress,
+  type DividendAutoReviewStockIssue,
+} from '../services/dividendAutoReviewService';
 import type { DividendDailyItem } from '../lib/dividendDailyCheck';
 import { dividendBackgroundRefreshPaused } from '../services/dividendRequestControl';
 
@@ -60,9 +66,17 @@ import './DividendPage.css';
 
 type Dialog = 'budget' | 'stock' | 'advice' | null;
 
-export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () => void }) {
+export default function DividendPage({
+  onOpenFundPlan,
+  onBack,
+  sharedQuotaMinor,
+}: {
+  onOpenFundPlan?: () => void;
+  onBack?: () => void;
+  sharedQuotaMinor?: number;
+}) {
   const { t, i18n } = useTranslation();
-  const [amountVisible, setAmountVisible] = useState(true);
+  const { amountVisible, setAmountVisible } = useAppContext();
   const [data, setData] = useState<Workbench | null>(null);
   const [dailyPlanKey, setDailyPlanKey] = useState('');
   const [taxBps, setTaxBps] = useState<ClassicTaxRateBps>(1000);
@@ -88,6 +102,10 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
   const [error, setError] = useState('');
   const [weightsRepaired, setWeightsRepaired] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [autoReviewProgress, setAutoReviewProgress] = useState<DividendAutoReviewProgress | null>(null);
+  const [autoReviewFailed, setAutoReviewFailed] = useState<DividendAutoReviewStockIssue[]>([]);
+  const autoReviewAbortRef = useRef<AbortController | null>(null);
+  const lastAutoReviewKeyRef = useRef('');
 
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
@@ -142,6 +160,7 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
     return () => {
       alive.current = false;
       aiAbortRef.current?.abort();
+      autoReviewAbortRef.current?.abort();
       window.removeEventListener('focus', onFocus);
     };
   }, [load, t]);
@@ -154,41 +173,67 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
     ? [...data.stocks.map(stock => stock.code)].sort().join(',')
     : '';
   const quotes = useDividendQuotes(quoteTargets, load, busy);
-  const automaticDisclosureDay = useRef('');
+
+  const runAutoReview = useCallback((options: { codes?: string[]; force?: boolean } = {}) => {
+    if (busy.current || (!options.force && dividendBackgroundRefreshPaused())) return;
+    autoReviewAbortRef.current?.abort();
+    const controller = new AbortController();
+    autoReviewAbortRef.current = controller;
+    busy.current = true;
+    setAutoReviewProgress({ phase: 'detecting', done: 0, total: 0 });
+    if (options.force) {
+      setError('');
+      setMessage('');
+    }
+    void autoReviewPendingDividendStocks({
+      codes: options.codes,
+      force: options.force,
+      signal: controller.signal,
+      onProgress: next => {
+        if (alive.current && !controller.signal.aborted) setAutoReviewProgress(next);
+      },
+    })
+      .then(async result => {
+        if (!alive.current || controller.signal.aborted || result.status === 'aborted') return;
+        setAutoReviewFailed(current => {
+          if (!options.codes?.length) return result.failed;
+          const scope = new Set(options.codes);
+          return [
+            ...current.filter(item => !scope.has(item.code)),
+            ...result.failed,
+          ];
+        });
+        if (result.refreshedCodes.length > 0 || result.resolvedCodes.length > 0) {
+          await load();
+        }
+      })
+      .catch(() => {
+        // Background auto-review leaves saved plans intact; explicit failures surface via result.failed.
+      })
+      .finally(() => {
+        if (autoReviewAbortRef.current === controller) {
+          autoReviewAbortRef.current = null;
+          busy.current = false;
+          if (alive.current) setAutoReviewProgress(null);
+        }
+      });
+  }, [load]);
 
   useEffect(() => {
     const day = dateInChina();
+    const key = `${day}|${quoteTargets}`;
     if (
-      !data ||
+      !quoteTargets ||
       window.location.hash === '#/dividend/advice' ||
-      automaticDisclosureDay.current === day ||
+      lastAutoReviewKeyRef.current === key ||
       busy.current ||
       quotes.refreshing ||
       dividendBackgroundRefreshPaused()
     )
       return;
-    automaticDisclosureDay.current = day;
-    const codes = [...data.stocks]
-      .sort((a, b) => Number(data.positions.has(b.code)) - Number(data.positions.has(a.code)) || b.weightBps - a.weightBps)
-      .filter(stock => stock.dividend?.schemaVersion !== 2 || stock.dividend.asOf !== day || stock.dividendFailedAt !== undefined)
-      .map(stock => stock.code);
-    if (!codes.length) return;
-    busy.current = true;
-    setProgress({ done: 0, total: codes.length });
-    void refreshDividendStocks(codes, (done, total) => {
-      if (alive.current) setProgress({ done, total });
-    })
-      .then(async () => {
-        await load();
-      })
-      .catch(() => {
-        if (alive.current) setError(t('div_load_error'));
-      })
-      .finally(() => {
-        busy.current = false;
-        if (alive.current) setProgress(null);
-      });
-  }, [data, quotes.refreshing, load, t]);
+    lastAutoReviewKeyRef.current = key;
+    runAutoReview();
+  }, [quoteTargets, quotes.refreshing, runAutoReview]);
 
   const money = (minor: number) => (amountVisible ? `${numeric(minor / 100)}` : '••••');
 
@@ -280,8 +325,11 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
     .filter(position => !data.stocks.some(stock => stock.code === position.code))
     .sort((a, b) => a.code.localeCompare(b.code));
   const adviceTarget = checkedPlans.find(({ plan }) => plan.code === adviceCode)?.plan;
-  const canRefresh = !progress && !quotes.refreshing;
+  const isRefreshing = Boolean(progress || quotes.refreshing || autoReviewProgress);
+  const canRefresh = !isRefreshing;
   const remainingMinor = Math.max(0, data.budgetMinor - stockBudgetMinor(data.budgetMinor, totalWeightBps));
+  const effectiveQuotaMinor = sharedQuotaMinor ?? (data.budgetConfigured ? data.budgetMinor : undefined);
+  const allocatedPercent = Math.min(100, Math.max(0, totalWeightBps / 100));
 
   const closePanel = () => {
     aiAbortRef.current?.abort();
@@ -321,6 +369,7 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
     setMessage('');
     setError('');
     setPanel('stock');
+    runAutoReview({ codes: [code] });
   };
 
   const startAdd = () => {
@@ -339,7 +388,10 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
   const refreshMarket = async (codes: string[]) => {
     if (!canRefresh) return;
     await quotes.refresh(true);
-    if (codes.length) await refresh(codes);
+    if (codes.length) {
+      await refresh(codes);
+      runAutoReview({ codes, force: true });
+    }
   };
 
   const askAiToday = async (targetCode?: string, question?: string) => {
@@ -401,18 +453,69 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
   return (
     <div className="dividend-page">
       <header className="div-wb-header">
-        <h1 className="page-title">{t('div_title')}</h1>
-        <button type="button" className="btn btn-secondary" onClick={() => setAmountVisible(value => !value)}>
-          {t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}
-        </button>
+        <div className="div-wb-nav-row" role="toolbar" aria-label={t('div_wb_nav_label')}>
+          {onBack ? (
+            <button type="button" className="btn btn-sm btn-secondary div-wb-back-btn" onClick={onBack}>
+              {t('plan_back_to_plan')}
+            </button>
+          ) : (
+            <span className="div-wb-nav-spacer" aria-hidden="true" />
+          )}
+          <div className="div-wb-header-actions">
+            <button
+              type="button"
+              className={`btn btn-sm btn-secondary div-wb-action-btn${isRefreshing ? ' is-busy' : ''}`}
+              disabled={!canRefresh || !quoteTargets}
+              aria-label={t('div_cs_toolbar_refresh_all')}
+              title={t('div_cs_toolbar_refresh_all')}
+              onClick={() => void refreshMarket(data.stocks.map(stock => stock.code))}
+            >
+              <svg className="div-wb-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <polyline points="21 3 21 9 15 9" />
+              </svg>
+              <span>
+                {progress
+                  ? t('div_refresh_progress', progress)
+                  : autoReviewProgress && autoReviewProgress.total > 0
+                    ? t('div_refresh_progress', { done: autoReviewProgress.done, total: autoReviewProgress.total })
+                    : t(quotes.refreshing || autoReviewProgress ? 'div_quotes_updating' : 'div_wb_refresh_short')}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary div-wb-action-btn div-wb-eye-btn"
+              aria-pressed={!amountVisible}
+              aria-label={t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}
+              title={t(amountVisible ? 'div_hide_amounts' : 'div_show_amounts')}
+              onClick={() => setAmountVisible(!amountVisible)}
+            >
+              {amountVisible ? (
+                <svg className="div-wb-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              ) : (
+                <svg className="div-wb-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              )}
+              <span className="div-wb-eye-label">{t(amountVisible ? 'div_wb_hide_short' : 'div_wb_show_short')}</span>
+            </button>
+          </div>
+        </div>
+        <div className="div-wb-title-row">
+          <h1 className="div-wb-title">{t('div_title')}</h1>
+          {effectiveQuotaMinor !== undefined && (
+            <span className="div-wb-quota-chip">
+              {t('plan_dividend_shared_quota', { amount: money(effectiveQuotaMinor) })}
+            </span>
+          )}
+        </div>
       </header>
 
-      <section className="div-focus-top-tools" aria-label={t('div_focus_data_tools')}>
-        <button type="button" className="btn btn-secondary" disabled={!canRefresh || !quoteTargets}
-          onClick={() => void refreshMarket(data.stocks.map(stock => stock.code))}>
-          {progress ? t('div_refresh_progress', progress) : t(quotes.refreshing ? 'div_quotes_updating' : 'div_cs_toolbar_refresh_all')}
-        </button>
-      </section>
       <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={false}
         onManageStock={code => { const stock = data.stocks.find(value => value.code === code); if (stock) { setIsNew(false); setEditor(stock); } }}
         selectionTools={<div className="div-selection-toolbar">
@@ -432,19 +535,27 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
       </details>}
       {<>
         <section className="div-wb-overview" aria-label={t('div_new_overview')}>
-          <div className="div-wb-heading">
-            <div>
-              <span>{t('div_cs_summary_budget')}</span>
-              <strong>{data.budgetConfigured ? money(data.budgetMinor) : '—'}</strong>
+          <div className="div-wb-heading div-wb-overview-head">
+            <div className="div-wb-overview-hero">
+              <span className="div-wb-kicker">{t('div_cs_summary_budget')}</span>
+              <strong className="div-wb-hero-amount">{data.budgetConfigured ? money(data.budgetMinor) : '—'}</strong>
             </div>
-            <button type="button" className="btn btn-secondary" onClick={() => { setMessage(''); setError(''); setWeightsRepaired(false); setPanel('budget'); }}>{t('div_budget_manage')}</button>
+            <button type="button" className="btn btn-sm btn-secondary div-wb-nowrap" onClick={() => { setMessage(''); setError(''); setWeightsRepaired(false); setPanel('budget'); }}>{t('div_budget_manage')}</button>
           </div>
-          <p className={totalWeightBps > 10000 ? 'div-warning' : 'div-muted'}>
+          {data.budgetConfigured && (
+            <div className="div-wb-alloc-track" aria-hidden="true">
+              <div
+                className={`div-wb-alloc-fill${totalWeightBps > 10000 ? ' is-over' : ''}`}
+                style={{ width: `${allocatedPercent}%` }}
+              />
+            </div>
+          )}
+          <p className={totalWeightBps > 10000 ? 'div-warning div-wb-alloc-note' : 'div-muted div-wb-alloc-note'}>
             {totalWeightBps > 10000
               ? t('div_new_weights_over', { percent: numeric(totalWeightBps / 100) })
               : t('div_allocated', { percent: numeric(totalWeightBps / 100), remaining: money(remainingMinor) })}
           </p>
-          {weightsRepaired && <p className="div-muted" role="status">{t('div_new_weights_repaired')}</p>}
+          {weightsRepaired && <p className="div-muted div-wb-alloc-note" role="status">{t('div_new_weights_repaired')}</p>}
           <dl className="div-wb-overview-meta">
             <div><dt>{t('div_cs_summary_held')}</dt><dd>{heldCount} / {classicPlans.length}</dd></div>
             <div><dt>{t('div_new_gross_annual')}</dt><dd>{money(annualDividendMinor)}</dd></div>
@@ -453,23 +564,56 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
 
         <section className="div-wb-daily" aria-labelledby="div-wb-daily-title">
           <div className="div-wb-heading">
-            <div>
+            <div className="div-wb-daily-copy">
               <h2 id="div-wb-daily-title">{t('div_new_daily')}</h2>
-              <p>{t('div_cs_summary_triggers_val', { buy: buyCount, sell: sellCount })}
-                {unverifiedCount > 0 && <small> · {t('div_new_unverified_count', { count: unverifiedCount })}</small>}
+              <p className="div-wb-daily-stats">
+                <span className={buyCount > 0 || sellCount > 0 ? 'div-wb-daily-triggers is-active' : 'div-wb-daily-triggers'}>
+                  {t('div_cs_summary_triggers_val', { buy: buyCount, sell: sellCount })}
+                </span>
+                {unverifiedCount > 0 && (
+                  <span className="div-wb-daily-badge">
+                    {t('div_new_unverified_count', { count: unverifiedCount })}
+                  </span>
+                )}
               </p>
             </div>
-            <button type="button" className="btn btn-secondary" onClick={() => openAdvice()}>{t('div_new_daily_open')}</button>
+            <button type="button" className="btn btn-sm btn-secondary div-wb-nowrap" onClick={() => openAdvice()}>{t('div_new_daily_open')}</button>
           </div>
-          {(progress || quotes.refreshing || quotes.failed) && <p className="div-muted" role="status">
-            {progress ? t('div_refresh_progress', progress) : t(quotes.refreshing ? 'div_quotes_updating' : 'div_new_quote_failed')}
+          {(progress || autoReviewProgress || quotes.refreshing || quotes.failed) && <p className="div-muted div-wb-status-bar" role="status">
+            {progress
+              ? t('div_refresh_progress', progress)
+              : autoReviewProgress
+                ? (autoReviewProgress.total > 0
+                    ? t('div_auto_review_running', { done: autoReviewProgress.done, total: autoReviewProgress.total })
+                    : t('div_auto_review_detecting'))
+                : t(quotes.refreshing ? 'div_quotes_updating' : 'div_new_quote_failed')}
           </p>}
+          {!isRefreshing && autoReviewFailed.length > 0 && (
+            <div className="div-wb-review-alert" role="status">
+              <span>
+                {t('div_auto_review_failed_summary', {
+                  count: autoReviewFailed.length,
+                  stocks: autoReviewFailed.map(item => item.name || item.code).join('、'),
+                })}
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary div-wb-nowrap"
+                onClick={() => runAutoReview({ codes: autoReviewFailed.map(item => item.code), force: true })}
+              >
+                {t('div_auto_review_retry')}
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="div-wb-stocks" aria-labelledby="div-wb-stocks-title">
-          <div className="div-wb-heading">
-            <h2 id="div-wb-stocks-title">{t('div_new_stocks')}</h2>
-            <button type="button" className="btn btn-primary" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
+          <div className="div-wb-heading div-wb-stocks-head">
+            <div className="div-wb-stocks-title-wrap">
+              <h2 id="div-wb-stocks-title">{t('div_new_stocks')}</h2>
+              <span className="div-wb-count-pill">{visiblePlans.length}</span>
+            </div>
+            <button type="button" className="btn btn-sm btn-primary div-wb-nowrap" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
           </div>
           <div className="div-wb-list-tools">
             <input type="search" aria-label={t('div_search')} placeholder={t('div_search')} value={search}
@@ -487,21 +631,32 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
           <ul className="div-wb-stock-list">
             {visiblePlans.map(({ plan, facts }) => (
               <li key={plan.code}>
-                <button type="button" className="div-wb-stock-row" onClick={() => openStock(plan.code)}>
-                  <span className="div-wb-stock-name">
-                    <strong>{plan.name} ({plan.code})</strong>
-                    <small>{t(`div_group_${plan.group}`)} · {numeric(plan.weightBps / 100)}%{plan.budgetMinor !== undefined ? ` · ${money(plan.budgetMinor)}` : ''}</small>
-                  </span>
-                  <span className="div-wb-stock-data">
-                    <strong>{plan.quotePriceMinor === undefined ? '—' : (plan.quotePriceMinor / 100).toFixed(2)}</strong>
-                    <small className={`is-${facts.status}`}>{t(`div_new_status_${facts.status}`)}</small>
+                <button type="button" className="div-wb-stock-card-row" onClick={() => openStock(plan.code)}>
+                  <span className="div-wb-stock-main">
+                    <span className="div-wb-stock-top">
+                      <span className="div-wb-stock-title-wrap">
+                        <strong className="div-wb-stock-title">{plan.name}</strong>
+                        <span className="div-wb-stock-code">{plan.code}</span>
+                      </span>
+                      <strong className="div-wb-stock-price">
+                        {plan.quotePriceMinor === undefined ? '—' : (plan.quotePriceMinor / 100).toFixed(2)}
+                      </strong>
+                    </span>
+                    <span className="div-wb-stock-bottom">
+                      <small className="div-wb-stock-meta">
+                        {t(`div_group_${plan.group}`)} · {numeric(plan.weightBps / 100)}%{plan.budgetMinor !== undefined ? ` · ${money(plan.budgetMinor)}` : ''}
+                      </small>
+                      <small className={`div-wb-status-pill is-${facts.status}`}>
+                        {t(`div_new_status_${facts.status}`)}
+                      </small>
+                    </span>
                   </span>
                   <span className="div-wb-chevron" aria-hidden="true">›</span>
                 </button>
               </li>
             ))}
           </ul>
-          {!visiblePlans.length && <p className="div-muted">{t('div_read_no_match')}</p>}
+          {!visiblePlans.length && <p className="div-muted div-wb-empty">{t('div_read_no_match')}</p>}
 
         </section>
       </>}
@@ -579,8 +734,12 @@ export default function DividendPage({ onOpenFundPlan }: { onOpenFundPlan?: () =
             onClick={() => void refreshMarket([selectedStock.code])}>{t('div_cs_refresh_single_btn')}</button>
           <button type="button" className="btn btn-secondary" onClick={() => openAdvice(selected.plan.code)}>{t('div_new_daily_open')}</button>
         </div>
-        {(progress || quotes.refreshing) && <p className="div-muted" role="status">
-          {progress ? t('div_refresh_progress', progress) : t('div_quotes_updating')}
+        {(progress || autoReviewProgress || quotes.refreshing) && <p className="div-muted" role="status">
+          {progress
+            ? t('div_refresh_progress', progress)
+            : autoReviewProgress
+              ? t('div_auto_review_stock_running')
+              : t('div_quotes_updating')}
         </p>}
       </WorkbenchDialog>}
 

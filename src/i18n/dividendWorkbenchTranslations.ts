@@ -54,6 +54,10 @@ export const dividendWorkbenchZh = {
   div_new_weights_repaired: '已将旧组合的超额权重按比例调整至 100%。',
   div_new_allocate_linked: '给新增持仓分配组合预算',
   div_new_weight_default: '有预算时默认填入建议权重。填 0 可仅作观察。',
+  div_wb_refresh_short: '刷新行情',
+  div_wb_hide_short: '隐藏',
+  div_wb_show_short: '显示',
+  div_wb_nav_label: '红利工作台导航与操作',
 };
 
 export const dividendWorkbenchEn = {
@@ -112,4 +116,8 @@ export const dividendWorkbenchEn = {
   div_new_weights_repaired: 'The existing portfolio was overallocated. Its weights now total 100%.',
   div_new_allocate_linked: 'Allocate portfolio budget to added holdings',
   div_new_weight_default: 'A suggested weight is prefilled when a budget exists. Enter 0 to watch only.',
+  div_wb_refresh_short: 'Refresh',
+  div_wb_hide_short: 'Hide',
+  div_wb_show_short: 'Show',
+  div_wb_nav_label: 'Dividend workbench navigation and actions',
 };

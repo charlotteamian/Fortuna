@@ -1,9 +1,115 @@
+.plan-page {
+  container: plan-page / inline-size;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Compact, balanced Plan Page Header */
+.plan-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.plan-page-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.plan-page-title-group {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.plan-page-title {
+  margin: 0;
+  font-size: var(--fs-4xl);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  text-wrap: balance;
+}
+.plan-page-subtitle {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  text-wrap: pretty;
+}
+.plan-eye-btn {
+  flex-shrink: 0;
+  min-width: var(--btn-h-sm);
+  min-height: var(--btn-h-sm);
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.plan-header-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.plan-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--btn-h-sm);
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.plan-toolbar-btn-accent {
+  background: var(--asset-dim);
+  color: var(--asset-color);
+  border-color: color-mix(in srgb, var(--asset-color) 32%, var(--border));
+}
+.plan-toolbar-btn-accent:hover {
+  border-color: var(--asset-color);
+  background: var(--asset-dim);
+}
+.plan-toolbar-icon {
+  display: block;
+  flex-shrink: 0;
+}
+.plan-toolbar-btn.is-busy .plan-toolbar-icon {
+  animation: plan-spin 1s linear infinite;
+}
+@keyframes plan-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-toolbar-btn.is-busy .plan-toolbar-icon { animation: none; }
+}
+@container plan-page (inline-size >= 560px) {
+  .plan-page-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .plan-page-header-top {
+    flex: 1 1 auto;
+    align-items: center;
+  }
+  .plan-header-actions {
+    display: flex;
+    flex-shrink: 0;
+  }
+}
+
 .plan-overview, .plan-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: var(--sp-4);
-  margin-bottom: var(--sp-3);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.plan-overview-heading {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .plan-section-heading, .plan-card-heading, .plan-budget-footer, .plan-progress-caption {
@@ -14,7 +120,7 @@
 }
 
 .plan-label, .plan-help, .plan-share { color: var(--text-secondary); font-size: var(--fs-sm); line-height: var(--lh-base); }
-.plan-help { margin-top: var(--sp-1); }
+.plan-help { margin-top: var(--sp-1); text-wrap: pretty; }
 
 .plan-text-button {
   background: none;
@@ -24,10 +130,11 @@
   font: inherit;
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
-  padding: 0 var(--sp-1);
+  padding: 0 6px;
   min-height: var(--btn-h-sm);
   cursor: pointer;
   flex-shrink: 0;
+  white-space: nowrap;
   transition: background-color var(--dur) ease;
 }
 .plan-text-button:hover { background: var(--asset-dim); }
@@ -77,16 +184,52 @@
 
 /* Allocation distribution visual bars */
 .plan-distribution {
-  margin-top: var(--sp-4);
-  padding-top: var(--sp-4);
-  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
 }
 .plan-distribution summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   cursor: pointer;
   min-height: var(--btn-h-sm);
-  padding: var(--sp-1) 0;
+  padding: 2px 0;
+  user-select: none;
+}
+.plan-distribution summary::-webkit-details-marker {
+  display: none;
+}
+.plan-dist-summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.plan-dist-summary-label::before {
+  content: "▾";
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform var(--dur) ease;
+  color: var(--asset-color);
+  flex-shrink: 0;
+}
+.plan-distribution[open] > summary .plan-dist-summary-label::before {
+  transform: rotate(0deg);
+}
+.plan-dist-status {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .plan-dist-row {
   display: flex;
@@ -133,19 +276,25 @@
 }
 
 .plan-budget-footer {
-  border-top: 1px solid var(--border);
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-2);
-  font-size: var(--fs-sm);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 8px;
+  padding-top: 6px;
+  font-size: var(--fs-xs);
   flex-wrap: wrap;
   color: var(--text-secondary);
 }
 
 .plan-list-heading {
-  margin: var(--sp-4) 0 var(--sp-2);
+  margin: 12px 0 8px;
 }
 .plan-list-heading h2 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  text-wrap: balance;
+}
+.plan-add-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Plan Card */
@@ -429,21 +578,22 @@
    ============================================================ */
 
 .plan-card {
+  container: plan-card / inline-size;
   border-left: 3px solid var(--plan-color, var(--asset-color));
-  padding: var(--sp-3);
+  padding: 12px;
 }
 
 .plan-card-header-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: 8px;
 }
 
 .plan-card-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
@@ -451,6 +601,7 @@
   font-weight: var(--fw-bold);
   line-height: var(--lh-tight);
   color: var(--text-primary);
+  text-wrap: balance;
 }
 
 .plan-card-title-text {
@@ -459,24 +610,34 @@
   white-space: nowrap;
 }
 
+.plan-card-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .plan-icon-btn {
-  min-width: 28px;
-  min-height: 28px;
+  min-width: var(--btn-h-sm);
+  min-height: var(--btn-h-sm);
   padding: 0 6px;
   font-size: var(--fs-xs);
+  white-space: nowrap;
 }
 
 .plan-edit-btn {
-  min-height: 28px;
-  padding: 0 8px;
+  min-height: var(--btn-h-sm);
+  padding: 0 10px;
   font-size: var(--fs-xs);
+  white-space: nowrap;
 }
 
 .plan-card-sub-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-top: 6px;
 }
 
@@ -583,33 +744,31 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  flex-wrap: wrap;
+  gap: 6px 10px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
   border: 1px solid var(--border-subtle);
-  margin-top: var(--sp-2);
+  margin-top: 6px;
 }
 
 .plan-reserve-info {
   min-width: 0;
+  flex: 1 1 160px;
   font-variant-numeric: tabular-nums;
 }
 
 .plan-reserve-main {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 
 .plan-reserve-sub {
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
   margin-top: 2px;
 }
 
@@ -639,12 +798,16 @@
 
 /* Free-form dashed note box */
 .plan-note-box {
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-radius: 6px;
   background: var(--bg-subtle);
   border: 1px dashed var(--border);
   font-size: var(--fs-xs);
   margin-bottom: 6px;
+}
+
+.plan-note-box-empty {
+  padding: 2px 6px 2px 10px;
 }
 
 .plan-note-box-head {
@@ -654,6 +817,15 @@
   gap: var(--sp-2);
   margin-bottom: 2px;
   color: var(--text-muted);
+}
+
+.plan-note-box-empty .plan-note-box-head {
+  margin-bottom: 0;
+}
+
+.plan-note-edit-btn {
+  font-size: var(--fs-xs);
+  padding: 0 6px;
 }
 
 /* Full-visibility compact position ladder table */
@@ -767,9 +939,10 @@
 /* Dividend Workbench Entry Button */
 .plan-div-enter-btn {
   width: 100%;
-  padding: 7px 10px;
+  min-height: var(--btn-h-md);
+  padding: 0 12px;
   border-radius: var(--radius-sm);
-  margin-bottom: 6px;
+  margin: 6px 0 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -778,8 +951,12 @@
   font-weight: var(--fw-semibold);
   background: var(--asset-dim);
   color: var(--asset-color);
-  border: 1px solid var(--asset-color);
+  border: 1px solid color-mix(in srgb, var(--asset-color) 42%, var(--border));
   cursor: pointer;
+  transition: border-color var(--dur) ease, background-color var(--dur) ease;
+}
+.plan-div-enter-btn:hover {
+  border-color: var(--asset-color);
 }
 
 /* Stock / Fund Sub-Card inside a Sector */
@@ -843,10 +1020,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--sp-2);
-  padding-bottom: var(--sp-3);
-  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  margin-bottom: var(--sp-2);
   border-bottom: 1px solid var(--border);
+}
+.plan-subpage-bar > .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ============================================================
@@ -854,17 +1036,17 @@
    ============================================================ */
 
 .plan-subcats {
-  margin: 8px 0 6px;
+  margin: 6px 0 4px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .plan-subcat {
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .plan-subcat-head {
@@ -872,7 +1054,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-2);
-  padding: 8px 10px;
+  padding: 4px 8px 4px 10px;
+  min-height: var(--btn-h-md);
   background: var(--bg-glass);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -899,8 +1082,8 @@
 }
 
 .plan-subcat-quota-btn {
-  min-height: auto;
-  padding: 0 2px;
+  min-height: var(--btn-h-sm);
+  padding: 0 4px;
   color: var(--text-muted);
   font-weight: var(--fw-medium);
   font-size: var(--fs-xs);
@@ -926,6 +1109,10 @@
 }
 
 .plan-scm { min-width: 0; }
+.plan-scm + .plan-scm {
+  border-inline-start: 1px solid var(--border-subtle);
+  padding-inline-start: 8px;
+}
 .plan-scm b {
   display: block;
   font-size: var(--fs-md);
@@ -960,7 +1147,8 @@
 
 .plan-subcat-add {
   width: 100%;
-  padding: 7px 10px;
+  min-height: var(--btn-h-sm);
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   border: 1px dashed var(--border);
   background: none;
@@ -1115,8 +1303,8 @@
 }
 
 .plan-inline-edit-trigger {
-  min-height: auto;
-  padding: 1px 4px;
+  min-height: var(--btn-h-sm);
+  padding: 0 6px;
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
@@ -1128,6 +1316,8 @@
 .plan-pill-btn {
   font-family: inherit;
   cursor: pointer;
+  min-height: var(--btn-h-sm);
+  padding: 0 10px;
 }
 
 .plan-ladder-table-edit th,

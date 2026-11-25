@@ -738,41 +738,32 @@ export default function PlanPage() {
     const dividendPlanItem = status.items.find(it => it.planMode === 'dividend');
     const stockSleeveTarget = dividendPlanItem?.targets.find(tg => tg.role === 'dividend_stock');
     const fundSleeveTarget = dividendPlanItem?.targets.find(tg => tg.role === 'dividend_fund');
-    const sharedQuota = stockSleeveTarget
-      ? stockSleeveTarget.targetAmount
-      : dividendPlanItem
-        ? (fundSleeveTarget ? Math.max(0, dividendPlanItem.targetValue - fundSleeveTarget.targetAmount) : dividendPlanItem.targetValue)
-        : settings.dividendBudgetMinor !== undefined
-          ? settings.dividendBudgetMinor / 100
-          : undefined;
+    const sharedQuota = status.base > 0 && dividendPlanItem
+      ? (stockSleeveTarget
+          ? stockSleeveTarget.targetAmount
+          : fundSleeveTarget
+            ? Math.max(0, dividendPlanItem.targetValue - fundSleeveTarget.targetAmount)
+            : dividendPlanItem.targetValue)
+      : settings.dividendBudgetMinor !== undefined
+        ? settings.dividendBudgetMinor / 100
+        : undefined;
     return (
-      <>
-        <div className="plan-subpage-bar">
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary"
-            onClick={() => {
-              if (window.location.hash === DIVIDEND_ADVISOR_READER_HASH) {
-                window.history.replaceState(null, '', window.location.pathname + window.location.search);
-              }
-              setReturnFocus(`card:${dividendPlanItem?.id ?? ''}`);
-              setSubView('plan');
-              void load(false);
-            }}
-          >
-            {t('plan_back_to_plan')}
-          </button>
-          <strong style={{ fontSize: 'var(--fs-md)', whiteSpace: 'nowrap' }}>{t('plan_dividend_workbench_title')}</strong>
-          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-            {sharedQuota !== undefined ? t('plan_dividend_shared_quota', { amount: masked(fmt(sharedQuota)) }) : ''}
-          </span>
-        </div>
-        <DividendPage onOpenFundPlan={() => {
+      <DividendPage
+        onBack={() => {
+          if (window.location.hash === DIVIDEND_ADVISOR_READER_HASH) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+          setReturnFocus(`card:${dividendPlanItem?.id ?? ''}`);
+          setSubView('plan');
+          void load(false);
+        }}
+        sharedQuotaMinor={sharedQuota !== undefined ? Math.round(sharedQuota * 100) : undefined}
+        onOpenFundPlan={() => {
           setReturnFocus('funds');
           setSubView('plan');
           void load(false);
-        }} />
-      </>
+        }}
+      />
     );
   }
 
@@ -1820,7 +1811,7 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             <span className="plan-dot" />
             <span className="plan-card-title-text">{item.name}</span>
           </h2>
-          <div className="plan-card-heading-actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className="plan-card-heading-actions">
             {status.items.length > 1 && (
               <>
                 <button
@@ -1953,13 +1944,12 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
         )}
 
         {/* Free-form Strategy Notes Box (retained across all modes) */}
-        <div className="plan-note-box">
+        <div className={`plan-note-box${notes.trim() ? '' : ' plan-note-box-empty'}`}>
           <div className="plan-note-box-head">
             <span>{t('plan_note_box_title')}</span>
             <button
               type="button"
-              className="plan-text-button"
-              style={{ minHeight: 'auto', padding: '0 4px', fontSize: 'var(--fs-xs)' }}
+              className="plan-text-button plan-note-edit-btn"
               aria-label={t('plan_edit_purchases_named', { name: item.name })}
               onClick={() => openPurchases(item)}
             >
@@ -2315,42 +2305,63 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
   };
 
   return (
-    <>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t('plan_title')}</h1>
-          <p className="page-subtitle">{t('plan_subtitle')}</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+    <div className="plan-page">
+      <header className="plan-page-header">
+        <div className="plan-page-header-top">
+          <div className="plan-page-title-group">
+            <h1 className="page-title plan-page-title">{t('plan_title')}</h1>
+            <p className="plan-page-subtitle">{t('plan_subtitle')}</p>
+          </div>
           <button
             type="button"
-            className="btn btn-sm btn-secondary"
+            className="btn btn-sm btn-secondary plan-eye-btn"
+            aria-pressed={!amountVisible}
+            aria-label={amountVisible ? t('hide_amount') : t('show_amount')}
+            title={amountVisible ? t('hide_amount') : t('show_amount')}
+            onClick={() => setAmountVisible(!amountVisible)}
+          >
+            {amountVisible ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            )}
+          </button>
+        </div>
+        <div className="plan-header-actions">
+          <button
+            type="button"
+            className={`btn btn-sm btn-secondary plan-toolbar-btn${refreshingQuotes ? ' is-busy' : ''}`}
             onClick={() => void handleRefreshQuotes()}
             disabled={refreshingQuotes}
           >
-            {t('plan_refresh_quotes')}
+            <svg className="plan-toolbar-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <polyline points="21 3 21 9 15 9" />
+            </svg>
+            <span>{t('plan_refresh_quotes_short')}</span>
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-secondary"
+            className="btn btn-sm btn-secondary plan-toolbar-btn plan-toolbar-btn-accent"
             onClick={openDividendWorkbench}
           >
-            {t('plan_open_dividend_workbench')}
-          </button>
-          <button
-            className="btn btn-sm btn-secondary"
-            onClick={() => setAmountVisible(!amountVisible)}
-            title={amountVisible ? t('hide_amount') : t('show_amount')}
-          >
-            {amountVisible ? '👁️' : '🔒'}
+            <span>{t('plan_open_dividend_short')}</span>
+            <span aria-hidden="true">›</span>
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Top Overview & Global Liquid Reserve Pool Reconciliation */}
       <section className="plan-overview">
         <div className="plan-section-heading">
-          <span className="plan-label" style={{ fontWeight: 600 }}>{t('plan_overview_heading')} · {primary}</span>
+          <span className="plan-label plan-overview-heading">{t('plan_overview_heading')} · {primary}</span>
           <button type="button" className="plan-text-button" onClick={openTarget}>{t('plan_change_budget')}</button>
         </div>
 
@@ -2387,10 +2398,18 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
           </span>
         </div>
 
-        {/* Allocation distribution visual bars */}
-        {status.items.length > 0 && (
+        {/* Allocation distribution visual bars + compact assignment status */}
+        {status.items.length > 0 ? (
           <details className="plan-distribution">
-            <summary>{t('plan_compare_allocation')}</summary>
+            <summary>
+              <span className="plan-dist-summary-label">{t('plan_compare_allocation')}</span>
+              <span className={status.targetPercentSum > 100.01 ? 'plan-error-text plan-dist-status' : 'plan-dist-status'}>
+                {sumOk ? t('plan_fully_assigned') : t(status.targetPercentSum > 100 ? 'plan_budget_over' : 'plan_budget_left', {
+                  percent: fmtPct(Math.abs(100 - status.targetPercentSum)),
+                  amount: masked(fmt(Math.abs(100 - status.targetPercentSum) / 100 * status.base)),
+                })}
+              </span>
+            </summary>
             <div className="plan-dist-row">
               <div className="plan-dist-header">
                 <span>{t('plan_target_allocation')}</span>
@@ -2449,23 +2468,23 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
               ))}
             </div>
           </details>
+        ) : (
+          <div className="plan-budget-footer">
+            <span>{t('plan_assigned', { percent: fmtPct(status.targetPercentSum) })}</span>
+            <span className={status.targetPercentSum > 100.01 ? 'plan-error-text' : ''}>
+              {sumOk ? t('plan_fully_assigned') : t(status.targetPercentSum > 100 ? 'plan_budget_over' : 'plan_budget_left', {
+                percent: fmtPct(Math.abs(100 - status.targetPercentSum)),
+                amount: masked(fmt(Math.abs(100 - status.targetPercentSum) / 100 * status.base)),
+              })}
+            </span>
+          </div>
         )}
-
-        <div className="plan-budget-footer">
-          <span>{t('plan_assigned', { percent: fmtPct(status.targetPercentSum) })}</span>
-          <span className={status.targetPercentSum > 100.01 ? 'plan-error-text' : ''}>
-            {sumOk ? t('plan_fully_assigned') : t(status.targetPercentSum > 100 ? 'plan_budget_over' : 'plan_budget_left', {
-              percent: fmtPct(Math.abs(100 - status.targetPercentSum)),
-              amount: masked(fmt(Math.abs(100 - status.targetPercentSum) / 100 * status.base)),
-            })}
-          </span>
-        </div>
       </section>
 
       {/* Categories section title + Add button */}
       <div className="plan-section-heading plan-list-heading">
         <h2>{t('plan_my_categories')}</h2>
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => openCreate()}>{t('add_plan_item')}</button>
+        <button type="button" className="btn btn-sm btn-primary plan-add-btn" onClick={() => openCreate()}>{t('add_plan_item')}</button>
       </div>
 
       {loadError && (
@@ -2561,7 +2580,7 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
                         const divCfg = buildPresetLadderConfig('dividend_yield');
                         setFormLadderKind('yield');
                         setFormLadderRows(toEditableRows(divCfg.rows));
-                        if (!formName.trim()) setFormName('红利价值板块');
+                        if (!formName.trim()) setFormName(t('plan_dividend_default_name'));
                       }
                     }}
                   >
@@ -3208,7 +3227,7 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
             role="dialog"
             aria-modal="true"
             aria-label={t('div_home_fund_plans')}
-            style={{ maxHeight: '85vh', overflowY: 'auto' }}
+            style={{ maxHeight: '85dvh', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
             <div className="modal-header">
@@ -3312,6 +3331,6 @@ const renderSubcatQuotaLabel = (item: PlanItemStatus, tg: PlanTargetStatus | und
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
