@@ -30,6 +30,56 @@ import DividendPricingUpdate from './DividendPricingUpdate';
 type Panel = 'chat' | 'research' | 'principles';
 type RemovalPreview = Awaited<ReturnType<typeof previewDividendRiskRemoval>>;
 const PRINCIPLE_KEYS = ['minYieldBps', 'minRoeBps', 'minRevenueGrowthBps', 'minProfitGrowthBps', 'maxDebtAssetBps', 'minCashProfitBps', 'minFcfCoverageBps', 'maxPayoutBps', 'minDividendYears'] as const;
+const PRINCIPLE_HINT_KEYS = new Set<typeof PRINCIPLE_KEYS[number]>([
+  'minYieldBps',
+  'minRevenueGrowthBps',
+  'minProfitGrowthBps',
+  'minFcfCoverageBps',
+]);
+const PRINCIPLE_PRESETS: ReadonlyArray<{ id: 'baseline' | 'balanced' | 'strict'; values: Record<typeof PRINCIPLE_KEYS[number], string> }> = [
+  {
+    id: 'baseline',
+    values: {
+      minYieldBps: '3',
+      minRoeBps: '6',
+      minRevenueGrowthBps: '-10',
+      minProfitGrowthBps: '-10',
+      maxDebtAssetBps: '70',
+      minCashProfitBps: '70',
+      minFcfCoverageBps: '100',
+      maxPayoutBps: '100',
+      minDividendYears: '3',
+    },
+  },
+  {
+    id: 'balanced',
+    values: {
+      minYieldBps: '3.5',
+      minRoeBps: '8',
+      minRevenueGrowthBps: '-5',
+      minProfitGrowthBps: '-5',
+      maxDebtAssetBps: '65',
+      minCashProfitBps: '80',
+      minFcfCoverageBps: '100',
+      maxPayoutBps: '90',
+      minDividendYears: '5',
+    },
+  },
+  {
+    id: 'strict',
+    values: {
+      minYieldBps: '4',
+      minRoeBps: '8',
+      minRevenueGrowthBps: '0',
+      minProfitGrowthBps: '0',
+      maxDebtAssetBps: '70',
+      minCashProfitBps: '80',
+      minFcfCoverageBps: '150',
+      maxPayoutBps: '100',
+      minDividendYears: '5',
+    },
+  },
+];
 function StockResearch({ stock, snapshot, pricingSnapshot, savedStock, check: loadedCheck, amountVisible, canAdd, busy, pricingOutdated, autoReviewing, failureReasons, collapsed, onToggle, onAdd, onDiscuss, onUpdated, onResearchUpdated, onManage, onRetry }: { onRetry: () => void; onManage?: () => void; stock: DividendStockResearch; snapshot: DividendResearchSnapshot; pricingSnapshot: DividendResearchSnapshot; savedStock?: DividendStock; check?: DividendStockCheckSummary; amountVisible: boolean; canAdd: boolean; busy: boolean; pricingOutdated: boolean; autoReviewing: boolean; failureReasons?: string[]; collapsed: boolean; onToggle: () => void; onAdd: () => void; onDiscuss: () => void; onUpdated: () => Promise<unknown>; onResearchUpdated: (snapshot: DividendResearchSnapshot) => Promise<void> }) {
   const { t } = useTranslation();
   const pricingElement = useRef<HTMLDivElement>(null), focusOnOpen = useRef(false);
@@ -49,7 +99,7 @@ function StockResearch({ stock, snapshot, pricingSnapshot, savedStock, check: lo
       {onManage && <button type="button" className="btn btn-secondary" disabled={busy} onClick={onManage}>{t('div_focus_manage')}</button>}
       {canAdd && <button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button>}
     </div>
-    <div id={`div-ai-stock-${stock.code}`} ref={pricingElement} tabIndex={-1} hidden={collapsed || !amountVisible}>
+    <div id={`div-ai-stock-${stock.code}`} ref={pricingElement} tabIndex={-1} hidden={collapsed}>
       {savedStock?.buyPaused && <DividendAdvisorResumeReview stock={stock} disabled={busy} onUpdated={onUpdated} onResearchUpdated={onResearchUpdated} />}
       {pricingOutdated && !autoReviewing && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
       {canAdd && <div className="div-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onAdd}>{t('div_ai_add_watch')}</button><span className="div-ai-muted">{t('div_check_join_to_save')}</span></div>}
@@ -59,7 +109,7 @@ function StockResearch({ stock, snapshot, pricingSnapshot, savedStock, check: lo
   </article>;
 }
 
-export default function DividendAdvisorWorkspace({ activePanel, amountVisible, onUpdated, onDiscuss, disabled = false, onManageStock, selectionTools }: { onManageStock?: (code: string) => void; selectionTools?: ReactNode; activePanel: Panel; amountVisible: boolean; onUpdated: () => Promise<unknown>; disabled?: boolean;
+export default function DividendAdvisorWorkspace({ activePanel, amountVisible, onUpdated, onDiscuss, disabled = false, onManageStock, onAddStock, selectionTools }: { onManageStock?: (code: string) => void; onAddStock?: () => void; selectionTools?: ReactNode; activePanel: Panel; amountVisible: boolean; onUpdated: () => Promise<unknown>; disabled?: boolean;
   onDiscuss: (stock: DividendStockResearch, snapshot: DividendResearchSnapshot) => void }) {
   const { t, i18n } = useTranslation();
   const [principles, setPrinciples] = useState<DividendSelectionPrinciples>(defaultDividendSelectionPrinciples);
@@ -283,13 +333,34 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
     [autoReviewResult],
   );
   const autoReviewFailed = autoReviewResult?.failed ?? [];
+  const principleDisplayValue = (key: typeof PRINCIPLE_KEYS[number]) =>
+    draft?.[key] ?? String(key === 'minDividendYears' ? principles[key] : (principles[key] ?? 15000) / 100);
+  const isPresetActive = (values: Record<typeof PRINCIPLE_KEYS[number], string>) =>
+    PRINCIPLE_KEYS.every(key => Number(principleDisplayValue(key)) === Number(values[key]));
 
   return <div className="div-ai-workspace-panels" hidden={activePanel === 'chat'}>
-    {activePanel === 'principles' && <section><h2 className="div-ai-panel-title">{t('div_ai_tab_principles')}</h2><p className="div-ai-muted">{t('div_ai_principles_intro')}</p>
-      <details className="div-method" open><summary>{t('div_v2_selection_rules')}</summary><p>{t('div_ai_principles_defaults')}</p><form className="div-ai-principles-form" onSubmit={event => { event.preventDefault(); savePrinciples(); }}>
+    {activePanel === 'principles' && <section><h2 className="div-ai-panel-title">{t('div_ai_tab_principles')}</h2>
+      <div className="div-ai-principles-notice" role="note">
+        <strong>{t('div_ai_principles_advisory_title')}</strong>
+        <p>{t('div_ai_principles_advisory_body')}</p>
+      </div>
+      <p className="div-ai-muted">{t('div_ai_principles_intro')}</p>
+      <details className="div-method" open><summary>{t('div_v2_selection_rules')}</summary><p>{t('div_ai_principles_defaults')}</p>
+        <div className="div-ai-principles-presets" role="group" aria-label={t('div_ai_principles_presets_label')}>
+          <span className="div-ai-principles-presets-label">{t('div_ai_principles_presets_label')}</span>
+          <div className="div-ai-principles-preset-buttons">
+            {PRINCIPLE_PRESETS.map(preset => <button type="button" key={preset.id}
+              className={`btn btn-secondary div-ai-preset-btn${isPresetActive(preset.values) ? ' is-selected' : ''}`}
+              aria-pressed={isPresetActive(preset.values)}
+              disabled={!ready || busy}
+              onClick={() => { setError(''); setNotice(''); setDraft({ ...preset.values }); }}>{t(`div_ai_preset_${preset.id}`)}</button>)}
+          </div>
+          <small className="div-ai-muted">{t('div_ai_principles_presets_hint')}</small>
+        </div>
+        <form className="div-ai-principles-form" onSubmit={event => { event.preventDefault(); savePrinciples(); }}>
         {PRINCIPLE_KEYS.map(key => <label key={key}><span>{t(`div_ai_rule_${key}`)}</span><input type="number" className="form-input" step={key === 'minDividendYears' ? '1' : '.01'}
           disabled={!ready || busy} value={draft?.[key] ?? (key === 'minDividendYears' ? principles[key] : (principles[key] ?? 15000) / 100)}
-          onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} /></label>)}
+          onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} />{PRINCIPLE_HINT_KEYS.has(key) && <small>{t(`div_ai_rule_hint_${key}`)}</small>}</label>)}
         <label className="div-ai-principles-notes"><span>{t('div_ai_principles_notes')}</span><textarea className="form-input" rows={4} maxLength={4000} disabled={!ready || busy}
           value={notesDraft ?? principles.notes ?? ''} onChange={event => setNotesDraft(event.target.value)} placeholder={t('div_ai_principles_notes_placeholder')} /><small>{t('div_ai_principles_notes_help')}</small></label>
         <button type="submit" className="btn btn-primary" disabled={!ready || busy || (!draft && notesDraft === null)}>{t('div_ai_principles_save')}</button>
@@ -299,13 +370,21 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
           await saveDividendPricingMethod(value); if (mounted.current) { setPricingMethod(value); setRemoval(null); setNotice(t('div_v2_pricing_saved')); }
         })} />
       </details>}</section>}
-    {activePanel === 'research' && <section><h2 className="div-ai-panel-title">{t('div_ai_tab_research')}</h2><p className="div-ai-muted">{t('div_focus_selection_intro')}</p><div className="div-selection-actions">{selectionTools}
-      <button type="button" className="btn btn-primary" disabled={!ready || busy} onClick={() => research('plan')}>{t('div_experience_repair_all')}</button></div>
-      <details className="div-ai-candidate-search"><summary>{t('div_ai_screen_candidates')}</summary><label htmlFor="div-ai-candidates">{t('div_ai_candidate_codes')}</label>
-        <textarea className="form-input" id="div-ai-candidates" value={codes} rows={2} maxLength={400} disabled={busy}
-          placeholder={t('div_ai_candidate_placeholder')} onChange={event => setCodes(event.target.value)} />
-        <p className="div-ai-muted">{t('div_ai_candidate_review_only')}</p>
-        <button type="button" className="btn btn-secondary" disabled={!ready || busy || !codes.trim()} onClick={() => research('candidates')}>{t('div_ai_screen_candidates')}</button></details>
+    {activePanel === 'research' && <section><div className="div-selection-header-bar">
+      <span className="div-selection-plan-count">{t('div_selection_plan_count', { count: configuredStocks.length })}</span>
+      <div className="div-selection-header-actions">
+        {onAddStock && <button type="button" className="btn btn-secondary" disabled={busy} onClick={onAddStock}>{t('div_cs_toolbar_add')}</button>}
+        <button type="button" className="btn btn-primary" disabled={!ready || busy} onClick={() => research('plan')}>{t('div_experience_repair_all')}</button>
+      </div>
+    </div>
+      <div className="div-selection-drawers">
+        {selectionTools && <details className="div-selection-drawer"><summary>{t('div_selection_batch_tools')}</summary><div className="div-selection-drawer-body">{selectionTools}</div></details>}
+        <details className="div-selection-drawer div-ai-candidate-search"><summary>{t('div_ai_screen_candidates')}</summary><div className="div-selection-drawer-body"><label htmlFor="div-ai-candidates">{t('div_ai_candidate_codes')}</label>
+          <textarea className="form-input" id="div-ai-candidates" value={codes} rows={2} maxLength={400} disabled={busy}
+            placeholder={t('div_ai_candidate_placeholder')} onChange={event => setCodes(event.target.value)} />
+          <p className="div-ai-muted">{t('div_ai_candidate_review_only')}</p>
+          <button type="button" className="btn btn-secondary" disabled={!ready || busy || !codes.trim()} onClick={() => research('candidates')}>{t('div_ai_screen_candidates')}</button></div></details>
+      </div>
       {working && <p className="div-advisor-status" role="status">{researchProgress ? t('div_experience_repair_progress', researchProgress) : t('div_ai_research_loading')}</p>}
       {!working && autoReviewing && <p className="div-advisor-status div-auto-review-banner" role="status">
         {autoReviewProgress && autoReviewProgress.total > 0
@@ -325,7 +404,6 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
       {!working && !autoReviewing && autoReviewFailed.length === 0 && autoReviewResult?.status === 'completed' && autoReviewResult.resolvedCodes.length > 0 && (
         <p className="div-advisor-status" role="status">{t('div_auto_review_completed', { count: autoReviewResult.resolvedCodes.length })}</p>
       )}
-      {snapshot && !amountVisible && <p className="div-advisor-hidden">{t('div_ai_reading_hidden')}</p>}
       <div className="div-focus-selection-tools"><input type="search" className="form-input" value={search} aria-label={t('div_search')} placeholder={t('div_search')} onChange={event => setSearch(event.target.value)} />
         <DividendReadFilters value={readFilter} onChange={setReadFilter} /></div>
       <div className="div-ai-research-results">{configuredStocks.filter(stock => !visibleCodes.has(stock.code) && matchesSearch(stock) && matchesDividendReadFilter(checkSummaries[stock.code], readFilter)).map(stock => {
@@ -338,8 +416,10 @@ export default function DividendAdvisorWorkspace({ activePanel, amountVisible, o
         </article>;
       })}</div>
       {snapshot && <div className="div-ai-research-results">
-        <p className="div-ai-muted">{t(savedResearch?.scope === 'candidates' ? 'div_ai_research_candidate_results' : 'div_ai_research_plan_results')}</p>
-        {restored && !autoReviewing && <p className="div-ai-muted">{t('div_ai_research_restored')}</p>}
+        <p className="div-ai-muted div-ai-results-status">
+          {t(savedResearch?.scope === 'candidates' ? 'div_ai_research_candidate_results' : 'div_ai_research_plan_results')}
+          {restored && !autoReviewing ? ` · ${t('div_ai_research_restored_short')}` : ''}
+        </p>
         {outdated && !autoReviewing && <p className="div-warning">{t('div_ai_research_outdated')}</p>}
         {savedResearch?.scope === 'candidates' && <button type="button" className="btn btn-secondary" disabled={!ready || busy} onClick={() => research('candidates', true)}>{t('div_ai_refresh_candidates')}</button>}
         {!visibleStocks.length && <p className="div-ai-muted">{t('div_ai_research_no_stocks')}</p>}

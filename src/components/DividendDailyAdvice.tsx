@@ -115,11 +115,12 @@ export default function DividendDailyAdvice({ config, disabled, amountVisible, p
   const coverage = current && dividendDailyCoverage(current.sources);
   const checkedCount = current ? dividendDailyCheckedKeys(current.items).length : 0;
   const stale = current && dividendDailyCheckIsStale(current, planKey);
+  const hasGeneratedAdvice = Boolean(current || completed || legacy || explanation);
   return <section className="div-daily-advice" aria-labelledby="div-daily-title">
     <div className="div-daily-heading"><div><h3 id="div-daily-title">{t('div_s3_title')}</h3><p className="div-ai-muted">{t('div_s3_intro')}</p></div>
       <button type="button" className="btn btn-primary div-daily-generate" disabled={disabled || !ready || running || !amountVisible} onClick={() => void generate()}>{t(running ? 'div_s3_running' : current ? 'div_s3_refresh' : 'div_s3_generate')}</button></div>
     {error && <p className="div-warning" role="alert">{error}</p>}
-    {!amountVisible && <p className="div-ai-muted">{t('div_ai_reading_hidden')}</p>}
+    {!amountVisible && hasGeneratedAdvice && <p className="div-ai-muted">{t('div_ai_reading_hidden')}</p>}
     {running && <div className="div-daily-progress" role="status"><span>{t('div_s3_deadline', { time: current ? time(current.deadlineAt) : '—' })}</span><button type="button" className="div-advisor-text-button div-daily-cancel" onClick={() => checkController.current?.abort()}>{t('div_ai_cancel')}</button></div>}
     {amountVisible && <>
       {current ? <div className="div-daily-result">
