@@ -517,10 +517,11 @@ export default function DividendPage({
       </header>
 
       <DividendAdvisor onUpdated={load} amountVisible={amountVisible} planKey={dailyPlanKey} onOpenCheckItem={onOpenCheckItem} showDailyCheck={false}
+        onAddStock={startAdd}
+        onShowAmounts={() => setAmountVisible(true)}
         onManageStock={code => { const stock = data.stocks.find(value => value.code === code); if (stock) { setIsNew(false); setEditor(stock); } }}
         selectionTools={<div className="div-selection-toolbar">
           <button type="button" className="btn btn-secondary" onClick={() => setImportOpen(true)}>{t('div_cs_toolbar_import')}</button>
-          <button type="button" className="btn btn-secondary" onClick={startAdd}>{t('div_cs_toolbar_add')}</button>
           <button type="button" className="btn btn-secondary" disabled={!data.stocks.length} onClick={() => setCleanupOpen(true)}>{t('div_cs_toolbar_cleanup')}</button>
           <button type="button" className="btn btn-secondary" disabled={!data.stocks.length || data.budgetMinor <= 0}
             onClick={() => { setAllocationMode('equal'); setAllocationOpen(true); }}>{t('div_experience_reallocate')}</button>

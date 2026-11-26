@@ -24,7 +24,7 @@ async function restoreHistory(value: DividendAdvisorHistoryState) {
   return recoverDividendAdvisorHistory(value, await db.dividendStocks.toCollection().primaryKeys());
 }
 
-export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, showDailyCheck = false, openPlanRequest = 0, onManageStock, selectionTools }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number; showDailyCheck?: boolean; onManageStock?: (code: string) => void; selectionTools?: ReactNode }) {
+export default function DividendAdvisor({ onUpdated, amountVisible, planManagement, planKey, onOpenCheckItem, showDailyCheck = false, openPlanRequest = 0, onManageStock, onAddStock, onShowAmounts, selectionTools }: { onUpdated: () => Promise<unknown>; amountVisible: boolean; planManagement?: ReactNode; planKey: string; onOpenCheckItem: (item: DividendDailyItem) => void; openPlanRequest?: number; showDailyCheck?: boolean; onManageStock?: (code: string) => void; onAddStock?: () => void; onShowAmounts?: () => void; selectionTools?: ReactNode }) {
   const { t, i18n } = useTranslation();
   const [saved, setSaved] = useState<DividendAdvisorConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -280,7 +280,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       {error && !readerOpen && <p className="div-warning" role="alert">{error}</p>}
     </section>
     {readerOpen && <DividendAdvisorReader messages={messages} amountVisible={amountVisible} question={question} busy={busy} loading={loading || historyBusy} configured={Boolean(saved)} phase={phase} error={error}
-      retryQuestion={lastQuestion} checkedAt={checkedAt} refreshLimited={refreshLimited} onQuestion={setQuestion} onAsk={value => void ask(value)} onBack={closeReader} onOpenSettings={openSettings}
+      retryQuestion={lastQuestion} checkedAt={checkedAt} refreshLimited={refreshLimited} onQuestion={setQuestion} onAsk={value => void ask(value)} onBack={closeReader} onOpenSettings={openSettings} onShowAmounts={onShowAmounts}
       onCancel={() => { controller.current?.abort(); controller.current = null; lock.current = false; setBusy(false); setPhase(''); setError(t('div_ai_error_cancelled')); }}
       conversations={history.conversations} activeConversationId={history.active?.id}
       onResumeConversation={id => void changeConversation(() => resumeDividendAdvisorConversation(id))}
@@ -290,7 +290,7 @@ export default function DividendAdvisor({ onUpdated, amountVisible, planManageme
       renderActions={message => message.actions?.length ? <>{message.actions.map(action => <DividendAdvisorPlanActions key={action.id} proposals={[action]} initiallyExpanded disabled={busy || historyBusy} onUpdated={onUpdated}
         beforePreview={() => validateDividendPricingProposal(action, priceContexts.current.get(action))}
         beforeApply={() => validateDividendPricingProposal(action, priceContexts.current.get(action))} />)}</> : null}
-      workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} onManageStock={onManageStock} selectionTools={selectionTools} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
+      workspacePanel={(tab, showChat) => <DividendAdvisorWorkspace activePanel={tab} onManageStock={onManageStock} onAddStock={onAddStock} selectionTools={selectionTools} amountVisible={amountVisible} onUpdated={onUpdated} disabled={busy || historyBusy}
         onDiscuss={(stock, research) => { showChat(); void ask(t('div_ai_discuss_stock_question', { name: stock.name, code: stock.code }), { ...research, stocks: [stock] }); }} />}
       onClear={() => void changeConversation(createDividendAdvisorConversation)} />}
   </>;

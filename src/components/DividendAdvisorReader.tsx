@@ -24,6 +24,7 @@ interface Props {
   onClear: () => void;
   onBack: () => void;
   onOpenSettings: () => void;
+  onShowAmounts?: () => void;
   conversations?: DividendAdvisorConversationSummary[];
   activeConversationId?: string;
   onResumeConversation?: (id: string) => void;
@@ -39,7 +40,7 @@ interface Props {
 const QUICK_QUESTIONS = ['actions', 'allocation', 'explain'] as const;
 
 export default function DividendAdvisorReader({ messages, amountVisible, question, busy, loading, configured, phase, error, retryQuestion,
-  checkedAt, refreshLimited, onQuestion, onAsk, onCancel, onClear, onBack, onOpenSettings, conversations = [], activeConversationId,
+  checkedAt, refreshLimited, onQuestion, onAsk, onCancel, onClear, onBack, onOpenSettings, onShowAmounts, conversations = [], activeConversationId,
   onResumeConversation, onDeleteConversation, onRetrySave, renderActions, workspacePanel, initialPanel = 'chat', onPanelChange, planManagement }: Props) {
   const { t, i18n } = useTranslation();
   const tab = initialPanel === 'plan' ? 'research' : initialPanel;
@@ -129,7 +130,10 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
           <div className="div-advisor-reader-quick" aria-label={t('div_ai_quick_questions')}>{QUICK_QUESTIONS.map(key => <button className="btn btn-secondary" key={key} disabled={busy || loading}
             onClick={() => onAsk(t(`div_ai_question_${key}`))}>{t(`div_ai_quick_${key}`)} <span aria-hidden="true">↗</span></button>)}</div>
         </section>}
-        {messages.length > 0 && !amountVisible && <p className="div-advisor-hidden" role="status">{t('div_ai_reading_hidden')}</p>}
+        {messages.length > 0 && !amountVisible && <div className="div-advisor-hidden" role="status">
+          <span>{t('div_ai_reading_hidden')}</span>
+          {onShowAmounts && <button type="button" className="btn btn-secondary div-advisor-show-amounts" onClick={onShowAmounts}>{t('div_show_amounts')}</button>}
+        </div>}
         {messages.length > 0 && amountVisible && <div className="div-advisor-reader-messages">{messages.map((message, index) => <article className={`div-advisor-reading-message ${message.role}`} key={index}>
           {index === (messages.at(-1)?.role === 'user' ? messages.length - 1 : messages.length - 2) && <div className="div-advisor-reading-anchor" ref={latestRef} />}
           {message.role === 'user' ? <><span className="div-advisor-question-kicker">{t('div_ai_you')}</span><h2>{message.content}</h2></>
@@ -145,7 +149,7 @@ export default function DividendAdvisorReader({ messages, amountVisible, questio
         {error && <div className="div-warning div-advisor-reading-error" role="alert"><p>{error}</p><div className="div-actions">
           {onRetrySave && <button className="btn btn-secondary" disabled={busy || loading} onClick={onRetrySave}>{t('div_ai_retry_save')}</button>}
           {retryQuestion && <button className="btn btn-secondary" disabled={busy} onClick={() => onAsk(retryQuestion)}>{t('div_ai_retry')}</button>}
-          {!configured && <button className="btn btn-secondary" onClick={onOpenSettings}>{t('div_ai_go_settings')}</button>}
+          <button type="button" className="btn btn-secondary" onClick={onOpenSettings}>{t(configured ? 'div_ai_check_settings' : 'div_ai_go_settings')}</button>
         </div></div>}
         <p className="div-advisor-return-hint">{t('div_ai_swipe_back_hint')}</p>
       </div>
