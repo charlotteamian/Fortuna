@@ -54,7 +54,10 @@ export interface DividendAdvisorRequest {
 export type DividendAdvisorTransport = (request: DividendAdvisorRequest) => Promise<{ status: number; data: unknown }>;
 const MAX_RESPONSE_LENGTH = 1_000_000;
 const MAX_ANSWER_LENGTH = 30_000;
-export const DIVIDEND_ADVISOR_TIMEOUT_MS = 90_000;
+export const DIVIDEND_ADVISOR_TIMEOUT_MS = 180_000;
+const REDIRECT_STATUSES = new Set([301, 302, 307, 308]);
+const MAX_REDIRECT_HOPS = 2;
+const SNAPSHOT_TRIM_THRESHOLD = 35_000;
 
 function endpoint(config: DividendAdvisorConfig): string {
   const url = new URL(config.baseUrl);
@@ -69,18 +72,85 @@ function endpoint(config: DividendAdvisorConfig): string {
   return url.toString();
 }
 
-async function defaultTransport(request: DividendAdvisorRequest) {
-  if (Capacitor.isNativePlatform()) {
-    const response = await CapacitorHttp.post({ url: request.url, headers: request.headers, data: request.body,
-      responseType: 'json', connectTimeout: 15_000, readTimeout: request.timeoutMs, disableRedirects: true });
-    return { status: response.status, data: response.data };
+function isOpenAiChatCompletionsUrl(rawUrl: string): boolean {
+  try { return new URL(rawUrl).pathname.replace(/\/+$/, '').endsWith('/chat/completions'); }
+  catch { return false; }
+}
+
+function findHeaderIgnoreCase(headers: Record<string, unknown> | undefined, target: string): string | undefined {
+  if (!headers) return undefined;
+  const lower = target.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower && typeof value === 'string') return value;
   }
-  const headers = { ...request.headers };
-  if (headers['anthropic-version']) headers['anthropic-dangerous-direct-browser-access'] = 'true';
-  const response = await fetch(request.url, { method: 'POST', headers, body: JSON.stringify(request.body),
-    signal: request.signal, credentials: 'omit', redirect: 'error' });
-  if (Number(response.headers.get('content-length')) > MAX_RESPONSE_LENGTH) throw new DividendAdvisorError('RESPONSE');
-  return { status: response.status, data: await response.text() };
+  return undefined;
+}
+
+function resolveSameOriginHttpsRedirect(currentUrl: string, location: string | undefined): string | null {
+  if (!location) return null;
+  try {
+    const current = new URL(currentUrl);
+    const next = new URL(location, current);
+    if (next.protocol !== 'https:' || next.origin !== current.origin) return null;
+    if (next.username || next.password) return null;
+    return next.toString();
+  } catch { return null; }
+}
+
+async function sendHttpPost(initialUrl: string, headers: Record<string, string>, body: Record<string, unknown>,
+  signal: AbortSignal, timeoutMs: number): Promise<{ status: number; data: unknown }> {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    if (signal.aborted) throw new DividendAdvisorError('CANCELLED');
+    if (Capacitor.isNativePlatform()) {
+      const response = await CapacitorHttp.post({
+        url: currentUrl, headers, data: body, responseType: 'text',
+        connectTimeout: Math.min(20_000, timeoutMs),
+        readTimeout: Math.min(timeoutMs + 5_000, 185_000),
+        disableRedirects: true,
+      });
+      if (REDIRECT_STATUSES.has(response.status) && hop < MAX_REDIRECT_HOPS) {
+        const location = findHeaderIgnoreCase(object(response.headers) ?? undefined, 'location');
+        const nextUrl = resolveSameOriginHttpsRedirect(currentUrl, location);
+        if (nextUrl) { currentUrl = nextUrl; continue; }
+      }
+      if (typeof response.data === 'string' && response.data.length > MAX_RESPONSE_LENGTH) throw new DividendAdvisorError('RESPONSE');
+      return { status: response.status, data: response.data };
+    }
+    const fetchHeaders = { ...headers };
+    if (fetchHeaders['anthropic-version']) fetchHeaders['anthropic-dangerous-direct-browser-access'] = 'true';
+    const response = await fetch(currentUrl, {
+      method: 'POST', headers: fetchHeaders, body: JSON.stringify(body),
+      signal, credentials: 'omit', redirect: 'manual',
+    });
+    if (response.type === 'opaqueredirect' || response.status === 0) throw new DividendAdvisorError('NETWORK');
+    if (REDIRECT_STATUSES.has(response.status) && hop < MAX_REDIRECT_HOPS) {
+      const nextUrl = resolveSameOriginHttpsRedirect(currentUrl, response.headers.get('location') ?? undefined);
+      if (nextUrl) { currentUrl = nextUrl; continue; }
+    }
+    if (Number(response.headers.get('content-length')) > MAX_RESPONSE_LENGTH) throw new DividendAdvisorError('RESPONSE');
+    const text = await response.text();
+    if (text.length > MAX_RESPONSE_LENGTH) throw new DividendAdvisorError('RESPONSE');
+    return { status: response.status, data: text };
+  }
+  throw new DividendAdvisorError('NETWORK');
+}
+
+async function defaultTransport(request: DividendAdvisorRequest) {
+  if (isOpenAiChatCompletionsUrl(request.url) && request.body.stream === false) {
+    const streamResponse = await sendHttpPost(
+      request.url,
+      { ...request.headers, Accept: 'text/event-stream, application/json' },
+      { ...request.body, stream: true },
+      request.signal,
+      request.timeoutMs,
+    );
+    if (streamResponse.status === 400 || streamResponse.status === 405 || streamResponse.status === 422) {
+      return sendHttpPost(request.url, request.headers, request.body, request.signal, request.timeoutMs);
+    }
+    return streamResponse;
+  }
+  return sendHttpPost(request.url, request.headers, request.body, request.signal, request.timeoutMs);
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -117,16 +187,56 @@ function extractSafeProviderErrorDetail(data: unknown, apiKey: string): string |
   return scrubbed || undefined;
 }
 
+/** Classify raw transport errors into safe codes without ever exposing raw messages or API keys. */
+export function classifyTransportError(cause: unknown, signalAborted = false): DividendAdvisorError {
+  if (cause instanceof DividendAdvisorError) return cause;
+  const parts: string[] = [];
+  const names: string[] = [];
+  const visited = new Set<unknown>();
+  let current: unknown = cause;
+  for (let depth = 0; depth < 4 && current !== undefined && current !== null && !visited.has(current); depth++) {
+    visited.add(current);
+    if (typeof current === 'string') { parts.push(current); break; }
+    const errObj = object(current);
+    const name = current instanceof Error ? current.name : typeof errObj?.name === 'string' ? errObj.name : '';
+    const message = current instanceof Error ? current.message
+      : typeof errObj?.message === 'string' ? errObj.message
+      : typeof errObj?.errorMessage === 'string' ? errObj.errorMessage : '';
+    const errCode = typeof errObj?.code === 'string' ? errObj.code : '';
+    if (name) names.push(name);
+    if (name || errCode || message) parts.push(`${name} ${errCode} ${message}`);
+    current = current instanceof Error ? current.cause : errObj?.cause;
+  }
+  const combined = parts.join(' ');
+  if (signalAborted && names.some(name => name === 'AbortError' || /abort/i.test(name))) {
+    return new DividendAdvisorError('CANCELLED');
+  }
+  if (names.includes('TimeoutError') || /sockettimeout|timed?\s*out|etimedout/i.test(combined)) {
+    return new DividendAdvisorError('TIMEOUT');
+  }
+  if (/ssl|cert|handshake|pkix/i.test(combined)) {
+    return new DividendAdvisorError('NETWORK', { detail: 'tls' });
+  }
+  if (/unknownhost|enotfound|gai_error|name or service not known/i.test(combined)) {
+    return new DividendAdvisorError('NETWORK', { detail: 'dns' });
+  }
+  if (/eofexception|unexpected end of stream|connection reset|econnreset|socket closed|broken pipe/i.test(combined)) {
+    return new DividendAdvisorError('NETWORK', { detail: 'reset' });
+  }
+  return new DividendAdvisorError('NETWORK');
+}
+
 export function formatDividendAdvisorFailure(cause: unknown, language = 'zh'): string {
   const copy = dividendAdvisorFailureCopy[language.startsWith('zh') ? 'zh' : 'en'];
   const err = cause instanceof DividendAdvisorError ? cause : new DividendAdvisorError('NETWORK');
   const statusText = err.httpStatus ? ` HTTP ${err.httpStatus}` : '';
-  const detailText = err.detail && !['truncated', 'content_filter', 'empty', 'invalid_json'].includes(err.detail)
+  const detailText = err.detail && !['truncated', 'content_filter', 'empty', 'invalid_json', 'tls', 'dns', 'reset'].includes(err.detail)
     ? copy.detailPrefix.replace('{{detail}}', err.detail) : '';
   const fill = (template: string) => template.replace('{{status}}', statusText).replace('{{detail}}', detailText).trim();
   switch (err.code) {
     case 'CONFIG': return copy.unconfigured;
     case 'URL': return copy.url;
+    case 'CONTEXT': return copy.context;
     case 'AUTH': return fill(copy.auth);
     case 'RATE_LIMIT': return fill(copy.rateLimit);
     case 'HTTP': return fill(copy.http);
@@ -135,15 +245,53 @@ export function formatDividendAdvisorFailure(cause: unknown, language = 'zh'): s
       if (err.detail === 'truncated') return copy.responseTruncated;
       if (err.detail === 'content_filter') return copy.responseFiltered;
       return copy.response;
-    default: return copy.network;
+    default:
+      if (err.detail === 'tls') return copy.networkTls;
+      if (err.detail === 'dns') return copy.networkDns;
+      if (err.detail === 'reset') return copy.networkReset;
+      return copy.network;
   }
 }
 
-function parseAnswer(protocol: DividendAdvisorConfig['protocol'], data: unknown): string {
+function parseOpenAiSseAnswer(raw: string, apiKey: string): string {
+  const normalized = raw.replace(/\r\n?/g, '\n');
+  const trimmed = normalized.trim();
+  if (!trimmed.startsWith('data:') && !normalized.includes('\ndata:')) {
+    throw new DividendAdvisorError('RESPONSE', { detail: 'invalid_json' });
+  }
+  let answer = '';
+  let finishReason: string | undefined;
+  for (const rawLine of normalized.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith(':') || !line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    let chunk: Record<string, unknown> | null;
+    try { chunk = object(JSON.parse(payload)); }
+    catch { throw new DividendAdvisorError('RESPONSE', { detail: 'invalid_json' }); }
+    if (!chunk) continue;
+    if (chunk.error) throw new DividendAdvisorError('HTTP', { detail: extractSafeProviderErrorDetail(chunk, apiKey) });
+    const choice = Array.isArray(chunk.choices) ? object(chunk.choices[0]) : null;
+    if (!choice) continue;
+    if (typeof choice.finish_reason === 'string' && choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = object(choice.delta);
+    if (delta && delta.thought !== true) answer += contentText(delta.content);
+  }
+  if (finishReason === 'length') throw new DividendAdvisorError('RESPONSE', { detail: 'truncated' });
+  if (finishReason === 'content_filter') throw new DividendAdvisorError('RESPONSE', { detail: 'content_filter' });
+  if (!answer.trim() || answer.length > MAX_ANSWER_LENGTH) throw new DividendAdvisorError('RESPONSE', { detail: 'empty' });
+  return answer.trim();
+}
+
+function parseAnswer(protocol: DividendAdvisorConfig['protocol'], data: unknown, apiKey = ''): string {
   let parsed = data;
   if (typeof data === 'string') {
     if (data.length > MAX_RESPONSE_LENGTH) throw new DividendAdvisorError('RESPONSE');
-    try { parsed = JSON.parse(data); } catch { throw new DividendAdvisorError('RESPONSE', { detail: 'invalid_json' }); }
+    try { parsed = JSON.parse(data); }
+    catch {
+      if (protocol === 'openai') return parseOpenAiSseAnswer(data, apiKey);
+      throw new DividendAdvisorError('RESPONSE', { detail: 'invalid_json' });
+    }
   }
   const envelope = object(parsed);
   let answer = '';
@@ -168,6 +316,37 @@ function parseAnswer(protocol: DividendAdvisorConfig['protocol'], data: unknown)
   return answer.trim();
 }
 
+function buildSnapshotPayload(context: DividendAdvisorContext, question: string, explanationResearch?: DividendResearchSnapshot): string {
+  const readable = dividendAdvisorReadableSnapshot(context, explanationResearch);
+  const raw = JSON.stringify(readable);
+  if (raw.length <= SNAPSHOT_TRIM_THRESHOLD) return raw;
+  const trimmed = structuredClone(readable) as Record<string, unknown>;
+  const trimShares = (plan: unknown) => {
+    const planObj = object(plan);
+    if (!planObj || !Array.isArray(planObj['Shares'])) return;
+    for (const item of planObj['Shares']) {
+      const stockObj = object(item);
+      if (!stockObj) continue;
+      const dists = stockObj['Implemented cash distributions'];
+      if (Array.isArray(dists) && dists.length > 8) {
+        stockObj['Implemented cash distributions'] = [...dists]
+          .sort((a, b) => String(object(b)?.['Ex-dividend date'] ?? '').localeCompare(String(object(a)?.['Ex-dividend date'] ?? '')))
+          .slice(0, 8);
+      }
+    }
+  };
+  trimShares(trimmed['Active plan to discuss first']);
+  if (context.activeStrategy === 'stocks' && !/基金|fund|对比|比较|both|all|全部/i.test(question)) {
+    trimmed['Alternative saved plan, discuss only when the user asks about it'] = {
+      Strategy: 'Dividend funds',
+      Note: 'Omitted unless asked',
+    };
+  } else {
+    trimShares(trimmed['Alternative saved plan, discuss only when the user asks about it']);
+  }
+  return JSON.stringify(trimmed);
+}
+
 export interface DividendAdvisorOptions {
   transport?: DividendAdvisorTransport; timeoutMs?: number; signal?: AbortSignal; language?: string;
   /** Internal explanation protocol, separate from the legacy low-level provider API. */
@@ -184,7 +363,7 @@ export async function askDividendAdvisor(config: DividendAdvisorConfig, context:
   const normalized = validateDividendAdvisorConfig(config);
   if (typeof question !== 'string' || !question.trim() || question.length > 2000) throw new DividendAdvisorError('QUESTION');
   const includeSnapshot = options.includeSnapshot !== false;
-  const snapshot = includeSnapshot ? JSON.stringify(dividendAdvisorReadableSnapshot(context, options.explanationResearch)) : '';
+  const snapshot = includeSnapshot ? buildSnapshotPayload(context, question, options.explanationResearch) : '';
   if (snapshot.length > 500_000) throw new DividendAdvisorError('CONTEXT');
   const system = options.systemPrompt ?? dividendAdvisorSystemPrompt(options.language ?? 'zh');
   const previous = history.slice(-8).filter(message => ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
@@ -235,10 +414,9 @@ async function sendDividendAdvisorRequest(normalized: DividendAdvisorConfig, sys
     if (response.status < 200 || response.status >= 300) {
       throw new DividendAdvisorError('HTTP', { httpStatus: response.status, detail: extractSafeProviderErrorDetail(response.data, normalized.apiKey) });
     }
-    return parseAnswer(normalized.protocol, response.data);
+    return parseAnswer(normalized.protocol, response.data, normalized.apiKey);
   } catch (cause) {
-    if (cause instanceof DividendAdvisorError) throw cause;
-    throw new DividendAdvisorError('NETWORK');
+    throw classifyTransportError(cause, Boolean(options.signal?.aborted));
   } finally {
     if (timer) clearTimeout(timer);
     if (onAbort) options.signal?.removeEventListener('abort', onAbort);

@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 import { buildDividendAdvisorContext, dividendAdvisorReadableSnapshot, dividendAdvisorSystemPrompt } from '../src/lib/dividendAdvisor.ts';
 import { defaultDividendFundPlan } from '../src/lib/dividendFundPlan.ts';
 import { parseDividendResponse, type DividendStock } from '../src/lib/dividendWorkbench.ts';
-import { askDividendAdvisor, askDividendAdvisorWithActions, clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
+import { askDividendAdvisor, askDividendAdvisorWithActions, classifyTransportError, clearDividendAdvisorConfig, DividendAdvisorError, formatDividendAdvisorFailure, loadDividendAdvisorConfig, saveDividendAdvisorConfig, validateDividendAdvisorConfig, type DividendAdvisorConfig, type DividendAdvisorRequest } from '../src/services/dividendAdvisorService.ts';
 import { defaultDividendSelectionPrinciples } from '../src/lib/dividendResearch.ts';
 import type { DividendPricingResult } from '../src/lib/dividendPricing.ts';
 import { verifiedDividendBase } from './helpers/dividendPricingFixture.ts';
@@ -462,7 +462,7 @@ for (const protocol of ['openai', 'gemini', 'anthropic'] as const) test(`${proto
       assert.doesNotMatch(body, /private-secret|PRIVATE ACCOUNT|PRIVATE HOLDING|PRIVATE FUND/);
       assert.doesNotMatch(body, /manualReference|highMicros|referencePriorDate|ruleCheck|budgetMinor|weightBps/);
       assert.match(body, /Price in CNY per share or unit/);
-      assert.equal(request.timeoutMs, 90_000);
+      assert.equal(request.timeoutMs, 180_000);
       if (protocol === 'openai') { assert.equal(request.url, 'https://model.example/v1/chat/completions'); assert.equal(request.headers.Authorization, 'Bearer private-secret-123'); assert.equal(request.body.stream, false); }
       else if (protocol === 'gemini') { assert.equal(request.url, 'https://model.example/v1beta/models/test-model:generateContent'); assert.equal(request.headers['x-goog-api-key'], 'private-secret-123'); assert.ok(request.body.systemInstruction); }
       else { assert.equal(request.url, 'https://model.example/v1/messages'); assert.equal(request.headers['x-api-key'], 'private-secret-123'); assert.equal(request.headers['anthropic-version'], '2023-06-01'); assert.ok(request.body.system); }
@@ -534,5 +534,195 @@ test('model credentials stay outside JSON/Excel backups, asset snapshots and led
   assert.equal((await loadDividendAdvisorConfig())?.apiKey, 'private-secret-123');
   await clearDividendAdvisorConfig();
   assert.equal(await loadDividendAdvisorConfig(), null);
+});
+
+test('SSE streaming aggregation concatenates delta.content while ignoring reasoning_content and thought parts', async () => {
+  const sseBody = [
+    ': keep-alive',
+    '',
+    'data: {"choices":[{"delta":{"reasoning_content":"Step 1 reasoning...","content":null}}]}',
+    '',
+    'data: {"choices":[{"delta":{"thought":true,"content":"Hidden internal thought"}}]}',
+    '',
+    'data: {"choices":[{"delta":{"reasoning_content":"Step 2...","content":"建议先核对"}}]}',
+    '',
+    'data: {"choices":[{"delta":{"content":"最新分红公告。"},"finish_reason":"stop"}]}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  const answer = await askDividendAdvisor(config(), context(), 'Check SSE', [], {
+    transport: async () => ({ status: 200, data: sseBody }),
+  });
+  assert.equal(answer, '建议先核对最新分红公告。');
+
+  const truncatedSse = 'data: {"choices":[{"delta":{"content":"Partial"},"finish_reason":"length"}]}\n\ndata: [DONE]\n';
+  await assert.rejects(
+    askDividendAdvisor(config(), context(), 'Check SSE truncated', [], { transport: async () => ({ status: 200, data: truncatedSse }) }),
+    (cause: unknown) => cause instanceof DividendAdvisorError && cause.code === 'RESPONSE' && cause.detail === 'truncated',
+  );
+
+  const filteredSse = 'data: {"choices":[{"delta":{"content":"Blocked"},"finish_reason":"content_filter"}]}\n\ndata: [DONE]\n';
+  await assert.rejects(
+    askDividendAdvisor(config(), context(), 'Check SSE filtered', [], { transport: async () => ({ status: 200, data: filteredSse }) }),
+    (cause: unknown) => cause instanceof DividendAdvisorError && cause.code === 'RESPONSE' && cause.detail === 'content_filter',
+  );
+
+  const errorSse = 'data: {"error":{"code":"upstream_error","message":"Bad gateway private-secret-123"}}\n\n';
+  await assert.rejects(
+    askDividendAdvisor(config(), context(), 'Check SSE error', [], { transport: async () => ({ status: 200, data: errorSse }) }),
+    code('HTTP'),
+  );
+});
+
+test('transport errors classify SocketTimeoutException, EOFException/Connection reset, TLS, DNS, AbortError and CONTEXT without leaking secrets', async () => {
+  const timeoutCause = new Error('java.net.SocketTimeoutException: Read timed out with Bearer private-secret-123');
+  const timeoutErr = classifyTransportError(timeoutCause);
+  assert.equal(timeoutErr.code, 'TIMEOUT');
+  assert.doesNotMatch(String(timeoutErr), /private-secret-123/);
+
+  const failedTimeout = await askDividendAdvisorWithActions(config(), context(), '今天怎么操作？', [], {
+    language: 'zh',
+    transport: async () => { throw timeoutCause; },
+  });
+  assert.equal(failedTimeout.errorCode, 'TIMEOUT');
+  assert.match(failedTimeout.answer, /请求超时/);
+  assert.doesNotMatch(failedTimeout.answer, /private-secret-123/);
+
+  for (const rawMessage of [
+    'java.io.EOFException: unexpected end of stream on https://api.example.com?key=private-secret-123',
+    'Connection reset by peer (ECONNRESET) token=private-secret-123',
+  ]) {
+    const resetCause = new Error(rawMessage);
+    const resetErr = classifyTransportError(resetCause);
+    assert.equal(resetErr.code, 'NETWORK');
+    assert.equal(resetErr.detail, 'reset');
+    assert.doesNotMatch(String(resetErr), /private-secret-123/);
+
+    const failedReset = await askDividendAdvisorWithActions(config(), context(), '今天怎么操作？', [], {
+      language: 'zh',
+      transport: async () => { throw resetCause; },
+    });
+    assert.equal(failedReset.errorCode, 'NETWORK');
+    assert.equal(failedReset.errorDetail, 'reset');
+    assert.match(failedReset.answer, /连接被中断/);
+    assert.doesNotMatch(failedReset.answer, /private-secret-123/);
+    assert.match(formatDividendAdvisorFailure(resetErr, 'en'), /connection reset/i);
+  }
+
+  const tlsErr = classifyTransportError(new Error('PKIX path building failed: SSLHandshakeException private-secret-123'));
+  assert.equal(tlsErr.code, 'NETWORK');
+  assert.equal(tlsErr.detail, 'tls');
+  assert.match(formatDividendAdvisorFailure(tlsErr, 'zh'), /TLS|证书/);
+  assert.doesNotMatch(formatDividendAdvisorFailure(tlsErr, 'zh'), /private-secret-123/);
+
+  const dnsErr = classifyTransportError(new Error('java.net.UnknownHostException: ENOTFOUND private-secret-123'));
+  assert.equal(dnsErr.code, 'NETWORK');
+  assert.equal(dnsErr.detail, 'dns');
+  assert.match(formatDividendAdvisorFailure(dnsErr, 'zh'), /域名解析/);
+  assert.doesNotMatch(formatDividendAdvisorFailure(dnsErr, 'zh'), /private-secret-123/);
+
+  const plainNetErr = new DividendAdvisorError('NETWORK');
+  assert.match(formatDividendAdvisorFailure(plainNetErr, 'zh'), /无法连接到配置的模型服务/);
+  assert.match(formatDividendAdvisorFailure(new DividendAdvisorError('CONTEXT'), 'zh'), /上下文限制|过长/);
+  assert.match(formatDividendAdvisorFailure(new DividendAdvisorError('CONTEXT'), 'en'), /too large/i);
+
+  const abortErr = classifyTransportError(new DOMException('The operation was aborted', 'AbortError'), true);
+  assert.equal(abortErr.code, 'CANCELLED');
+});
+
+test('large snapshots lightly trim historical distributions and omit unrequested alternative fund plan', async () => {
+  const manyPayments = Array.from({ length: 20 }, (_, i) => ({
+    exDate: `2025-${String(12 - (i % 12)).padStart(2, '0')}-${String(28 - i).padStart(2, '0')}`,
+    reportDate: `2025-06-30`,
+    dpsMicros: 100_000 + i,
+  }));
+  const largeStocks: DividendStock[] = Array.from({ length: 12 }, (_, i) => ({
+    ...stock,
+    code: String(600000 + i),
+    name: `高息标的${i}`,
+    note: '长期持有观察备注'.repeat(60),
+    dividend: { asOf: '2026-10-15', windowStart: '2025-10-15', dpsMicros: 300000, payments: manyPayments, fetchedAt: now },
+  }));
+  const largeContext = buildDividendAdvisorContext({
+    stocks: largeStocks,
+    strategy: 'stocks',
+    budgetMinor: 10000_00,
+    budgetConfigured: true,
+    positions: new Map(),
+    fundPlan: {
+      ...defaultDividendFundPlan(),
+      budgetMinor: 20000_00,
+      funds: [{ id: 'fund-1', name: 'Dividend ETF', code: '512890', indexKind: 'low_volatility', weightBps: 10000 }],
+    },
+  }, now);
+  assert.ok(JSON.stringify(dividendAdvisorReadableSnapshot(largeContext)).length > 35_000);
+
+  let stockOnlyContent = '';
+  await askDividendAdvisor(config(), largeContext, '分析股票买入计划', [], {
+    transport: async request => {
+      const msgs = request.body.messages as { content: string }[];
+      stockOnlyContent = msgs[msgs.length - 1].content;
+      return { status: 200, data: response('openai', '已分析。') };
+    },
+  });
+  assert.match(stockOnlyContent, /"Note":"Omitted unless asked"/);
+  assert.doesNotMatch(stockOnlyContent, /Dividend ETF/);
+  const userMessageMatch = stockOnlyContent.match(/^Current dividend snapshot \(JSON data\):\n([\s\S]*)\n\nUser question:/);
+  assert.ok(userMessageMatch);
+  const sentSnapshot = JSON.parse(userMessageMatch[1]);
+  assert.equal(sentSnapshot['Active plan to discuss first']['Shares'][0]['Implemented cash distributions'].length, 8);
+
+  let withFundContent = '';
+  await askDividendAdvisor(config(), largeContext, '对比一下股票和基金计划', [], {
+    transport: async request => {
+      const msgs = request.body.messages as { content: string }[];
+      withFundContent = msgs[msgs.length - 1].content;
+      return { status: 200, data: response('openai', '已对比。') };
+    },
+  });
+  assert.match(withFundContent, /Dividend ETF/);
+  assert.doesNotMatch(withFundContent, /"Note":"Omitted unless asked"/);
+});
+
+test('defaultTransport upgrades OpenAI chat/completions to SSE, falls back on 400/405/422, and follows safe same-origin HTTPS redirects', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const seen: { url: string; headers: HeadersInit | undefined; body: Record<string, unknown> }[] = [];
+    globalThis.fetch = (async (input, init) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      seen.push({ url, headers: init?.headers, body });
+      if (seen.length === 1) {
+        return new Response(null, { status: 308, headers: { Location: '/v2/chat/completions' } });
+      }
+      if (seen.length === 2) {
+        return new Response(JSON.stringify({ error: { message: 'stream unsupported' } }), { status: 422 });
+      }
+      return new Response(JSON.stringify(response('openai', 'Fallback OK')), { status: 200 });
+    }) as typeof fetch;
+
+    const answer = await askDividendAdvisor(config(), context(), 'Check transport', []);
+    assert.equal(answer, 'Fallback OK');
+    assert.equal(seen.length, 3);
+    assert.equal(seen[0].url, 'https://model.example/v1/chat/completions');
+    assert.equal(seen[0].body.stream, true);
+    assert.equal((seen[0].headers as Record<string, string>).Accept, 'text/event-stream, application/json');
+    assert.equal(seen[1].url, 'https://model.example/v2/chat/completions');
+    assert.equal(seen[1].body.stream, true);
+    assert.equal(seen[2].url, 'https://model.example/v1/chat/completions');
+    assert.equal(seen[2].body.stream, false);
+
+    // Cross-origin redirect must NOT be followed and must NOT forward Authorization.
+    const crossSeen: string[] = [];
+    globalThis.fetch = (async input => {
+      crossSeen.push(String(input));
+      return new Response('redirect', { status: 302, headers: { Location: 'https://evil.example/steal' } });
+    }) as typeof fetch;
+    await assert.rejects(askDividendAdvisor(config(), context(), 'Cross origin check', []), code('HTTP'));
+    assert.deepEqual(crossSeen, ['https://model.example/v1/chat/completions']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 after(() => db.close());

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HOLDING_RECOGNITION_PROVIDERS, getHoldingRecognitionProvider, inferHoldingRecognitionProvider } from '../lib/holdingRecognitionProviders';
 import { DIVIDEND_AI_CONFIG_CHANGED_EVENT } from '../lib/dividendAdvisorNavigation';
-import { clearDividendAdvisorConfig, DividendAdvisorError, loadDividendAdvisorConfig, saveDividendAdvisorConfig, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
+import { clearDividendAdvisorConfig, DividendAdvisorError, formatDividendAdvisorFailure, loadDividendAdvisorConfig, requestDividendAdvisor, saveDividendAdvisorConfig, type DividendAdvisorConfig } from '../services/dividendAdvisorService';
+import { HoldingRecognitionError, loadHoldingRecognitionConfig } from '../services/holdingRecognitionService';
 import './HoldingRecognitionSettings.css';
 import './DividendAdvisor.css';
 
@@ -10,7 +11,7 @@ const provider = getHoldingRecognitionProvider('aliyun');
 const EMPTY_CONFIG: DividendAdvisorConfig = { provider: provider.id, protocol: provider.protocol, baseUrl: provider.baseUrl, model: provider.defaultModel, apiKey: '' };
 
 export default function DividendAdvisorSettings({ focus = false }: { focus?: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const sectionRef = useRef<HTMLElement>(null);
   const mounted = useRef(false);
   const lock = useRef(false);
@@ -19,6 +20,7 @@ export default function DividendAdvisorSettings({ focus = false }: { focus?: boo
   const [expanded, setExpanded] = useState(focus);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const selectedProviderId = inferHoldingRecognitionProvider(config);
@@ -54,6 +56,44 @@ export default function DividendAdvisorSettings({ focus = false }: { focus?: boo
     } catch (cause) { if (mounted.current) setError(describeError(cause)); }
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   };
+  const reuseHoldingConfig = async () => {
+    if (lock.current || loading) return;
+    lock.current = true; setBusy(true); setError(''); setNotice('');
+    try {
+      const holdingConfig = await loadHoldingRecognitionConfig();
+      if (!holdingConfig) {
+        if (mounted.current) setNotice(t('div_ai_reuse_missing'));
+        return;
+      }
+      await saveDividendAdvisorConfig(holdingConfig);
+      window.dispatchEvent(new CustomEvent(DIVIDEND_AI_CONFIG_CHANGED_EVENT));
+      if (mounted.current) {
+        setConfig({ ...holdingConfig });
+        setSaved({ ...holdingConfig });
+        setNotice(t('div_ai_reuse_saved'));
+      }
+    } catch (cause) {
+      if (mounted.current) {
+        setError(cause instanceof HoldingRecognitionError ? t('div_ai_error_storage') : describeError(cause));
+      }
+    } finally { lock.current = false; if (mounted.current) setBusy(false); }
+  };
+  const testConnection = async () => {
+    if (lock.current || loading) return;
+    lock.current = true; setBusy(true); setTesting(true); setError(''); setNotice('');
+    try {
+      await requestDividendAdvisor(config, 'Reply with OK only.', [{ role: 'user', content: 'ping' }], {
+        timeoutMs: 30_000,
+        language: i18n.language,
+      });
+      if (mounted.current) setNotice(t('div_ai_test_success'));
+    } catch (cause) {
+      if (mounted.current) setError(formatDividendAdvisorFailure(cause, i18n.language));
+    } finally {
+      lock.current = false;
+      if (mounted.current) { setTesting(false); setBusy(false); }
+    }
+  };
 
   return <section className="settings-section holding-recognition-settings" id="dividend-advisor-settings" ref={sectionRef}>
     <button type="button" className="settings-menu-summary holding-recognition-toggle" disabled={loading || busy}
@@ -64,6 +104,9 @@ export default function DividendAdvisorSettings({ focus = false }: { focus?: boo
       <p className="holding-recognition-note">{t('div_ai_settings_description')}</p>
       <p className="holding-recognition-note">{t('div_ai_privacy')}</p>
       <p className="holding-recognition-note">{t('div_ai_sharing')}</p>
+      <div className="holding-recognition-actions" style={{ marginBottom: 12 }}>
+        <button type="button" className="btn btn-secondary" disabled={busy || loading} onClick={() => void reuseHoldingConfig()}>{t('div_ai_reuse_holding')}</button>
+      </div>
       <div className="form-group"><label className="form-label" htmlFor="div-ai-provider">{t('div_ai_provider')}</label>
         <select className="form-select" id="div-ai-provider" value={selectedProviderId} disabled={busy || loading} onChange={event => {
           const next = getHoldingRecognitionProvider(event.target.value);
@@ -80,15 +123,26 @@ export default function DividendAdvisorSettings({ focus = false }: { focus?: boo
         <input className="form-input" id={`div-ai-${field}`} disabled={busy || loading} autoComplete="off" spellCheck={false}
           type={field === 'apiKey' ? 'password' : field === 'baseUrl' ? 'url' : 'text'} value={config[field]}
           placeholder={t(field === 'model' && selectedProviderId === 'volcengine' ? 'holding_import_volcengine_model_ph' : `holding_import_api_${field}_ph`)}
-          onChange={event => setConfig(current => ({ ...current, [field]: event.target.value }))} />
+          onChange={event => {
+            const nextValue = event.target.value;
+            setConfig(current => {
+              if (field !== 'baseUrl') return { ...current, [field]: nextValue };
+              const inferred = inferHoldingRecognitionProvider({ protocol: current.protocol, baseUrl: nextValue });
+              const nextProvider = current.provider && current.provider !== 'custom' && inferred !== current.provider
+                ? inferred : current.provider;
+              return { ...current, baseUrl: nextValue, ...(nextProvider !== undefined ? { provider: nextProvider } : {}) };
+            });
+          }} />
         {field === 'model' && selectedProvider.models.length > 0 && <select className="form-select div-advisor-presets" aria-label={t('div_ai_model_presets')} disabled={busy || loading}
           value={selectedProvider.models.includes(config.model) ? config.model : ''} onChange={event => { if (event.target.value) setConfig(current => ({ ...current, model: event.target.value })); }}>
           <option value="">{t('holding_import_model_custom')}</option>{selectedProvider.models.map(model => <option key={model} value={model}>{model}</option>)}
         </select>}
       </div>)}
       <p className="holding-recognition-note">{t('div_ai_model_hint')}</p>
-      <div className="holding-recognition-actions"><button className="btn btn-primary" disabled={busy || loading} onClick={() => void save()}>{t('holding_import_save_config')}</button>
-        {saved && <button className="btn btn-secondary" disabled={busy || loading} onClick={() => void save(true)}>{t('holding_api_clear_config')}</button>}
+      <div className="holding-recognition-actions">
+        <button type="button" className="btn btn-secondary" disabled={busy || loading} onClick={() => void testConnection()}>{t(testing ? 'div_ai_testing' : 'div_ai_test_connection')}</button>
+        <button type="button" className="btn btn-primary" disabled={busy || loading} onClick={() => void save()}>{t('holding_import_save_config')}</button>
+        {saved && <button type="button" className="btn btn-secondary" disabled={busy || loading} onClick={() => void save(true)}>{t('holding_api_clear_config')}</button>}
       </div>
     </div>
     {error && <p className="holding-recognition-error" role="alert">{error}</p>}
