@@ -18,9 +18,11 @@ registerHooks({
   },
 });
 
-const { calculateAutoTxnFee, resolveHoldingFeeTerms, isManualTxnFee } = await import('../src/lib/holdingPosition.ts');
+import * as XLSX from 'xlsx';
+
+const { calculateAutoTxnFee, isEtfHolding, resolveHoldingCommissionRatePercent, resolveHoldingFeeTerms, isManualTxnFee } = await import('../src/lib/holdingPosition.ts');
 const { db, initializeSettings, updateSettings, materializeHoldingTxnFees, exportData, importData, exportToExcel, importFromExcel } = await import('../src/db.ts');
-const { addHoldingTxn, updateHoldingTxn, getHoldingsWithPositions, recalculateAutoTxnFees, updateHolding } = await import('../src/services/holdingService.ts');
+const { addHoldingTxn, createHolding, updateHoldingTxn, getHoldingsWithPositions, recalculateAutoTxnFees, updateHolding } = await import('../src/services/holdingService.ts');
 const { getChartPortfolios } = await import('../src/services/chartPortfolioService.ts');
 const { getMonthlyRealizedPnl } = await import('../src/services/pnlService.ts');
 
@@ -230,4 +232,154 @@ test('invalid fee fields are rejected by both restore paths', async () => {
     assert.equal(await importData(JSON.stringify(copy)), false);
   }
   assert.equal(await importData(JSON.stringify(json)), true);
+});
+
+test('isEtfHolding identifies A-share ETF/LOF codes, ETF/LOF names, US options, and explicit overrides', () => {
+  // A-share listed ETF/LOF codes (with and without exchange prefixes/suffixes)
+  assert.equal(isEtfHolding({ symbol: '510300' }), true);
+  assert.equal(isEtfHolding({ symbol: 'sh512890' }), true);
+  assert.equal(isEtfHolding({ symbol: '159915.SZ' }), true);
+  assert.equal(isEtfHolding({ symbol: '588000' }), true);
+  assert.equal(isEtfHolding({ symbol: '161725' }), true);
+
+  // Name matches (word boundaries)
+  assert.equal(isEtfHolding({ name: '沪深300ETF' }), true);
+  assert.equal(isEtfHolding({ name: 'Vanguard S&P 500 ETF', symbol: 'VOO', market: '美股' }), true);
+  assert.equal(isEtfHolding({ name: '招商中证白酒LOF' }), true);
+
+  // Negative checks
+  assert.equal(isEtfHolding({ name: 'Netflix', symbol: 'NFLX', market: '美股' }), false);
+  assert.equal(isEtfHolding({ name: '浦发银行', symbol: '600000' }), false);
+  assert.equal(isEtfHolding({ name: '美的集团', symbol: '000333' }), false);
+  assert.equal(isEtfHolding({ name: '紫金矿业', symbol: '02899', market: '港股' }), false);
+  assert.equal(isEtfHolding({ symbol: '510300', market: '港股' }), false);
+  assert.equal(isEtfHolding({ symbol: 'us510300' }), false);
+  assert.equal(isEtfHolding({ name: 'AAPL ETF', symbol: 'AAPL', instrumentType: 'us_option', securityFeeKind: 'etf' }), false);
+  assert.equal(isEtfHolding(undefined), false);
+
+  // Explicit securityFeeKind overrides
+  assert.equal(isEtfHolding({ name: '510300 ETF', symbol: '510300', securityFeeKind: 'stock' }), false);
+  assert.equal(isEtfHolding({ name: '紫金矿业', symbol: '02899', market: '港股', securityFeeKind: 'etf' }), true);
+});
+
+test('stock and ETF holdings in the same account use distinct commission rates and minimums, including recalculateAutoTxnFees', async () => {
+  await materializeHoldingTxnFees();
+  await updateSettings({
+    defaultCommissionRatePercent: 0.025,
+    minCommission: 5,
+    defaultEtfCommissionRatePercent: 0.005,
+    etfMinCommission: 0,
+  });
+
+  const stockId = await createHolding('stocks', { name: '美的集团', symbol: '000333', market: 'A股', lastPrice: 60 });
+  const etfId = await createHolding('stocks', { name: '红利低波ETF', symbol: '512890', market: 'A股', lastPrice: 1.2 });
+  const forcedStockEtfId = await createHolding('stocks', { name: '300ETF', symbol: '510300', market: 'A股', securityFeeKind: 'stock', lastPrice: 4 });
+  const forcedEtfStockId = await createHolding('stocks', { name: 'VOO', symbol: 'VOO', market: '美股', securityFeeKind: 'etf', lastPrice: 500 });
+
+  assert.equal(resolveHoldingCommissionRatePercent({ symbol: '000333' }, { defaultCommissionRatePercent: 0.025, defaultEtfCommissionRatePercent: 0.005 }, '股票/ETF'), 0.025);
+  assert.equal(resolveHoldingCommissionRatePercent({ symbol: '512890' }, { defaultCommissionRatePercent: 0.025, defaultEtfCommissionRatePercent: 0.005 }, '股票/ETF'), 0.005);
+
+  // 100 x 60 = 6,000 -> 0.025% = 1.50 -> raised to stock min 5.00
+  const stockBuy = await addHoldingTxn('stocks', stockId, { date: '2026-03-11', kind: 'buy', shares: 100, price: 60 });
+  // 10,000 x 1.2 = 12,000 -> 0.005% = 0.60 -> etfMinCommission = 0, so 0.60 (not 5.00)
+  const etfBuy = await addHoldingTxn('stocks', etfId, { date: '2026-03-11', kind: 'buy', shares: 10000, price: 1.2 });
+  // Forced stock schedule on 510300: 1,000 x 4 = 4,000 -> 0.025% = 1.00 -> stock min 5.00
+  const forcedStockBuy = await addHoldingTxn('stocks', forcedStockEtfId, { date: '2026-03-11', kind: 'buy', shares: 1000, price: 4 });
+  // Forced ETF schedule on VOO: 10 x 500 = 5,000 -> 0.005% = 0.25 -> etfMinCommission 0 -> 0.25
+  const forcedEtfBuy = await addHoldingTxn('stocks', forcedEtfStockId, { date: '2026-03-11', kind: 'buy', shares: 10, price: 500 });
+
+  assert.equal((await db.holdingTxns.get(stockBuy))?.fee, 5);
+  assert.equal((await db.holdingTxns.get(etfBuy))?.fee, 0.6);
+  assert.equal((await db.holdingTxns.get(forcedStockBuy))?.fee, 5);
+  assert.equal((await db.holdingTxns.get(forcedEtfBuy))?.fee, 0.25);
+
+  // Update ETF settings and recalculate automatic fees (scoped and full ledger)
+  await updateSettings({ defaultEtfCommissionRatePercent: 0.01, etfMinCommission: 1 });
+  assert.equal(await recalculateAutoTxnFees({ holdingId: etfId }), 1);
+  assert.equal((await db.holdingTxns.get(etfBuy))?.fee, 1.2);
+  assert.equal((await db.holdingTxns.get(forcedEtfBuy))?.fee, 0.25);
+
+  // Full recalculation updates forcedEtfBuy (0.25 -> 1.00 min) and legacy stock b1 (1.00 -> 5.00 min)
+  const repricedCount = await recalculateAutoTxnFees();
+  assert.equal(repricedCount, 2);
+  assert.equal((await db.holdingTxns.get(etfBuy))?.fee, 1.2);
+  assert.equal((await db.holdingTxns.get(forcedEtfBuy))?.fee, 1);
+  assert.equal((await db.holdingTxns.get(stockBuy))?.fee, 5);
+  assert.equal((await db.holdingTxns.get(forcedStockBuy))?.fee, 5);
+  assert.equal((await db.holdingTxns.get('b1'))?.fee, 5);
+});
+
+test('ETF fee settings and securityFeeKind survive JSON and Excel backups and reject invalid values', async () => {
+  await materializeHoldingTxnFees();
+  await updateSettings({
+    defaultCommissionRatePercent: 0.025,
+    minCommission: 5,
+    defaultEtfCommissionRatePercent: 0.005,
+    etfMinCommission: 0,
+  });
+  await updateHolding('default-rate', { securityFeeKind: 'etf' });
+  await updateHolding('custom-rate', { securityFeeKind: 'stock' });
+
+  const expected = async () => ({
+    defaultRate: (await db.settings.get('main'))?.defaultCommissionRatePercent,
+    min: (await db.settings.get('main'))?.minCommission,
+    etfRate: (await db.settings.get('main'))?.defaultEtfCommissionRatePercent,
+    etfMin: (await db.settings.get('main'))?.etfMinCommission,
+    stockKind: (await db.holdings.get('default-rate'))?.securityFeeKind,
+    etfKind: (await db.holdings.get('custom-rate'))?.securityFeeKind,
+  });
+  const original = await expected();
+  assert.deepEqual(original, {
+    defaultRate: 0.025,
+    min: 5,
+    etfRate: 0.005,
+    etfMin: 0,
+    stockKind: 'etf',
+    etfKind: 'stock',
+  });
+
+  const json = await exportData();
+  const excel = await exportToExcel();
+  for (const restore of [() => importData(json), () => importFromExcel(excel)]) {
+    await updateSettings({ defaultEtfCommissionRatePercent: 0.1, etfMinCommission: 10 });
+    await updateHolding('default-rate', { securityFeeKind: 'stock' });
+    await updateHolding('custom-rate', { securityFeeKind: undefined });
+    assert.equal(await restore(), true);
+    assert.deepEqual(await expected(), original);
+  }
+
+  // JSON invalid rejections
+  const parsedJson = JSON.parse(json);
+  for (const mutate of [
+    (data: typeof parsedJson) => { data.settings[0].defaultEtfCommissionRatePercent = -0.01; },
+    (data: typeof parsedJson) => { data.settings[0].defaultEtfCommissionRatePercent = 15; },
+    (data: typeof parsedJson) => { data.settings[0].etfMinCommission = -1; },
+    (data: typeof parsedJson) => { data.holdings[0].securityFeeKind = 'bond'; },
+  ]) {
+    const copy = structuredClone(parsedJson);
+    mutate(copy);
+    assert.equal(await importData(JSON.stringify(copy)), false);
+  }
+
+  // Excel invalid rejections
+  const mutateExcel = async (mutateWb: (wb: XLSX.WorkBook) => void) => {
+    const wb = XLSX.read(excel, { type: 'base64' });
+    mutateWb(wb);
+    return importFromExcel(XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }));
+  };
+  assert.equal(await mutateExcel(wb => {
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets.Settings);
+    rows[0].defaultEtfCommissionRatePercent = 20;
+    wb.Sheets.Settings = XLSX.utils.json_to_sheet(rows);
+  }), false);
+  assert.equal(await mutateExcel(wb => {
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets.Settings);
+    rows[0].etfMinCommission = -5;
+    wb.Sheets.Settings = XLSX.utils.json_to_sheet(rows);
+  }), false);
+  assert.equal(await mutateExcel(wb => {
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets.Holdings);
+    rows[0].securityFeeKind = 'bond';
+    wb.Sheets.Holdings = XLSX.utils.json_to_sheet(rows);
+  }), false);
 });

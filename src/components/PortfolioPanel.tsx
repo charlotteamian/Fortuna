@@ -33,8 +33,11 @@ import {
   deriveBalanceHoldingTimeline,
   formatCommissionRatePercent,
   formatCommissionWan,
+  isEtfHolding,
   isValidCommissionRatePercent,
   resolveHoldingCommissionRatePercent,
+  type HoldingFeeSettings,
+  type SecurityFeeKind,
 } from '../lib/holdingPosition';
 import { calculatePortfolioCash } from '../lib/portfolioCash';
 import {
@@ -73,7 +76,11 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const showProductCode = !isBalancePortfolio || shouldShowProductCodeForCategory(account.category);
   const [holdings, setHoldings] = useState<HoldingWithPosition[]>([]);
   const [txns, setTxns] = useState<HoldingTxn[]>([]);
-  const [defaultCommissionRatePercent, setDefaultCommissionRatePercent] = useState(DEFAULT_COMMISSION_RATE_PERCENT);
+  const [feeSettings, setFeeSettings] = useState<HoldingFeeSettings & { defaultStampDutyRatePercent?: number }>({
+    defaultCommissionRatePercent: DEFAULT_COMMISSION_RATE_PERCENT,
+    minCommission: 0,
+    defaultStampDutyRatePercent: DEFAULT_STAMP_DUTY_RATE_PERCENT,
+  });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showArchivedHoldings, setShowArchivedHoldings] = useState(false);
   const [archiveFilters, setArchiveFilters] = useState({ ...DEFAULT_ARCHIVE_FILTERS });
@@ -92,6 +99,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const [hOptionRight, setHOptionRight] = useState<UsOptionRight>('call');
   const [hOptionStrike, setHOptionStrike] = useState('');
   const [hPrice, setHPrice] = useState('');
+  const [hSecurityFeeKind, setHSecurityFeeKind] = useState<'' | SecurityFeeKind>('');
   const [hCommissionRate, setHCommissionRate] = useState('');
   const [hCommissionRateError, setHCommissionRateError] = useState('');
   const [hStampDutyRate, setHStampDutyRate] = useState('');
@@ -153,7 +161,13 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     ]);
     setHoldings(h);
     setTxns(tx);
-    setDefaultCommissionRatePercent(settings?.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT);
+    setFeeSettings({
+      defaultCommissionRatePercent: settings?.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT,
+      defaultEtfCommissionRatePercent: settings?.defaultEtfCommissionRatePercent,
+      minCommission: settings?.minCommission ?? 0,
+      etfMinCommission: settings?.etfMinCommission,
+      defaultStampDutyRatePercent: settings?.defaultStampDutyRatePercent ?? DEFAULT_STAMP_DUTY_RATE_PERCENT,
+    });
     return h;
   }, [account.id]);
 
@@ -288,6 +302,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
   const openCreateHolding = () => {
     setEditingHolding(null);
     setHName(''); setHSymbol(''); setHMarket(''); setHPrice('');
+    setHSecurityFeeKind('');
     setHCommissionRate(''); setHCommissionRateError('');
     setHStampDutyRate(''); setHStampDutyRateError(''); setHRecalcFees(false);
     setHInstrumentType('security'); setHOptionUnderlying(''); setHOptionExpiration('');
@@ -309,6 +324,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     setHOptionRight(optionContract?.right ?? 'call');
     setHOptionStrike(optionContract ? formatStrikeMilli(optionContract.strikeMilli) : '');
     setHPrice(isBalancePortfolio ? (h.marketValue > 0 ? String(Math.round(h.marketValue * 100) / 100) : '') : (h.lastPrice > 0 ? String(h.lastPrice) : ''));
+    setHSecurityFeeKind(h.securityFeeKind ?? '');
     setHCommissionRate(h.commissionRatePercent != null ? formatCommissionRatePercent(h.commissionRatePercent) : '');
     setHCommissionRateError('');
     setHStampDutyRate(h.stampDutyRatePercent != null ? formatCommissionRatePercent(h.stampDutyRatePercent) : '');
@@ -364,7 +380,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
     }
     const meta: Pick<Holding,
       'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
-      | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'stampDutyRatePercent' | 'productData'
+      | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'securityFeeKind' | 'commissionRatePercent' | 'stampDutyRatePercent' | 'productData'
     > = {
       name: hName.trim(),
       symbol: optionContract
@@ -378,6 +394,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
       optionStrikeMilli: optionContract?.strikeMilli,
       contractMultiplier: optionContract?.multiplier,
       mode: defaultHoldingMode,
+      securityFeeKind: !isBalancePortfolio && hInstrumentType !== 'us_option' && hSecurityFeeKind ? hSecurityFeeKind : undefined,
       commissionRatePercent,
       stampDutyRatePercent,
       productData: Object.keys(cleanProductData).length > 0 ? cleanProductData : undefined,
@@ -1063,12 +1080,50 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                 <div className="form-hint" style={{ marginTop: 'var(--sp-2)' }}>{t('derived_balance_hint')}</div>
               </div>
             )}
+            {!isBalancePortfolio && isStockPortfolio && hInstrumentType !== 'us_option' && (() => {
+              const autoDetectedEtf = isEtfHolding({ name: hName, symbol: hSymbol, market: hMarket });
+              const detectedLabel = t(autoDetectedEtf ? 'holding_fee_kind_name_etf' : 'holding_fee_kind_name_stock');
+              const feeKindOptions: { value: '' | SecurityFeeKind; label: string }[] = [
+                { value: '', label: t('holding_fee_kind_auto', { detected: detectedLabel }) },
+                { value: 'stock', label: t('holding_fee_kind_stock') },
+                { value: 'etf', label: t('holding_fee_kind_etf') },
+              ];
+              return (
+                <div className="form-group">
+                  <label className="form-label">{t('holding_fee_kind_label')}</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {feeKindOptions.map(opt => (
+                      <button
+                        key={opt.value || 'auto'}
+                        type="button"
+                        className={`chip${hSecurityFeeKind === opt.value ? ' active' : ''}`}
+                        onClick={() => setHSecurityFeeKind(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {!isBalancePortfolio && (() => {
+              const liveHoldingIdentity = {
+                mode: defaultHoldingMode,
+                name: hName,
+                symbol: hSymbol,
+                market: hMarket,
+                instrumentType: hInstrumentType === 'us_option' ? 'us_option' as const : undefined,
+                securityFeeKind: hInstrumentType !== 'us_option' && hSecurityFeeKind ? hSecurityFeeKind : undefined,
+              };
               const inheritedRate = resolveHoldingCommissionRatePercent(
-                { mode: defaultHoldingMode },
-                defaultCommissionRatePercent,
+                liveHoldingIdentity,
+                feeSettings,
                 account.category,
               );
+              const inheritedIsEtf = isStockPortfolio && hInstrumentType !== 'us_option' && isEtfHolding(liveHoldingIdentity);
+              const inheritedHintKey = isStockPortfolio && hInstrumentType !== 'us_option'
+                ? (inheritedIsEtf ? 'holding_commission_rate_etf_hint' : 'holding_commission_rate_stock_hint')
+                : 'holding_commission_rate_hint';
               const trimmedRate = hCommissionRate.trim();
               const parsedPreview = trimmedRate === '' ? null : Number(trimmedRate);
               const validPreview = parsedPreview != null && isValidCommissionRatePercent(parsedPreview);
@@ -1099,7 +1154,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                           rate: formatCommissionRatePercent(parsedPreview),
                           wan: formatCommissionWan(parsedPreview),
                         })
-                      : t('holding_commission_rate_hint', {
+                      : t(inheritedHintKey, {
                           rate: formatCommissionRatePercent(inheritedRate),
                           wan: formatCommissionWan(inheritedRate),
                         })}
@@ -1113,7 +1168,8 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
               );
             })()}
             {!isBalancePortfolio && (() => {
-              const defaultStampDutyLabel = t('holding_stamp_duty_default_btn', { rate: formatCommissionRatePercent(DEFAULT_STAMP_DUTY_RATE_PERCENT) });
+              const preferredStampDuty = feeSettings.defaultStampDutyRatePercent ?? DEFAULT_STAMP_DUTY_RATE_PERCENT;
+              const defaultStampDutyLabel = t('holding_stamp_duty_default_btn', { rate: formatCommissionRatePercent(preferredStampDuty) });
               return (
                 <div className="form-group">
                   <label className="form-label" htmlFor="holding-stamp-duty-rate">{t('holding_stamp_duty_rate_label')}</label>
@@ -1137,7 +1193,7 @@ export default function PortfolioPanel({ account, onChanged, onOpenApiSettings, 
                       }}
                     />
                     <button type="button" className="btn btn-sm btn-secondary" style={{ flexShrink: 0 }}
-                      onClick={() => { setHStampDutyRate(formatCommissionRatePercent(DEFAULT_STAMP_DUTY_RATE_PERCENT)); setHStampDutyRateError(''); }}>
+                      onClick={() => { setHStampDutyRate(formatCommissionRatePercent(preferredStampDuty)); setHStampDutyRateError(''); }}>
                       {defaultStampDutyLabel}
                     </button>
                   </div>

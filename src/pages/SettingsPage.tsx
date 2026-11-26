@@ -78,6 +78,12 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
   const [minCommissionInput, setMinCommissionInput] = useState('0');
   const [minCommissionError, setMinCommissionError] = useState('');
   const [savingMinCommission, setSavingMinCommission] = useState(false);
+  const [etfCommissionRateInput, setEtfCommissionRateInput] = useState(formatCommissionRatePercent(DEFAULT_COMMISSION_RATE_PERCENT));
+  const [etfCommissionRateError, setEtfCommissionRateError] = useState('');
+  const [savingEtfCommissionRate, setSavingEtfCommissionRate] = useState(false);
+  const [etfMinCommissionInput, setEtfMinCommissionInput] = useState('0');
+  const [etfMinCommissionError, setEtfMinCommissionError] = useState('');
+  const [savingEtfMinCommission, setSavingEtfMinCommission] = useState(false);
   const [defaultStampDutyInput, setDefaultStampDutyInput] = useState(formatCommissionRatePercent(DEFAULT_STAMP_DUTY_RATE_PERCENT));
   const [defaultStampDutyError, setDefaultStampDutyError] = useState('');
   const [savingDefaultStampDuty, setSavingDefaultStampDuty] = useState(false);
@@ -103,7 +109,13 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       setCommissionRateInput(formatCommissionRatePercent(s.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT));
       setCommissionRateError('');
       setMinCommissionInput(s.minCommission != null ? String(s.minCommission) : '0');
+      setMinCommissionError('');
+      setEtfCommissionRateInput(formatCommissionRatePercent(s.defaultEtfCommissionRatePercent ?? s.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT));
+      setEtfCommissionRateError('');
+      setEtfMinCommissionInput(String(s.etfMinCommission ?? s.minCommission ?? 0));
+      setEtfMinCommissionError('');
       setDefaultStampDutyInput(formatCommissionRatePercent(s.defaultStampDutyRatePercent ?? DEFAULT_STAMP_DUTY_RATE_PERCENT));
+      setDefaultStampDutyError('');
       setLastUpdate(ratesUpdatedAt);
       setSnapshotAccounts(accounts);
       setSnapshotStatus(syncStatus);
@@ -197,6 +209,50 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
       showToast(t('default_min_commission_saved'));
     } finally {
       setSavingMinCommission(false);
+    }
+  };
+
+  const handleSaveEtfCommissionRate = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!settings || savingEtfCommissionRate) return;
+    const raw = etfCommissionRateInput.trim();
+    const parsed = raw === '' ? NaN : Number(raw);
+    if (!isValidCommissionRatePercent(parsed)) {
+      setEtfCommissionRateError(t('default_etf_commission_rate_invalid'));
+      return;
+    }
+    setSavingEtfCommissionRate(true);
+    setEtfCommissionRateError('');
+    try {
+      await save({ defaultEtfCommissionRatePercent: parsed });
+      setEtfCommissionRateInput(formatCommissionRatePercent(parsed));
+      await syncAllPortfolioSnapshots(false);
+      onAccountsChanged();
+      showToast(t('default_etf_commission_rate_saved'));
+    } finally {
+      setSavingEtfCommissionRate(false);
+    }
+  };
+
+  const handleSaveEtfMinCommission = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!settings || savingEtfMinCommission) return;
+    const raw = etfMinCommissionInput.trim();
+    const parsed = raw === '' ? NaN : Number(raw);
+    if (!isValidMinCommission(parsed)) {
+      setEtfMinCommissionError(t('default_etf_min_commission_invalid'));
+      return;
+    }
+    setSavingEtfMinCommission(true);
+    setEtfMinCommissionError('');
+    try {
+      await save({ etfMinCommission: parsed });
+      setEtfMinCommissionInput(String(parsed));
+      await syncAllPortfolioSnapshots(false);
+      onAccountsChanged();
+      showToast(t('default_etf_min_commission_saved'));
+    } finally {
+      setSavingEtfMinCommission(false);
     }
   };
 
@@ -736,6 +792,79 @@ export default function SettingsPage({ onRefresh, onAccountsChanged, onOpenOnboa
           {minCommissionError && (
             <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
               {minCommissionError}
+            </div>
+          )}
+        </form>
+        <form onSubmit={event => void handleSaveEtfCommissionRate(event)} noValidate>
+          <div className="settings-item" style={{ alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <label htmlFor="default-etf-commission-rate" className="settings-item-label">{t('default_etf_commission_rate')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexShrink: 0 }}>
+              <input
+                id="default-etf-commission-rate"
+                name="defaultEtfCommissionRatePercent"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max="10"
+                step="0.001"
+                value={etfCommissionRateInput}
+                disabled={savingEtfCommissionRate}
+                aria-describedby="default-etf-commission-rate-hint"
+                aria-invalid={Boolean(etfCommissionRateError)}
+                style={{ width: 96, textAlign: 'right' }}
+                onChange={event => {
+                  setEtfCommissionRateInput(event.target.value);
+                  if (etfCommissionRateError) setEtfCommissionRateError('');
+                }}
+              />
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 'var(--fw-semibold)' }}>%</span>
+              <button type="submit" className="btn btn-sm btn-primary" disabled={savingEtfCommissionRate}>{t('save')}</button>
+            </div>
+          </div>
+          <div id="default-etf-commission-rate-hint" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)', lineHeight: 'var(--lh-base)' }}>
+            {t('default_etf_commission_rate_hint', {
+              rate: formatCommissionRatePercent(settings.defaultEtfCommissionRatePercent ?? settings.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT),
+              wan: formatCommissionWan(settings.defaultEtfCommissionRatePercent ?? settings.defaultCommissionRatePercent ?? DEFAULT_COMMISSION_RATE_PERCENT),
+            })}
+          </div>
+          {etfCommissionRateError && (
+            <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+              {etfCommissionRateError}
+            </div>
+          )}
+        </form>
+        <form onSubmit={event => void handleSaveEtfMinCommission(event)} noValidate>
+          <div className="settings-item" style={{ alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <label htmlFor="default-etf-min-commission" className="settings-item-label">{t('default_etf_min_commission')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexShrink: 0 }}>
+              <input
+                id="default-etf-min-commission"
+                name="etfMinCommission"
+                className="form-input mono"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={etfMinCommissionInput}
+                disabled={savingEtfMinCommission}
+                aria-describedby="default-etf-min-commission-hint"
+                aria-invalid={Boolean(etfMinCommissionError)}
+                style={{ width: 96, textAlign: 'right' }}
+                onChange={event => {
+                  setEtfMinCommissionInput(event.target.value);
+                  if (etfMinCommissionError) setEtfMinCommissionError('');
+                }}
+              />
+              <button type="submit" className="btn btn-sm btn-primary" disabled={savingEtfMinCommission}>{t('save')}</button>
+            </div>
+          </div>
+          <div id="default-etf-min-commission-hint" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 'var(--sp-1)', lineHeight: 'var(--lh-base)' }}>
+            {t('default_etf_min_commission_hint')}
+          </div>
+          {etfMinCommissionError && (
+            <div role="alert" style={{ fontSize: 'var(--fs-xs)', color: 'var(--liability-color)', marginTop: 'var(--sp-1)' }}>
+              {etfMinCommissionError}
             </div>
           )}
         </form>

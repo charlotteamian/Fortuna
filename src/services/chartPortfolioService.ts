@@ -10,7 +10,9 @@ export async function getChartPortfolios() {
   ]);
   const feeSettings = {
     defaultCommissionRatePercent: settings.defaultCommissionRatePercent,
+    defaultEtfCommissionRatePercent: settings.defaultEtfCommissionRatePercent,
     minCommission: settings.minCommission,
+    etfMinCommission: settings.etfMinCommission,
   };
   return getEligibleNavAccounts(accounts).map(account => ({
     account,

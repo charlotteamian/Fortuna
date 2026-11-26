@@ -8,6 +8,15 @@ export const MAX_MIN_COMMISSION = 1_000_000;
 const UNIT_HOLDING_CATEGORIES = new Set(['股票/ETF', '股票', '场外基金', '数字货币']);
 const STOCK_COMMISSION_CATEGORIES = new Set(['股票/ETF', '股票']);
 
+export type SecurityFeeKind = 'stock' | 'etf';
+
+export interface HoldingFeeSettings {
+  defaultCommissionRatePercent?: number;
+  defaultEtfCommissionRatePercent?: number;
+  minCommission?: number;
+  etfMinCommission?: number;
+}
+
 export type HoldingTxnLike = Pick<
   HoldingTxn,
   'date' | 'kind' | 'shares' | 'price' | 'createdAt' | 'quantitySnapshot' | 'costPriceSnapshot' | 'balanceSnapshot' | 'fee'
@@ -123,16 +132,57 @@ export function formatCommissionWan(ratePercent: number): string {
   return String(Number((safe * 100).toFixed(4)));
 }
 
+export function isEtfHolding(holding?: {
+  name?: string;
+  symbol?: string;
+  market?: string;
+  instrumentType?: string;
+  securityFeeKind?: SecurityFeeKind;
+}): boolean {
+  if (!holding || holding.instrumentType === 'us_option') return false;
+  if (holding.securityFeeKind === 'etf') return true;
+  if (holding.securityFeeKind === 'stock') return false;
+  const rawSymbol = (holding.symbol ?? '').trim();
+  if (
+    !(holding.market && /美|港|US|HK/i.test(holding.market))
+    && !/^(?:us|hk)/i.test(rawSymbol)
+    && rawSymbol.length > 0
+  ) {
+    const normalizedSymbol = rawSymbol
+      .replace(/^(?:sh|sz|bj)[.:]?/i, '')
+      .replace(/\.(?:sh|sz|bj)$/i, '');
+    if (/^(?:1[568]|5\d)\d{4}$/.test(normalizedSymbol)) return true;
+  }
+  if (typeof holding.name === 'string' && /(?:^|[^A-Za-z])(?:ETF|LOF)(?:$|[^A-Za-z])/i.test(holding.name)) {
+    return true;
+  }
+  return false;
+}
+
 export function resolveHoldingCommissionRatePercent(
-  holding?: { mode?: string; commissionRatePercent?: number },
-  defaultCommissionRatePercent?: number,
+  holding?: {
+    mode?: string;
+    commissionRatePercent?: number;
+    name?: string;
+    symbol?: string;
+    market?: string;
+    instrumentType?: string;
+    securityFeeKind?: SecurityFeeKind;
+  },
+  defaultOrSettings?: number | Pick<HoldingFeeSettings, 'defaultCommissionRatePercent' | 'defaultEtfCommissionRatePercent'>,
   accountCategory?: string,
 ): number {
   if (holding?.mode === 'balance') return 0;
   if (accountCategory && !holding?.mode && !UNIT_HOLDING_CATEGORIES.has(accountCategory)) return 0;
   if (isValidCommissionRatePercent(holding?.commissionRatePercent)) return holding.commissionRatePercent;
   if (accountCategory && !STOCK_COMMISSION_CATEGORIES.has(accountCategory)) return 0;
-  return normalizeCommissionRatePercent(defaultCommissionRatePercent, DEFAULT_COMMISSION_RATE_PERCENT);
+  if (typeof defaultOrSettings === 'object' && defaultOrSettings !== null) {
+    if (isEtfHolding(holding) && isValidCommissionRatePercent(defaultOrSettings.defaultEtfCommissionRatePercent)) {
+      return defaultOrSettings.defaultEtfCommissionRatePercent;
+    }
+    return normalizeCommissionRatePercent(defaultOrSettings.defaultCommissionRatePercent, DEFAULT_COMMISSION_RATE_PERCENT);
+  }
+  return normalizeCommissionRatePercent(defaultOrSettings, DEFAULT_COMMISSION_RATE_PERCENT);
 }
 
 export function isValidMinCommission(value: unknown): value is number {
@@ -153,16 +203,28 @@ function normalizeFeeTerms(terms: number | Partial<HoldingFeeTerms> | undefined)
  * ETFs and funds stay duty-free unless the user sets a rate on them.
  */
 export function resolveHoldingFeeTerms(
-  holding?: { mode?: string; commissionRatePercent?: number; stampDutyRatePercent?: number },
-  settings?: { defaultCommissionRatePercent?: number; minCommission?: number },
+  holding?: {
+    mode?: string;
+    commissionRatePercent?: number;
+    stampDutyRatePercent?: number;
+    name?: string;
+    symbol?: string;
+    market?: string;
+    instrumentType?: string;
+    securityFeeKind?: SecurityFeeKind;
+  },
+  settings?: HoldingFeeSettings,
   accountCategory?: string,
 ): HoldingFeeTerms {
   const tradesUnits = holding?.mode !== 'balance'
     && !(accountCategory && !holding?.mode && !UNIT_HOLDING_CATEGORIES.has(accountCategory));
   if (!tradesUnits) return { commissionRatePercent: 0, minCommission: 0, stampDutyRatePercent: 0 };
+  const minCommission = isEtfHolding(holding) && isValidMinCommission(settings?.etfMinCommission)
+    ? settings.etfMinCommission
+    : settings?.minCommission;
   return normalizeFeeTerms({
-    commissionRatePercent: resolveHoldingCommissionRatePercent(holding, settings?.defaultCommissionRatePercent, accountCategory),
-    minCommission: settings?.minCommission,
+    commissionRatePercent: resolveHoldingCommissionRatePercent(holding, settings, accountCategory),
+    minCommission,
     stampDutyRatePercent: holding?.stampDutyRatePercent,
   });
 }

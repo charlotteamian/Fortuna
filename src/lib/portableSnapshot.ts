@@ -35,7 +35,20 @@ export interface PortableSnapshotInput {
   transactions: HoldingTxn[];
   exchangeRates: ExchangeRate[];
   planStatus: PlanStatus;
-  settings: Pick<Settings, 'primaryCurrency' | 'snapshotFocusAccountIds' | 'defaultCommissionRatePercent' | 'minCommission' | 'dividendBudgetMinor' | 'dividendStrategy' | 'dividendFundPlan' | 'dividendPricingMethod' | 'dividendSelectionPrinciples'>;
+  settings: Pick<
+    Settings,
+    | 'primaryCurrency'
+    | 'snapshotFocusAccountIds'
+    | 'defaultCommissionRatePercent'
+    | 'defaultEtfCommissionRatePercent'
+    | 'minCommission'
+    | 'etfMinCommission'
+    | 'dividendBudgetMinor'
+    | 'dividendStrategy'
+    | 'dividendFundPlan'
+    | 'dividendPricingMethod'
+    | 'dividendSelectionPrinciples'
+  >;
   dividendStocks?: DividendStock[];
   priceMonitors?: PriceMonitor[];
   generatedAt?: Date;
@@ -104,19 +117,20 @@ export function buildPortableSnapshot(input: PortableSnapshotInput) {
       const mode = getHoldingMode(account.category, holding);
       const multiplier = getHoldingContractMultiplier(holding);
       const optionContract = resolveUsOptionContract(holding);
+      const snapshotFeeSettings = {
+        defaultCommissionRatePercent: input.settings.defaultCommissionRatePercent ?? 0,
+        defaultEtfCommissionRatePercent: input.settings.defaultEtfCommissionRatePercent,
+        minCommission: input.settings.minCommission,
+        etfMinCommission: input.settings.etfMinCommission,
+      };
       const commissionRatePercent = mode === 'balance'
         ? 0
         : isValidCommissionRatePercent(holding.commissionRatePercent)
           ? holding.commissionRatePercent
-          : input.settings.defaultCommissionRatePercent === undefined
-            ? 0
-            : resolveHoldingCommissionRatePercent(holding, input.settings.defaultCommissionRatePercent, account.category);
+          : resolveHoldingCommissionRatePercent(holding, snapshotFeeSettings, account.category);
       const analysis = mode === 'balance'
         ? null
-        : analyzeHoldingPosition(holdingTransactions, multiplier, resolveHoldingFeeTerms(holding, {
-            defaultCommissionRatePercent: input.settings.defaultCommissionRatePercent ?? 0,
-            minCommission: input.settings.minCommission,
-          }, account.category));
+        : analyzeHoldingPosition(holdingTransactions, multiplier, resolveHoldingFeeTerms(holding, snapshotFeeSettings, account.category));
       if (analysis) analysisByHoldingId.set(holding.id, analysis);
       const position = analysis ? analysis.position : computeBalanceHoldingPosition(holdingTransactions);
       const marketValue = mode === 'balance' ? position.shares : position.shares * multiplier * (holding.lastPrice || 0);

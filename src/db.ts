@@ -31,6 +31,7 @@ import {
   isValidMinCommission,
   resolveHoldingFeeTerms,
   type HoldingPositionAnalysis,
+  type SecurityFeeKind,
 } from './lib/holdingPosition';
 
 export { CURRENT_AUTOMATIC_SNAPSHOT_SCHEMA_VERSION } from './lib/snapshotSchema';
@@ -153,6 +154,7 @@ export interface Holding {
   optionStrikeMilli?: number; // strike × 1000 (OSI precision)
   contractMultiplier?: number; // normally 100 for US equity options
   mode?: HoldingMode;      // unit = quantity × price, balance = current balance tracked by amount deltas
+  securityFeeKind?: SecurityFeeKind; // optional override: 'stock' or 'etf' (undefined = auto-detect)
   commissionRatePercent?: number; // optional per-holding commission rate override (%)
   stampDutyRatePercent?: number; // optional stamp duty on sells (%); omitted = none (ETFs, funds)
   productData?: Record<string, string>; // per-product metadata, e.g. deposit rate and maturity
@@ -196,8 +198,10 @@ export interface Settings {
   fontSize?: 'small' | 'normal' | 'large';
   language?: 'auto' | 'zh' | 'en';
   goldPriceSource?: GoldPriceSource;  // which gold price convention to value precious metals with
-  defaultCommissionRatePercent?: number; // default stock/ETF trading commission rate (%) e.g. 0.01 = 0.01% (万1)
-  minCommission?: number;             // smallest commission per fill in account currency; 0 = no minimum
+  defaultCommissionRatePercent?: number; // default stock trading commission rate (%) e.g. 0.01 = 0.01% (万1)
+  defaultEtfCommissionRatePercent?: number; // default ETF trading commission rate (%); undefined = fall back to stock rate
+  minCommission?: number;             // smallest stock commission per fill in account currency; 0 = no minimum
+  etfMinCommission?: number;          // smallest ETF commission per fill in account currency; undefined = fall back to stock minimum
   defaultStampDutyRatePercent?: number; // rate offered when stamp duty is switched on for a holding (%)
   txnFeesMaterialized?: boolean;      // every fill written before stored fees has had its fee stored
   metalTxnMigrated?: boolean;         // legacy metal snapshot records converted to buy/sell deltas
@@ -603,8 +607,8 @@ export async function importData(jsonData: string): Promise<boolean> {
   try {
     const data = JSON.parse(jsonData);
     if (!data.accounts || !data.records || !data.settings) return false;
-    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.defaultCommissionRatePercent === undefined || isValidCommissionRatePercent(row.defaultCommissionRatePercent)) && (row.minCommission === undefined || isValidMinCommission(row.minCommission)) && (row.defaultStampDutyRatePercent === undefined || isValidCommissionRatePercent(row.defaultStampDutyRatePercent)) && (row.dividendManualInputs === undefined || isDividendManualInputsMap(row.dividendManualInputs)) && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
-    if (data.holdings !== undefined && (!Array.isArray(data.holdings) || !data.holdings.every((row: Holding) => row && (row.commissionRatePercent === undefined || isValidCommissionRatePercent(row.commissionRatePercent)) && (row.stampDutyRatePercent === undefined || isValidCommissionRatePercent(row.stampDutyRatePercent))))) return false;
+    if (!Array.isArray(data.settings) || !data.settings.every((row: Settings) => row && (row.defaultCommissionRatePercent === undefined || isValidCommissionRatePercent(row.defaultCommissionRatePercent)) && (row.defaultEtfCommissionRatePercent === undefined || isValidCommissionRatePercent(row.defaultEtfCommissionRatePercent)) && (row.minCommission === undefined || isValidMinCommission(row.minCommission)) && (row.etfMinCommission === undefined || isValidMinCommission(row.etfMinCommission)) && (row.defaultStampDutyRatePercent === undefined || isValidCommissionRatePercent(row.defaultStampDutyRatePercent)) && (row.dividendManualInputs === undefined || isDividendManualInputsMap(row.dividendManualInputs)) && (row.dividendPricingMethod === undefined || isDividendPricingMethod(row.dividendPricingMethod)) && (row.dividendSelectionPrinciples === undefined || isDividendSelectionPrinciples(row.dividendSelectionPrinciples)) && (row.dividendFundPlan === undefined || isDividendFundPlan(row.dividendFundPlan)) && (row.dividendStrategy === undefined || ['stocks', 'funds'].includes(row.dividendStrategy)))) return false;
+    if (data.holdings !== undefined && (!Array.isArray(data.holdings) || !data.holdings.every((row: Holding) => row && (row.securityFeeKind === undefined || row.securityFeeKind === 'stock' || row.securityFeeKind === 'etf') && (row.commissionRatePercent === undefined || isValidCommissionRatePercent(row.commissionRatePercent)) && (row.stampDutyRatePercent === undefined || isValidCommissionRatePercent(row.stampDutyRatePercent))))) return false;
     if (data.holdingTxns !== undefined && (!Array.isArray(data.holdingTxns) || !data.holdingTxns.every((row: HoldingTxn) => row && (row.fee === undefined || (typeof row.fee === 'number' && Number.isFinite(row.fee) && row.fee >= 0)) && (row.feeSource === undefined || row.feeSource === 'auto' || row.feeSource === 'manual')))) return false;
     if (data.dividendStocks !== undefined && (!Array.isArray(data.dividendStocks) || !data.dividendStocks.every(isDividendStock))) return false;
 
@@ -960,10 +964,16 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
     sheet = 'Holdings';
     const holdings = wsHoldings
       ? XLSX.utils.sheet_to_json<Record<string, unknown>>(wsHoldings).map(row => {
-          const { productData, commissionRatePercent, stampDutyRatePercent, ...rest } = row;
+          const { productData, commissionRatePercent, stampDutyRatePercent, securityFeeKind, ...rest } = row;
           const hasValue = (value: unknown) => value != null && !(typeof value === 'string' && value.trim() === '');
+          const parsedSecurityFeeKind = !hasValue(securityFeeKind)
+            ? undefined
+            : typeof securityFeeKind === 'string'
+              ? securityFeeKind.trim()
+              : securityFeeKind;
           return {
             ...rest,
+            ...(parsedSecurityFeeKind !== undefined ? { securityFeeKind: parsedSecurityFeeKind } : {}),
             ...(hasValue(commissionRatePercent) ? { commissionRatePercent: normalizeExcelBackupNumber(commissionRatePercent) } : {}),
             ...(hasValue(stampDutyRatePercent) ? { stampDutyRatePercent: normalizeExcelBackupNumber(stampDutyRatePercent) } : {}),
             productData: typeof productData === 'string'
@@ -1058,10 +1068,20 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
         if (!isValidCommissionRatePercent(parsedRate)) return [];
         restored.defaultCommissionRatePercent = parsedRate;
       }
+      if (row.defaultEtfCommissionRatePercent !== undefined && row.defaultEtfCommissionRatePercent !== null && row.defaultEtfCommissionRatePercent !== '') {
+        const parsedEtfRate = normalizeExcelBackupNumber(row.defaultEtfCommissionRatePercent);
+        if (!isValidCommissionRatePercent(parsedEtfRate)) return [];
+        restored.defaultEtfCommissionRatePercent = parsedEtfRate;
+      }
       if (row.minCommission !== undefined && row.minCommission !== null && row.minCommission !== '') {
         const parsedMinimum = normalizeExcelBackupNumber(row.minCommission);
         if (!isValidMinCommission(parsedMinimum)) return [];
         restored.minCommission = parsedMinimum;
+      }
+      if (row.etfMinCommission !== undefined && row.etfMinCommission !== null && row.etfMinCommission !== '') {
+        const parsedEtfMinimum = normalizeExcelBackupNumber(row.etfMinCommission);
+        if (!isValidMinCommission(parsedEtfMinimum)) return [];
+        restored.etfMinCommission = parsedEtfMinimum;
       }
       if (row.defaultStampDutyRatePercent !== undefined && row.defaultStampDutyRatePercent !== null && row.defaultStampDutyRatePercent !== '') {
         const parsedStampDuty = normalizeExcelBackupNumber(row.defaultStampDutyRatePercent);
@@ -1110,6 +1130,7 @@ export async function importFromExcel(data: string | ArrayBuffer | Uint8Array, o
       && Number.isFinite(holding.lastPrice)
       && Number.isFinite(holding.createdAt)
       && Number.isFinite(holding.sortOrder)
+      && (holding.securityFeeKind === undefined || holding.securityFeeKind === 'stock' || holding.securityFeeKind === 'etf')
       && (holding.commissionRatePercent === undefined || isValidCommissionRatePercent(holding.commissionRatePercent))
       && (holding.stampDutyRatePercent === undefined || isValidCommissionRatePercent(holding.stampDutyRatePercent))
     ))) return fail('invalid_data', 'Holdings');

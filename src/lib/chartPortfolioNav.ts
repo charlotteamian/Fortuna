@@ -197,14 +197,21 @@ export function buildAccountNavPoints(
   accountId: string,
   holdings: readonly PnlHoldingLike[],
   txns: readonly PnlTxnLike[],
-  feeSettings: { defaultCommissionRatePercent?: number; minCommission?: number } = {},
+  feeSettings: {
+    defaultCommissionRatePercent?: number;
+    defaultEtfCommissionRatePercent?: number;
+    minCommission?: number;
+    etfMinCommission?: number;
+  } = {},
   accountCategory?: string,
 ): PnlNavPoint[] {
   // A bare call prices fills at 0 commission, matching the historical default; callers with
   // real settings pass the configured default and minimum instead.
   const normalizedFeeSettings = {
     defaultCommissionRatePercent: feeSettings.defaultCommissionRatePercent ?? 0,
+    defaultEtfCommissionRatePercent: feeSettings.defaultEtfCommissionRatePercent,
     minCommission: feeSettings.minCommission ?? 0,
+    etfMinCommission: feeSettings.etfMinCommission,
   };
   const slots = new Map<string, NavSlot>();
   const holdingById = new Map<string, PnlHoldingLike>();

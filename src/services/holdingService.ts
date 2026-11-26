@@ -30,17 +30,20 @@ export {
   computeHoldingPnl,
   computeHoldingPosition,
   DEFAULT_COMMISSION_RATE_PERCENT,
+  isEtfHolding,
   isManualTxnFee,
   resolveHoldingCommissionRatePercent,
   resolveHoldingFeeTerms,
 } from '../lib/holdingPosition';
 export type {
   HoldingDayTradeMatch,
+  HoldingFeeSettings,
   HoldingFeeTerms,
   HoldingPnl,
   HoldingPosition,
   HoldingPositionAnalysis,
   HoldingTxnDayTradeSummary,
+  SecurityFeeKind,
 } from '../lib/holdingPosition';
 
 // ---- Holding CRUD ----
@@ -51,7 +54,7 @@ export async function getHoldings(accountId: string): Promise<Holding[]> {
 
 export async function createHolding(accountId: string, data: Pick<Holding,
   'name' | 'symbol' | 'market' | 'instrumentType' | 'optionUnderlying' | 'optionExpiration'
-  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'commissionRatePercent' | 'stampDutyRatePercent' | 'productData'
+  | 'optionRight' | 'optionStrikeMilli' | 'contractMultiplier' | 'mode' | 'securityFeeKind' | 'commissionRatePercent' | 'stampDutyRatePercent' | 'productData'
   | 'lastPrice' | 'priceDate'
 >): Promise<string> {
   const count = await db.holdings.where('accountId').equals(accountId).count();
